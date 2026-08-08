@@ -9,6 +9,7 @@ from app.api.v1 import (
     visits,
     geo,
     media,
+    signatures,
 )
 
 api_router = APIRouter()
@@ -22,3 +23,4 @@ api_router.include_router(customers.router)
 api_router.include_router(visits.router)
 api_router.include_router(geo.router)
 api_router.include_router(media.router)
+api_router.include_router(signatures.router)

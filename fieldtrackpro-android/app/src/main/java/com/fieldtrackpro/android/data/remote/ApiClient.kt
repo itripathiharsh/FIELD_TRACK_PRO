@@ -4,6 +4,7 @@ import com.fieldtrackpro.android.data.api.AuthApi
 import com.fieldtrackpro.android.data.api.CustomerApi
 import com.fieldtrackpro.android.data.api.GeoApi
 import com.fieldtrackpro.android.data.api.MediaApi
+import com.fieldtrackpro.android.data.api.SignatureApi
 import com.fieldtrackpro.android.data.api.VisitApi
 import com.fieldtrackpro.android.BuildConfig
 import com.fieldtrackpro.android.data.local.TokenManager
@@ -84,6 +85,9 @@ object ApiClient {
 
     fun createGeoApi(tokenManager: TokenManager): GeoApi =
         getRetrofit(tokenManager).create(GeoApi::class.java)
+
+    fun createSignatureApi(tokenManager: TokenManager): SignatureApi =
+        getRetrofit(tokenManager).create(SignatureApi::class.java)
 
     private fun String?.isNull_or_empty(): Boolean = this == null || this.trim().isEmpty()
 }

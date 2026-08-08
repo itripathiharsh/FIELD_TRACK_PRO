@@ -1,5 +1,11 @@
 package com.fieldtrackpro.android.ui.screens.media
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -24,15 +30,20 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import com.fieldtrackpro.android.ui.components.EmptyState
 import com.fieldtrackpro.android.ui.components.ErrorBanner
 import com.fieldtrackpro.android.ui.components.FieldTrackTopAppBar
-import com.fieldtrackpro.android.ui.components.LoadingScreen
 import com.fieldtrackpro.android.ui.components.StatusBadge
 import com.fieldtrackpro.android.ui.theme.ElectricBlue
 import com.fieldtrackpro.android.ui.theme.Slate50
@@ -41,6 +52,7 @@ import com.fieldtrackpro.android.ui.theme.Slate900
 import com.fieldtrackpro.android.ui.theme.SurfaceWhite
 import com.fieldtrackpro.android.ui.viewmodel.MediaState
 import com.fieldtrackpro.android.ui.viewmodel.MediaViewModel
+import java.io.File
 
 @Composable
 fun MediaUploadScreen(
@@ -48,7 +60,53 @@ fun MediaUploadScreen(
     viewModel: MediaViewModel,
     onNavigateBack: () -> Unit
 ) {
+    val context = LocalContext.current
     val state by viewModel.mediaState.collectAsState()
+
+    var cameraUri by remember { mutableStateOf<Uri?>(null) }
+    var hasCameraPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+                PackageManager.PERMISSION_GRANTED
+        )
+    }
+
+    val cameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { success ->
+        if (success && cameraUri != null) {
+            uploadFile(context, viewModel, visitId, cameraUri!!, "image/jpeg")
+        }
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        hasCameraPermission = granted
+        if (granted) {
+            val uri = createTempImageUri(context)
+            cameraUri = uri
+            cameraLauncher.launch(uri)
+        }
+    }
+
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            val mimeType = context.contentResolver.getType(uri) ?: "image/*"
+            uploadFile(context, viewModel, visitId, uri, mimeType)
+        }
+    }
+
+    val documentPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            val mimeType = context.contentResolver.getType(uri) ?: "application/pdf"
+            uploadFile(context, viewModel, visitId, uri, mimeType)
+        }
+    }
 
     LaunchedEffect(visitId) {
         viewModel.loadVisitMedia(visitId)
@@ -94,29 +152,59 @@ fun MediaUploadScreen(
                         Spacer(modifier = Modifier.height(12.dp))
                     }
 
-                    Card(
+                    if (state is MediaState.UploadSuccess) {
+                        Text(
+                            text = "Upload successful!",
+                            fontSize = 13.sp,
+                            color = ElectricBlue,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
+
+                    Row(
                         modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = Slate50),
-                        shape = RoundedCornerShape(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
+                        Button(
+                            onClick = {
+                                if (hasCameraPermission) {
+                                    val uri = createTempImageUri(context)
+                                    cameraUri = uri
+                                    cameraLauncher.launch(uri)
+                                } else {
+                                    permissionLauncher.launch(Manifest.permission.CAMERA)
+                                }
+                            },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = ElectricBlue),
+                            enabled = state !is MediaState.Loading
                         ) {
-                            Text(
-                                text = "📸 Photo Capture",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Slate900
-                            )
-                            Text(
-                                text = "Camera integration is not yet available in this release.",
-                                fontSize = 12.sp,
-                                color = Slate500
-                            )
+                            Text("Camera", fontSize = 12.sp)
                         }
+
+                        OutlinedButton(
+                            onClick = { imagePickerLauncher.launch("image/*") },
+                            modifier = Modifier.weight(1f),
+                            enabled = state !is MediaState.Loading
+                        ) {
+                            Text("Photo", fontSize = 12.sp)
+                        }
+
+                        OutlinedButton(
+                            onClick = { documentPickerLauncher.launch("application/pdf") },
+                            modifier = Modifier.weight(1f),
+                            enabled = state !is MediaState.Loading
+                        ) {
+                            Text("PDF", fontSize = 12.sp)
+                        }
+                    }
+
+                    if (state is MediaState.Loading) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        CircularProgressIndicator(
+                            modifier = Modifier.align(Alignment.CenterHorizontally)
+                        )
                     }
                 }
             }
@@ -154,7 +242,7 @@ fun MediaUploadScreen(
                                     ) {
                                         Column {
                                             Text(
-                                                text = media.storageKey.split("/").lastOrNull() ?: media.id,
+                                                text = media.originalFilename ?: media.storageKey.split("/").lastOrNull() ?: media.id,
                                                 fontSize = 14.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 color = Slate900
@@ -175,5 +263,39 @@ fun MediaUploadScreen(
                 else -> {}
             }
         }
+    }
+}
+
+private fun createTempImageUri(context: android.content.Context): Uri {
+    val tempFile = File.createTempFile(
+        "capture_${System.currentTimeMillis()}",
+        ".jpg",
+        context.cacheDir
+    )
+    return FileProvider.getUriForFile(
+        context,
+        "${context.packageName}.fileprovider",
+        tempFile
+    )
+}
+
+private fun uploadFile(
+    context: android.content.Context,
+    viewModel: MediaViewModel,
+    visitId: String,
+    uri: Uri,
+    mimeType: String
+) {
+    try {
+        val inputStream = context.contentResolver.openInputStream(uri)
+        val bytes = inputStream?.readBytes()
+        inputStream?.close()
+
+        if (bytes != null && bytes.isNotEmpty()) {
+            val fileName = uri.lastPathSegment ?: "attachment_${System.currentTimeMillis()}"
+            viewModel.uploadMedia(visitId, fileName, mimeType, bytes)
+        }
+    } catch (e: Exception) {
+        // Error will be handled by the ViewModel state
     }
 }
