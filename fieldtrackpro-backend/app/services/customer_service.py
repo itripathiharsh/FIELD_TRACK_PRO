@@ -30,6 +30,7 @@ async def create_customer(data: CustomerCreate, created_by: uuid.UUID, session: 
     customer = Customer(
         name=data.name,
         contact_number=data.contact_number,
+        contact_person=data.contact_person,
         address=data.address,
         location=data.location.to_wkt(),
         geofence_radius_m=data.geofence_radius_m,
@@ -65,6 +66,8 @@ async def update_customer(customer_id: uuid.UUID, data: CustomerUpdate, session:
         customer.name = data.name
     if data.contact_number is not None:
         customer.contact_number = data.contact_number
+    if data.contact_person is not None:
+        customer.contact_person = data.contact_person
     if data.address is not None:
         customer.address = data.address
     if data.location is not None:

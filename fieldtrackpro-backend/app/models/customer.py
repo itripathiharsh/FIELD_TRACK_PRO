@@ -13,7 +13,11 @@ class Customer(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(150))
+    # FT-013: the phone number and the human contact are separate concerns. The
+    # admin form labelled this column "Contact Person", so a realistic full name
+    # overflowed varchar(20) and produced an unhandled 500.
     contact_number: Mapped[str] = mapped_column(String(20))
+    contact_person: Mapped[Optional[str]] = mapped_column(String(150), nullable=True)
     address: Mapped[str] = mapped_column(Text)
     location: Mapped[Any] = mapped_column(Geography(geometry_type="POINT", srid=4326))
     geofence_radius_m: Mapped[int] = mapped_column(Integer, default=75)
