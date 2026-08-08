@@ -42,8 +42,24 @@ SEED_LNG = 77.5946
 
 
 def _sync_dsn() -> str:
-    """Translate the app's async SQLAlchemy URL into a plain psycopg2 DSN."""
+    """
+    Plain psycopg2 DSN for reading committed state as the application sees it.
+    """
     return settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
+
+
+def _owner_dsn() -> str:
+    """
+    Privileged DSN used ONLY for fixture teardown.
+
+    FT-032 makes `geo_verification_logs` insert-only for the application role,
+    so the app itself cannot delete audit rows - which is the point. Test
+    fixtures must therefore clean up as the schema owner. Using the owner here
+    is deliberate and is confined to setup/teardown; every assertion about
+    application behaviour still runs through the restricted role.
+    """
+    url = settings.migration_database_url or settings.database_url
+    return url.replace("postgresql+asyncpg://", "postgresql://")
 
 
 def db_available() -> bool:
@@ -71,12 +87,15 @@ requires_db = pytest.mark.skipif(
 
 
 @contextmanager
-def db_cursor() -> Iterator[psycopg2.extras.RealDictCursor]:
+def db_cursor(privileged: bool = False) -> Iterator[psycopg2.extras.RealDictCursor]:
     """
     Yield a cursor on a connection completely separate from the app's async
     engine. If a row is visible here, it was genuinely COMMITTED.
+
+    ``privileged=True`` connects as the schema owner and is reserved for
+    fixture teardown of insert-only tables (see :func:`_owner_dsn`).
     """
-    conn = psycopg2.connect(_sync_dsn())
+    conn = psycopg2.connect(_owner_dsn() if privileged else _sync_dsn())
     try:
         conn.autocommit = True
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -164,7 +183,7 @@ def _purge_test_artifacts() -> None:
     next one. Only rows created by this suite are touched; developer seed data
     carries no marker and is therefore never matched.
     """
-    with db_cursor() as cur:
+    with db_cursor(privileged=True) as cur:
         cur.execute(
             "DELETE FROM geo_verification_logs WHERE visit_id IN ("
             "  SELECT v.id FROM visits v"
@@ -312,7 +331,8 @@ def created_visits() -> Iterator[list[str]]:
     yield ids
     if not ids:
         return
-    with db_cursor() as cur:
+    # Owner connection: audit rows are insert-only for the application role.
+    with db_cursor(privileged=True) as cur:
         cur.execute("DELETE FROM geo_verification_logs WHERE visit_id = ANY(%s::uuid[])", (ids,))
         cur.execute("DELETE FROM visit_media WHERE visit_id = ANY(%s::uuid[])", (ids,))
         cur.execute("DELETE FROM visits WHERE id = ANY(%s::uuid[])", (ids,))
@@ -434,4 +454,5 @@ async def create_visit(
 
 # Minimal valid JPEG (magic bytes + padding) accepted by FileValidationService.
 VALID_JPEG = b"\xFF\xD8\xFF\xE0\x00\x10JFIF\x00\x01\x01\x01\x00\x60\x00\x60\x00\x00" + b"\x00" * 256
+
 

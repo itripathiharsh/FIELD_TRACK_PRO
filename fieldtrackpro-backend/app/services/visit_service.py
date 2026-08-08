@@ -10,7 +10,7 @@ from datetime import date, datetime, timedelta, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions.custom import BaseAPIException
-from app.models.geo_verification_log import GeoVerificationLog
+from app.models.geo_verification_log import GeoVerificationLog, GeoVerificationType
 from app.models.user import Role
 from app.models.visit import Visit, VisitStatus
 from app.repositories.geo_log_repo import GeoLogRepository
@@ -143,8 +143,7 @@ async def check_in(
     current_user: User,
     session: AsyncSession,
 ) -> Visit:
-    from app.services.customer_service import _extract_coords_from_wkt
-    from app.services.geo_verification_service import GeoVerificationService
+    from app.services.customer_service import verify_device_against_customer
 
     visit = await get_visit_for_user(visit_id, current_user, session)
 
@@ -157,24 +156,23 @@ async def check_in(
     assert_valid_transition(visit.status, VisitStatus.IN_PROGRESS)
 
     customer = await get_customer(visit.customer_id, session)
-    cust_lat, cust_lng = _extract_coords_from_wkt(getattr(customer, "location", None))
 
-    # Perform comprehensive server-side geo verification
-    geo_res = GeoVerificationService.verify_location(
+    # FT-004: PostGIS measures the distance from the stored geography.
+    geo_res = await verify_device_against_customer(
+        customer,
+        session,
         device_lat=data.latitude,
-        device_lon=data.longitude,
-        target_lat=cust_lat,
-        target_lon=cust_lng,
-        geofence_radius_m=customer.geofence_radius_m,
+        device_lng=data.longitude,
         accuracy_m=data.accuracy_m,
         is_mock_location=data.is_mock_location,
     )
 
-    # Log the verification attempt
+    # Log the verification attempt (success or failure) - insert-only audit.
     geo_repo = GeoLogRepository(session)
     log = GeoVerificationLog(
         visit_id=visit.id,
-        device_location=f"POINT({data.longitude} {data.latitude})",
+        verification_type=GeoVerificationType.CHECK_IN,
+        device_location=f"SRID=4326;POINT({data.longitude} {data.latitude})",
         distance_from_customer_m=geo_res.distance_m,
         is_valid=geo_res.is_valid,
         failure_reason=geo_res.failure_reason,
@@ -197,7 +195,7 @@ async def check_in(
 
     visit.status = VisitStatus.IN_PROGRESS
     visit.check_in_at = datetime.now(tz=timezone.utc)
-    visit.check_in_location = f"POINT({data.longitude} {data.latitude})"
+    visit.check_in_location = f"SRID=4326;POINT({data.longitude} {data.latitude})"
     session.add(visit)
     await geo_repo.commit()
     await session.refresh(visit)
@@ -210,22 +208,20 @@ async def check_out(
     current_user: User,
     session: AsyncSession,
 ) -> Visit:
-    from app.services.customer_service import _extract_coords_from_wkt
-    from app.services.geo_verification_service import GeoVerificationService
+    from app.services.customer_service import verify_device_against_customer
 
     visit = await get_visit_for_user(visit_id, current_user, session)
 
     assert_valid_transition(visit.status, VisitStatus.COMPLETED)
 
     customer = await get_customer(visit.customer_id, session)
-    cust_lat, cust_lng = _extract_coords_from_wkt(getattr(customer, "location", None))
 
-    geo_res = GeoVerificationService.verify_location(
+    # FT-004: identical geofence rules as check-in, same PostGIS distance.
+    geo_res = await verify_device_against_customer(
+        customer,
+        session,
         device_lat=data.latitude,
-        device_lon=data.longitude,
-        target_lat=cust_lat,
-        target_lon=cust_lng,
-        geofence_radius_m=customer.geofence_radius_m,
+        device_lng=data.longitude,
         accuracy_m=data.accuracy_m,
         is_mock_location=data.is_mock_location,
     )
@@ -233,7 +229,8 @@ async def check_out(
     geo_repo = GeoLogRepository(session)
     log = GeoVerificationLog(
         visit_id=visit.id,
-        device_location=f"POINT({data.longitude} {data.latitude})",
+        verification_type=GeoVerificationType.CHECK_OUT,
+        device_location=f"SRID=4326;POINT({data.longitude} {data.latitude})",
         distance_from_customer_m=geo_res.distance_m,
         is_valid=geo_res.is_valid,
         failure_reason=geo_res.failure_reason,
@@ -255,7 +252,7 @@ async def check_out(
 
     visit.status = VisitStatus.COMPLETED
     visit.check_out_at = datetime.now(tz=timezone.utc)
-    visit.check_out_location = f"POINT({data.longitude} {data.latitude})"
+    visit.check_out_location = f"SRID=4326;POINT({data.longitude} {data.latitude})"
     session.add(visit)
     await session.commit()
     await session.refresh(visit)
@@ -286,3 +283,4 @@ async def admin_force_status(
     await session.commit()
     await session.refresh(visit)
     return visit
+

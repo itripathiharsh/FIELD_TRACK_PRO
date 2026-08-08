@@ -66,14 +66,31 @@ class GeoVerificationService:
         geofence_radius_m: float,
         accuracy_m: float | None = None,
         is_mock_location: bool = False,
+        measured_distance_m: float | None = None,
     ) -> GeoVerificationResult:
         """
         Execute comprehensive server-side verification:
+
         1. Coordinate range validation
         2. Mock provider detection
         3. GPS accuracy threshold validation
         4. Geofence radius check
+
+        ``measured_distance_m`` lets the caller supply an authoritative distance
+        computed by PostGIS (``ST_Distance`` on ``geography``). When omitted the
+        Haversine approximation is used, which keeps this class independently
+        testable. Callers that touch the database must pass the PostGIS value so
+        the decision is made on the same figure that is written to the audit log
+        (FT-004).
         """
+
+        def distance_to_target() -> float:
+            if measured_distance_m is not None:
+                return measured_distance_m
+            return cls.calculate_haversine_distance(
+                device_lat, device_lon, target_lat, target_lon
+            )
+
         # 1. Coordinate range validation
         if not (-90.0 <= device_lat <= 90.0) or not (-180.0 <= device_lon <= 180.0):
             return GeoVerificationResult(
@@ -87,12 +104,9 @@ class GeoVerificationService:
 
         # 2. Mock provider detection
         if is_mock_location:
-            distance = cls.calculate_haversine_distance(
-                device_lat, device_lon, target_lat, target_lon
-            )
             return GeoVerificationResult(
                 is_valid=False,
-                distance_m=distance,
+                distance_m=distance_to_target(),
                 geofence_radius_m=geofence_radius_m,
                 is_mock=True,
                 accuracy_m=accuracy_m,
@@ -101,23 +115,20 @@ class GeoVerificationService:
 
         # 3. GPS accuracy threshold validation
         if accuracy_m is not None and accuracy_m > cls.MAX_ACCURACY_THRESHOLD_M:
-            distance = cls.calculate_haversine_distance(
-                device_lat, device_lon, target_lat, target_lon
-            )
             return GeoVerificationResult(
                 is_valid=False,
-                distance_m=distance,
+                distance_m=distance_to_target(),
                 geofence_radius_m=geofence_radius_m,
                 is_mock=False,
                 accuracy_m=accuracy_m,
-                failure_reason=f"GPS accuracy ({accuracy_m:.1f}m) exceeds maximum threshold ({cls.MAX_ACCURACY_THRESHOLD_M:.1f}m)",
+                failure_reason=(
+                    f"GPS accuracy ({accuracy_m:.1f}m) exceeds maximum threshold "
+                    f"({cls.MAX_ACCURACY_THRESHOLD_M:.1f}m)"
+                ),
             )
 
-        # 4. Calculate distance & verify geofence
-        distance = cls.calculate_haversine_distance(
-            device_lat, device_lon, target_lat, target_lon
-        )
-
+        # 4. Geofence radius check
+        distance = distance_to_target()
         if distance > geofence_radius_m:
             return GeoVerificationResult(
                 is_valid=False,
@@ -125,7 +136,10 @@ class GeoVerificationService:
                 geofence_radius_m=geofence_radius_m,
                 is_mock=False,
                 accuracy_m=accuracy_m,
-                failure_reason=f"Distance ({distance:.1f}m) exceeds allowed radius ({geofence_radius_m:.1f}m)",
+                failure_reason=(
+                    f"Distance ({distance:.1f}m) exceeds allowed radius "
+                    f"({geofence_radius_m:.1f}m)"
+                ),
             )
 
         # All checks passed

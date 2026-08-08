@@ -10,8 +10,12 @@ from app.models import Base
 # Alembic Config object
 config = context.config
 
-# Set sqlalchemy.url dynamically from settings
-config.set_main_option("sqlalchemy.url", settings.database_url)
+# Migrations require table ownership (DDL, GRANT/REVOKE), which the runtime
+# application role intentionally lacks. Use MIGRATION_DATABASE_URL when
+# provided; otherwise fall back to the runtime URL.
+config.set_main_option(
+    "sqlalchemy.url", settings.migration_database_url or settings.database_url
+)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

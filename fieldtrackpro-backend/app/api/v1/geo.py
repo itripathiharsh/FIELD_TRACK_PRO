@@ -11,8 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.deps.auth import CurrentUser
 from app.database import get_async_session
 from app.schemas.geo import LocationVerifyRequest, LocationVerifyResponse
-from app.services.customer_service import _extract_coords_from_wkt, get_customer
-from app.services.geo_verification_service import GeoVerificationService
+from app.services.customer_service import get_customer, verify_device_against_customer
 
 router = APIRouter(prefix="/geo", tags=["Geo Verification"])
 
@@ -26,16 +25,17 @@ async def verify_location_endpoint(
     """
     Standalone endpoint for mobile apps to pre-verify current device coordinates
     against a target customer geofence before submitting check-in/out.
+
+    FT-004: shares the exact verification path used by check-in and check-out,
+    so a positive pre-check cannot disagree with the real submission.
     """
     customer = await get_customer(data.customer_id, session)
-    cust_lat, cust_lng = _extract_coords_from_wkt(getattr(customer, "location", None))
 
-    result = GeoVerificationService.verify_location(
+    result = await verify_device_against_customer(
+        customer,
+        session,
         device_lat=data.latitude,
-        device_lon=data.longitude,
-        target_lat=cust_lat,
-        target_lon=cust_lng,
-        geofence_radius_m=customer.geofence_radius_m,
+        device_lng=data.longitude,
         accuracy_m=data.accuracy_m,
         is_mock_location=data.is_mock_location,
     )

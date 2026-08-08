@@ -105,7 +105,8 @@ async def get_visit_geo_logs(
     session: DbSession,
 ):
     """Retrieve immutable geo verification audit logs for a visit."""
-    return await visit_service.get_visit_geo_logs(visit_id, current_user, session)
+    logs = await visit_service.get_visit_geo_logs(visit_id, current_user, session)
+    return [GeoVerificationLogRead.from_model(log) for log in logs]
 
 
 @router.patch("/{visit_id}/status", response_model=VisitRead, dependencies=[AdminOnly])

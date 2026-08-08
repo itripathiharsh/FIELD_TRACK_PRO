@@ -16,6 +16,10 @@ dependencies = [
     "asyncpg>=0.30.0",
     "alembic>=1.14.0",
     "geoalchemy2>=0.16.0",
+    # Required to decode PostGIS WKB values into coordinates (FT-004).
+    # GeoAlchemy2's to_shape() depends on it; it was previously undeclared,
+    # which is why the codebase hand-parsed WKT and silently failed.
+    "shapely>=2.0.0",
     "python-jose[cryptography]>=3.3.0",
     "passlib[bcrypt]>=1.7.4",
     "python-multipart>=0.0.12",
