@@ -22,7 +22,7 @@ import { Customer, Employee, Visit } from '../types';
 
 export const DashboardPage: React.FC = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, isLoading: isAuthLoading } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
 
   const [visits, setVisits] = useState<Visit[]>([]);
@@ -41,6 +41,12 @@ export const DashboardPage: React.FC = () => {
    * the whole operation.
    */
   const fetchData = useCallback(() => {
+    // FT-069: wait for authentication to resolve before fetching. On the first
+    // render `user` is still null, so `isAdmin` is false and an administrator
+    // would briefly be served the employee endpoints - producing an empty
+    // dashboard and a needless 403 against the admin-only roster.
+    if (isAuthLoading || !user) return;
+
     setIsLoading(true);
     setError(null);
 
@@ -61,7 +67,7 @@ export const DashboardPage: React.FC = () => {
         setError(err.message || 'Unable to load dashboard data');
       })
       .finally(() => setIsLoading(false));
-  }, [isAdmin]);
+  }, [isAdmin, isAuthLoading, user]);
 
   useEffect(() => {
     fetchData();
