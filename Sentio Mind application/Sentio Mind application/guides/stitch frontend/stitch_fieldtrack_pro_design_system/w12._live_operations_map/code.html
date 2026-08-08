@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>W12. Live Operations Map</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Roboto:wght@500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary-container": "#008560",
+                        "surface-variant": "#e1e2e8",
+                        "background": "#F7F8F9",
+                        "on-background": "#191c20",
+                        "primary": "#00694c",
+                        "warning-tint": "#FFF6E5",
+                        "surface-dim": "#d8dadf",
+                        "outline-variant": "#bccac1",
+                        "on-primary": "#ffffff",
+                        "on-secondary-container": "#003d6d",
+                        "tertiary-container": "#9d6a00",
+                        "error-container": "#ffdad6",
+                        "inverse-on-surface": "#eff0f6",
+                        "primary-fixed": "#86f8c9",
+                        "surface-container-lowest": "#ffffff",
+                        "on-tertiary-fixed-variant": "#614000",
+                        "surface": "#FFFFFF",
+                        "on-surface-variant": "#3d4943",
+                        "inverse-primary": "#68dbae",
+                        "error-tint": "#FDECEC",
+                        "tertiary-fixed-dim": "#fcbb4f",
+                        "border-subtle": "#EDEFF2",
+                        "inverse-surface": "#2e3135",
+                        "secondary-container": "#5da9fe",
+                        "on-error": "#ffffff",
+                        "surface-bright": "#f8f9ff",
+                        "primary-fixed-dim": "#68dbae",
+                        "on-surface": "#191c20",
+                        "secondary-tint": "#EAF3FC",
+                        "surface-container": "#eceef3",
+                        "outline": "#6d7a73",
+                        "on-tertiary": "#ffffff",
+                        "surface-container-highest": "#e1e2e8",
+                        "on-primary-fixed": "#002115",
+                        "on-primary-container": "#f5fff7",
+                        "on-secondary-fixed-variant": "#004880",
+                        "on-secondary": "#ffffff",
+                        "text-muted": "#8A919C",
+                        "secondary-fixed-dim": "#a1c9ff",
+                        "surface-tint": "#006c4e",
+                        "on-primary-fixed-variant": "#00513a",
+                        "on-tertiary-fixed": "#281800",
+                        "on-secondary-fixed": "#001c38",
+                        "tertiary-fixed": "#ffddb0",
+                        "primary-tint": "#EAF7F1",
+                        "surface-container-low": "#f2f3f9",
+                        "secondary-fixed": "#d2e4ff",
+                        "tertiary": "#7d5400",
+                        "secondary": "#0060a8",
+                        "surface-container-high": "#e6e8ed",
+                        "error": "#E24B4A",
+                        "on-error-container": "#93000a",
+                        "on-tertiary-container": "#fffbff"
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    spacing: {
+                        "space-2": "8px",
+                        "space-1": "4px",
+                        "space-8": "32px",
+                        "space-3": "12px",
+                        "space-6": "24px",
+                        "space-4": "16px",
+                        "space-12": "48px"
+                    },
+                    fontFamily: {
+                        "h3": ["Inter"],
+                        "h1-mobile": ["Roboto"],
+                        "micro": ["Inter"],
+                        "h2-mobile": ["Roboto"],
+                        "h2": ["Inter"],
+                        "caption": ["Inter"],
+                        "display": ["Inter"],
+                        "body": ["Inter"],
+                        "body-emphasis": ["Inter"],
+                        "h1": ["Inter"]
+                    },
+                    fontSize: {
+                        "h3": ["20px", { lineHeight: "1.35", fontWeight: "600" }],
+                        "h1-mobile": ["28px", { lineHeight: "1.25", fontWeight: "700" }],
+                        "micro": ["12px", { lineHeight: "1.3", letterSpacing: "0.02em", fontWeight: "500" }],
+                        "h2-mobile": ["22px", { lineHeight: "1.3", fontWeight: "600" }],
+                        "h2": ["24px", { lineHeight: "1.3", fontWeight: "600" }],
+                        "caption": ["14px", { lineHeight: "1.4", fontWeight: "400" }],
+                        "display": ["36px", { lineHeight: "1.2", fontWeight: "700" }],
+                        "body": ["16px", { lineHeight: "1.5", fontWeight: "400" }],
+                        "body-emphasis": ["16px", { lineHeight: "1.5", fontWeight: "600" }],
+                        "h1": ["30px", { lineHeight: "1.25", fontWeight: "700" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .map-grid-pattern {
+            background-image: 
+                linear-gradient(to right, #eceef3 1px, transparent 1px),
+                linear-gradient(to bottom, #eceef3 1px, transparent 1px);
+            background-size: 40px 40px;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body text-body antialiased flex flex-col md:flex-row h-screen overflow-hidden">
+<!-- Web SideNavBar (Hidden on Mobile) -->
+<nav class="hidden md:flex flex-col h-full py-space-6 px-space-4 w-[240px] fixed left-0 top-0 bg-surface dark:bg-inverse-surface shadow-sm z-50">
+<div class="mb-space-8">
+<h1 class="font-h2 text-h2 font-bold text-primary dark:text-inverse-primary">FieldTrack Pro</h1>
+<p class="font-caption text-caption text-on-surface-variant dark:text-surface-variant">Admin Dashboard</p>
+</div>
+<ul class="flex-1 flex flex-col gap-space-2">
+<li>
+<a class="flex items-center gap-space-3 px-space-4 py-space-3 rounded-lg text-on-surface-variant dark:text-surface-variant hover:bg-surface-container dark:hover:bg-surface-container-high transition-colors opacity-80 transition-all duration-150" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span class="font-body text-body">Dashboard</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-space-3 px-space-4 py-space-3 rounded-lg text-on-surface-variant dark:text-surface-variant hover:bg-surface-container dark:hover:bg-surface-container-high transition-colors opacity-80 transition-all duration-150" href="#">
+<span class="material-symbols-outlined" data-icon="badge">badge</span>
+<span class="font-body text-body">Employees</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-space-3 px-space-4 py-space-3 rounded-lg text-on-surface-variant dark:text-surface-variant hover:bg-surface-container dark:hover:bg-surface-container-high transition-colors opacity-80 transition-all duration-150" href="#">
+<span class="material-symbols-outlined" data-icon="group">group</span>
+<span class="font-body text-body">Customers</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-space-3 px-space-4 py-space-3 rounded-lg text-primary dark:text-inverse-primary font-body-emphasis border-r-4 border-primary dark:border-inverse-primary bg-primary-tint dark:bg-on-primary-fixed-variant opacity-80 transition-all duration-150" href="#">
+<span class="material-symbols-outlined" data-icon="location_on" style="font-variation-settings: 'FILL' 1;">location_on</span>
+<span class="font-body-emphasis text-body-emphasis">Visits</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-space-3 px-space-4 py-space-3 rounded-lg text-on-surface-variant dark:text-surface-variant hover:bg-surface-container dark:hover:bg-surface-container-high transition-colors opacity-80 transition-all duration-150" href="#">
+<span class="material-symbols-outlined" data-icon="assessment">assessment</span>
+<span class="font-body text-body">Reports</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-space-3 px-space-4 py-space-3 rounded-lg text-on-surface-variant dark:text-surface-variant hover:bg-surface-container dark:hover:bg-surface-container-high transition-colors opacity-80 transition-all duration-150" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="font-body text-body">Settings</span>
+</a>
+</li>
+<li class="mt-auto">
+<a class="flex items-center gap-space-3 px-space-4 py-space-3 rounded-lg text-on-surface-variant dark:text-surface-variant hover:bg-surface-container dark:hover:bg-surface-container-high transition-colors opacity-80 transition-all duration-150" href="#">
+<span class="material-symbols-outlined" data-icon="logout">logout</span>
+<span class="font-body text-body">Logout</span>
+</a>
+</li>
+</ul>
+</nav>
+<!-- Main Content Area -->
+<main class="flex-1 flex flex-col md:ml-[240px] h-screen relative">
+<!-- Mobile TopAppBar (Hidden on Web) -->
+<header class="md:hidden flex justify-between items-center w-full px-space-4 h-[64px] z-40 bg-surface dark:bg-inverse-surface border-b border-surface-container-highest dark:border-outline-variant shadow-none docked full-width top-0">
+<h1 class="font-h1-mobile text-h1-mobile font-bold text-primary dark:text-inverse-primary tracking-tight">FieldTrack Pro</h1>
+<div class="flex items-center gap-space-2">
+<button class="p-space-2 text-on-surface-variant dark:text-surface-variant hover:bg-secondary-tint dark:hover:bg-on-secondary-fixed-variant rounded-full transition-transform active:scale-95 duration-100">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+<button class="p-space-2 text-on-surface-variant dark:text-surface-variant hover:bg-secondary-tint dark:hover:bg-on-secondary-fixed-variant rounded-full transition-transform active:scale-95 duration-100">
+<span class="material-symbols-outlined" data-icon="account_circle">account_circle</span>
+</button>
+</div>
+</header>
+<!-- Interactive Map Canvas -->
+<div class="flex-1 relative w-full h-full bg-surface-container-low map-grid-pattern overflow-hidden">
+<!-- Map Background Image -->
+<div class="absolute inset-0 bg-cover bg-center opacity-40 mix-blend-multiply pointer-events-none" data-alt="A highly detailed, modern topographical map interface rendered in a pristine light-mode aesthetic. The map features subtle grays, muted topographical lines, and soft surface colors that create a sophisticated, highly legible backdrop. The lighting is even and flat, typical of premium GIS software interfaces, ensuring clarity. The mood is professional, analytical, and highly organized." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuBmk_GQpee8wkWEcidFyvbXCZ10xZj7b0f8WdF-U5LuJ7CY6s6jbTWTGb7RACZU-DytiQmG_WXWEA1eEtTr-1qNYiGyIHVEKWg8F5QwUQP7fzM1Yinc094KMDYZePKVd7Ls1nWssfXasaFjF53BFHcIplBi-RZO2s1qpM6yD7kb1Rt_x87ImU1eQ6_Rv3XtbRc-NWMltv1M9dZFzyaPrm8YORu2A0DUsAfiLUKIurEpdestqE_c3h9-')"></div>
+<!-- Header / Status Overlay -->
+<div class="absolute top-space-4 left-space-4 right-space-4 md:left-space-6 md:right-space-6 flex justify-between items-start pointer-events-none z-10">
+<div class="bg-surface/90 backdrop-blur-sm px-space-4 py-space-3 rounded-lg shadow-sm border border-neutral-100 flex flex-col pointer-events-auto">
+<h2 class="font-h3 text-h3 text-on-surface mb-space-1">Live Operations Map</h2>
+<div class="flex items-center gap-space-2 text-text-muted font-caption text-caption">
+<span class="material-symbols-outlined text-[16px]" data-icon="schedule">schedule</span>
+                        Last updated: Just now
+                    </div>
+</div>
+<!-- Desktop Search/Actions (replaces TopAppBar functionality on web) -->
+<div class="hidden md:flex gap-space-3 pointer-events-auto">
+<div class="relative bg-surface/90 backdrop-blur-sm rounded-lg shadow-sm border border-outline-variant/30 flex items-center px-space-3 py-space-2 focus-within:border-secondary-500 focus-within:border-2 transition-all">
+<span class="material-symbols-outlined text-on-surface-variant mr-space-2" data-icon="search">search</span>
+<input class="bg-transparent border-none focus:ring-0 text-body font-body text-on-surface w-64 placeholder:text-text-muted outline-none" placeholder="Search employee or location..." type="text"/>
+</div>
+</div>
+</div>
+<!-- Territory Sidebar Toggle & Panel -->
+<div class="absolute top-space-24 md:top-space-24 left-space-4 z-10 flex flex-col gap-space-3 pointer-events-none">
+<div class="bg-surface/95 backdrop-blur-md w-72 rounded-xl shadow-lg border border-neutral-100 overflow-hidden pointer-events-auto flex flex-col">
+<div class="p-space-4 border-b border-border-subtle flex justify-between items-center bg-surface-bright">
+<span class="font-body-emphasis text-body-emphasis text-on-surface">Territories</span>
+<button class="text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined" data-icon="filter_list">filter_list</span>
+</button>
+</div>
+<div class="p-space-2 flex flex-col max-h-[300px] overflow-y-auto">
+<label class="flex items-center gap-space-3 p-space-2 hover:bg-neutral-50 rounded-lg cursor-pointer transition-colors group">
+<input checked="" class="form-checkbox h-4 w-4 text-primary rounded border-outline-variant focus:ring-primary-container" type="checkbox"/>
+<span class="font-body text-body text-on-surface group-hover:text-primary transition-colors">North District</span>
+<span class="ml-auto font-micro text-micro bg-primary-tint text-on-primary-fixed-variant px-2 py-1 rounded-full">12 Active</span>
+</label>
+<label class="flex items-center gap-space-3 p-space-2 hover:bg-neutral-50 rounded-lg cursor-pointer transition-colors group">
+<input checked="" class="form-checkbox h-4 w-4 text-primary rounded border-outline-variant focus:ring-primary-container" type="checkbox"/>
+<span class="font-body text-body text-on-surface group-hover:text-primary transition-colors">South Metro</span>
+<span class="ml-auto font-micro text-micro bg-secondary-tint text-on-secondary-fixed-variant px-2 py-1 rounded-full">8 En Route</span>
+</label>
+<label class="flex items-center gap-space-3 p-space-2 hover:bg-neutral-50 rounded-lg cursor-pointer transition-colors group">
+<input class="form-checkbox h-4 w-4 text-primary rounded border-outline-variant focus:ring-primary-container" type="checkbox"/>
+<span class="font-body text-body text-on-surface group-hover:text-primary transition-colors">East Valley</span>
+<span class="ml-auto font-micro text-micro text-text-muted">Offline</span>
+</label>
+</div>
+</div>
+</div>
+<!-- Map Markers -->
+<!-- Marker 1: Checked-in (Teal) -->
+<div class="absolute top-[35%] left-[45%] flex flex-col items-center group cursor-pointer hover:z-20 transition-transform hover:scale-105">
+<div class="w-10 h-10 rounded-full bg-primary flex items-center justify-center shadow-lg border-2 border-surface shadow-[0_4px_12px_rgba(0,105,76,0.3)] relative z-10 group-hover:bg-primary-container transition-colors">
+<span class="material-symbols-outlined text-on-primary font-body text-body" data-icon="person_check" style="font-variation-settings: 'FILL' 1;">person_check</span>
+</div>
+<div class="mt-space-1 px-space-3 py-space-2 bg-surface rounded-lg shadow-md border border-neutral-100 font-micro text-micro text-on-surface whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity absolute top-full pointer-events-none translate-y-1">
+<div class="font-body-emphasis text-body-emphasis text-on-surface mb-0.5">Sarah Jenkins</div>
+<div class="text-primary font-micro text-micro flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span> Checked-in: 09:15 AM
+                    </div>
+</div>
+</div>
+<!-- Marker 2: En Route (Blue) -->
+<div class="absolute top-[60%] left-[25%] flex flex-col items-center group cursor-pointer hover:z-20 transition-transform hover:scale-105">
+<div class="w-10 h-10 rounded-full bg-secondary flex items-center justify-center shadow-lg border-2 border-surface shadow-[0_4px_12px_rgba(0,96,168,0.3)] relative z-10 group-hover:bg-secondary-container transition-colors">
+<span class="material-symbols-outlined text-on-secondary font-body text-body" data-icon="directions_car" style="font-variation-settings: 'FILL' 1;">directions_car</span>
+</div>
+<!-- Path line illustration via SVG -->
+<svg class="absolute bottom-full left-1/2 -translate-x-1/2 w-24 h-24 pointer-events-none stroke-secondary opacity-50" fill="none" viewbox="0 0 100 100">
+<path d="M50,100 Q80,50 100,0" stroke-dasharray="4 4" stroke-width="2"></path>
+</svg>
+<div class="mt-space-1 px-space-3 py-space-2 bg-surface rounded-lg shadow-md border border-neutral-100 font-micro text-micro text-on-surface whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity absolute top-full pointer-events-none translate-y-1">
+<div class="font-body-emphasis text-body-emphasis text-on-surface mb-0.5">Marcus Cole</div>
+<div class="text-secondary font-micro text-micro flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse"></span> En Route to Site B
+                    </div>
+</div>
+</div>
+<!-- Marker 3: Checked-in (Teal) -->
+<div class="absolute top-[20%] left-[70%] flex flex-col items-center group cursor-pointer hover:z-20 transition-transform hover:scale-105">
+<div class="w-10 h-10 rounded-full bg-primary flex items-center justify-center shadow-lg border-2 border-surface shadow-[0_4px_12px_rgba(0,105,76,0.3)] relative z-10 group-hover:bg-primary-container transition-colors">
+<span class="material-symbols-outlined text-on-primary font-body text-body" data-icon="person_check" style="font-variation-settings: 'FILL' 1;">person_check</span>
+</div>
+</div>
+</div>
+<!-- Mobile BottomNavBar (Hidden on Web) -->
+<nav class="md:hidden fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-space-2 pb-safe h-[80px] bg-surface dark:bg-inverse-surface shadow-[0_-2px_10px_rgba(0,0,0,0.05)] docked full-width rounded-t-xl">
+<a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-surface-variant px-space-4 py-space-2 hover:bg-surface-container-low dark:hover:bg-surface-container-high transition-colors" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="event_note">event_note</span>
+<span class="font-micro text-micro">Visits</span>
+</a>
+<a class="flex flex-col items-center justify-center bg-primary-container dark:bg-primary text-on-primary-container dark:text-on-primary rounded-xl px-space-4 py-space-2 active:scale-90 transition-transform duration-200" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="map" style="font-variation-settings: 'FILL' 1;">map</span>
+<span class="font-micro text-micro font-bold">Maps</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-surface-variant px-space-4 py-space-2 hover:bg-surface-container-low dark:hover:bg-surface-container-high transition-colors" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="sync">sync</span>
+<span class="font-micro text-micro">Sync</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-surface-variant px-space-4 py-space-2 hover:bg-surface-container-low dark:hover:bg-surface-container-high transition-colors" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="person">person</span>
+<span class="font-micro text-micro">Profile</span>
+</a>
+</nav>
+</main>
+</body></html>

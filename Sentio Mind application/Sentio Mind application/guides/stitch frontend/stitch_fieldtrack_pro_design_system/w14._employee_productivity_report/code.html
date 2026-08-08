@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Employee Productivity Report - FieldTrack Pro</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Roboto:wght@600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "secondary-container": "#5da9fe",
+                        "surface-container-lowest": "#ffffff",
+                        "on-tertiary-fixed-variant": "#614000",
+                        "border-subtle": "#EDEFF2",
+                        "tertiary-fixed-dim": "#fcbb4f",
+                        "tertiary": "#7d5400",
+                        "secondary-fixed-dim": "#a1c9ff",
+                        "primary": "#00694c",
+                        "surface": "#FFFFFF",
+                        "outline-variant": "#bccac1",
+                        "inverse-primary": "#68dbae",
+                        "primary-fixed": "#86f8c9",
+                        "surface-bright": "#f8f9ff",
+                        "surface-tint": "#006c4e",
+                        "secondary-tint": "#EAF3FC",
+                        "on-background": "#191c20",
+                        "on-primary-fixed": "#002115",
+                        "on-primary": "#ffffff",
+                        "on-tertiary": "#ffffff",
+                        "on-surface-variant": "#3d4943",
+                        "on-error-container": "#93000a",
+                        "background": "#F7F8F9",
+                        "outline": "#6d7a73",
+                        "surface-dim": "#d8dadf",
+                        "surface-container-low": "#f2f3f9",
+                        "primary-container": "#008560",
+                        "primary-tint": "#EAF7F1",
+                        "on-tertiary-fixed": "#281800",
+                        "on-secondary": "#ffffff",
+                        "error-container": "#ffdad6",
+                        "error": "#E24B4A",
+                        "surface-container-highest": "#e1e2e8",
+                        "error-tint": "#FDECEC",
+                        "surface-variant": "#e1e2e8",
+                        "on-error": "#ffffff",
+                        "tertiary-fixed": "#ffddb0",
+                        "text-muted": "#8A919C",
+                        "on-secondary-fixed": "#001c38",
+                        "tertiary-container": "#9d6a00",
+                        "on-secondary-container": "#003d6d",
+                        "on-surface": "#191c20",
+                        "surface-container": "#eceef3",
+                        "on-tertiary-container": "#fffbff",
+                        "warning-tint": "#FFF6E5",
+                        "inverse-on-surface": "#eff0f6",
+                        "secondary": "#0060a8",
+                        "surface-container-high": "#e6e8ed",
+                        "primary-fixed-dim": "#68dbae",
+                        "on-primary-container": "#f5fff7",
+                        "on-secondary-fixed-variant": "#004880",
+                        "secondary-fixed": "#d2e4ff",
+                        "inverse-surface": "#2e3135",
+                        "on-primary-fixed-variant": "#00513a"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "space-4": "16px",
+                        "space-2": "8px",
+                        "space-8": "32px",
+                        "space-6": "24px",
+                        "space-12": "48px",
+                        "space-1": "4px",
+                        "space-3": "12px"
+                    },
+                    "fontFamily": {
+                        "caption": ["Inter"],
+                        "h2": ["Inter"],
+                        "display": ["Inter"],
+                        "body": ["Inter"],
+                        "h1-mobile": ["Roboto"],
+                        "h1": ["Inter"],
+                        "body-emphasis": ["Inter"],
+                        "micro": ["Inter"],
+                        "h2-mobile": ["Roboto"],
+                        "h3": ["Inter"]
+                    },
+                    "fontSize": {
+                        "caption": ["14px", { "lineHeight": "1.4", "fontWeight": "400" }],
+                        "h2": ["24px", { "lineHeight": "1.3", "fontWeight": "600" }],
+                        "display": ["36px", { "lineHeight": "1.2", "fontWeight": "700" }],
+                        "body": ["16px", { "lineHeight": "1.5", "fontWeight": "400" }],
+                        "h1-mobile": ["28px", { "lineHeight": "1.25", "fontWeight": "700" }],
+                        "h1": ["30px", { "lineHeight": "1.25", "fontWeight": "700" }],
+                        "body-emphasis": ["16px", { "lineHeight": "1.5", "fontWeight": "600" }],
+                        "micro": ["12px", { "lineHeight": "1.3", "letterSpacing": "0.02em", "fontWeight": "500" }],
+                        "h2-mobile": ["22px", { "lineHeight": "1.3", "fontWeight": "600" }],
+                        "h3": ["20px", { "lineHeight": "1.35", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body { background-color: #F7F8F9; }
+        .chart-bar { transition: height 0.3s ease; }
+    </style>
+</head>
+<body class="font-body text-body text-on-background min-h-screen flex">
+<!-- SideNavBar (Web) -->
+<nav class="hidden md:flex flex-col h-full py-space-6 px-space-4 bg-surface dark:bg-on-background fixed left-0 top-0 h-full w-[240px] border-r border-border-subtle dark:border-outline-variant z-20">
+<div class="mb-space-8 px-space-4">
+<h1 class="font-h3 text-h3 font-bold text-primary dark:text-primary-fixed">FieldTrack Pro</h1>
+<p class="font-caption text-caption text-on-surface-variant">Field Ops Admin</p>
+</div>
+<ul class="flex flex-col gap-space-2 w-full">
+<li>
+<a class="flex items-center gap-space-3 px-space-4 py-space-3 rounded-lg text-on-surface-variant dark:text-surface-variant hover:bg-surface-container-low dark:hover:bg-inverse-surface transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="font-body-emphasis">Dashboard</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-space-3 px-space-4 py-space-3 rounded-lg text-on-surface-variant dark:text-surface-variant hover:bg-surface-container-low dark:hover:bg-inverse-surface transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">badge</span>
+<span class="font-body-emphasis">Employees</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-space-3 px-space-4 py-space-3 rounded-lg text-on-surface-variant dark:text-surface-variant hover:bg-surface-container-low dark:hover:bg-inverse-surface transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">group</span>
+<span class="font-body-emphasis">Customers</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-space-3 px-space-4 py-space-3 rounded-lg text-on-surface-variant dark:text-surface-variant hover:bg-surface-container-low dark:hover:bg-inverse-surface transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">location_on</span>
+<span class="font-body-emphasis">Visits</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-space-3 px-space-4 py-space-3 rounded-lg bg-primary-tint dark:bg-on-primary-fixed-variant text-primary dark:text-primary-fixed font-body-emphasis border-r-4 border-primary transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">assessment</span>
+<span class="font-body-emphasis">Reports</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-space-3 px-space-4 py-space-3 rounded-lg text-on-surface-variant dark:text-surface-variant hover:bg-surface-container-low dark:hover:bg-inverse-surface transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="font-body-emphasis">Settings</span>
+</a>
+</li>
+</ul>
+</nav>
+<!-- TopNavBar (Web) -->
+<header class="hidden md:flex justify-between items-center px-space-6 h-16 ml-[240px] w-[calc(100%-240px)] fixed top-0 right-0 bg-surface dark:bg-on-background border-b border-border-subtle dark:border-outline-variant z-10">
+<div class="flex items-center gap-space-4">
+<!-- Placeholder for search or breadcrumbs if needed, intentionally left blank per spec to maintain focus -->
+</div>
+<div class="flex items-center gap-space-4">
+<button class="text-on-surface-variant hover:text-primary transition-colors duration-200 p-space-2 rounded-full hover:bg-surface-container-low">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="font-body-emphasis text-body-emphasis text-secondary hover:text-secondary-container transition-colors duration-200 px-space-4 py-space-2 rounded-lg border border-secondary">
+                Export
+            </button>
+<button class="flex items-center gap-space-2 cursor-pointer transition-transform duration-200 hover:scale-95">
+<img alt="Admin User Profile" class="w-8 h-8 rounded-full object-cover border border-border-subtle" data-alt="Professional headshot of a female admin user in a bright office environment, modern corporate style, light neutral background, high resolution, soft lighting." src="https://lh3.googleusercontent.com/aida-public/AB6AXuA1YXer2Brd1jaVMHv4_AAMcU1_0BJzaNWU97E9gaVWDINWFrkWKZzLXGKPAC_T_vQvkttaDrl_n-rewURP0LCCwqH9uOrqZ4NY3KYSn0ZGTMHa2BbrRuitZzYLnHN2Pg-yIKBZOzRw4g8FUgGHsTRZPQZKn62ZqvArJmbaPYHqGc6EQcblh1HA0vcxcQxJPTpwye_FKqBaf_hfQoaSfnf9HDl-nbprsZiQz2Bs3rl5hp8YzsJtcfBA"/>
+<span class="font-body-emphasis text-body-emphasis text-primary">Profile</span>
+</button>
+</div>
+</header>
+<!-- Main Content Area -->
+<main class="w-full md:ml-[240px] pt-16 min-h-screen p-space-4 md:p-space-6">
+<div class="max-w-7xl mx-auto space-y-space-6">
+<!-- Report Header -->
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-space-4 bg-surface p-space-4 md:p-space-6 rounded-xl border border-border-subtle shadow-sm">
+<div>
+<h2 class="font-h2 text-h2 text-on-surface">Employee Productivity</h2>
+<p class="font-caption text-caption text-on-surface-variant mt-1">Overview of team performance and field metrics.</p>
+</div>
+<div class="flex flex-wrap items-center gap-space-4">
+<div class="flex items-center border border-border-subtle rounded-lg px-space-3 py-space-2 bg-surface focus-within:border-secondary focus-within:ring-1 focus-within:ring-secondary transition-all">
+<span class="material-symbols-outlined text-on-surface-variant mr-space-2 text-[20px]">calendar_today</span>
+<select class="bg-transparent border-none p-0 font-body text-body text-on-surface focus:ring-0 cursor-pointer outline-none">
+<option>Last 7 Days</option>
+<option>This Month</option>
+<option>Last Month</option>
+<option>Custom Range...</option>
+</select>
+</div>
+<button class="flex items-center gap-space-2 bg-primary text-on-primary font-body-emphasis px-space-4 py-space-2 rounded-lg hover:bg-primary-container transition-colors shadow-sm">
+<span class="material-symbols-outlined text-[20px]">download</span>
+                        Export CSV
+                    </button>
+</div>
+</div>
+<!-- Metric Cards (Bento style grid) -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-space-4 md:gap-space-6">
+<!-- Card 1 -->
+<div class="bg-surface p-space-6 rounded-xl border border-border-subtle shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow relative overflow-hidden group">
+<div class="absolute top-0 right-0 p-space-4 opacity-10 group-hover:opacity-20 transition-opacity">
+<span class="material-symbols-outlined text-[64px] text-primary">task_alt</span>
+</div>
+<div>
+<p class="font-caption text-caption text-on-surface-variant uppercase tracking-wider font-semibold">Total Visits</p>
+<h3 class="font-display text-display text-on-surface mt-space-2">1,248</h3>
+</div>
+<div class="mt-space-4 flex items-center text-primary-container gap-space-1 bg-primary-tint w-fit px-space-2 py-space-1 rounded-full">
+<span class="material-symbols-outlined text-[16px]">trending_up</span>
+<span class="font-micro text-micro">+12% vs last period</span>
+</div>
+</div>
+<!-- Card 2 -->
+<div class="bg-surface p-space-6 rounded-xl border border-border-subtle shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow relative overflow-hidden group">
+<div class="absolute top-0 right-0 p-space-4 opacity-10 group-hover:opacity-20 transition-opacity">
+<span class="material-symbols-outlined text-[64px] text-secondary">schedule</span>
+</div>
+<div>
+<p class="font-caption text-caption text-on-surface-variant uppercase tracking-wider font-semibold">Avg. Duration</p>
+<h3 class="font-display text-display text-on-surface mt-space-2">42m</h3>
+</div>
+<div class="mt-space-4 flex items-center text-on-surface-variant gap-space-1 bg-surface-container w-fit px-space-2 py-space-1 rounded-full">
+<span class="material-symbols-outlined text-[16px]">horizontal_rule</span>
+<span class="font-micro text-micro">No change vs last period</span>
+</div>
+</div>
+<!-- Card 3 -->
+<div class="bg-surface p-space-6 rounded-xl border border-border-subtle shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow relative overflow-hidden group">
+<div class="absolute top-0 right-0 p-space-4 opacity-10 group-hover:opacity-20 transition-opacity">
+<span class="material-symbols-outlined text-[64px] text-tertiary">route</span>
+</div>
+<div>
+<p class="font-caption text-caption text-on-surface-variant uppercase tracking-wider font-semibold">Approx. Distance Traveled</p>
+<h3 class="font-display text-display text-on-surface mt-space-2">3,450mi</h3>
+</div>
+<div class="mt-space-4 flex items-center text-error gap-space-1 bg-error-tint w-fit px-space-2 py-space-1 rounded-full">
+<span class="material-symbols-outlined text-[16px]">trending_down</span>
+<span class="font-micro text-micro">-5% vs last period</span>
+</div>
+</div>
+</div>
+<!-- Chart Section -->
+<div class="bg-surface p-space-6 rounded-xl border border-border-subtle shadow-sm">
+<h3 class="font-h3 text-h3 text-on-surface mb-space-6">Visits Completed per Employee</h3>
+<!-- Pure HTML/CSS Bar Chart Mockup -->
+<div class="relative h-64 w-full flex items-end gap-2 sm:gap-4 md:gap-6 mt-space-4 border-b border-l border-border-subtle pb-2 pl-2">
+<!-- Y-Axis Labels (Absolute positioned to the left of the chart area) -->
+<div class="absolute left-[-30px] bottom-2 top-0 flex flex-col justify-between text-right w-[20px] font-micro text-micro text-on-surface-variant">
+<span>100</span>
+<span>75</span>
+<span>50</span>
+<span>25</span>
+<span>0</span>
+</div>
+<!-- Chart Grid Lines (Background) -->
+<div class="absolute inset-0 border-b-0 border-l-0 border-r-0 border-t-0 z-0 flex flex-col justify-between pt-2">
+<div class="w-full border-t border-surface-container-high h-0"></div>
+<div class="w-full border-t border-surface-container-high h-0"></div>
+<div class="w-full border-t border-surface-container-high h-0"></div>
+<div class="w-full border-t border-surface-container-high h-0"></div>
+<div class="w-full border-transparent h-0"></div> <!-- Bottom line handled by container -->
+</div>
+<!-- Bars (Relative, z-index above grid) -->
+<div class="flex-1 flex flex-col items-center group z-10">
+<div class="w-full max-w-[40px] bg-primary rounded-t-sm chart-bar relative hover:bg-primary-container cursor-pointer" style="height: 85%;">
+<div class="absolute -top-8 left-1/2 -translate-x-1/2 bg-inverse-surface text-inverse-on-surface font-micro px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">85 Visits</div>
+</div>
+<span class="font-micro text-micro mt-space-2 text-on-surface-variant truncate w-full text-center">E. Smith</span>
+</div>
+<div class="flex-1 flex flex-col items-center group z-10">
+<div class="w-full max-w-[40px] bg-primary rounded-t-sm chart-bar relative hover:bg-primary-container cursor-pointer" style="height: 60%;">
+<div class="absolute -top-8 left-1/2 -translate-x-1/2 bg-inverse-surface text-inverse-on-surface font-micro px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">60 Visits</div>
+</div>
+<span class="font-micro text-micro mt-space-2 text-on-surface-variant truncate w-full text-center">J. Doe</span>
+</div>
+<div class="flex-1 flex flex-col items-center group z-10">
+<div class="w-full max-w-[40px] bg-primary rounded-t-sm chart-bar relative hover:bg-primary-container cursor-pointer" style="height: 92%;">
+<div class="absolute -top-8 left-1/2 -translate-x-1/2 bg-inverse-surface text-inverse-on-surface font-micro px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">92 Visits</div>
+</div>
+<span class="font-micro text-micro mt-space-2 text-on-surface-variant truncate w-full text-center">A. Lee</span>
+</div>
+<div class="flex-1 flex flex-col items-center group z-10">
+<div class="w-full max-w-[40px] bg-primary rounded-t-sm chart-bar relative hover:bg-primary-container cursor-pointer" style="height: 45%;">
+<div class="absolute -top-8 left-1/2 -translate-x-1/2 bg-inverse-surface text-inverse-on-surface font-micro px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">45 Visits</div>
+</div>
+<span class="font-micro text-micro mt-space-2 text-on-surface-variant truncate w-full text-center">R. Patel</span>
+</div>
+<div class="flex-1 flex flex-col items-center group z-10">
+<div class="w-full max-w-[40px] bg-primary rounded-t-sm chart-bar relative hover:bg-primary-container cursor-pointer" style="height: 70%;">
+<div class="absolute -top-8 left-1/2 -translate-x-1/2 bg-inverse-surface text-inverse-on-surface font-micro px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">70 Visits</div>
+</div>
+<span class="font-micro text-micro mt-space-2 text-on-surface-variant truncate w-full text-center">C. Wong</span>
+</div>
+<div class="flex-1 hidden sm:flex flex-col items-center group z-10">
+<div class="w-full max-w-[40px] bg-primary rounded-t-sm chart-bar relative hover:bg-primary-container cursor-pointer" style="height: 55%;">
+<div class="absolute -top-8 left-1/2 -translate-x-1/2 bg-inverse-surface text-inverse-on-surface font-micro px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">55 Visits</div>
+</div>
+<span class="font-micro text-micro mt-space-2 text-on-surface-variant truncate w-full text-center">M. Garcia</span>
+</div>
+<div class="flex-1 hidden md:flex flex-col items-center group z-10">
+<div class="w-full max-w-[40px] bg-primary rounded-t-sm chart-bar relative hover:bg-primary-container cursor-pointer" style="height: 80%;">
+<div class="absolute -top-8 left-1/2 -translate-x-1/2 bg-inverse-surface text-inverse-on-surface font-micro px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">80 Visits</div>
+</div>
+<span class="font-micro text-micro mt-space-2 text-on-surface-variant truncate w-full text-center">T. Brown</span>
+</div>
+</div>
+</div>
+<!-- Data Table -->
+<div class="bg-surface rounded-xl border border-border-subtle shadow-sm overflow-hidden">
+<div class="px-space-6 py-space-4 border-b border-border-subtle flex justify-between items-center bg-surface-bright">
+<h3 class="font-h3 text-h3 text-on-surface">Employee Details</h3>
+<div class="relative w-64">
+<span class="material-symbols-outlined absolute left-space-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px]">search</span>
+<input class="w-full pl-10 pr-space-4 py-space-2 border border-border-subtle rounded-lg font-body text-body text-on-surface bg-surface focus:outline-none focus:ring-2 focus:ring-secondary focus:border-secondary transition-all" placeholder="Search employees..." type="text"/>
+</div>
+</div>
+<div class="overflow-x-auto w-full">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="bg-surface-container-low border-b border-border-subtle font-caption text-caption text-on-surface-variant uppercase tracking-wider">
+<th class="px-space-6 py-space-4 font-semibold">Employee</th>
+<th class="px-space-6 py-space-4 font-semibold text-right">Total Visits</th>
+<th class="px-space-6 py-space-4 font-semibold text-right">Avg. Duration</th>
+<th class="px-space-6 py-space-4 font-semibold text-right">Distance (Approx)</th>
+<th class="px-space-6 py-space-4 font-semibold text-center">Status</th>
+</tr>
+</thead>
+<tbody class="font-body text-body text-on-surface">
+<tr class="border-b border-border-subtle hover:bg-surface-bright transition-colors">
+<td class="px-space-6 py-space-4">
+<div class="flex items-center gap-space-3">
+<div class="w-8 h-8 rounded-full bg-primary-tint text-primary flex items-center justify-center font-body-emphasis text-micro">AL</div>
+<span class="font-body-emphasis">Amanda Lee</span>
+</div>
+</td>
+<td class="px-space-6 py-space-4 text-right font-body-emphasis">92</td>
+<td class="px-space-6 py-space-4 text-right text-on-surface-variant">38m</td>
+<td class="px-space-6 py-space-4 text-right text-on-surface-variant">420mi</td>
+<td class="px-space-6 py-space-4 text-center">
+<span class="inline-block px-3 py-1 bg-primary-tint text-primary-container font-micro rounded-full">Optimal</span>
+</td>
+</tr>
+<tr class="border-b border-border-subtle hover:bg-surface-bright transition-colors">
+<td class="px-space-6 py-space-4">
+<div class="flex items-center gap-space-3">
+<div class="w-8 h-8 rounded-full bg-secondary-tint text-secondary flex items-center justify-center font-body-emphasis text-micro">ES</div>
+<span class="font-body-emphasis">Elias Smith</span>
+</div>
+</td>
+<td class="px-space-6 py-space-4 text-right font-body-emphasis">85</td>
+<td class="px-space-6 py-space-4 text-right text-on-surface-variant">45m</td>
+<td class="px-space-6 py-space-4 text-right text-on-surface-variant">510mi</td>
+<td class="px-space-6 py-space-4 text-center">
+<span class="inline-block px-3 py-1 bg-primary-tint text-primary-container font-micro rounded-full">Optimal</span>
+</td>
+</tr>
+<tr class="border-b border-border-subtle hover:bg-surface-bright transition-colors">
+<td class="px-space-6 py-space-4">
+<div class="flex items-center gap-space-3">
+<div class="w-8 h-8 rounded-full bg-surface-dim text-on-surface-variant flex items-center justify-center font-body-emphasis text-micro">TB</div>
+<span class="font-body-emphasis">Thomas Brown</span>
+</div>
+</td>
+<td class="px-space-6 py-space-4 text-right font-body-emphasis">80</td>
+<td class="px-space-6 py-space-4 text-right text-on-surface-variant">41m</td>
+<td class="px-space-6 py-space-4 text-right text-on-surface-variant">390mi</td>
+<td class="px-space-6 py-space-4 text-center">
+<span class="inline-block px-3 py-1 bg-primary-tint text-primary-container font-micro rounded-full">Optimal</span>
+</td>
+</tr>
+<tr class="border-b border-border-subtle hover:bg-surface-bright transition-colors">
+<td class="px-space-6 py-space-4">
+<div class="flex items-center gap-space-3">
+<div class="w-8 h-8 rounded-full bg-surface-dim text-on-surface-variant flex items-center justify-center font-body-emphasis text-micro">CW</div>
+<span class="font-body-emphasis">Chloe Wong</span>
+</div>
+</td>
+<td class="px-space-6 py-space-4 text-right font-body-emphasis">70</td>
+<td class="px-space-6 py-space-4 text-right text-on-surface-variant">52m</td>
+<td class="px-space-6 py-space-4 text-right text-on-surface-variant">480mi</td>
+<td class="px-space-6 py-space-4 text-center">
+<span class="inline-block px-3 py-1 bg-secondary-tint text-secondary font-micro rounded-full">Average</span>
+</td>
+</tr>
+<tr class="hover:bg-surface-bright transition-colors">
+<td class="px-space-6 py-space-4">
+<div class="flex items-center gap-space-3">
+<div class="w-8 h-8 rounded-full bg-error-tint text-error flex items-center justify-center font-body-emphasis text-micro">RP</div>
+<span class="font-body-emphasis">Raj Patel</span>
+</div>
+</td>
+<td class="px-space-6 py-space-4 text-right font-body-emphasis">45</td>
+<td class="px-space-6 py-space-4 text-right text-on-surface-variant">65m</td>
+<td class="px-space-6 py-space-4 text-right text-on-surface-variant">210mi</td>
+<td class="px-space-6 py-space-4 text-center">
+<span class="inline-block px-3 py-1 bg-error-tint text-error font-micro rounded-full">Review</span>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="px-space-6 py-space-4 border-t border-border-subtle bg-surface-bright flex justify-between items-center text-caption text-on-surface-variant">
+<span>Showing 1 to 5 of 24 employees</span>
+<div class="flex gap-space-2">
+<button class="px-space-3 py-1 border border-border-subtle rounded hover:bg-surface-container-low transition-colors disabled:opacity-50" disabled="">Prev</button>
+<button class="px-space-3 py-1 border border-border-subtle rounded hover:bg-surface-container-low transition-colors">Next</button>
+</div>
+</div>
+</div>
+</div>
+</main>
+</body></html>

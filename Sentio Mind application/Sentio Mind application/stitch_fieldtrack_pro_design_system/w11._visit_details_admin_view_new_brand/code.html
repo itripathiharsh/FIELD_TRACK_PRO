@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Field Operations - Visit Details Admin</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=League+Spartan:wght@400;500;600;700&amp;family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-secondary-fixed-variant": "#653e00",
+                      "on-error": "#ffffff",
+                      "on-primary-container": "#7c89aa",
+                      "on-tertiary": "#ffffff",
+                      "surface-variant": "#e4e2e5",
+                      "surface-dim": "#dbd9dc",
+                      "on-tertiary-fixed": "#2a1800",
+                      "on-tertiary-container": "#a58359",
+                      "surface-container-high": "#eae7ea",
+                      "surface-bright": "#fbf8fb",
+                      "primary-fixed-dim": "#b9c6ea",
+                      "primary": "#000a24",
+                      "on-tertiary-fixed-variant": "#5c421e",
+                      "on-background": "#1b1b1e",
+                      "surface": "#fbf8fb",
+                      "inverse-on-surface": "#f2f0f3",
+                      "error": "#ba1a1a",
+                      "on-primary-fixed-variant": "#3a4664",
+                      "on-secondary": "#ffffff",
+                      "surface-tint": "#525e7d",
+                      "secondary": "#855300",
+                      "on-surface": "#1b1b1e",
+                      "secondary-fixed-dim": "#ffb95f",
+                      "secondary-container": "#ffa515",
+                      "primary-fixed": "#d9e2ff",
+                      "outline-variant": "#c5c6ce",
+                      "primary-container": "#14213d",
+                      "on-secondary-container": "#684000",
+                      "background": "#fbf8fb",
+                      "on-primary-fixed": "#0d1b36",
+                      "tertiary-container": "#321d00",
+                      "surface-container-low": "#f5f3f6",
+                      "tertiary": "#130900",
+                      "secondary-fixed": "#ffddb8",
+                      "on-error-container": "#93000a",
+                      "surface-container-lowest": "#ffffff",
+                      "tertiary-fixed-dim": "#e7c092",
+                      "outline": "#75777e",
+                      "on-primary": "#ffffff",
+                      "surface-container": "#f0edf0",
+                      "on-surface-variant": "#45464d",
+                      "inverse-primary": "#b9c6ea",
+                      "error-container": "#ffdad6",
+                      "tertiary-fixed": "#ffddb6",
+                      "inverse-surface": "#303033",
+                      "surface-container-highest": "#e4e2e5",
+                      "on-secondary-fixed": "#2a1700"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.125rem",
+                      "lg": "0.25rem",
+                      "xl": "0.5rem",
+                      "full": "0.75rem"
+              },
+              "spacing": {
+                      "gutter": "24px",
+                      "base": "8px",
+                      "margin": "32px",
+                      "container-max": "1440px"
+              },
+              "fontFamily": {
+                      "body-md": [
+                              "Libre Baskerville"
+                      ],
+                      "headline-lg-mobile": [
+                              "League Spartan"
+                      ],
+                      "headline-md": [
+                              "League Spartan"
+                      ],
+                      "button": [
+                              "League Spartan"
+                      ],
+                      "body-lg": [
+                              "Libre Baskerville"
+                      ],
+                      "nav-link": [
+                              "League Spartan"
+                      ],
+                      "label-md": [
+                              "League Spartan"
+                      ],
+                      "headline-sm": [
+                              "League Spartan"
+                      ],
+                      "headline-lg": [
+                              "League Spartan"
+                      ]
+              },
+              "fontSize": {
+                      "body-md": [
+                              "16px",
+                              {
+                                      "lineHeight": "1.6",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "headline-lg-mobile": [
+                              "24px",
+                              {
+                                      "lineHeight": "1.2",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "headline-md": [
+                              "24px",
+                              {
+                                      "lineHeight": "1.3",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "button": [
+                              "16px",
+                              {
+                                      "lineHeight": "1",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "body-lg": [
+                              "18px",
+                              {
+                                      "lineHeight": "1.6",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "nav-link": [
+                              "15px",
+                              {
+                                      "lineHeight": "1",
+                                      "fontWeight": "500"
+                              }
+                      ],
+                      "label-md": [
+                              "14px",
+                              {
+                                      "lineHeight": "1",
+                                      "letterSpacing": "0.05em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "headline-sm": [
+                              "20px",
+                              {
+                                      "lineHeight": "1.3",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "headline-lg": [
+                              "32px",
+                              {
+                                      "lineHeight": "1.2",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "700"
+                              }
+                      ]
+              }
+      },
+          },
+        }
+      </script>
+<style>
+        .material-symbols-outlined {
+          font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .material-symbols-outlined[data-weight="fill"] {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        
+        /* Subtle interactions */
+        .hover-elevate {
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .hover-elevate:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        }
+      </style>
+</head>
+<body class="bg-[#E5E5E5] text-on-surface font-body-md min-h-screen flex flex-col md:flex-row antialiased">
+<!-- TopNavBar (Mobile Only / Suppressed on details view conceptually, but kept for structural consistency if needed. Hiding for deep detail view as per mandate, wait, mandate says hide if focused journey. Details view is often focused. Let's keep Sidebar but maybe Top Nav is simplified, or hide both. Actually, mandate says "Suppress if: Task-Focused: Any sub-page featuring a 'Close' or 'Back' action". A "Visit Details" is a sub-page. Let's hide the global shell and provide a prominent 'Back' action.) -->
+<!-- Applying Task-Focused Suppression: No SideNav, No BottomNav. Full canvas for Details. -->
+<main class="flex-1 flex flex-col w-full max-w-container-max mx-auto px-margin py-margin">
+<!-- Header / Back Action -->
+<header class="flex items-center justify-between mb-8 pb-4 border-b border-outline-variant">
+<div class="flex items-center gap-4">
+<button class="flex items-center justify-center w-10 h-10 rounded-full hover:bg-surface-variant transition-colors group">
+<span class="material-symbols-outlined text-on-surface-variant group-hover:text-primary transition-colors" data-icon="arrow_back">arrow_back</span>
+</button>
+<div>
+<h1 class="font-headline-lg text-headline-lg text-primary m-0">Visit #VO-7492</h1>
+<p class="font-label-md text-label-md text-on-surface-variant mt-1 uppercase">Oct 24, 2023 • 14:30 - 15:45 EST</p>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<span class="inline-flex items-center px-3 py-1 rounded-full bg-secondary-fixed text-on-secondary-container border border-secondary-fixed-dim font-label-md text-label-md uppercase tracking-wider">
+                    Pending Review
+                </span>
+<div class="flex gap-2">
+<button class="px-6 py-3 border border-primary-container text-primary-container font-button text-button uppercase hover:bg-surface-variant transition-colors rounded">
+                        Flag Issue
+                    </button>
+<button class="px-6 py-3 bg-[#FCA311] text-black font-button text-button uppercase hover:bg-[#E5940F] transition-colors rounded">
+                        Approve Visit
+                    </button>
+</div>
+</div>
+</header>
+<!-- Bento Grid Layout -->
+<div class="grid grid-cols-1 md:grid-cols-12 gap-gutter">
+<!-- Main Content Area (8 cols) -->
+<div class="md:col-span-8 flex flex-col gap-gutter">
+<!-- Audit Data / Overview Card -->
+<section class="bg-surface border border-outline-variant rounded-xl p-6 hover-elevate">
+<h2 class="font-headline-md text-headline-md text-primary mb-4 pb-2 border-b border-outline-variant flex items-center gap-2">
+<span class="material-symbols-outlined text-secondary" data-icon="assignment">assignment</span>
+                        Audit Overview
+                    </h2>
+<div class="grid grid-cols-2 md:grid-cols-4 gap-6 mb-6">
+<div>
+<p class="font-label-md text-label-md text-on-surface-variant uppercase mb-1">Inspector</p>
+<p class="font-body-md text-body-md font-semibold">Sarah Jenkins</p>
+</div>
+<div>
+<p class="font-label-md text-label-md text-on-surface-variant uppercase mb-1">Site ID</p>
+<p class="font-body-md text-body-md font-semibold">FAC-092-B</p>
+</div>
+<div>
+<p class="font-label-md text-label-md text-on-surface-variant uppercase mb-1">Duration</p>
+<p class="font-body-md text-body-md font-semibold">1h 15m</p>
+</div>
+<div>
+<p class="font-label-md text-label-md text-on-surface-variant uppercase mb-1">Score</p>
+<p class="font-body-md text-body-md font-semibold text-secondary-container">92 / 100</p>
+</div>
+</div>
+<div class="space-y-4">
+<h3 class="font-headline-sm text-headline-sm text-primary">Inspection Checklist</h3>
+<!-- Zebra striped data list -->
+<div class="border border-outline-variant rounded-lg overflow-hidden">
+<div class="flex items-center justify-between p-3 bg-primary text-on-primary font-label-md text-label-md uppercase">
+<span>Item Checklist</span>
+<span>Status</span>
+</div>
+<div class="flex items-center justify-between p-3 bg-surface border-b border-outline-variant">
+<span class="font-body-md text-body-md">Structural Integrity Check</span>
+<span class="material-symbols-outlined text-secondary-container" data-icon="check_circle">check_circle</span>
+</div>
+<div class="flex items-center justify-between p-3 bg-[#F9F9F9] border-b border-outline-variant">
+<span class="font-body-md text-body-md">Safety Equipment Verification</span>
+<span class="material-symbols-outlined text-secondary-container" data-icon="check_circle">check_circle</span>
+</div>
+<div class="flex items-center justify-between p-3 bg-surface border-b border-outline-variant">
+<span class="font-body-md text-body-md">Environmental Compliance Logs</span>
+<span class="material-symbols-outlined text-error" data-icon="error">error</span>
+</div>
+<div class="flex items-center justify-between p-3 bg-[#F9F9F9]">
+<span class="font-body-md text-body-md">Perimeter Security Audit</span>
+<span class="material-symbols-outlined text-secondary-container" data-icon="check_circle">check_circle</span>
+</div>
+</div>
+</div>
+</section>
+<!-- Photographic Evidence -->
+<section class="bg-surface border border-outline-variant rounded-xl p-6 hover-elevate">
+<h2 class="font-headline-md text-headline-md text-primary mb-4 pb-2 border-b border-outline-variant flex items-center gap-2">
+<span class="material-symbols-outlined text-secondary" data-icon="photo_camera">photo_camera</span>
+                        Field Photography
+                    </h2>
+<div class="grid grid-cols-2 gap-4">
+<div class="relative group cursor-pointer rounded-lg overflow-hidden border border-outline-variant">
+<div class="bg-cover bg-center w-full h-48 transition-transform duration-300 group-hover:scale-105" data-alt="A detailed close-up shot of an industrial pipeline valve in a modern factory setting. The lighting is harsh and utilitarian, highlighting the metallic textures and a slight rust spot. Corporate modern aesthetic, high contrast, deep navy shadows." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuBy6uKbHdlevMtYLwcfv6OlqZl9CLwLzWgovoQ1PSarF2vOHmml3CytCcWfwOf-aQr6YDx6sO3dveiTlMHSeyyChHLZg8SP1ci8CvECsghlB1JMtRPOtSO5iRYhsLNbZB2bryJeK9CUm6IjYw0asQISKpGC7AAEdgQt84Zrb1suRAhvpVKcCvFFCsGLGQnlg43HcBq_TcTBzk7eu6nMUKQkGRQKGfunKvBU6qf4rhrqdo9uc2dtTM0r')"></div>
+<div class="absolute bottom-0 left-0 right-0 bg-primary/80 backdrop-blur-sm p-2">
+<p class="font-label-md text-label-md text-white uppercase">Valve Integrity - Sector B</p>
+</div>
+</div>
+<div class="relative group cursor-pointer rounded-lg overflow-hidden border border-outline-variant">
+<div class="bg-cover bg-center w-full h-48 transition-transform duration-300 group-hover:scale-105" data-alt="A wide shot of a logistics warehouse aisle, showing neatly stacked pallets and a clean concrete floor. Bright overhead LED lighting creates a sterile, precise environment. Minimalist industrial aesthetic with a focus on safety and order." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuC88vLlVPzjTxPaHXH_9Nxbf80zaPmUKgZsH1CuQBJBt3AQTX00S5W6U9mRTH3BgUzDndFqSgHwfjunnx3UY7WkQKaFHqyhduwWtlzU-y4NKsl1GPaMBSGP4y7mBOncoSligMqsMntYTinVJFADXSv7wVY02rcx5KcCcIhhyvhjMOJLebJlnpMAC6bZBQST_3mnU7JmGx0Z4OAgNtS1Hx6vzuUFyBw9Bc5Hnj76Ab8vzLeOMfG32E2s')"></div>
+<div class="absolute bottom-0 left-0 right-0 bg-primary/80 backdrop-blur-sm p-2">
+<p class="font-label-md text-label-md text-white uppercase">Aisle Clearance - Warehouse 4</p>
+</div>
+</div>
+</div>
+</section>
+</div>
+<!-- Sidebar / Context Area (4 cols) -->
+<div class="md:col-span-4 flex flex-col gap-gutter">
+<!-- Map Verification -->
+<section class="bg-surface border border-outline-variant rounded-xl overflow-hidden hover-elevate flex flex-col">
+<div class="p-4 border-b border-outline-variant">
+<h2 class="font-headline-md text-headline-md text-primary flex items-center gap-2 m-0">
+<span class="material-symbols-outlined text-secondary" data-icon="location_on">location_on</span>
+                            Geospatial Lock
+                        </h2>
+</div>
+<div class="h-48 w-full bg-surface-variant relative">
+<!-- Map Placeholder -->
+<img alt="Map view of Chicago" class="object-cover w-full h-full" data-location="Chicago" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAyPzJBFpUsxHsPzuiMw-8iBxdUNnzGYKY3cEBI-32TaU570YQAe6AgKQHSc4Di3NzwgmMhaoFKbxCvp1UAlc2rewl-8hOzgS4HeEb9MFV2XOno1trCrviQ1rjcEwAzEVr9OoHe-r1FWjcTOBNt8b2L6WfLQ6YLvdcI9WIQ3rtyE6Sdp4GftFByxezk4hR_zJaDkKuIMVh5riYXHc7DB-_IDlcfpcAJcumXPKaikfZTCXepyu0XRttp"/>
+<!-- Target overlay -->
+<div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+<div class="w-8 h-8 rounded-full border-2 border-secondary bg-secondary/20 animate-pulse flex items-center justify-center">
+<div class="w-2 h-2 rounded-full bg-secondary"></div>
+</div>
+</div>
+</div>
+<div class="p-4 bg-surface">
+<p class="font-label-md text-label-md text-on-surface-variant uppercase mb-1">Verified Coordinates</p>
+<p class="font-body-md text-body-md font-mono text-primary bg-[#F9F9F9] p-2 rounded border border-outline-variant">
+                            41.8781° N, 87.6298° W
+                        </p>
+<p class="font-body-md text-body-md text-on-surface-variant mt-2 text-sm">Device GPS match confirmed at 14:30 EST within 15m radius.</p>
+</div>
+</section>
+<!-- Signatures -->
+<section class="bg-surface border border-outline-variant rounded-xl p-6 hover-elevate">
+<h2 class="font-headline-md text-headline-md text-primary mb-4 pb-2 border-b border-outline-variant flex items-center gap-2">
+<span class="material-symbols-outlined text-secondary" data-icon="draw">draw</span>
+                        Sign-offs
+                    </h2>
+<div class="space-y-6">
+<div>
+<p class="font-label-md text-label-md text-on-surface-variant uppercase mb-2">Inspector Signature</p>
+<div class="border border-outline-variant rounded bg-[#F9F9F9] h-24 flex items-center justify-center relative">
+<span class="font-body-lg text-body-lg italic text-primary opacity-60">S. Jenkins</span>
+<div class="absolute bottom-2 right-2 text-xs text-on-surface-variant font-mono">TS: 15:45:12</div>
+</div>
+</div>
+<div>
+<p class="font-label-md text-label-md text-on-surface-variant uppercase mb-2">Site Manager Signature</p>
+<div class="border border-outline-variant rounded bg-[#F9F9F9] h-24 flex items-center justify-center relative">
+<span class="font-body-lg text-body-lg italic text-primary opacity-60">R. Vance</span>
+<div class="absolute bottom-2 right-2 text-xs text-on-surface-variant font-mono">TS: 15:46:05</div>
+</div>
+</div>
+</div>
+</section>
+</div>
+</div>
+</main>
+</body></html>

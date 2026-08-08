@@ -1,0 +1,88 @@
+# =============================================================================
+# FieldTrack Pro - repository-wide ignore rules
+# Sub-projects keep their own .gitignore; these are the global guarantees.
+# =============================================================================
+
+# --- Secrets: never commit, under any name -----------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.jks
+*.keystore
+secrets.*
+**/local.properties
+docs/**/*secret*.txt
+
+# --- Database dumps / backups ------------------------------------------------
+*.dump
+*.sql.gz
+*.bak
+*.backup
+backups/
+FieldTrackPro_Backups/
+
+# --- Python ------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# --- Node / frontend ---------------------------------------------------------
+node_modules/
+dist/
+dist-ssr/
+build/
+coverage/
+.vite/
+*.local
+.eslintcache
+
+# --- Android / Gradle --------------------------------------------------------
+.gradle/
+captures/
+.externalNativeBuild/
+.cxx/
+*.iml
+*.apk
+*.aab
+*.aar
+
+# --- Logs / temp -------------------------------------------------------------
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+pytest_full_output.txt
+
+# --- Editors / OS ------------------------------------------------------------
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# --- Large redundant archives (content is committed in extracted form) -------
+*.zip
+
+# --- Local media storage (runtime artefact, not source) ----------------------
+fieldtrackpro-backend/media_storage/**
+!fieldtrackpro-backend/media_storage/.gitkeep

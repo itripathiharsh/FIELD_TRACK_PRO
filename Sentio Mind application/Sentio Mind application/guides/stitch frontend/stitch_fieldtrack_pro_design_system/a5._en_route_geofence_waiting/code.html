@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>En Route - FieldTrack Pro</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Roboto:wght@500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "warning-tint": "#FFF6E5",
+                        "surface": "#FFFFFF",
+                        "on-tertiary-fixed-variant": "#614000",
+                        "border-subtle": "#EDEFF2",
+                        "surface-container-low": "#f2f3f9",
+                        "primary-container": "#008560",
+                        "on-background": "#191c20",
+                        "on-error-container": "#93000a",
+                        "on-secondary-container": "#003d6d",
+                        "secondary-fixed": "#d2e4ff",
+                        "error-container": "#ffdad6",
+                        "primary": "#00694c",
+                        "outline-variant": "#bccac1",
+                        "tertiary-fixed": "#ffddb0",
+                        "on-primary-fixed-variant": "#00513a",
+                        "text-muted": "#8A919C",
+                        "secondary-container": "#5da9fe",
+                        "on-tertiary-container": "#fffbff",
+                        "on-surface-variant": "#3d4943",
+                        "on-tertiary": "#ffffff",
+                        "surface-container": "#eceef3",
+                        "primary-fixed": "#86f8c9",
+                        "tertiary-fixed-dim": "#fcbb4f",
+                        "on-primary-fixed": "#002115",
+                        "inverse-on-surface": "#eff0f6",
+                        "inverse-surface": "#2e3135",
+                        "surface-bright": "#f8f9ff",
+                        "secondary-tint": "#EAF3FC",
+                        "on-primary": "#ffffff",
+                        "tertiary": "#7d5400",
+                        "on-secondary-fixed": "#001c38",
+                        "error": "#E24B4A",
+                        "surface-container-highest": "#e1e2e8",
+                        "surface-container-lowest": "#ffffff",
+                        "on-secondary": "#ffffff",
+                        "inverse-primary": "#68dbae",
+                        "outline": "#6d7a73",
+                        "secondary": "#0060a8",
+                        "surface-dim": "#d8dadf",
+                        "primary-tint": "#EAF7F1",
+                        "on-primary-container": "#f5fff7",
+                        "on-secondary-fixed-variant": "#004880",
+                        "error-tint": "#FDECEC",
+                        "surface-variant": "#e1e2e8",
+                        "background": "#F7F8F9",
+                        "secondary-fixed-dim": "#a1c9ff",
+                        "surface-container-high": "#e6e8ed",
+                        "on-error": "#ffffff",
+                        "surface-tint": "#006c4e",
+                        "tertiary-container": "#9d6a00",
+                        "on-surface": "#191c20",
+                        "on-tertiary-fixed": "#281800",
+                        "primary-fixed-dim": "#68dbae"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "space-6": "24px",
+                        "space-3": "12px",
+                        "space-1": "4px",
+                        "space-2": "8px",
+                        "space-12": "48px",
+                        "space-4": "16px",
+                        "space-8": "32px"
+                    },
+                    "fontFamily": {
+                        "body-emphasis": ["Inter"],
+                        "micro": ["Inter"],
+                        "h3": ["Inter"],
+                        "h1": ["Inter"],
+                        "caption": ["Inter"],
+                        "h1-mobile": ["Roboto"],
+                        "h2-mobile": ["Roboto"],
+                        "h2": ["Inter"],
+                        "display": ["Inter"],
+                        "body": ["Inter"]
+                    },
+                    "fontSize": {
+                        "body-emphasis": ["16px", { "lineHeight": "1.5", "fontWeight": "600" }],
+                        "micro": ["12px", { "lineHeight": "1.3", "letterSpacing": "0.02em", "fontWeight": "500" }],
+                        "h3": ["20px", { "lineHeight": "1.35", "fontWeight": "600" }],
+                        "h1": ["30px", { "lineHeight": "1.25", "fontWeight": "700" }],
+                        "caption": ["14px", { "lineHeight": "1.4", "fontWeight": "400" }],
+                        "h1-mobile": ["28px", { "lineHeight": "1.25", "fontWeight": "700" }],
+                        "h2-mobile": ["22px", { "lineHeight": "1.3", "fontWeight": "600" }],
+                        "h2": ["24px", { "lineHeight": "1.3", "fontWeight": "600" }],
+                        "display": ["36px", { "lineHeight": "1.2", "fontWeight": "700" }],
+                        "body": ["16px", { "lineHeight": "1.5", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .material-symbols-outlined.filled {
+            font-variation-settings: 'FILL' 1;
+        }
+        
+        /* Map pulsing animation */
+        @keyframes pulse-ring {
+            0% { transform: scale(0.8); opacity: 0.5; }
+            100% { transform: scale(1.5); opacity: 0; }
+        }
+        .pulse-dot::before {
+            content: '';
+            position: absolute;
+            left: -100%;
+            top: -100%;
+            right: -100%;
+            bottom: -100%;
+            border-radius: 50%;
+            background-color: theme('colors.secondary');
+            animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface-container-low font-body text-body text-on-surface h-screen w-full overflow-hidden flex flex-col relative antialiased selection:bg-primary-container selection:text-on-primary-container">
+<!-- TopAppBar -->
+<header class="bg-surface flex justify-between items-center w-full px-space-4 h-[64px] z-40 border-b border-surface-container-highest shrink-0 relative shadow-[0_2px_4px_rgba(0,0,0,0.02)]">
+<div class="flex items-center gap-space-3">
+<button aria-label="Go back" class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container transition-colors">
+<span class="material-symbols-outlined text-on-surface">arrow_back</span>
+</button>
+<h1 class="font-h2-mobile text-h2-mobile text-on-surface truncate pr-space-4">Heading to Acme Corporation HQ</h1>
+</div>
+</header>
+<!-- Map Canvas (Simulated with background image + overlay elements) -->
+<main aria-hidden="true" class="flex-grow relative bg-surface-variant w-full h-full overflow-hidden">
+<!-- Map Background -->
+<div class="absolute inset-0 bg-cover bg-center w-full h-full" data-alt="A clean, modern, light-mode stylized street map of an urban downtown area. The map uses soft grays, whites, and pale greens for parks. The roads are distinct but subtle. The overall aesthetic is professional, minimal, and clear, fitting for a corporate field service application. Calm and uncluttered." data-location="Downtown City" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuCN-U1gcfkCj8qxBK8oBzaRkbyjedwD7RwnRCK4fxwJQkYibdNUi5NmRlBWfG5j2rbQyeBJJuAP3SSq3ImW_OWqI3RXSbwUMmObK7OSBpmy5uRnDyabSfqeuVngkEXyA-ws-ttcF_IE53RD6I9hBhdiVwOPMKE5A16pqNMuWnfdfOwoq5TZRayh-Higyb8rBs-cs9u0TCgcBVWG1q3ucfzCOkXM1PpgGqWJUl6b_UM5-mcJqVJ8b-MM')">
+</div>
+<!-- Destination Geofence & Pin -->
+<div class="absolute top-[30%] left-[45%] translate-x-[-50%] translate-y-[-50%] flex flex-col items-center justify-center">
+<!-- Geofence Radius -->
+<div class="absolute w-[180px] h-[180px] rounded-full bg-secondary-container/20 border border-secondary-container/40 z-10"></div>
+<!-- Destination Pin -->
+<div class="relative z-20 flex flex-col items-center">
+<div class="bg-primary text-on-primary w-10 h-10 rounded-full flex items-center justify-center shadow-sm relative">
+<span class="material-symbols-outlined filled text-[20px]">corporate_fare</span>
+<div class="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[8px] border-t-primary"></div>
+</div>
+</div>
+</div>
+<!-- Employee Location Dot -->
+<div class="absolute top-[65%] left-[60%] translate-x-[-50%] translate-y-[-50%] z-20">
+<div class="w-5 h-5 bg-surface rounded-full shadow-md flex items-center justify-center">
+<div class="w-3 h-3 bg-secondary rounded-full relative pulse-dot shadow-inner"></div>
+</div>
+</div>
+<!-- Path Indicator (SVG) -->
+<svg class="absolute inset-0 w-full h-full z-10 pointer-events-none" style="filter: drop-shadow(0px 2px 4px rgba(0,0,0,0.1));">
+<path class="text-secondary opacity-70" d="M 60% 65% Q 70% 45% 45% 30%" fill="none" id="route-path" stroke="currentColor" stroke-dasharray="8 8" stroke-width="4"></path>
+</svg>
+</main>
+<!-- Bottom Persistent Card -->
+<div class="absolute bottom-0 left-0 w-full z-30 bg-surface rounded-t-[24px] shadow-[0_-4px_24px_rgba(0,0,0,0.08)] px-space-4 pt-space-6 pb-space-8 md:px-space-6 transform transition-transform duration-300 ease-out">
+<!-- Drag Handle / Grabber -->
+<div class="absolute top-3 left-1/2 -translate-x-1/2 w-12 h-1.5 bg-surface-container-highest rounded-full"></div>
+<div class="flex flex-col gap-space-4">
+<div class="flex items-start justify-between gap-space-4">
+<div class="flex flex-col gap-space-1">
+<div class="flex items-center gap-space-2">
+<h2 class="font-h1-mobile text-h1-mobile text-on-surface">340m away</h2>
+<span class="bg-primary-tint text-on-primary-fixed-variant font-micro text-micro px-2 py-1 rounded-full">On time</span>
+</div>
+<p class="font-caption text-caption text-on-surface-variant max-w-[280px]">
+                        We'll prompt you to check in automatically once you enter the zone.
+                    </p>
+</div>
+<!-- ETA Circle -->
+<div class="w-16 h-16 rounded-full border-[3px] border-secondary-tint flex flex-col items-center justify-center shrink-0">
+<span class="font-body-emphasis text-body-emphasis text-secondary">3</span>
+<span class="font-micro text-micro text-on-surface-variant">min</span>
+</div>
+</div>
+<!-- Actions -->
+<div class="mt-space-2">
+<button class="w-full h-space-12 flex items-center justify-center gap-space-2 rounded-lg border-2 border-outline-variant text-on-surface-variant hover:bg-surface-container-low hover:border-outline transition-colors focus:outline-none focus:ring-2 focus:ring-secondary active:scale-[0.98]">
+<span class="material-symbols-outlined">map</span>
+<span class="font-body-emphasis text-body-emphasis">Open in Google Maps</span>
+</button>
+</div>
+<!-- Contextual Info -->
+<div class="flex items-center gap-space-3 pt-space-4 border-t border-surface-container-highest mt-space-2">
+<div class="w-10 h-10 rounded-full bg-surface-container flex items-center justify-center text-on-surface-variant shrink-0">
+<span class="material-symbols-outlined">badge</span>
+</div>
+<div class="flex flex-col">
+<span class="font-caption text-caption text-on-surface-variant">Contact</span>
+<span class="font-body-emphasis text-body-emphasis text-on-surface">Sarah Jenkins (Site Mgr)</span>
+</div>
+<button class="ml-auto w-10 h-10 rounded-full bg-secondary-tint text-on-secondary-container flex items-center justify-center hover:bg-secondary-fixed transition-colors">
+<span class="material-symbols-outlined">call</span>
+</button>
+</div>
+</div>
+</div>
+<script>
+        // Simple script to adjust SVG path points to match the responsive percentages
+        window.addEventListener('resize', updatePath);
+        function updatePath() {
+            const path = document.getElementById('route-path');
+            if(path) {
+                // Ensure the path line stays somewhat connected visually on resize
+                // In a real app, this would be handled by map coordinates
+            }
+        }
+    </script>
+</body></html>

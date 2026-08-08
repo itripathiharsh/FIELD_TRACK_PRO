@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Customer Visit History Report</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=League+Spartan:wght@400;500;600;700;800&amp;family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-secondary-fixed-variant": "#653e00",
+                      "on-error": "#ffffff",
+                      "on-primary-container": "#7c89aa",
+                      "on-tertiary": "#ffffff",
+                      "surface-variant": "#e4e2e5",
+                      "surface-dim": "#dbd9dc",
+                      "on-tertiary-fixed": "#2a1800",
+                      "on-tertiary-container": "#a58359",
+                      "surface-container-high": "#eae7ea",
+                      "surface-bright": "#fbf8fb",
+                      "primary-fixed-dim": "#b9c6ea",
+                      "primary": "#000a24",
+                      "on-tertiary-fixed-variant": "#5c421e",
+                      "on-background": "#1b1b1e",
+                      "surface": "#fbf8fb",
+                      "inverse-on-surface": "#f2f0f3",
+                      "error": "#ba1a1a",
+                      "on-primary-fixed-variant": "#3a4664",
+                      "on-secondary": "#ffffff",
+                      "surface-tint": "#525e7d",
+                      "secondary": "#855300",
+                      "on-surface": "#1b1b1e",
+                      "secondary-fixed-dim": "#ffb95f",
+                      "secondary-container": "#ffa515",
+                      "primary-fixed": "#d9e2ff",
+                      "outline-variant": "#c5c6ce",
+                      "primary-container": "#14213d",
+                      "on-secondary-container": "#684000",
+                      "background": "#fbf8fb",
+                      "on-primary-fixed": "#0d1b36",
+                      "tertiary-container": "#321d00",
+                      "surface-container-low": "#f5f3f6",
+                      "tertiary": "#130900",
+                      "secondary-fixed": "#ffddb8",
+                      "on-error-container": "#93000a",
+                      "surface-container-lowest": "#ffffff",
+                      "tertiary-fixed-dim": "#e7c092",
+                      "outline": "#75777e",
+                      "on-primary": "#ffffff",
+                      "surface-container": "#f0edf0",
+                      "on-surface-variant": "#45464d",
+                      "inverse-primary": "#b9c6ea",
+                      "error-container": "#ffdad6",
+                      "tertiary-fixed": "#ffddb6",
+                      "inverse-surface": "#303033",
+                      "surface-container-highest": "#e4e2e5",
+                      "on-secondary-fixed": "#2a1700"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.125rem",
+                      "lg": "0.25rem",
+                      "xl": "0.5rem",
+                      "full": "0.75rem"
+              },
+              "spacing": {
+                      "gutter": "24px",
+                      "base": "8px",
+                      "margin": "32px",
+                      "container-max": "1440px"
+              },
+              "fontFamily": {
+                      "body-md": [
+                              "Libre Baskerville"
+                      ],
+                      "headline-lg-mobile": [
+                              "League Spartan"
+                      ],
+                      "headline-md": [
+                              "League Spartan"
+                      ],
+                      "button": [
+                              "League Spartan"
+                      ],
+                      "body-lg": [
+                              "Libre Baskerville"
+                      ],
+                      "nav-link": [
+                              "League Spartan"
+                      ],
+                      "label-md": [
+                              "League Spartan"
+                      ],
+                      "headline-sm": [
+                              "League Spartan"
+                      ],
+                      "headline-lg": [
+                              "League Spartan"
+                      ]
+              },
+              "fontSize": {
+                      "body-md": [
+                              "16px",
+                              {
+                                      "lineHeight": "1.6",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "headline-lg-mobile": [
+                              "24px",
+                              {
+                                      "lineHeight": "1.2",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "headline-md": [
+                              "24px",
+                              {
+                                      "lineHeight": "1.3",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "button": [
+                              "16px",
+                              {
+                                      "lineHeight": "1",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "body-lg": [
+                              "18px",
+                              {
+                                      "lineHeight": "1.6",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "nav-link": [
+                              "15px",
+                              {
+                                      "lineHeight": "1",
+                                      "fontWeight": "500"
+                              }
+                      ],
+                      "label-md": [
+                              "14px",
+                              {
+                                      "lineHeight": "1",
+                                      "letterSpacing": "0.05em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "headline-sm": [
+                              "20px",
+                              {
+                                      "lineHeight": "1.3",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "headline-lg": [
+                              "32px",
+                              {
+                                      "lineHeight": "1.2",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "700"
+                              }
+                      ]
+              }
+      },
+          },
+        }
+    </script>
+<style>
+        body { background-color: #E5E5E5; }
+        .data-table-row:nth-child(even) { background-color: #F9F9F9; }
+        .data-table-row:hover { box-shadow: 0px 4px 12px rgba(0,0,0,0.08); z-index: 10; position: relative; }
+    </style>
+</head>
+<body class="text-on-background font-body-md h-screen overflow-hidden flex">
+<!-- SideNavBar -->
+<nav class="bg-primary dark:bg-primary fixed left-0 top-0 h-full w-[280px] border-r border-outline-variant dark:border-outline-variant flex flex-col h-screen w-[280px] z-50">
+<div class="p-6">
+<div class="flex items-center gap-3 mb-8">
+<img class="w-10 h-10 rounded-full object-cover border border-outline-variant" data-alt="A small, professional avatar portrait of an administrative user in a corporate setting. The lighting is clean and bright, emphasizing a modern industrial or corporate management aesthetic with deep navy and gold accents in the background." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDeiDIonLsn7-hp8w5qu27BHv8dPXHdgByH-Qb262A5cXLeVPQd6_w2FEzBM3tC8lAqPkCkWUhHwJLdPxdADJYTULPMi8HVVjoBjRMw-t1-vWz37EZ2vVhI5u2Gtgz_MmuMdKibgP8iJz7M3yYMwqf-l3hWgWarha0HIo3F6rvRc3dWGNVgYq9lUHtFtsYmfgIk9WLOfTx2GqJL9wp1sxchKXwd7lwTu7ALXGpt5XUfMO89BM7K0qTW"/>
+<div>
+<h1 class="font-headline-md text-headline-md font-bold text-surface dark:text-surface-bright">FieldOps Admin</h1>
+<p class="font-label-md text-label-md text-secondary dark:text-secondary-fixed-dim">Management Console</p>
+</div>
+</div>
+<button class="w-full bg-[#FCA311] hover:bg-secondary-fixed-dim text-black font-button text-button py-3 px-4 rounded mb-8 uppercase flex justify-center items-center gap-2 transition-colors duration-200">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">add</span>
+                New Operation
+            </button>
+<div class="flex flex-col gap-2">
+<a class="text-surface-variant px-6 py-3 hover:text-surface hover:bg-primary-container/50 transition-colors duration-200 flex items-center gap-3 font-label-md text-label-md rounded" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+                    Dashboard
+                </a>
+<a class="text-surface-variant px-6 py-3 hover:text-surface hover:bg-primary-container/50 transition-colors duration-200 flex items-center gap-3 font-label-md text-label-md rounded" href="#">
+<span class="material-symbols-outlined">precision_manufacturing</span>
+                    Operations
+                </a>
+<a class="text-surface-variant px-6 py-3 hover:text-surface hover:bg-primary-container/50 transition-colors duration-200 flex items-center gap-3 font-label-md text-label-md rounded" href="#">
+<span class="material-symbols-outlined">map</span>
+                    Live Map
+                </a>
+<a class="text-secondary border-l-4 border-[#FCA311] bg-primary-container px-6 py-3 flex items-center gap-3 font-label-md text-label-md rounded-r" href="#">
+<span class="material-symbols-outlined">analytics</span>
+                    Reporting
+                </a>
+<a class="text-surface-variant px-6 py-3 hover:text-surface hover:bg-primary-container/50 transition-colors duration-200 flex items-center gap-3 font-label-md text-label-md rounded" href="#">
+<span class="material-symbols-outlined">settings_input_component</span>
+                    System Utilities
+                </a>
+<a class="text-surface-variant px-6 py-3 hover:text-surface hover:bg-primary-container/50 transition-colors duration-200 flex items-center gap-3 font-label-md text-label-md rounded" href="#">
+<span class="material-symbols-outlined">settings</span>
+                    Settings
+                </a>
+</div>
+</div>
+<div class="mt-auto p-6 border-t border-outline-variant/30 flex flex-col gap-2">
+<a class="text-surface-variant px-6 py-3 hover:text-surface hover:bg-primary-container/50 transition-colors duration-200 flex items-center gap-3 font-label-md text-label-md rounded" href="#">
+<span class="material-symbols-outlined">build</span>
+                Maintenance
+            </a>
+<a class="text-surface-variant px-6 py-3 hover:text-surface hover:bg-primary-container/50 transition-colors duration-200 flex items-center gap-3 font-label-md text-label-md rounded" href="#">
+<span class="material-symbols-outlined">logout</span>
+                Logout
+            </a>
+</div>
+</nav>
+<!-- Main Content Area -->
+<div class="flex-1 flex flex-col ml-[280px] w-[calc(100%-280px)] h-screen overflow-hidden">
+<!-- TopNavBar -->
+<header class="bg-surface dark:bg-surface-container-highest flex justify-between items-center h-16 w-full px-margin border-b border-outline-variant dark:border-outline-variant docked full-width top-0 sticky z-40">
+<div class="flex items-center gap-6">
+<span class="font-headline-sm text-headline-sm font-bold text-primary dark:text-primary-fixed">Field Operations</span>
+<nav class="hidden md:flex gap-6 ml-8">
+<a class="text-on-surface-variant font-medium font-nav-link text-nav-link hover:text-secondary transition-colors duration-200" href="#">Overview</a>
+<a class="text-primary font-bold border-b-2 border-[#FCA311] pb-1 font-nav-link text-nav-link focus:ring-2 focus:ring-secondary focus:ring-offset-2" href="#">Analytics</a>
+<a class="text-on-surface-variant font-medium font-nav-link text-nav-link hover:text-secondary transition-colors duration-200" href="#">Exports</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<div class="relative hidden lg:block">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline">search</span>
+<input class="pl-10 pr-4 py-2 border border-[#D1D1D1] rounded focus:border-primary focus:ring-1 focus:ring-primary font-body-md text-body-md bg-white" placeholder="Search reports..." type="text"/>
+</div>
+<button class="p-2 text-primary hover:text-secondary transition-colors duration-200 rounded-full hover:bg-surface-variant">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="p-2 text-primary hover:text-secondary transition-colors duration-200 rounded-full hover:bg-surface-variant">
+<span class="material-symbols-outlined">help_outline</span>
+</button>
+<img class="w-8 h-8 rounded-full border border-outline-variant object-cover ml-2" data-alt="A small circular avatar of an Administrator. Professional corporate headshot in high resolution with subtle lighting, suited for a top navigation bar." src="https://lh3.googleusercontent.com/aida-public/AB6AXuB6oFmCEhnDuj8FTnuxsMTrNf87xYlSK3DtSeTsP_1UenX37j1WTgxuzkfRRg5ZK_8PmUOFXnDhpFcGDZosG_8JLYVEGE0u-wL-mZvKQTMRKLh2EemcKMX2gPz33LCa0_epkZcP9KvdT1pRKmQm17Ki247h__CfkUoT45CuWDbWUgU3mE7w5yt7hhp68-SLM0YDz1DOoAVdR8iYG15-TKmb1YprLCKtgzet5rt35JErtjUwKsWVIZAf"/>
+</div>
+</header>
+<!-- Canvas -->
+<main class="flex-1 overflow-y-auto p-margin">
+<div class="max-w-container-max mx-auto">
+<!-- Page Header -->
+<div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+<div>
+<h2 class="font-headline-lg text-headline-lg text-primary mb-1">Customer Visit History</h2>
+<p class="font-body-md text-body-md text-on-surface-variant">Comprehensive log of field operations and client engagements.</p>
+</div>
+<div class="flex gap-4">
+<button class="border border-[#14213D] text-[#14213D] hover:bg-surface-variant font-button text-button py-2 px-6 rounded uppercase transition-colors duration-200">
+                            Filter
+                        </button>
+<button class="bg-[#FCA311] hover:bg-secondary-container text-black font-button text-button py-2 px-6 rounded uppercase flex items-center gap-2 transition-colors duration-200 shadow-sm">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">download</span>
+                            Export Report
+                        </button>
+</div>
+</div>
+<!-- Report Card -->
+<div class="bg-white rounded-lg border border-[#D1D1D1] overflow-hidden">
+<!-- Filters/Stats Bar -->
+<div class="p-4 border-b border-[#D1D1D1] bg-surface-bright flex justify-between items-center">
+<div class="flex gap-6">
+<div>
+<span class="font-label-md text-label-md text-outline block uppercase mb-1">Total Visits</span>
+<span class="font-headline-sm text-headline-sm text-primary">1,248</span>
+</div>
+<div>
+<span class="font-label-md text-label-md text-outline block uppercase mb-1">Avg Completion Time</span>
+<span class="font-headline-sm text-headline-sm text-primary">45m</span>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<label class="font-label-md text-label-md text-outline uppercase">Date Range:</label>
+<select class="border border-[#D1D1D1] rounded py-1 px-3 font-body-md text-body-md focus:border-primary focus:ring-1 focus:ring-primary">
+<option>Last 30 Days</option>
+<option>This Quarter</option>
+<option>Year to Date</option>
+</select>
+</div>
+</div>
+<!-- Data Table -->
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="bg-primary text-white border-b border-primary-container">
+<th class="p-4 font-headline-sm text-headline-sm font-bold w-1/4">Customer</th>
+<th class="p-4 font-headline-sm text-headline-sm font-bold">Location</th>
+<th class="p-4 font-headline-sm text-headline-sm font-bold">Date &amp; Time</th>
+<th class="p-4 font-headline-sm text-headline-sm font-bold">Duration</th>
+<th class="p-4 font-headline-sm text-headline-sm font-bold">Status</th>
+<th class="p-4 font-headline-sm text-headline-sm font-bold text-right">Actions</th>
+</tr>
+</thead>
+<tbody class="font-body-md text-body-md text-on-surface">
+<!-- Row 1 -->
+<tr class="data-table-row border-b border-[#D1D1D1] transition-shadow duration-200 bg-white">
+<td class="p-4">
+<div class="font-bold text-primary">Apex Industrial</div>
+<div class="text-sm text-on-surface-variant">ID: CUST-8821</div>
+</td>
+<td class="p-4">Sector 4, North Plant</td>
+<td class="p-4">Oct 24, 2023 - 09:00 AM</td>
+<td class="p-4">1h 15m</td>
+<td class="p-4">
+<span class="inline-flex items-center px-2 py-1 rounded bg-green-50 text-green-800 border border-green-200 font-label-md text-[12px] uppercase">
+                                            Completed
+                                        </span>
+</td>
+<td class="p-4 text-right">
+<button class="text-outline hover:text-primary transition-colors"><span class="material-symbols-outlined">more_vert</span></button>
+</td>
+</tr>
+<!-- Row 2 -->
+<tr class="data-table-row border-b border-[#D1D1D1] transition-shadow duration-200">
+<td class="p-4">
+<div class="font-bold text-primary">Nexus Logistics</div>
+<div class="text-sm text-on-surface-variant">ID: CUST-9942</div>
+</td>
+<td class="p-4">Central Hub</td>
+<td class="p-4">Oct 24, 2023 - 11:30 AM</td>
+<td class="p-4">45m</td>
+<td class="p-4">
+<span class="inline-flex items-center px-2 py-1 rounded bg-green-50 text-green-800 border border-green-200 font-label-md text-[12px] uppercase">
+                                            Completed
+                                        </span>
+</td>
+<td class="p-4 text-right">
+<button class="text-outline hover:text-primary transition-colors"><span class="material-symbols-outlined">more_vert</span></button>
+</td>
+</tr>
+<!-- Row 3 -->
+<tr class="data-table-row border-b border-[#D1D1D1] transition-shadow duration-200 bg-white">
+<td class="p-4">
+<div class="font-bold text-primary">Vanguard Corp</div>
+<div class="text-sm text-on-surface-variant">ID: CUST-1024</div>
+</td>
+<td class="p-4">East Wing Facility</td>
+<td class="p-4">Oct 24, 2023 - 02:00 PM</td>
+<td class="p-4">--</td>
+<td class="p-4">
+<span class="inline-flex items-center px-2 py-1 rounded bg-blue-50 text-blue-800 border border-blue-200 font-label-md text-[12px] uppercase">
+                                            In Progress
+                                        </span>
+</td>
+<td class="p-4 text-right">
+<button class="text-outline hover:text-primary transition-colors"><span class="material-symbols-outlined">more_vert</span></button>
+</td>
+</tr>
+<!-- Row 4 -->
+<tr class="data-table-row border-b border-[#D1D1D1] transition-shadow duration-200">
+<td class="p-4">
+<div class="font-bold text-primary">Omega Manufacturing</div>
+<div class="text-sm text-on-surface-variant">ID: CUST-7731</div>
+</td>
+<td class="p-4">South Yard</td>
+<td class="p-4">Oct 23, 2023 - 08:15 AM</td>
+<td class="p-4">2h 30m</td>
+<td class="p-4">
+<span class="inline-flex items-center px-2 py-1 rounded bg-red-50 text-red-800 border border-red-200 font-label-md text-[12px] uppercase">
+                                            Flagged
+                                        </span>
+</td>
+<td class="p-4 text-right">
+<button class="text-outline hover:text-primary transition-colors"><span class="material-symbols-outlined">more_vert</span></button>
+</td>
+</tr>
+<!-- Row 5 -->
+<tr class="data-table-row border-b border-[#D1D1D1] transition-shadow duration-200 bg-white">
+<td class="p-4">
+<div class="font-bold text-primary">Delta Systems</div>
+<div class="text-sm text-on-surface-variant">ID: CUST-3390</div>
+</td>
+<td class="p-4">HQ Building</td>
+<td class="p-4">Oct 23, 2023 - 01:00 PM</td>
+<td class="p-4">30m</td>
+<td class="p-4">
+<span class="inline-flex items-center px-2 py-1 rounded bg-green-50 text-green-800 border border-green-200 font-label-md text-[12px] uppercase">
+                                            Completed
+                                        </span>
+</td>
+<td class="p-4 text-right">
+<button class="text-outline hover:text-primary transition-colors"><span class="material-symbols-outlined">more_vert</span></button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Pagination -->
+<div class="p-4 border-t border-[#D1D1D1] flex justify-between items-center bg-white">
+<span class="font-body-md text-body-md text-on-surface-variant">Showing 1 to 5 of 1,248 entries</span>
+<div class="flex gap-1">
+<button class="px-3 py-1 border border-[#D1D1D1] rounded text-outline hover:bg-surface-variant disabled:opacity-50" disabled="">Prev</button>
+<button class="px-3 py-1 border border-primary bg-primary text-white rounded">1</button>
+<button class="px-3 py-1 border border-[#D1D1D1] rounded text-primary hover:bg-surface-variant">2</button>
+<button class="px-3 py-1 border border-[#D1D1D1] rounded text-primary hover:bg-surface-variant">3</button>
+<span class="px-3 py-1">...</span>
+<button class="px-3 py-1 border border-[#D1D1D1] rounded text-primary hover:bg-surface-variant">Next</button>
+</div>
+</div>
+</div>
+</div>
+</main>
+</div>
+</body></html>

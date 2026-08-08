@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Visit Submission Success</title>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Google Fonts -->
+<link href="https://fonts.googleapis.com/css2?family=League+Spartan:wght@400;500;600;700;800&amp;family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Theme Configuration -->
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-secondary-fixed-variant": "#653e00",
+                        "on-error": "#ffffff",
+                        "on-primary-container": "#7c89aa",
+                        "on-tertiary": "#ffffff",
+                        "surface-variant": "#e4e2e5",
+                        "surface-dim": "#dbd9dc",
+                        "on-tertiary-fixed": "#2a1800",
+                        "on-tertiary-container": "#a58359",
+                        "surface-container-high": "#eae7ea",
+                        "surface-bright": "#fbf8fb",
+                        "primary-fixed-dim": "#b9c6ea",
+                        "primary": "#000a24",
+                        "on-tertiary-fixed-variant": "#5c421e",
+                        "on-background": "#1b1b1e",
+                        "surface": "#fbf8fb",
+                        "inverse-on-surface": "#f2f0f3",
+                        "error": "#ba1a1a",
+                        "on-primary-fixed-variant": "#3a4664",
+                        "on-secondary": "#ffffff",
+                        "surface-tint": "#525e7d",
+                        "secondary": "#855300",
+                        "on-surface": "#1b1b1e",
+                        "secondary-fixed-dim": "#ffb95f",
+                        "secondary-container": "#ffa515",
+                        "primary-fixed": "#d9e2ff",
+                        "outline-variant": "#c5c6ce",
+                        "primary-container": "#14213d",
+                        "on-secondary-container": "#684000",
+                        "background": "#fbf8fb",
+                        "on-primary-fixed": "#0d1b36",
+                        "tertiary-container": "#321d00",
+                        "surface-container-low": "#f5f3f6",
+                        "tertiary": "#130900",
+                        "secondary-fixed": "#ffddb8",
+                        "on-error-container": "#93000a",
+                        "surface-container-lowest": "#ffffff",
+                        "tertiary-fixed-dim": "#e7c092",
+                        "outline": "#75777e",
+                        "on-primary": "#ffffff",
+                        "surface-container": "#f0edf0",
+                        "on-surface-variant": "#45464d",
+                        "inverse-primary": "#b9c6ea",
+                        "error-container": "#ffdad6",
+                        "tertiary-fixed": "#ffddb6",
+                        "inverse-surface": "#303033",
+                        "surface-container-highest": "#e4e2e5",
+                        "on-secondary-fixed": "#2a1700"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "gutter": "24px",
+                        "base": "8px",
+                        "margin": "32px",
+                        "container-max": "1440px"
+                    },
+                    "fontFamily": {
+                        "body-md": ["Libre Baskerville"],
+                        "headline-lg-mobile": ["League Spartan"],
+                        "headline-md": ["League Spartan"],
+                        "button": ["League Spartan"],
+                        "body-lg": ["Libre Baskerville"],
+                        "nav-link": ["League Spartan"],
+                        "label-md": ["League Spartan"],
+                        "headline-sm": ["League Spartan"],
+                        "headline-lg": ["League Spartan"]
+                    },
+                    "fontSize": {
+                        "body-md": ["16px", { "lineHeight": "1.6", "fontWeight": "400" }],
+                        "headline-lg-mobile": ["24px", { "lineHeight": "1.2", "fontWeight": "700" }],
+                        "headline-md": ["24px", { "lineHeight": "1.3", "fontWeight": "600" }],
+                        "button": ["16px", { "lineHeight": "1", "fontWeight": "700" }],
+                        "body-lg": ["18px", { "lineHeight": "1.6", "fontWeight": "400" }],
+                        "nav-link": ["15px", { "lineHeight": "1", "fontWeight": "500" }],
+                        "label-md": ["14px", { "lineHeight": "1", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "headline-sm": ["20px", { "lineHeight": "1.3", "fontWeight": "600" }],
+                        "headline-lg": ["32px", { "lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "700" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .animate-slide-up {
+            animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        
+        .animate-scale-in {
+            animation: scaleIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            opacity: 0;
+            transform: scale(0.9);
+        }
+
+        .animate-fade-in {
+            animation: fadeIn 0.8s ease-out forwards;
+            opacity: 0;
+        }
+
+        .delay-100 { animation-delay: 100ms; }
+        .delay-200 { animation-delay: 200ms; }
+        .delay-300 { animation-delay: 300ms; }
+
+        @keyframes slideUp {
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes scaleIn {
+            to { opacity: 1; transform: scale(1); }
+        }
+        @keyframes fadeIn {
+            to { opacity: 1; }
+        }
+
+        /* Ambient glow effect */
+        .ambient-glow {
+            background: radial-gradient(circle at 50% 0%, rgba(255, 165, 21, 0.15) 0%, transparent 60%);
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-primary min-h-screen flex flex-col text-on-primary font-body-md antialiased overflow-x-hidden selection:bg-secondary-container selection:text-on-secondary-container">
+<!-- Navigation Shell Suppressed as per instructions for Transactional/Success Screens -->
+<!-- Background Ambient Glow -->
+<div class="fixed inset-0 ambient-glow pointer-events-none z-0"></div>
+<!-- Main Content Container -->
+<main class="flex-1 flex flex-col items-center justify-center p-6 md:p-margin w-full max-w-container-max mx-auto relative z-10 min-h-screen">
+<!-- Brand Header (Minimal) -->
+<header class="absolute top-6 left-0 right-0 flex justify-center w-full animate-fade-in">
+<h1 class="font-headline-sm text-headline-sm text-on-primary tracking-widest uppercase opacity-70">
+                Field Ops
+            </h1>
+</header>
+<!-- Success Core -->
+<div class="flex flex-col items-center text-center w-full max-w-lg mt-12">
+<!-- Icon -->
+<div class="relative flex items-center justify-center w-24 h-24 md:w-32 md:h-32 rounded-full bg-secondary-container/10 mb-8 animate-scale-in">
+<!-- Inner pulse ring -->
+<div class="absolute inset-0 rounded-full border-2 border-secondary-container/30 animate-[ping_2s_cubic-bezier(0,0,0.2,1)_infinite]"></div>
+<!-- Core icon -->
+<span class="material-symbols-outlined text-[64px] md:text-[80px] text-secondary-container" style="font-variation-settings: 'FILL' 1;">
+                    check_circle
+                </span>
+</div>
+<!-- Headline -->
+<h2 class="font-headline-lg-mobile md:font-headline-lg text-headline-lg-mobile md:text-headline-lg text-on-primary mb-3 animate-slide-up delay-100">
+                Visit Summary Submitted Successfully
+            </h2>
+<p class="font-body-md text-body-md text-on-primary-container mb-10 animate-slide-up delay-200 max-w-sm">
+                Your report has been logged and synced with central dispatch.
+            </p>
+<!-- Visit Details Bento Grid -->
+<div class="w-full bg-primary-container/80 backdrop-blur-md rounded-xl border border-outline-variant/30 overflow-hidden mb-10 animate-slide-up delay-300 shadow-lg text-left">
+<!-- Card Header -->
+<div class="bg-surface-tint/10 px-6 py-4 border-b border-outline-variant/20 flex items-center gap-3">
+<span class="material-symbols-outlined text-secondary-container text-xl" style="font-variation-settings: 'FILL' 1;">
+                        domain
+                    </span>
+<h3 class="font-headline-sm text-headline-sm text-on-primary">
+                        Apex Industrial Facility
+                    </h3>
+</div>
+<!-- Grid Data -->
+<div class="grid grid-cols-2 gap-4 p-6">
+<div class="flex flex-col gap-1">
+<span class="font-label-md text-label-md text-on-primary-container uppercase">Date</span>
+<div class="flex items-center gap-2 text-on-primary font-body-md text-body-md">
+<span class="material-symbols-outlined text-[18px] opacity-70">calendar_today</span>
+                            Oct 24, 2023
+                        </div>
+</div>
+<div class="flex flex-col gap-1">
+<span class="font-label-md text-label-md text-on-primary-container uppercase">Duration</span>
+<div class="flex items-center gap-2 text-on-primary font-body-md text-body-md">
+<span class="material-symbols-outlined text-[18px] opacity-70">schedule</span>
+                            1h 45m
+                        </div>
+</div>
+<div class="flex flex-col gap-1 col-span-2 mt-2 pt-4 border-t border-outline-variant/20">
+<span class="font-label-md text-label-md text-on-primary-container uppercase">Key Actions</span>
+<div class="flex flex-wrap gap-2 mt-2">
+<span class="px-3 py-1 bg-surface-tint/20 rounded-full font-label-md text-label-md text-primary-fixed border border-outline-variant/20">
+                                Safety Inspection
+                            </span>
+<span class="px-3 py-1 bg-surface-tint/20 rounded-full font-label-md text-label-md text-primary-fixed border border-outline-variant/20">
+                                Meter Read
+                            </span>
+<span class="px-3 py-1 bg-surface-tint/20 rounded-full font-label-md text-label-md text-primary-fixed border border-outline-variant/20">
+                                Client Sign-off
+                            </span>
+</div>
+</div>
+</div>
+</div>
+<!-- Primary Action -->
+<button class="w-full bg-secondary-container hover:bg-secondary-fixed text-tertiary-container font-button text-button py-4 px-6 rounded-xl transition-all active:scale-95 flex items-center justify-center gap-2 shadow-[0_4px_12px_rgba(255,165,21,0.2)] animate-slide-up delay-300">
+<span class="material-symbols-outlined text-[20px]">
+                    arrow_back
+                </span>
+                BACK TO DASHBOARD
+            </button>
+</div>
+</main>
+<script>
+        // Simple JS for button interaction feedback beyond CSS
+        document.querySelector('button').addEventListener('click', function(e) {
+            const btn = e.currentTarget;
+            btn.style.opacity = '0.7';
+            setTimeout(() => {
+                btn.style.opacity = '1';
+                // Simulated navigation action
+                console.log('Navigating to dashboard...');
+            }, 150);
+        });
+    </script>
+</body></html>

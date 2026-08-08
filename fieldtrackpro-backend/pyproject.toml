@@ -1,0 +1,52 @@
+[project]
+name = "fieldtrackpro-backend"
+version = "0.1.0"
+description = "FieldTrack Pro FastAPI Backend API"
+authors = [
+    {name = "FieldTrack Pro Team"}
+]
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "pydantic>=2.9.0",
+    "pydantic-settings>=2.6.0",
+    "sqlalchemy>=2.0.36",
+    "asyncpg>=0.30.0",
+    "alembic>=1.14.0",
+    "geoalchemy2>=0.16.0",
+    "python-jose[cryptography]>=3.3.0",
+    "passlib[bcrypt]>=1.7.4",
+    "python-multipart>=0.0.12",
+    "bcrypt>=4.0.1",
+    "minio>=7.2.0",
+    "pillow>=11.0.0",
+    "python-magic>=0.4.27",
+    "firebase-admin>=6.5.0",
+    "apscheduler>=3.10.4",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "httpx>=0.27.0",
+    # Sync driver used by the test harness to check DB readiness and to
+    # assert committed database state independently of the app's async session.
+    "psycopg2-binary>=2.9.9",
+]
+
+[tool.poetry]
+packages = [{include = "app"}]
+
+[tool.pytest.ini_options]
+asyncio_mode = "strict"
+testpaths = ["tests"]
+markers = [
+    "integration: real business-path test requiring a migrated PostGIS database",
+]
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

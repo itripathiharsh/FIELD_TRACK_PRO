@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Add/Edit Employee - FieldOps Admin</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=League+Spartan:wght@400;500;600;700&amp;family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-secondary-fixed-variant": "#653e00",
+                        "on-error": "#ffffff",
+                        "on-primary-container": "#7c89aa",
+                        "on-tertiary": "#ffffff",
+                        "surface-variant": "#e4e2e5",
+                        "surface-dim": "#dbd9dc",
+                        "on-tertiary-fixed": "#2a1800",
+                        "on-tertiary-container": "#a58359",
+                        "surface-container-high": "#eae7ea",
+                        "surface-bright": "#fbf8fb",
+                        "primary-fixed-dim": "#b9c6ea",
+                        "primary": "#000a24",
+                        "on-tertiary-fixed-variant": "#5c421e",
+                        "on-background": "#1b1b1e",
+                        "surface": "#fbf8fb",
+                        "inverse-on-surface": "#f2f0f3",
+                        "error": "#ba1a1a",
+                        "on-primary-fixed-variant": "#3a4664",
+                        "on-secondary": "#ffffff",
+                        "surface-tint": "#525e7d",
+                        "secondary": "#855300",
+                        "on-surface": "#1b1b1e",
+                        "secondary-fixed-dim": "#ffb95f",
+                        "secondary-container": "#ffa515",
+                        "primary-fixed": "#d9e2ff",
+                        "outline-variant": "#c5c6ce",
+                        "primary-container": "#14213d",
+                        "on-secondary-container": "#684000",
+                        "background": "#fbf8fb",
+                        "on-primary-fixed": "#0d1b36",
+                        "tertiary-container": "#321d00",
+                        "surface-container-low": "#f5f3f6",
+                        "tertiary": "#130900",
+                        "secondary-fixed": "#ffddb8",
+                        "on-error-container": "#93000a",
+                        "surface-container-lowest": "#ffffff",
+                        "tertiary-fixed-dim": "#e7c092",
+                        "outline": "#75777e",
+                        "on-primary": "#ffffff",
+                        "surface-container": "#f0edf0",
+                        "on-surface-variant": "#45464d",
+                        "inverse-primary": "#b9c6ea",
+                        "error-container": "#ffdad6",
+                        "tertiary-fixed": "#ffddb6",
+                        "inverse-surface": "#303033",
+                        "surface-container-highest": "#e4e2e5",
+                        "on-secondary-fixed": "#2a1700"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "gutter": "24px",
+                        "base": "8px",
+                        "margin": "32px",
+                        "container-max": "1440px"
+                    },
+                    "fontFamily": {
+                        "body-md": ["Libre Baskerville"],
+                        "headline-lg-mobile": ["League Spartan"],
+                        "headline-md": ["League Spartan"],
+                        "button": ["League Spartan"],
+                        "body-lg": ["Libre Baskerville"],
+                        "nav-link": ["League Spartan"],
+                        "label-md": ["League Spartan"],
+                        "headline-sm": ["League Spartan"],
+                        "headline-lg": ["League Spartan"]
+                    },
+                    "fontSize": {
+                        "body-md": ["16px", { "lineHeight": "1.6", "fontWeight": "400" }],
+                        "headline-lg-mobile": ["24px", { "lineHeight": "1.2", "fontWeight": "700" }],
+                        "headline-md": ["24px", { "lineHeight": "1.3", "fontWeight": "600" }],
+                        "button": ["16px", { "lineHeight": "1", "fontWeight": "700" }],
+                        "body-lg": ["18px", { "lineHeight": "1.6", "fontWeight": "400" }],
+                        "nav-link": ["15px", { "lineHeight": "1", "fontWeight": "500" }],
+                        "label-md": ["14px", { "lineHeight": "1", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "headline-sm": ["20px", { "lineHeight": "1.3", "fontWeight": "600" }],
+                        "headline-lg": ["32px", { "lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "700" }]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        body { background-color: #E5E5E5; }
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+    </style>
+</head>
+<body class="flex bg-[#E5E5E5] min-h-screen font-body-md text-on-background">
+<!-- SideNavBar -->
+<nav class="fixed left-0 top-0 h-full w-[280px] bg-primary flex flex-col border-r border-outline-variant z-50">
+<div class="p-6">
+<h1 class="font-headline-md text-headline-md font-bold text-surface">FieldOps Admin</h1>
+<p class="font-label-md text-label-md text-surface-variant mt-2">Management Console</p>
+</div>
+<div class="px-6 mb-6">
+<button class="w-full bg-[#FCA311] text-black font-button text-button py-3 px-4 rounded flex items-center justify-center gap-2 uppercase tracking-wide">
+<span class="material-symbols-outlined">add</span>
+                New Operation
+            </button>
+</div>
+<ul class="flex-1 overflow-y-auto font-label-md text-label-md">
+<li class="px-6 py-3 text-surface-variant hover:bg-primary-container/50 hover:text-surface transition-colors duration-200 flex items-center gap-3 cursor-pointer">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span>Dashboard</span>
+</li>
+<li class="px-6 py-3 text-surface-variant hover:bg-primary-container/50 hover:text-surface transition-colors duration-200 flex items-center gap-3 cursor-pointer">
+<span class="material-symbols-outlined" data-icon="precision_manufacturing">precision_manufacturing</span>
+<span>Operations</span>
+</li>
+<li class="text-secondary border-l-4 border-secondary bg-primary-container px-6 py-3 flex items-center gap-3 cursor-pointer">
+<span class="material-symbols-outlined" data-icon="group">group</span>
+<span>Employees</span>
+</li>
+<li class="px-6 py-3 text-surface-variant hover:bg-primary-container/50 hover:text-surface transition-colors duration-200 flex items-center gap-3 cursor-pointer">
+<span class="material-symbols-outlined" data-icon="map">map</span>
+<span>Live Map</span>
+</li>
+<li class="px-6 py-3 text-surface-variant hover:bg-primary-container/50 hover:text-surface transition-colors duration-200 flex items-center gap-3 cursor-pointer">
+<span class="material-symbols-outlined" data-icon="analytics">analytics</span>
+<span>Reporting</span>
+</li>
+<li class="px-6 py-3 text-surface-variant hover:bg-primary-container/50 hover:text-surface transition-colors duration-200 flex items-center gap-3 cursor-pointer">
+<span class="material-symbols-outlined" data-icon="settings_input_component">settings_input_component</span>
+<span>System Utilities</span>
+</li>
+<li class="px-6 py-3 text-surface-variant hover:bg-primary-container/50 hover:text-surface transition-colors duration-200 flex items-center gap-3 cursor-pointer">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span>Settings</span>
+</li>
+</ul>
+<div class="mt-auto border-t border-outline-variant p-4 font-label-md text-label-md">
+<div class="px-6 py-3 text-surface-variant hover:bg-primary-container/50 hover:text-surface transition-colors duration-200 flex items-center gap-3 cursor-pointer">
+<span class="material-symbols-outlined" data-icon="build">build</span>
+<span>Maintenance</span>
+</div>
+<div class="px-6 py-3 text-surface-variant hover:bg-primary-container/50 hover:text-surface transition-colors duration-200 flex items-center gap-3 cursor-pointer">
+<span class="material-symbols-outlined" data-icon="logout">logout</span>
+<span>Logout</span>
+</div>
+</div>
+</nav>
+<!-- Main Content Area -->
+<div class="ml-[280px] w-[calc(100%-280px)] min-h-screen flex flex-col">
+<!-- TopNavBar -->
+<header class="bg-surface docked full-width top-0 sticky z-40 flex justify-between items-center h-16 w-full px-margin border-b border-outline-variant">
+<div class="flex items-center gap-8">
+<h2 class="font-headline-sm text-headline-sm font-bold text-primary">Field Operations</h2>
+<nav class="hidden md:flex gap-6 font-nav-link text-nav-link text-on-surface-variant font-medium">
+<a class="hover:text-secondary transition-colors duration-200 py-4" href="#">Overview</a>
+<a class="hover:text-secondary transition-colors duration-200 py-4" href="#">Analytics</a>
+<a class="hover:text-secondary transition-colors duration-200 py-4" href="#">Exports</a>
+</nav>
+</div>
+<div class="flex items-center gap-6">
+<span class="material-symbols-outlined cursor-pointer hover:text-secondary transition-colors" data-icon="notifications">notifications</span>
+<span class="material-symbols-outlined cursor-pointer hover:text-secondary transition-colors" data-icon="help_outline">help_outline</span>
+<img class="w-10 h-10 rounded-full object-cover border border-outline-variant" data-alt="A professional headshot of a diverse corporate administrator in a modern office setting. The lighting is bright and even, indicating a light-mode corporate aesthetic. The subject is wearing a dark navy blazer, projecting authority and dependability. High resolution, clear focus, 8k, modern corporate photography style." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBq761tRR5aHTOjnSR_UwAhot6SqLUunHZz2Xhl8JdOkHirxAXocKOATQudyWqi1mTfUcb7mWw-VclpjCDJpN-64I-Uazy5ix1-_Xb3BoO_8FbE67xdW-gBOYwLR4ZaZrt78qjbE4yyFax-BuBl4vARMsrlDbh1cEouEKmlmoCitmVUieaPddi4yeBDwm9x3IWkKtGuliNaRm5WEzRNZDF4pYur_z7DEigpZiGF7oCtFOSSdiat8HlW"/>
+</div>
+</header>
+<!-- Page Canvas -->
+<main class="flex-1 p-margin max-w-container-max mx-auto w-full">
+<div class="mb-8 flex justify-between items-end">
+<div>
+<h1 class="font-headline-lg text-headline-lg text-primary mb-2">Add New Employee</h1>
+<p class="font-body-md text-body-md text-on-surface-variant">Enter details to onboard a new field operative to the system.</p>
+</div>
+<button class="bg-primary-container text-surface px-6 py-2 rounded font-button text-button uppercase tracking-wide hover:bg-primary transition-colors flex items-center gap-2 border border-[#14213D]">
+<span class="material-symbols-outlined">arrow_back</span>
+                    Back to List
+                </button>
+</div>
+<!-- Glassmorphism/Bento Form Container -->
+<div class="bg-surface rounded-xl border border-[#D1D1D1] overflow-hidden">
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-0">
+<!-- Form Section -->
+<div class="lg:col-span-8 p-8 border-r border-[#D1D1D1]">
+<h3 class="font-headline-sm text-headline-sm text-primary mb-6 border-b border-[#D1D1D1] pb-2">Employee Information</h3>
+<form class="space-y-6">
+<!-- Name Row -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+<div class="flex flex-col">
+<label class="font-label-md text-label-md text-on-surface-variant mb-2 uppercase">First Name</label>
+<input class="border border-[#D1D1D1] rounded p-3 font-body-md text-on-background focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors bg-surface-container-lowest" placeholder="e.g. Jane" type="text"/>
+</div>
+<div class="flex flex-col">
+<label class="font-label-md text-label-md text-on-surface-variant mb-2 uppercase">Last Name</label>
+<input class="border border-[#D1D1D1] rounded p-3 font-body-md text-on-background focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors bg-surface-container-lowest" placeholder="e.g. Doe" type="text"/>
+</div>
+</div>
+<!-- Contact Row -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+<div class="flex flex-col">
+<label class="font-label-md text-label-md text-on-surface-variant mb-2 uppercase">Email Address</label>
+<input class="border border-[#D1D1D1] rounded p-3 font-body-md text-on-background focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors bg-surface-container-lowest" placeholder="jane.doe@fieldops.com" type="email"/>
+</div>
+<div class="flex flex-col">
+<label class="font-label-md text-label-md text-on-surface-variant mb-2 uppercase">Phone Number</label>
+<input class="border border-[#D1D1D1] rounded p-3 font-body-md text-on-background focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors bg-surface-container-lowest" placeholder="+1 (555) 000-0000" type="tel"/>
+</div>
+</div>
+<!-- Role & Territory -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+<div class="flex flex-col">
+<label class="font-label-md text-label-md text-on-surface-variant mb-2 uppercase">Role Assignment</label>
+<select class="border border-[#D1D1D1] rounded p-3 font-body-md text-on-background focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors bg-surface-container-lowest appearance-none">
+<option>Field Technician</option>
+<option>Site Supervisor</option>
+<option>Logistics Coordinator</option>
+<option>Safety Inspector</option>
+</select>
+</div>
+<div class="flex flex-col">
+<label class="font-label-md text-label-md text-on-surface-variant mb-2 uppercase">Operating Territory</label>
+<select class="border border-[#D1D1D1] rounded p-3 font-body-md text-on-background focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors bg-surface-container-lowest appearance-none">
+<option>North Region - Zone A</option>
+<option>South Region - Zone B</option>
+<option>East Region - Zone C</option>
+<option>West Region - Zone D</option>
+</select>
+</div>
+</div>
+<!-- Save Action -->
+<div class="pt-6 border-t border-[#D1D1D1] flex justify-end">
+<button class="bg-surface-variant text-on-surface-variant px-6 py-3 rounded font-button text-button uppercase tracking-wide hover:bg-outline-variant transition-colors mr-4" type="button">
+                                    Cancel
+                                </button>
+<button class="bg-[#FCA311] text-black px-8 py-3 rounded font-button text-button uppercase tracking-wide hover:bg-[#e5940f] transition-colors shadow-[0px_4px_12px_rgba(0,0,0,0.08)]" type="submit">
+                                    Save Employee
+                                </button>
+</div>
+</form>
+</div>
+<!-- Side Context Panel -->
+<div class="lg:col-span-4 bg-surface-container-low p-8 flex flex-col items-center justify-center text-center">
+<div class="w-32 h-32 rounded-full border-4 border-surface overflow-hidden shadow-sm mb-6 bg-surface-variant flex items-center justify-center">
+<span class="material-symbols-outlined text-6xl text-outline">add_a_photo</span>
+</div>
+<h4 class="font-headline-sm text-headline-sm text-primary mb-2">Profile Image</h4>
+<p class="font-body-md text-body-md text-on-surface-variant mb-6">Upload a professional headshot for ID badge generation.</p>
+<button class="border border-[#14213D] text-[#14213D] px-6 py-2 rounded font-button text-button uppercase tracking-wide hover:bg-primary-container hover:text-surface transition-colors bg-transparent">
+                            Upload Photo
+                        </button>
+</div>
+</div>
+</div>
+</main>
+</div>
+</body></html>

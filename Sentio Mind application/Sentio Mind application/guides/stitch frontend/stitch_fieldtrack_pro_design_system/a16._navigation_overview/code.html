@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Navigation / Route Overview - FieldTrack Pro</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Roboto:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "background": "#F7F8F9",
+                      "on-primary-fixed": "#002115",
+                      "on-secondary-container": "#003d6d",
+                      "on-error": "#ffffff",
+                      "primary-tint": "#EAF7F1",
+                      "on-secondary": "#ffffff",
+                      "text-muted": "#8A919C",
+                      "on-tertiary-container": "#fffbff",
+                      "surface-variant": "#e1e2e8",
+                      "surface-container-lowest": "#ffffff",
+                      "surface-container-high": "#e6e8ed",
+                      "primary-fixed": "#86f8c9",
+                      "primary-container": "#008560",
+                      "error-container": "#ffdad6",
+                      "on-background": "#191c20",
+                      "secondary-container": "#5da9fe",
+                      "on-primary-container": "#f5fff7",
+                      "surface-dim": "#d8dadf",
+                      "surface-container-low": "#f2f3f9",
+                      "on-tertiary-fixed-variant": "#614000",
+                      "on-surface": "#191c20",
+                      "inverse-primary": "#68dbae",
+                      "outline-variant": "#bccac1",
+                      "on-tertiary": "#ffffff",
+                      "primary-fixed-dim": "#68dbae",
+                      "tertiary": "#7d5400",
+                      "border-subtle": "#EDEFF2",
+                      "primary": "#00694c",
+                      "secondary-fixed-dim": "#a1c9ff",
+                      "on-surface-variant": "#3d4943",
+                      "inverse-surface": "#2e3135",
+                      "surface": "#FFFFFF",
+                      "tertiary-fixed": "#ffddb0",
+                      "on-tertiary-fixed": "#281800",
+                      "on-primary": "#ffffff",
+                      "on-error-container": "#93000a",
+                      "surface-container": "#eceef3",
+                      "error": "#E24B4A",
+                      "error-tint": "#FDECEC",
+                      "secondary-tint": "#EAF3FC",
+                      "warning-tint": "#FFF6E5",
+                      "tertiary-container": "#9d6a00",
+                      "on-primary-fixed-variant": "#00513a",
+                      "surface-bright": "#f8f9ff",
+                      "outline": "#6d7a73",
+                      "surface-tint": "#006c4e",
+                      "on-secondary-fixed-variant": "#004880",
+                      "secondary-fixed": "#d2e4ff",
+                      "on-secondary-fixed": "#001c38",
+                      "surface-container-highest": "#e1e2e8",
+                      "tertiary-fixed-dim": "#fcbb4f",
+                      "secondary": "#0060a8",
+                      "inverse-on-surface": "#eff0f6"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "space-6": "24px",
+                      "space-3": "12px",
+                      "space-1": "4px",
+                      "space-4": "16px",
+                      "space-2": "8px",
+                      "space-12": "48px",
+                      "space-8": "32px"
+              },
+              "fontFamily": {
+                      "caption": [
+                              "Inter"
+                      ],
+                      "micro": [
+                              "Inter"
+                      ],
+                      "h1": [
+                              "Inter"
+                      ],
+                      "h3": [
+                              "Inter"
+                      ],
+                      "h1-mobile": [
+                              "Roboto"
+                      ],
+                      "body-emphasis": [
+                              "Inter"
+                      ],
+                      "body": [
+                              "Inter"
+                      ],
+                      "h2-mobile": [
+                              "Roboto"
+                      ],
+                      "h2": [
+                              "Inter"
+                      ],
+                      "display": [
+                              "Inter"
+                      ]
+              },
+              "fontSize": {
+                      "caption": [
+                              "14px",
+                              {
+                                      "lineHeight": "1.4",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "micro": [
+                              "12px",
+                              {
+                                      "lineHeight": "1.3",
+                                      "letterSpacing": "0.02em",
+                                      "fontWeight": "500"
+                              }
+                      ],
+                      "h1": [
+                              "30px",
+                              {
+                                      "lineHeight": "1.25",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "h3": [
+                              "20px",
+                              {
+                                      "lineHeight": "1.35",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "h1-mobile": [
+                              "28px",
+                              {
+                                      "lineHeight": "1.25",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "body-emphasis": [
+                              "16px",
+                              {
+                                      "lineHeight": "1.5",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "body": [
+                              "16px",
+                              {
+                                      "lineHeight": "1.5",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "h2-mobile": [
+                              "22px",
+                              {
+                                      "lineHeight": "1.3",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "h2": [
+                              "24px",
+                              {
+                                      "lineHeight": "1.3",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "display": [
+                              "36px",
+                              {
+                                      "lineHeight": "1.2",
+                                      "fontWeight": "700"
+                              }
+                      ]
+              }
+            },
+          },
+        }
+    </script>
+<style>
+        .map-container {
+            position: relative;
+            height: 45vh; /* Responsive height */
+            background-color: #e5e5e5; /* Fallback */
+            overflow: hidden;
+        }
+        
+        .route-line {
+            position: absolute;
+            top: 50%;
+            left: 20%;
+            width: 60%;
+            height: 4px;
+            background: linear-gradient(to right, transparent, #0060a8, transparent);
+            transform: rotate(-15deg);
+            z-index: 10;
+        }
+
+        .map-pin {
+            position: absolute;
+            z-index: 20;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+
+        .employee-dot {
+            bottom: 30%;
+            left: 20%;
+            background-color: #ffffff;
+            border: 2px solid #0060a8;
+        }
+        
+        .employee-inner-dot {
+             width: 12px;
+             height: 12px;
+             background-color: #0060a8;
+             border-radius: 50%;
+        }
+
+        .customer-pin {
+            top: 40%;
+            right: 20%;
+            background-color: #00694c;
+            color: white;
+        }
+        
+        .map-overlay-badge {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -150%);
+            z-index: 30;
+        }
+        
+        .content-card-scroll {
+             height: calc(100vh - 45vh - 64px); /* Full height minus map and header */
+             overflow-y: auto;
+             background-color: #F7F8F9;
+        }
+        
+        .bottom-actions-container {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(to top, rgba(247, 248, 249, 1) 70%, rgba(247, 248, 249, 0));
+            padding-bottom: env(safe-area-inset-bottom, 16px);
+            z-index: 40;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body-emphasis h-screen w-screen overflow-hidden flex flex-col md:hidden">
+<!-- Top App Bar (Contextual/Transactional - No Global Nav) -->
+<header class="bg-surface border-b border-surface-container-highest flex justify-between items-center w-full px-space-4 h-[64px] z-40 shrink-0">
+<button aria-label="Go back" class="w-12 h-12 flex items-center justify-center -ml-2 rounded-full hover:bg-surface-container-low transition-colors">
+<span class="material-symbols-outlined text-on-surface">arrow_back</span>
+</button>
+<div class="flex-1 px-space-2 truncate">
+<h1 class="font-h2-mobile text-h2-mobile text-on-surface truncate">Apex Manufacturing</h1>
+</div>
+<!-- Status Badge -->
+<div class="bg-secondary-tint px-space-3 py-space-1 rounded-full flex items-center justify-center shrink-0">
+<span class="font-micro text-micro text-secondary">In Progress</span>
+</div>
+</header>
+<!-- Interactive Map Area -->
+<div class="map-container relative w-full shrink-0">
+<!-- Background Map Image Placeholder -->
+<div class="absolute inset-0 bg-cover bg-center" data-alt="A clean, minimalist vector map of an industrial park area showing streets and building footprints. The map uses a light mode aesthetic with soft grey tones for streets, pale white for landmasses, and subtle light blue accents for water bodies. Designed for a professional, utilitarian interface, avoiding excessive details or vibrant colors to maintain high legibility." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDLcHK7p8laIPkxdURWwW1h7YNKlimui3f5C12108nUZ0TKrMKMG_JC-RAVmKWfDaJd9unx1LUQZEl4UHQRlShpesuj_Ju9aHbvXHwSejGiqfF6J11wCe_K-36-69p64AyPqBsQZxc5JackLbnEzMKcSd8ISrNPVVVkKYRSW3Yx-JYOaVk1Lc4WHSep73T4yhiXtdo-lCznUQ1YvukoM3uA_6p-4pXvGoXFDJvaAL5C4Je7Axt3rBwR')"></div>
+<!-- Route Line Visualization -->
+<div class="route-line"></div>
+<!-- Employee Location (Start) -->
+<div class="map-pin employee-dot">
+<div class="employee-inner-dot"></div>
+</div>
+<!-- Customer Location (Destination) -->
+<div class="map-pin customer-pin">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">location_on</span>
+</div>
+<!-- Overlay Stats Badge -->
+<div class="map-overlay-badge bg-surface px-space-3 py-space-2 rounded-lg shadow-sm border border-border-subtle flex items-center gap-space-2">
+<div class="flex flex-col">
+<span class="font-body-emphasis text-body-emphasis text-on-surface">12 mins</span>
+<span class="font-caption text-caption text-text-muted">2.4 miles</span>
+</div>
+<div class="w-px h-8 bg-border-subtle"></div>
+<span class="material-symbols-outlined text-primary text-[24px]">directions_car</span>
+</div>
+</div>
+<!-- Scrollable Content Area -->
+<main class="content-card-scroll relative w-full pt-space-4 px-space-4 pb-[140px]">
+<!-- Info Card -->
+<div class="bg-surface rounded-lg border border-border-subtle shadow-sm p-space-4 mb-space-4">
+<div class="flex items-start justify-between mb-space-4">
+<div>
+<h2 class="font-h3 text-h3 text-on-surface mb-1">Apex Manufacturing</h2>
+<div class="flex items-start gap-space-2 text-text-muted mt-space-2">
+<span class="material-symbols-outlined text-[20px] mt-0.5">location_on</span>
+<p class="font-body text-body">1400 Industrial Pkwy<br/>Sector 4, Building B</p>
+</div>
+</div>
+</div>
+<div class="h-px w-full bg-border-subtle my-space-4"></div>
+<div class="grid grid-cols-1 gap-space-4">
+<div class="flex items-center gap-space-3">
+<div class="w-10 h-10 rounded-full bg-surface-container-low flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-on-surface-variant">person</span>
+</div>
+<div>
+<p class="font-caption text-caption text-text-muted mb-0.5">Contact</p>
+<p class="font-body-emphasis text-body-emphasis text-on-surface">(555) 012-3456</p>
+</div>
+</div>
+<div class="flex items-center gap-space-3">
+<div class="w-10 h-10 rounded-full bg-primary-tint flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-primary">build</span>
+</div>
+<div>
+<p class="font-caption text-caption text-text-muted mb-0.5">Visit Type</p>
+<p class="font-body-emphasis text-body-emphasis text-on-surface">Routine Maintenance</p>
+</div>
+</div>
+<div class="flex items-center gap-space-3">
+<div class="w-10 h-10 rounded-full bg-surface-container-low flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-on-surface-variant">schedule</span>
+</div>
+<div>
+<p class="font-caption text-caption text-text-muted mb-0.5">Scheduled</p>
+<p class="font-body-emphasis text-body-emphasis text-on-surface">10:00 AM</p>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Bottom Actions (Fixed over content) -->
+<div class="bottom-actions-container px-space-4 pt-space-6 pb-space-4">
+<button class="w-full h-space-12 bg-primary hover:bg-surface-tint text-on-primary font-body-emphasis rounded-lg flex items-center justify-center gap-space-2 transition-colors mb-space-3">
+<span class="material-symbols-outlined text-[20px]">map</span>
+            Open in Google Maps
+        </button>
+<button class="w-full h-space-12 bg-transparent hover:bg-secondary-tint text-secondary font-body-emphasis rounded-lg flex items-center justify-center gap-space-2 transition-colors border border-transparent">
+<span class="material-symbols-outlined text-[20px]">call</span>
+            Call Customer
+        </button>
+</div>
+</body></html>

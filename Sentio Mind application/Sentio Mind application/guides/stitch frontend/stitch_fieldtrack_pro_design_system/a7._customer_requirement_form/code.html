@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
+<title>Customer Requirement</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Roboto:wght@600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "warning-tint": "#FFF6E5",
+                      "surface": "#FFFFFF",
+                      "on-tertiary-fixed-variant": "#614000",
+                      "border-subtle": "#EDEFF2",
+                      "surface-container-low": "#f2f3f9",
+                      "primary-container": "#008560",
+                      "on-background": "#191c20",
+                      "on-error-container": "#93000a",
+                      "on-secondary-container": "#003d6d",
+                      "secondary-fixed": "#d2e4ff",
+                      "error-container": "#ffdad6",
+                      "primary": "#00694c",
+                      "outline-variant": "#bccac1",
+                      "tertiary-fixed": "#ffddb0",
+                      "on-primary-fixed-variant": "#00513a",
+                      "text-muted": "#8A919C",
+                      "secondary-container": "#5da9fe",
+                      "on-tertiary-container": "#fffbff",
+                      "on-surface-variant": "#3d4943",
+                      "on-tertiary": "#ffffff",
+                      "surface-container": "#eceef3",
+                      "primary-fixed": "#86f8c9",
+                      "tertiary-fixed-dim": "#fcbb4f",
+                      "on-primary-fixed": "#002115",
+                      "inverse-on-surface": "#eff0f6",
+                      "inverse-surface": "#2e3135",
+                      "surface-bright": "#f8f9ff",
+                      "secondary-tint": "#EAF3FC",
+                      "on-primary": "#ffffff",
+                      "tertiary": "#7d5400",
+                      "on-secondary-fixed": "#001c38",
+                      "error": "#E24B4A",
+                      "surface-container-highest": "#e1e2e8",
+                      "surface-container-lowest": "#ffffff",
+                      "on-secondary": "#ffffff",
+                      "inverse-primary": "#68dbae",
+                      "outline": "#6d7a73",
+                      "secondary": "#0060a8",
+                      "surface-dim": "#d8dadf",
+                      "primary-tint": "#EAF7F1",
+                      "on-primary-container": "#f5fff7",
+                      "on-secondary-fixed-variant": "#004880",
+                      "error-tint": "#FDECEC",
+                      "surface-variant": "#e1e2e8",
+                      "background": "#F7F8F9",
+                      "secondary-fixed-dim": "#a1c9ff",
+                      "surface-container-high": "#e6e8ed",
+                      "on-error": "#ffffff",
+                      "surface-tint": "#006c4e",
+                      "tertiary-container": "#9d6a00",
+                      "on-surface": "#191c20",
+                      "on-tertiary-fixed": "#281800",
+                      "primary-fixed-dim": "#68dbae"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "space-6": "24px",
+                      "space-3": "12px",
+                      "space-1": "4px",
+                      "space-2": "8px",
+                      "space-12": "48px",
+                      "space-4": "16px",
+                      "space-8": "32px"
+              },
+              "fontFamily": {
+                      "body-emphasis": ["Inter"],
+                      "micro": ["Inter"],
+                      "h3": ["Inter"],
+                      "h1": ["Inter"],
+                      "caption": ["Inter"],
+                      "h1-mobile": ["Roboto"],
+                      "h2-mobile": ["Roboto"],
+                      "h2": ["Inter"],
+                      "display": ["Inter"],
+                      "body": ["Inter"]
+              },
+              "fontSize": {
+                      "body-emphasis": ["16px", {"lineHeight": "1.5", "fontWeight": "600"}],
+                      "micro": ["12px", {"lineHeight": "1.3", "letterSpacing": "0.02em", "fontWeight": "500"}],
+                      "h3": ["20px", {"lineHeight": "1.35", "fontWeight": "600"}],
+                      "h1": ["30px", {"lineHeight": "1.25", "fontWeight": "700"}],
+                      "caption": ["14px", {"lineHeight": "1.4", "fontWeight": "400"}],
+                      "h1-mobile": ["28px", {"lineHeight": "1.25", "fontWeight": "700"}],
+                      "h2-mobile": ["22px", {"lineHeight": "1.3", "fontWeight": "600"}],
+                      "h2": ["24px", {"lineHeight": "1.3", "fontWeight": "600"}],
+                      "display": ["36px", {"lineHeight": "1.2", "fontWeight": "700"}],
+                      "body": ["16px", {"lineHeight": "1.5", "fontWeight": "400"}]
+              }
+            }
+          }
+        }
+    </script>
+<style type="text/tailwindcss">
+        @layer utilities {
+            .pb-safe { padding-bottom: env(safe-area-inset-bottom, 20px); }
+            .pt-safe { padding-top: env(safe-area-inset-top, 0px); }
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-surface font-body text-body antialiased min-h-screen flex flex-col pt-safe pb-safe selection:bg-primary-tint selection:text-primary">
+<!-- Top App Bar with Progress -->
+<header class="bg-surface sticky top-0 z-40 border-b border-surface-container-highest flex justify-between items-center w-full px-space-4 h-[64px] shadow-sm">
+<button aria-label="Go back" class="text-on-surface-variant hover:bg-surface-container-low rounded-full w-space-12 h-space-12 flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-secondary focus:ring-offset-2" type="button">
+<span class="material-symbols-outlined" data-icon="arrow_back">arrow_back</span>
+</button>
+<div class="flex-1 flex flex-col items-center justify-center px-space-4">
+<h1 class="font-h2-mobile text-h2-mobile text-on-surface text-center truncate w-full">Customer Requirement</h1>
+</div>
+<div class="w-space-12 flex items-center justify-center text-on-surface-variant font-micro text-micro">
+            1 of 4
+        </div>
+<!-- Progress Bar (Absolute positioned at the bottom of the header) -->
+<div class="absolute bottom-0 left-0 w-full h-[2px] bg-surface-container-highest">
+<div aria-valuemax="100" aria-valuemin="0" aria-valuenow="25" class="h-full bg-primary" role="progressbar" style="width: 25%;"></div>
+</div>
+</header>
+<!-- Main Content -->
+<main class="flex-1 overflow-y-auto px-space-4 py-space-6 flex flex-col gap-space-6">
+<div class="flex justify-between items-center">
+<p class="font-caption text-caption text-text-muted flex items-center gap-space-1">
+<span class="material-symbols-outlined text-[16px]" data-icon="cloud_done">cloud_done</span>
+                Draft saved automatically
+            </p>
+</div>
+<form class="flex flex-col gap-space-6 pb-[100px]">
+<!-- Customer Name (Pre-filled) -->
+<div class="flex flex-col gap-space-2">
+<label class="font-body-emphasis text-body-emphasis text-on-surface" for="customerName">Customer Name</label>
+<div class="relative">
+<div class="absolute inset-y-0 left-0 pl-space-3 flex items-center pointer-events-none">
+<span class="material-symbols-outlined text-text-muted" data-icon="business">business</span>
+</div>
+<input class="w-full pl-10 pr-space-3 py-space-3 bg-surface border border-outline-variant rounded-lg font-body text-body text-on-surface focus:outline-none focus:ring-2 focus:ring-secondary focus:border-secondary transition-all min-h-[48px]" id="customerName" name="customerName" required="" type="text" value="Acme Corp"/>
+</div>
+</div>
+<!-- Contact Number -->
+<div class="flex flex-col gap-space-2">
+<label class="font-body-emphasis text-body-emphasis text-on-surface" for="contactNumber">Contact Number</label>
+<div class="relative">
+<div class="absolute inset-y-0 left-0 pl-space-3 flex items-center pointer-events-none">
+<span class="material-symbols-outlined text-text-muted" data-icon="call">call</span>
+</div>
+<input class="w-full pl-10 pr-space-3 py-space-3 bg-surface border border-outline-variant rounded-lg font-body text-body text-on-surface focus:outline-none focus:ring-2 focus:ring-secondary focus:border-secondary transition-all min-h-[48px]" id="contactNumber" name="contactNumber" placeholder="(555) 123-4567" type="tel"/>
+</div>
+</div>
+<!-- Requirement Category (Dropdown) -->
+<div class="flex flex-col gap-space-2">
+<label class="font-body-emphasis text-body-emphasis text-on-surface" for="category">Requirement Category</label>
+<div class="relative">
+<select class="appearance-none w-full px-space-3 py-space-3 bg-surface border border-outline-variant rounded-lg font-body text-body text-on-surface focus:outline-none focus:ring-2 focus:ring-secondary focus:border-secondary transition-all min-h-[48px]" id="category" name="category">
+<option disabled="" selected="" value="">Select a category</option>
+<option value="hardware">Hardware Installation</option>
+<option value="software">Software Setup</option>
+<option value="maintenance">Routine Maintenance</option>
+<option value="consultation">Consultation</option>
+</select>
+<div class="absolute inset-y-0 right-0 pr-space-3 flex items-center pointer-events-none">
+<span class="material-symbols-outlined text-text-muted" data-icon="expand_more">expand_more</span>
+</div>
+</div>
+</div>
+<!-- Requirement Description (Textarea) -->
+<div class="flex flex-col gap-space-2">
+<label class="font-body-emphasis text-body-emphasis text-on-surface flex justify-between" for="description">
+                    Requirement Description
+                    <span class="font-caption text-caption text-text-muted font-normal">Optional</span>
+</label>
+<textarea class="w-full px-space-3 py-space-3 bg-surface border border-outline-variant rounded-lg font-body text-body text-on-surface focus:outline-none focus:ring-2 focus:ring-secondary focus:border-secondary transition-all resize-none" id="description" name="description" placeholder="Detail the specific needs and context..." rows="4"></textarea>
+</div>
+<!-- Priority (Segmented Control) -->
+<div class="flex flex-col gap-space-2">
+<label class="font-body-emphasis text-body-emphasis text-on-surface">Priority Level</label>
+<div aria-label="Priority level" class="flex p-1 bg-surface-container-low rounded-lg border border-outline-variant overflow-hidden" role="group">
+<label class="flex-1 text-center cursor-pointer relative group">
+<input class="peer sr-only" name="priority" type="radio" value="low"/>
+<div class="py-space-2 font-body text-body text-on-surface-variant peer-checked:bg-surface peer-checked:text-on-surface peer-checked:shadow-sm rounded-md transition-all peer-focus-visible:ring-2 peer-focus-visible:ring-secondary min-h-[40px] flex items-center justify-center">
+                            Low
+                        </div>
+</label>
+<label class="flex-1 text-center cursor-pointer relative group">
+<input checked="" class="peer sr-only" name="priority" type="radio" value="medium"/>
+<div class="py-space-2 font-body text-body text-on-surface-variant peer-checked:bg-surface peer-checked:text-on-surface peer-checked:shadow-sm rounded-md transition-all peer-focus-visible:ring-2 peer-focus-visible:ring-secondary min-h-[40px] flex items-center justify-center">
+                            Medium
+                        </div>
+</label>
+<label class="flex-1 text-center cursor-pointer relative group">
+<input class="peer sr-only" name="priority" type="radio" value="high"/>
+<div class="py-space-2 font-body text-body text-on-surface-variant peer-checked:bg-surface peer-checked:text-on-surface peer-checked:shadow-sm rounded-md transition-all peer-focus-visible:ring-2 peer-focus-visible:ring-secondary min-h-[40px] flex items-center justify-center">
+                            High
+                        </div>
+</label>
+</div>
+</div>
+<!-- Expected Timeline -->
+<div class="flex flex-col gap-space-2">
+<label class="font-body-emphasis text-body-emphasis text-on-surface" for="timeline">Expected Timeline</label>
+<div class="relative">
+<div class="absolute inset-y-0 left-0 pl-space-3 flex items-center pointer-events-none">
+<span class="material-symbols-outlined text-text-muted" data-icon="calendar_today">calendar_today</span>
+</div>
+<input class="w-full pl-10 pr-space-3 py-space-3 bg-surface border border-outline-variant rounded-lg font-body text-body text-on-surface focus:outline-none focus:ring-2 focus:ring-secondary focus:border-secondary transition-all min-h-[48px]" id="timeline" name="timeline" type="date"/>
+</div>
+</div>
+<!-- Budget Range -->
+<div class="flex flex-col gap-space-2">
+<label class="font-body-emphasis text-body-emphasis text-on-surface" for="budget">Budget Range</label>
+<div class="relative">
+<div class="absolute inset-y-0 left-0 pl-space-3 flex items-center pointer-events-none">
+<span class="material-symbols-outlined text-text-muted" data-icon="payments">payments</span>
+</div>
+<input class="w-full pl-10 pr-space-3 py-space-3 bg-surface border border-outline-variant rounded-lg font-body text-body text-on-surface focus:outline-none focus:ring-2 focus:ring-secondary focus:border-secondary transition-all min-h-[48px]" id="budget" name="budget" placeholder="e.g. $5,000 - $10,000" type="text"/>
+</div>
+</div>
+<!-- Notes -->
+<div class="flex flex-col gap-space-2">
+<label class="font-body-emphasis text-body-emphasis text-on-surface flex justify-between" for="notes">
+                    Internal Notes
+                    <span class="font-caption text-caption text-text-muted font-normal">Optional</span>
+</label>
+<textarea class="w-full px-space-3 py-space-3 bg-surface border border-outline-variant rounded-lg font-body text-body text-on-surface focus:outline-none focus:ring-2 focus:ring-secondary focus:border-secondary transition-all resize-none bg-surface-container-lowest" id="notes" name="notes" placeholder="Private notes not visible to customer..." rows="2"></textarea>
+</div>
+</form>
+</main>
+<!-- Bottom Action Bar (Fixed) -->
+<div class="fixed bottom-0 left-0 w-full bg-surface border-t border-surface-container-highest p-space-4 pb-safe z-50 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+<button class="w-full bg-primary text-on-primary font-body-emphasis text-body-emphasis py-space-3 rounded-lg min-h-[48px] flex items-center justify-center gap-space-2 hover:opacity-90 active:scale-[0.98] transition-all focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" type="button">
+            Next Step
+            <span class="material-symbols-outlined" data-icon="arrow_forward">arrow_forward</span>
+</button>
+</div>
+</body></html>

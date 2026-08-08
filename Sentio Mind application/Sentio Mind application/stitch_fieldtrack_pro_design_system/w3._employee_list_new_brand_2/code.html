@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Employee List - FieldTrack Pro</title>
+<!-- Google Fonts: League Spartan & Libre Baskerville -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=League+Spartan:wght@400;500;600;700;800&amp;family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&amp;display=swap" rel="stylesheet"/>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Tailwind Configuration -->
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "surface-container-highest": "#e4e2e5",
+                      "primary-container": "#14213d",
+                      "surface": "#fbf8fb",
+                      "on-secondary-fixed": "#2a1700",
+                      "on-primary-fixed-variant": "#3a4664",
+                      "surface-dim": "#dbd9dc",
+                      "on-error-container": "#93000a",
+                      "on-surface-variant": "#45464d",
+                      "tertiary-fixed": "#ffddb6",
+                      "surface-tint": "#525e7d",
+                      "surface-container-lowest": "#ffffff",
+                      "error": "#ba1a1a",
+                      "surface-variant": "#e4e2e5",
+                      "on-tertiary-container": "#a58359",
+                      "secondary-fixed": "#ffddb8",
+                      "inverse-on-surface": "#f2f0f3",
+                      "primary-fixed-dim": "#b9c6ea",
+                      "on-secondary-container": "#684000",
+                      "inverse-primary": "#b9c6ea",
+                      "tertiary-fixed-dim": "#e7c092",
+                      "secondary-fixed-dim": "#ffb95f",
+                      "outline": "#75777e",
+                      "tertiary": "#130900",
+                      "on-primary": "#ffffff",
+                      "on-error": "#ffffff",
+                      "surface-bright": "#fbf8fb",
+                      "primary-fixed": "#d9e2ff",
+                      "on-surface": "#1b1b1e",
+                      "on-background": "#1b1b1e",
+                      "secondary": "#855300",
+                      "surface-container": "#f0edf0",
+                      "surface-container-high": "#eae7ea",
+                      "on-tertiary-fixed-variant": "#5c421e",
+                      "on-primary-container": "#7c89aa",
+                      "primary": "#000a24",
+                      "inverse-surface": "#303033",
+                      "on-secondary-fixed-variant": "#653e00",
+                      "on-tertiary-fixed": "#2a1800",
+                      "error-container": "#ffdad6",
+                      "tertiary-container": "#321d00",
+                      "secondary-container": "#ffa515",
+                      "on-tertiary": "#ffffff",
+                      "outline-variant": "#c5c6ce",
+                      "on-primary-fixed": "#0d1b36",
+                      "surface-container-low": "#f5f3f6",
+                      "on-secondary": "#ffffff",
+                      "background": "#fbf8fb"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.125rem",
+                      "lg": "0.25rem",
+                      "xl": "0.5rem",
+                      "full": "0.75rem"
+              },
+              "spacing": {
+                      "container-max": "1440px",
+                      "margin": "32px",
+                      "base": "8px",
+                      "gutter": "24px"
+              },
+              "fontFamily": {
+                      "headline-sm": [
+                              "League Spartan"
+                      ],
+                      "label-md": [
+                              "League Spartan"
+                      ],
+                      "button": [
+                              "League Spartan"
+                      ],
+                      "nav-link": [
+                              "League Spartan"
+                      ],
+                      "headline-lg": [
+                              "League Spartan"
+                      ],
+                      "body-md": [
+                              "Libre Baskerville"
+                      ],
+                      "headline-md": [
+                              "League Spartan"
+                      ],
+                      "body-lg": [
+                              "Libre Baskerville"
+                      ],
+                      "headline-lg-mobile": [
+                              "League Spartan"
+                      ]
+              },
+              "fontSize": {
+                      "headline-sm": [
+                              "20px",
+                              {
+                                      "lineHeight": "1.3",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "label-md": [
+                              "14px",
+                              {
+                                      "lineHeight": "1",
+                                      "letterSpacing": "0.05em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "button": [
+                              "16px",
+                              {
+                                      "lineHeight": "1",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "nav-link": [
+                              "15px",
+                              {
+                                      "lineHeight": "1",
+                                      "fontWeight": "500"
+                              }
+                      ],
+                      "headline-lg": [
+                              "32px",
+                              {
+                                      "lineHeight": "1.2",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "body-md": [
+                              "16px",
+                              {
+                                      "lineHeight": "1.6",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "headline-md": [
+                              "24px",
+                              {
+                                      "lineHeight": "1.3",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "body-lg": [
+                              "18px",
+                              {
+                                      "lineHeight": "1.6",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "headline-lg-mobile": [
+                              "24px",
+                              {
+                                      "lineHeight": "1.2",
+                                      "fontWeight": "700"
+                              }
+                      ]
+              }
+      },
+          },
+        }
+    </script>
+<style>
+        /* Hide scrollbar for cleaner table view while keeping functionality */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface font-body-md antialiased overflow-hidden">
+<!-- SideNavBar (Generated from JSON) -->
+<aside class="bg-surface dark:bg-on-background font-body text-body fixed left-0 top-0 h-full w-[240px] border-r border-border-subtle dark:border-outline-variant flat no shadows flex flex-col py-space-6 px-space-4 z-30 font-body-md shadow-[1px_0_0_0_#D1D1D1]">
+<!-- Brand / Header -->
+<div class="flex items-center gap-3 px-4 py-6 mb-4">
+<div class="w-10 h-10 rounded-lg bg-primary flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-on-primary" style="font-variation-settings: 'FILL' 1;">explore</span>
+</div>
+<div>
+<h1 class="font-h3 text-h3 font-bold text-primary dark:text-primary-fixed font-headline-md tracking-tight leading-none">FieldTrack Pro</h1>
+<p class="text-xs text-on-surface-variant font-label-md mt-1">Field Ops Admin</p>
+</div>
+</div>
+<!-- Navigation Links -->
+<nav class="flex-1 flex flex-col gap-1 px-2">
+<!-- Inactive Tab -->
+<a class="flex items-center gap-3 px-3 py-3 rounded-lg text-on-surface-variant dark:text-surface-variant hover:bg-surface-container-low dark:hover:bg-inverse-surface hover:bg-surface-container-low dark:hover:bg-inverse-surface transition-colors duration-200 scale-98 active:scale-95 transition-all cursor-pointer font-nav-link" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+<span>Dashboard</span>
+</a>
+<!-- Active Tab (Matched intent to 'Employee List') -->
+<a class="flex items-center gap-3 px-3 py-3 rounded-lg bg-primary-tint dark:bg-on-primary-fixed-variant text-primary dark:text-primary-fixed font-body-emphasis border-r-4 border-primary hover:bg-surface-container-low dark:hover:bg-inverse-surface transition-colors duration-200 scale-98 active:scale-95 transition-all cursor-pointer font-nav-link bg-surface-container-high" href="#" style="border-right-color: #FCA311;">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1; color: #FCA311;">badge</span>
+<span class="font-bold text-primary">Employees</span>
+</a>
+<!-- Inactive Tabs -->
+<a class="flex items-center gap-3 px-3 py-3 rounded-lg text-on-surface-variant dark:text-surface-variant hover:bg-surface-container-low dark:hover:bg-inverse-surface hover:bg-surface-container-low dark:hover:bg-inverse-surface transition-colors duration-200 scale-98 active:scale-95 transition-all cursor-pointer font-nav-link" href="#">
+<span class="material-symbols-outlined">group</span>
+<span>Customers</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-3 rounded-lg text-on-surface-variant dark:text-surface-variant hover:bg-surface-container-low dark:hover:bg-inverse-surface hover:bg-surface-container-low dark:hover:bg-inverse-surface transition-colors duration-200 scale-98 active:scale-95 transition-all cursor-pointer font-nav-link" href="#">
+<span class="material-symbols-outlined">location_on</span>
+<span>Visits</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-3 rounded-lg text-on-surface-variant dark:text-surface-variant hover:bg-surface-container-low dark:hover:bg-inverse-surface hover:bg-surface-container-low dark:hover:bg-inverse-surface transition-colors duration-200 scale-98 active:scale-95 transition-all cursor-pointer font-nav-link" href="#">
+<span class="material-symbols-outlined">assessment</span>
+<span>Reports</span>
+</a>
+</nav>
+<!-- Bottom Actions -->
+<div class="mt-auto px-2 pb-4 pt-6 border-t border-outline-variant">
+<a class="flex items-center gap-3 px-3 py-3 rounded-lg text-on-surface-variant dark:text-surface-variant hover:bg-surface-container-low dark:hover:bg-inverse-surface hover:bg-surface-container-low dark:hover:bg-inverse-surface transition-colors duration-200 scale-98 active:scale-95 transition-all cursor-pointer font-nav-link" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span>Settings</span>
+</a>
+</div>
+</aside>
+<!-- TopNavBar (Generated from JSON) -->
+<header class="bg-surface dark:bg-on-background font-body text-body fixed top-0 right-0 w-[calc(100%-240px)] h-16 border-b border-border-subtle dark:border-outline-variant flat no shadows flex justify-between items-center px-space-6 ml-[240px] px-6 z-20 font-body-md bg-surface-container-lowest shadow-[0_1px_0_0_#D1D1D1]">
+<!-- Left: Search (based on search_bar: "on_left") -->
+<div class="flex-1 flex items-center">
+<div class="relative w-full max-w-md">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline">search</span>
+<input class="w-full pl-10 pr-4 py-2 bg-surface rounded-md border border-outline-variant text-on-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary font-body-md transition-colors placeholder:text-outline" placeholder="Search employees, roles, or locations..." type="text"/>
+</div>
+</div>
+<!-- Right: Actions -->
+<div class="flex items-center gap-6">
+<!-- Trailing Icon Action -->
+<button class="relative p-2 text-on-surface-variant dark:text-surface-variant hover:text-primary dark:hover:text-primary-fixed transition-colors cursor-pointer transition-transform duration-200 hover:bg-surface-container rounded-full">
+<span class="material-symbols-outlined">notifications</span>
+<span class="absolute top-1.5 right-1.5 w-2 h-2 bg-error rounded-full border border-surface-container-lowest"></span>
+</button>
+<!-- Secondary Action -->
+<button class="px-4 py-2 font-button uppercase text-primary border border-primary rounded hover:bg-surface-container transition-colors tracking-wide text-sm">
+                Export
+            </button>
+<!-- Primary Action / Profile -->
+<div class="flex items-center gap-3 pl-4 border-l border-outline-variant cursor-pointer transition-transform duration-200 hover:opacity-80">
+<img alt="Admin User Profile" class="w-9 h-9 rounded-full object-cover border border-outline-variant shadow-sm" data-alt="A polished headshot of an executive administrator, male, early 40s, wearing business casual attire. He is positioned in a clean, minimalist corporate setting with soft natural light streaming from a window out of frame. The image exudes authority and precision, tailored for the top navigation bar of a professional field operations dashboard." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAIXlWEgSHvni6MMhnqZMK0GsNVn9fC_8tECiQ5CD9noYNW0qW7PivKwauwCiMJ7zsNMY5aNU62Q8-X-sXb70nscvwLvU13jPjsP-GCWR_-YyrgbwZ8DJawo20cqWRug6JxQzn9ZrOabVKLxNPPV3M_WmoLk4vrfTbMq5BCVccbiXV8qcS_EtlQhvkDMYNTPRJePLlBzLm-guPlRDp_Qbv1yK1MCNi750s6k6wJB6Ryg2uIbfVvZE4D"/>
+<div class="hidden md:block">
+<p class="font-label-md text-on-surface leading-none mb-1">Alex Mercer</p>
+<p class="text-xs text-outline font-nav-link leading-none">Profile</p>
+</div>
+</div>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="ml-[240px] pt-16 h-screen w-[calc(100%-240px)] flex flex-col bg-background">
+<!-- Page Header -->
+<div class="px-margin py-8 flex justify-between items-end shrink-0">
+<div>
+<nav class="flex items-center gap-2 text-sm font-nav-link text-outline mb-2">
+<a class="hover:text-primary transition-colors" href="#">FieldTrack Pro</a>
+<span class="material-symbols-outlined text-sm">chevron_right</span>
+<span class="text-on-surface font-medium">Employees</span>
+</nav>
+<h2 class="font-headline-lg text-headline-lg text-primary">Employee Directory</h2>
+<p class="font-body-md text-on-surface-variant mt-2 max-w-2xl">Manage your field operations team, assign roles, and monitor current status across all active regions.</p>
+</div>
+<!-- Primary Action Button -->
+<button class="bg-secondary-container text-tertiary font-button uppercase px-6 py-3 rounded shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 flex items-center gap-2">
+<span class="material-symbols-outlined text-lg">add</span>
+                Add Employee
+            </button>
+</div>
+<!-- Full-Page Data Table Container -->
+<div class="flex-1 px-margin pb-margin overflow-hidden flex flex-col">
+<!-- Filter Bar (Contextual addition for data-dense views) -->
+<div class="bg-surface-container-lowest border border-outline-variant border-b-0 rounded-t-xl p-4 flex gap-4 items-center shrink-0 shadow-[0_4px_12px_rgba(0,0,0,0.02)] relative z-10">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-outline">filter_list</span>
+<span class="font-label-md text-on-surface uppercase tracking-wide">Filters:</span>
+</div>
+<select class="bg-surface border border-outline-variant rounded px-3 py-1.5 font-body-md text-sm text-on-surface focus:border-primary focus:ring-1 focus:ring-primary outline-none">
+<option>All Roles</option>
+<option>Technician</option>
+<option>Supervisor</option>
+<option>Dispatcher</option>
+</select>
+<select class="bg-surface border border-outline-variant rounded px-3 py-1.5 font-body-md text-sm text-on-surface focus:border-primary focus:ring-1 focus:ring-primary outline-none">
+<option>All Statuses</option>
+<option>Active</option>
+<option>Inactive</option>
+</select>
+<div class="ml-auto text-sm font-label-md text-outline">
+                    Showing 124 Employees
+                </div>
+</div>
+<!-- Scrollable Table Area -->
+<div class="flex-1 overflow-auto no-scrollbar bg-surface-container-lowest border border-outline-variant rounded-b-xl shadow-[0_4px_12px_rgba(0,0,0,0.02)] relative">
+<table class="w-full text-left border-collapse min-w-[1000px]">
+<!-- Sticky Navy Headers with Spartan Typography -->
+<thead class="sticky top-0 z-20">
+<tr class="bg-primary text-on-primary">
+<th class="px-6 py-4 font-headline-sm text-sm uppercase tracking-widest font-bold whitespace-nowrap w-16">Profile</th>
+<th class="px-6 py-4 font-headline-sm text-sm uppercase tracking-widest font-bold whitespace-nowrap">Employee Name</th>
+<th class="px-6 py-4 font-headline-sm text-sm uppercase tracking-widest font-bold whitespace-nowrap">Role &amp; Speciality</th>
+<th class="px-6 py-4 font-headline-sm text-sm uppercase tracking-widest font-bold whitespace-nowrap">Region</th>
+<th class="px-6 py-4 font-headline-sm text-sm uppercase tracking-widest font-bold whitespace-nowrap">Status</th>
+<th class="px-6 py-4 font-headline-sm text-sm uppercase tracking-widest font-bold whitespace-nowrap text-right">Actions</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-outline-variant text-on-surface">
+<!-- Row 1: Active -->
+<tr class="bg-surface-container-lowest hover:bg-surface-container-low transition-colors group cursor-pointer">
+<td class="px-6 py-4">
+<img alt="Sarah Jenkins" class="w-10 h-10 rounded-full object-cover border border-outline-variant" data-alt="A professional headshot of a female field technician in her late 20s. She is wearing a branded high-visibility vest over a navy polo shirt. The background is a slightly blurred industrial warehouse setting with bright, cool overhead lighting. The composition is clean, modern, and aligned with a corporate light-mode dashboard aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDlTk9X7YAerf3Cew-30B-ORHFT66HL7kVoxA6e3ufuuuSUcNagWA8Sfz3UpWrTRuolbgV3cuPBmJzYU2qkL2F7YiWDJK1GaJkFljNm3JUqmkzOiKEv8FgnKpIYOjorpXszHtTgR0etJBW-LVfhA0Qp3nTDe--nyq-fOL8ZNdiVtRi_QZy8s8Zm56HfzthcUBofVTQoEArUsAvgPkpdgn-a_h7RXSzI0TpAxCjUrdMGJ2Deo7_1nnT6"/>
+</td>
+<td class="px-6 py-4">
+<p class="font-label-md text-base text-primary">Sarah Jenkins</p>
+<p class="text-sm text-on-surface-variant font-body-md mt-0.5">ID: EMP-8492</p>
+</td>
+<td class="px-6 py-4">
+<p class="font-medium">Senior Technician</p>
+<p class="text-sm text-on-surface-variant">HVAC Systems</p>
+</td>
+<td class="px-6 py-4">
+<div class="flex items-center gap-1.5 text-on-surface-variant">
+<span class="material-symbols-outlined text-[18px]">location_on</span>
+<span>Northwest District</span>
+</div>
+</td>
+<td class="px-6 py-4">
+<!-- Brand Semantic Active Badge -->
+<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-label-md bg-secondary-fixed text-on-secondary-fixed border border-secondary uppercase tracking-wider">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>
+                                    Active
+                                </span>
+</td>
+<td class="px-6 py-4 text-right">
+<div class="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="p-1.5 text-outline hover:text-primary transition-colors rounded hover:bg-surface-variant" title="Edit">
+<span class="material-symbols-outlined text-[20px]">edit</span>
+</button>
+<button class="p-1.5 text-outline hover:text-error transition-colors rounded hover:bg-error-container" title="Deactivate">
+<span class="material-symbols-outlined text-[20px]">block</span>
+</button>
+</div>
+</td>
+</tr>
+<!-- Row 2: Zebra Striping (bg-[#F9F9F9] equivalent in config is surface) -->
+<tr class="bg-surface hover:bg-surface-container-low transition-colors group cursor-pointer">
+<td class="px-6 py-4">
+<div class="w-10 h-10 rounded-full bg-surface-tint text-on-primary flex items-center justify-center font-headline-sm border border-outline-variant">
+                                    MR
+                                </div>
+</td>
+<td class="px-6 py-4">
+<p class="font-label-md text-base text-primary">Marcus Rodriguez</p>
+<p class="text-sm text-on-surface-variant font-body-md mt-0.5">ID: EMP-8493</p>
+</td>
+<td class="px-6 py-4">
+<p class="font-medium">Dispatcher</p>
+<p class="text-sm text-on-surface-variant">Logistics Core</p>
+</td>
+<td class="px-6 py-4">
+<div class="flex items-center gap-1.5 text-on-surface-variant">
+<span class="material-symbols-outlined text-[18px]">location_on</span>
+<span>Central Hub</span>
+</div>
+</td>
+<td class="px-6 py-4">
+<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-label-md bg-secondary-fixed text-on-secondary-fixed border border-secondary uppercase tracking-wider">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>
+                                    Active
+                                </span>
+</td>
+<td class="px-6 py-4 text-right">
+<div class="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="p-1.5 text-outline hover:text-primary transition-colors rounded hover:bg-surface-variant" title="Edit">
+<span class="material-symbols-outlined text-[20px]">edit</span>
+</button>
+<button class="p-1.5 text-outline hover:text-error transition-colors rounded hover:bg-error-container" title="Deactivate">
+<span class="material-symbols-outlined text-[20px]">block</span>
+</button>
+</div>
+</td>
+</tr>
+<!-- Row 3: Inactive -->
+<tr class="bg-surface-container-lowest hover:bg-surface-container-low transition-colors group cursor-pointer opacity-75">
+<td class="px-6 py-4">
+<img alt="David Chen" class="w-10 h-10 rounded-full object-cover border border-outline-variant grayscale" data-alt="A corporate portrait of an older male logistics supervisor in his 50s. He wears a standard grey uniform shirt. The lighting is slightly muted and flat, capturing a neutral, professional expression. The background is a plain, light grey studio setting, ensuring the focus remains entirely on the subject for a professional staff directory." src="https://lh3.googleusercontent.com/aida-public/AB6AXuD-r7k4rZUBbadwNy9DkZIQd8LEAbPyNH5pasEgickYY0CGDZDxYhusNyp0DKvICqxnA3W1gvw5_OSgB2DOC7w8Q4LEmmmRh46hD2MYzpHm-mtAfLAqEZThmCu1_lUq346d_TM3JvMYWNln486B4egOn42h0wUMUxBDGFZOdKjmA5KpZ14-1T8g5tdXnXFLbhAha11dzj2hwiBAko9XEHBeRX5ep9UucMYW_6fYu26DLYIAxxpjUiL0"/>
+</td>
+<td class="px-6 py-4">
+<p class="font-label-md text-base text-on-surface-variant">David Chen</p>
+<p class="text-sm text-outline font-body-md mt-0.5">ID: EMP-7102</p>
+</td>
+<td class="px-6 py-4 text-on-surface-variant">
+<p class="font-medium">Field Supervisor</p>
+<p class="text-sm text-outline">Electrical</p>
+</td>
+<td class="px-6 py-4">
+<div class="flex items-center gap-1.5 text-outline">
+<span class="material-symbols-outlined text-[18px]">location_on</span>
+<span>East Coast Division</span>
+</div>
+</td>
+<td class="px-6 py-4">
+<!-- Brand Semantic Inactive Badge -->
+<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-label-md bg-surface-container-high text-on-surface-variant border border-outline uppercase tracking-wider">
+<span class="w-1.5 h-1.5 rounded-full bg-outline"></span>
+                                    Inactive
+                                </span>
+</td>
+<td class="px-6 py-4 text-right">
+<div class="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="p-1.5 text-outline hover:text-primary transition-colors rounded hover:bg-surface-variant" title="View Record">
+<span class="material-symbols-outlined text-[20px]">visibility</span>
+</button>
+</div>
+</td>
+</tr>
+<!-- Row 4: Zebra Striping -->
+<tr class="bg-surface hover:bg-surface-container-low transition-colors group cursor-pointer">
+<td class="px-6 py-4">
+<img alt="Elena Rostova" class="w-10 h-10 rounded-full object-cover border border-outline-variant" data-alt="A bright, high-quality headshot of a young female project manager in her early 30s. She is wearing a smart-casual navy blouse. She stands against an out-of-focus background of a modern, brightly lit office interior with structural steel elements visible. The lighting is crisp and even, suitable for an enterprise web application user profile." src="https://lh3.googleusercontent.com/aida-public/AB6AXuASk9OYlg99mfrkIbK7K6Pcl7NWQbLlGFRr2MiMZ_6Oyc0nBOn4s-eE0RtzV5Wi4qc-f8p0VnuVc508fOZppyd4t4OilRjdi5qOG__nPKOe_SKF8fK-vvdRHo8C-yPeKIFnQ_mcJlv9XAUe9PoNfd--7UZir4JEf1nyJ7TcyIto-QlMucb5YldBZiXHnHM1IkX_VbEQjwBBy2cCGOOsJmJy3uQyvll8_0Ndc8feyGu_5asffQk4mXGS"/>
+</td>
+<td class="px-6 py-4">
+<p class="font-label-md text-base text-primary">Elena Rostova</p>
+<p class="text-sm text-on-surface-variant font-body-md mt-0.5">ID: EMP-8511</p>
+</td>
+<td class="px-6 py-4">
+<p class="font-medium">Project Manager</p>
+<p class="text-sm text-on-surface-variant">Commercial Installs</p>
+</td>
+<td class="px-6 py-4">
+<div class="flex items-center gap-1.5 text-on-surface-variant">
+<span class="material-symbols-outlined text-[18px]">location_on</span>
+<span>Southwest District</span>
+</div>
+</td>
+<td class="px-6 py-4">
+<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-label-md bg-secondary-fixed text-on-secondary-fixed border border-secondary uppercase tracking-wider">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>
+                                    Active
+                                </span>
+</td>
+<td class="px-6 py-4 text-right">
+<div class="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="p-1.5 text-outline hover:text-primary transition-colors rounded hover:bg-surface-variant" title="Edit">
+<span class="material-symbols-outlined text-[20px]">edit</span>
+</button>
+<button class="p-1.5 text-outline hover:text-error transition-colors rounded hover:bg-error-container" title="Deactivate">
+<span class="material-symbols-outlined text-[20px]">block</span>
+</button>
+</div>
+</td>
+</tr>
+<!-- Row 5: Active -->
+<tr class="bg-surface-container-lowest hover:bg-surface-container-low transition-colors group cursor-pointer">
+<td class="px-6 py-4">
+<div class="w-10 h-10 rounded-full bg-primary-fixed-dim text-primary flex items-center justify-center font-headline-sm border border-outline-variant">
+                                    JW
+                                </div>
+</td>
+<td class="px-6 py-4">
+<p class="font-label-md text-base text-primary">James Wilson</p>
+<p class="text-sm text-on-surface-variant font-body-md mt-0.5">ID: EMP-8622</p>
+</td>
+<td class="px-6 py-4">
+<p class="font-medium">Junior Technician</p>
+<p class="text-sm text-on-surface-variant">Plumbing</p>
+</td>
+<td class="px-6 py-4">
+<div class="flex items-center gap-1.5 text-on-surface-variant">
+<span class="material-symbols-outlined text-[18px]">location_on</span>
+<span>Northwest District</span>
+</div>
+</td>
+<td class="px-6 py-4">
+<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-label-md bg-secondary-fixed text-on-secondary-fixed border border-secondary uppercase tracking-wider">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>
+                                    Active
+                                </span>
+</td>
+<td class="px-6 py-4 text-right">
+<div class="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="p-1.5 text-outline hover:text-primary transition-colors rounded hover:bg-surface-variant" title="Edit">
+<span class="material-symbols-outlined text-[20px]">edit</span>
+</button>
+<button class="p-1.5 text-outline hover:text-error transition-colors rounded hover:bg-error-container" title="Deactivate">
+<span class="material-symbols-outlined text-[20px]">block</span>
+</button>
+</div>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Pagination / Footer -->
+<div class="bg-surface-container-lowest border border-outline-variant border-t-0 rounded-b-xl p-4 flex justify-between items-center shrink-0">
+<span class="text-sm font-body-md text-outline">Showing 1 to 5 of 124 entries</span>
+<div class="flex items-center gap-1">
+<button class="w-8 h-8 flex items-center justify-center rounded border border-outline-variant text-outline hover:bg-surface hover:text-primary transition-colors disabled:opacity-50" disabled="">
+<span class="material-symbols-outlined text-[20px]">chevron_left</span>
+</button>
+<button class="w-8 h-8 flex items-center justify-center rounded bg-primary text-on-primary font-label-md text-sm">1</button>
+<button class="w-8 h-8 flex items-center justify-center rounded border border-outline-variant text-on-surface hover:bg-surface hover:text-primary transition-colors font-label-md text-sm">2</button>
+<button class="w-8 h-8 flex items-center justify-center rounded border border-outline-variant text-on-surface hover:bg-surface hover:text-primary transition-colors font-label-md text-sm">3</button>
+<span class="px-2 text-outline">...</span>
+<button class="w-8 h-8 flex items-center justify-center rounded border border-outline-variant text-on-surface hover:bg-surface hover:text-primary transition-colors font-label-md text-sm">25</button>
+<button class="w-8 h-8 flex items-center justify-center rounded border border-outline-variant text-outline hover:bg-surface hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[20px]">chevron_right</span>
+</button>
+</div>
+</div>
+</div>
+</main>
+</body></html>

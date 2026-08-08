@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+
+<html class="h-full" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>FieldTrack Pro - Visit Status Board</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=League+Spartan:wght@400;500;600;700;800&amp;family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface-container-highest": "#e4e2e5",
+                        "primary-container": "#14213d",
+                        "surface": "#fbf8fb",
+                        "on-secondary-fixed": "#2a1700",
+                        "on-primary-fixed-variant": "#3a4664",
+                        "surface-dim": "#dbd9dc",
+                        "on-error-container": "#93000a",
+                        "on-surface-variant": "#45464d",
+                        "tertiary-fixed": "#ffddb6",
+                        "surface-tint": "#525e7d",
+                        "surface-container-lowest": "#ffffff",
+                        "error": "#ba1a1a",
+                        "surface-variant": "#e4e2e5",
+                        "on-tertiary-container": "#a58359",
+                        "secondary-fixed": "#ffddb8",
+                        "inverse-on-surface": "#f2f0f3",
+                        "primary-fixed-dim": "#b9c6ea",
+                        "on-secondary-container": "#684000",
+                        "inverse-primary": "#b9c6ea",
+                        "tertiary-fixed-dim": "#e7c092",
+                        "secondary-fixed-dim": "#ffb95f",
+                        "outline": "#75777e",
+                        "tertiary": "#130900",
+                        "on-primary": "#ffffff",
+                        "on-error": "#ffffff",
+                        "surface-bright": "#fbf8fb",
+                        "primary-fixed": "#d9e2ff",
+                        "on-surface": "#1b1b1e",
+                        "on-background": "#1b1b1e",
+                        "secondary": "#855300",
+                        "surface-container": "#f0edf0",
+                        "surface-container-high": "#eae7ea",
+                        "on-tertiary-fixed-variant": "#5c421e",
+                        "on-primary-container": "#7c89aa",
+                        "primary": "#000a24",
+                        "inverse-surface": "#303033",
+                        "on-secondary-fixed-variant": "#653e00",
+                        "on-tertiary-fixed": "#2a1800",
+                        "error-container": "#ffdad6",
+                        "tertiary-container": "#321d00",
+                        "secondary-container": "#ffa515",
+                        "on-tertiary": "#ffffff",
+                        "outline-variant": "#c5c6ce",
+                        "on-primary-fixed": "#0d1b36",
+                        "surface-container-low": "#f5f3f6",
+                        "on-secondary": "#ffffff",
+                        "background": "#fbf8fb"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "container-max": "1440px",
+                        "margin": "32px",
+                        "base": "8px",
+                        "gutter": "24px"
+                    },
+                    "fontFamily": {
+                        "headline-sm": ["League Spartan"],
+                        "label-md": ["League Spartan"],
+                        "button": ["League Spartan"],
+                        "nav-link": ["League Spartan"],
+                        "headline-lg": ["League Spartan"],
+                        "body-md": ["Libre Baskerville"],
+                        "headline-md": ["League Spartan"],
+                        "body-lg": ["Libre Baskerville"],
+                        "headline-lg-mobile": ["League Spartan"]
+                    },
+                    "fontSize": {
+                        "headline-sm": ["20px", { "lineHeight": "1.3", "fontWeight": "600" }],
+                        "label-md": ["14px", { "lineHeight": "1", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "button": ["16px", { "lineHeight": "1", "fontWeight": "700" }],
+                        "nav-link": ["15px", { "lineHeight": "1", "fontWeight": "500" }],
+                        "headline-lg": ["32px", { "lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "body-md": ["16px", { "lineHeight": "1.6", "fontWeight": "400" }],
+                        "headline-md": ["24px", { "lineHeight": "1.3", "fontWeight": "600" }],
+                        "body-lg": ["18px", { "lineHeight": "1.6", "fontWeight": "400" }],
+                        "headline-lg-mobile": ["24px", { "lineHeight": "1.2", "fontWeight": "700" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .kanban-scroll::-webkit-scrollbar {
+            height: 8px;
+            width: 8px;
+        }
+        .kanban-scroll::-webkit-scrollbar-track {
+            background: #f0edf0; 
+            border-radius: 4px;
+        }
+        .kanban-scroll::-webkit-scrollbar-thumb {
+            background: #c5c6ce; 
+            border-radius: 4px;
+        }
+        .kanban-scroll::-webkit-scrollbar-thumb:hover {
+            background: #75777e; 
+        }
+        /* Hide scrollbar for columns but allow scroll */
+        .column-scroll {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        .column-scroll::-webkit-scrollbar {
+            display: none;
+        }
+    </style>
+</head>
+<body class="bg-background h-full text-on-background font-body-md text-body-md overflow-hidden">
+<!-- SideNavBar -->
+<nav class="fixed left-0 top-0 h-full w-[240px] bg-primary dark:bg-on-background border-r border-[#D1D1D1] dark:border-outline-variant flex flex-col z-20">
+<div class="h-16 flex items-center px-6 border-b border-[#D1D1D1] dark:border-outline-variant">
+<h1 class="font-headline-md text-headline-md font-bold text-on-primary">FieldTrack Pro</h1>
+</div>
+<div class="px-6 py-4">
+<p class="font-label-md text-label-md text-primary-fixed-dim uppercase tracking-wider">Field Ops Admin</p>
+</div>
+<div class="flex flex-col flex-1 px-4 py-2 space-y-2">
+<a class="flex items-center px-4 py-3 rounded-lg text-on-primary hover:bg-[#14213d] transition-colors duration-200" href="#">
+<span class="material-symbols-outlined mr-4">dashboard</span>
+<span class="font-nav-link text-nav-link">Dashboard</span>
+</a>
+<a class="flex items-center px-4 py-3 rounded-lg text-on-primary hover:bg-[#14213d] transition-colors duration-200" href="#">
+<span class="material-symbols-outlined mr-4">badge</span>
+<span class="font-nav-link text-nav-link">Employees</span>
+</a>
+<a class="flex items-center px-4 py-3 rounded-lg text-on-primary hover:bg-[#14213d] transition-colors duration-200" href="#">
+<span class="material-symbols-outlined mr-4">group</span>
+<span class="font-nav-link text-nav-link">Customers</span>
+</a>
+<!-- Active State for Visits -->
+<a class="flex items-center px-4 py-3 text-secondary-container bg-primary-container font-body-emphasis border-l-4 border-secondary-container" href="#">
+<span class="material-symbols-outlined mr-4" style="font-variation-settings: 'FILL' 1;">location_on</span>
+<span class="font-nav-link text-nav-link font-bold">Visits</span>
+</a>
+<a class="flex items-center px-4 py-3 rounded-lg text-on-primary hover:bg-[#14213d] transition-colors duration-200" href="#">
+<span class="material-symbols-outlined mr-4">assessment</span>
+<span class="font-nav-link text-nav-link">Reports</span>
+</a>
+<a class="flex items-center px-4 py-3 rounded-lg text-on-primary hover:bg-[#14213d] transition-colors duration-200 mt-auto mb-4" href="#">
+<span class="material-symbols-outlined mr-4">settings</span>
+<span class="font-nav-link text-nav-link">Settings</span>
+</a>
+</div>
+</nav>
+<!-- TopNavBar -->
+<header class="fixed top-0 right-0 w-[calc(100%-240px)] h-16 bg-surface-container-lowest border-b border-[#D1D1D1] flex justify-between items-center px-8 z-10">
+<div class="flex items-center w-1/3">
+<div class="relative w-full max-w-md">
+<span class="material-symbols-outlined absolute left-3 top-1/2 transform -translate-y-1/2 text-outline">search</span>
+<input class="w-full pl-10 pr-4 py-2 border border-[#D1D1D1] rounded focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary font-body-md text-body-md bg-surface-bright" placeholder="Search visits, locations, tech..." type="text"/>
+</div>
+</div>
+<div class="flex items-center space-x-6">
+<button class="text-on-surface-variant hover:text-primary transition-colors relative">
+<span class="material-symbols-outlined">notifications</span>
+<span class="absolute top-0 right-0 block h-2 w-2 rounded-full bg-secondary-container ring-2 ring-surface-container-lowest"></span>
+</button>
+<button class="font-button text-button uppercase text-primary border border-primary px-4 py-2 rounded hover:bg-surface-container-low transition-colors">
+                Export
+            </button>
+<button class="flex items-center space-x-2 focus:outline-none">
+<img alt="Admin User Profile" class="w-10 h-10 rounded-full border border-[#D1D1D1] object-cover" data-alt="A small circular profile picture of an industrial field ops manager wearing a hard hat, plain background, professional lighting, corporate modern aesthetic, sharp focus." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCGifBM2QSRPxypgWU3HlpK5GB7srtuP_gMmmQ8X0z6u8vUqmbzH4s4wwkunxPec-5H1hvyXqEdcnZCqIcPOZtg_wV37SGKstvtk-Ruth6Yvc-mheYDYf0erFW8s4J-Id0o_C_aq2amoFLPYMM6DT6rRFAISpgTohDdcB2UVFbHeSggXOnkWXNdnrE-j7rjvLjqGRIZfMJSQOUy0Shewd8updffUOYaHh28F4Ccpr8uc_R3jLOkFAAn"/>
+<span class="material-symbols-outlined text-on-surface-variant">arrow_drop_down</span>
+</button>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="ml-[240px] mt-16 h-[calc(100vh-64px)] bg-[#E5E5E5] flex flex-col">
+<!-- Page Header -->
+<div class="px-8 py-6 flex justify-between items-center bg-surface-container-lowest border-b border-[#D1D1D1] shrink-0">
+<div>
+<h2 class="font-headline-lg text-headline-lg text-primary">Visit Status Board</h2>
+<p class="font-body-md text-body-md text-on-surface-variant mt-1">Manage and track daily field operations workflow.</p>
+</div>
+<div class="flex space-x-4">
+<button class="font-button text-button uppercase bg-secondary-container text-[#000000] px-6 py-3 rounded shadow-[0px_4px_12px_rgba(0,0,0,0.08)] hover:bg-[#e69312] transition-colors">
+                    New Visit
+                </button>
+</div>
+</div>
+<!-- Kanban Board Area -->
+<div class="flex-1 overflow-x-auto kanban-scroll p-8">
+<div class="flex space-x-6 h-full min-w-max pb-4">
+<!-- Column: Pending -->
+<div class="w-80 flex flex-col bg-surface-container-lowest border border-[#D1D1D1] rounded-lg">
+<div class="px-4 py-3 border-b border-[#D1D1D1] bg-surface-bright rounded-t-lg flex justify-between items-center">
+<h3 class="font-headline-sm text-headline-sm text-primary flex items-center">
+<span class="w-3 h-3 rounded-full bg-outline-variant mr-2"></span>
+                            Pending
+                        </h3>
+<span class="font-label-md text-label-md text-on-surface-variant bg-surface-container px-2 py-1 rounded">3</span>
+</div>
+<div class="flex-1 overflow-y-auto column-scroll p-3 space-y-3 bg-[#fbf8fb]">
+<!-- Card -->
+<div class="bg-surface-container-lowest border border-[#D1D1D1] rounded p-4 hover:shadow-[0px_4px_12px_rgba(0,0,0,0.08)] transition-shadow cursor-grab">
+<div class="flex justify-between items-start mb-2">
+<span class="font-label-md text-label-md text-primary-container bg-primary-fixed px-2 py-1 rounded border border-primary-fixed-dim uppercase">HVAC Install</span>
+<span class="material-symbols-outlined text-on-surface-variant text-sm">more_horiz</span>
+</div>
+<h4 class="font-headline-sm text-headline-sm text-primary mb-1">Acme Corp HQ</h4>
+<p class="font-body-md text-sm text-on-surface-variant mb-4 flex items-center">
+<span class="material-symbols-outlined text-[16px] mr-1">schedule</span> Today, 14:00
+                            </p>
+<div class="border-t border-[#D1D1D1] pt-3 flex justify-between items-center">
+<div class="flex items-center space-x-2">
+<div class="w-6 h-6 rounded-full bg-surface-container-high flex items-center justify-center text-xs font-bold text-primary">JS</div>
+<span class="font-body-md text-sm text-on-surface-variant">J. Smith</span>
+</div>
+</div>
+</div>
+<!-- Card -->
+<div class="bg-surface-container-lowest border border-[#D1D1D1] rounded p-4 hover:shadow-[0px_4px_12px_rgba(0,0,0,0.08)] transition-shadow cursor-grab">
+<div class="flex justify-between items-start mb-2">
+<span class="font-label-md text-label-md text-on-tertiary-container bg-tertiary-fixed px-2 py-1 rounded border border-tertiary-fixed-dim uppercase">Routine Insp</span>
+<span class="material-symbols-outlined text-on-surface-variant text-sm">more_horiz</span>
+</div>
+<h4 class="font-headline-sm text-headline-sm text-primary mb-1">Sector 7G Plant</h4>
+<p class="font-body-md text-sm text-on-surface-variant mb-4 flex items-center">
+<span class="material-symbols-outlined text-[16px] mr-1">schedule</span> Tomorrow, 09:00
+                            </p>
+<div class="border-t border-[#D1D1D1] pt-3 flex justify-between items-center">
+<div class="flex items-center space-x-2">
+<div class="w-6 h-6 rounded-full bg-surface-container-high flex items-center justify-center text-xs font-bold text-primary">AM</div>
+<span class="font-body-md text-sm text-on-surface-variant">A. Miller</span>
+</div>
+</div>
+</div>
+<!-- Card -->
+<div class="bg-surface-container-lowest border border-[#D1D1D1] rounded p-4 hover:shadow-[0px_4px_12px_rgba(0,0,0,0.08)] transition-shadow cursor-grab">
+<div class="flex justify-between items-start mb-2">
+<span class="font-label-md text-label-md text-on-tertiary-container bg-tertiary-fixed px-2 py-1 rounded border border-tertiary-fixed-dim uppercase">Routine Insp</span>
+<span class="material-symbols-outlined text-on-surface-variant text-sm">more_horiz</span>
+</div>
+<h4 class="font-headline-sm text-headline-sm text-primary mb-1">Delta Storage Facility</h4>
+<p class="font-body-md text-sm text-on-surface-variant mb-4 flex items-center">
+<span class="material-symbols-outlined text-[16px] mr-1">schedule</span> Oct 12, 10:30
+                            </p>
+<div class="border-t border-[#D1D1D1] pt-3 flex justify-between items-center">
+<span class="font-label-md text-xs text-outline italic">Unassigned</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Column: In Progress -->
+<div class="w-80 flex flex-col bg-surface-container-lowest border border-[#D1D1D1] rounded-lg border-t-4 border-t-secondary-container shadow-[0px_4px_12px_rgba(0,0,0,0.04)]">
+<div class="px-4 py-3 border-b border-[#D1D1D1] bg-surface-bright rounded-t flex justify-between items-center">
+<h3 class="font-headline-sm text-headline-sm text-primary flex items-center">
+<span class="w-3 h-3 rounded-full bg-secondary-container mr-2 animate-pulse"></span>
+                            In Progress
+                        </h3>
+<span class="font-label-md text-label-md text-on-primary bg-primary px-2 py-1 rounded">2</span>
+</div>
+<div class="flex-1 overflow-y-auto column-scroll p-3 space-y-3 bg-[#fbf8fb]">
+<!-- Card Active -->
+<div class="bg-surface-container-lowest border border-secondary-container rounded p-4 shadow-[0px_4px_12px_rgba(0,0,0,0.08)] cursor-grab relative overflow-hidden">
+<div class="absolute top-0 left-0 w-1 h-full bg-secondary-container"></div>
+<div class="flex justify-between items-start mb-2 pl-2">
+<span class="font-label-md text-label-md text-primary-container bg-primary-fixed px-2 py-1 rounded border border-primary-fixed-dim uppercase">Emergency Repair</span>
+<span class="material-symbols-outlined text-on-surface-variant text-sm">more_horiz</span>
+</div>
+<h4 class="font-headline-sm text-headline-sm text-primary mb-1 pl-2">Central Node Grid</h4>
+<p class="font-body-md text-sm text-on-surface-variant mb-4 flex items-center pl-2">
+<span class="material-symbols-outlined text-[16px] mr-1 text-secondary-container">play_circle</span> Started 2h ago
+                            </p>
+<div class="border-t border-[#D1D1D1] pt-3 flex justify-between items-center pl-2">
+<div class="flex items-center space-x-2">
+<img alt="Tech" class="w-6 h-6 rounded-full object-cover" data-alt="Small headshot of an experienced field technician looking focused, industrial setting background, warm lighting, corporate modern aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuChHuHeQmk4uPhHPfA8dbdsQqNVceFusB9uRGkdRevAn_nA4qnbo46Uu0_sOCNzTnGNfO3Iwj3jrC4USaYO8p0bAqoZjd_Vg5NQEf_g3hWtYetGZffvNKm-DaBLRa6QDsVZdh-qg9vPJO8Ql9liwAzjSRizJXrkxloiUOyNuJtOqevnb3IDLfrodNDrFDcd7dUlqOblLAiivP_QD7nFDjR3a-78TVGxpErSxK93iiCfeJNNu0P_2_Jj"/>
+<span class="font-body-md text-sm text-primary font-bold">R. Vance</span>
+</div>
+<span class="material-symbols-outlined text-secondary-container">build</span>
+</div>
+</div>
+<!-- Card Active -->
+<div class="bg-surface-container-lowest border border-secondary-container rounded p-4 shadow-[0px_4px_12px_rgba(0,0,0,0.08)] cursor-grab relative overflow-hidden">
+<div class="absolute top-0 left-0 w-1 h-full bg-secondary-container"></div>
+<div class="flex justify-between items-start mb-2 pl-2">
+<span class="font-label-md text-label-md text-primary-container bg-primary-fixed px-2 py-1 rounded border border-primary-fixed-dim uppercase">Site Audit</span>
+<span class="material-symbols-outlined text-on-surface-variant text-sm">more_horiz</span>
+</div>
+<h4 class="font-headline-sm text-headline-sm text-primary mb-1 pl-2">Omega Logistics</h4>
+<p class="font-body-md text-sm text-on-surface-variant mb-4 flex items-center pl-2">
+<span class="material-symbols-outlined text-[16px] mr-1 text-secondary-container">play_circle</span> Started 45m ago
+                            </p>
+<div class="border-t border-[#D1D1D1] pt-3 flex justify-between items-center pl-2">
+<div class="flex items-center space-x-2">
+<div class="w-6 h-6 rounded-full bg-surface-container-high flex items-center justify-center text-xs font-bold text-primary">TB</div>
+<span class="font-body-md text-sm text-primary font-bold">T. Brooks</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Column: Completed -->
+<div class="w-80 flex flex-col bg-surface-container-lowest border border-[#D1D1D1] rounded-lg opacity-80">
+<div class="px-4 py-3 border-b border-[#D1D1D1] bg-surface-bright rounded-t flex justify-between items-center">
+<h3 class="font-headline-sm text-headline-sm text-primary flex items-center">
+<span class="w-3 h-3 rounded-full bg-primary-container mr-2"></span>
+                            Completed
+                        </h3>
+<span class="font-label-md text-label-md text-on-surface-variant bg-surface-container px-2 py-1 rounded">4</span>
+</div>
+<div class="flex-1 overflow-y-auto column-scroll p-3 space-y-3 bg-[#fbf8fb]">
+<!-- Card Completed -->
+<div class="bg-surface-container-lowest border border-[#D1D1D1] rounded p-4 cursor-default">
+<div class="flex justify-between items-start mb-2">
+<span class="font-label-md text-label-md text-on-surface-variant bg-surface-container-high px-2 py-1 rounded uppercase line-through">Equip Setup</span>
+<span class="material-symbols-outlined text-primary-container">check_circle</span>
+</div>
+<h4 class="font-headline-sm text-headline-sm text-outline mb-1">New Build Site A</h4>
+<div class="border-t border-[#D1D1D1] pt-3 mt-4 flex justify-between items-center">
+<span class="font-body-md text-xs text-on-surface-variant">Closed at 11:30</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Column: Missed -->
+<div class="w-80 flex flex-col bg-surface-container-lowest border border-[#D1D1D1] rounded-lg">
+<div class="px-4 py-3 border-b border-[#D1D1D1] bg-surface-bright rounded-t flex justify-between items-center">
+<h3 class="font-headline-sm text-headline-sm text-primary flex items-center">
+<span class="w-3 h-3 rounded-full bg-outline mr-2"></span>
+                            Missed
+                        </h3>
+<span class="font-label-md text-label-md text-on-surface-variant bg-surface-container px-2 py-1 rounded">1</span>
+</div>
+<div class="flex-1 overflow-y-auto column-scroll p-3 space-y-3 bg-[#fbf8fb]">
+<!-- Card -->
+<div class="bg-surface-container-lowest border border-[#D1D1D1] rounded p-4 hover:shadow-[0px_4px_12px_rgba(0,0,0,0.08)] transition-shadow cursor-grab border-l-4 border-l-outline">
+<div class="flex justify-between items-start mb-2">
+<span class="font-label-md text-label-md text-on-tertiary-container bg-tertiary-fixed px-2 py-1 rounded border border-tertiary-fixed-dim uppercase">Delivery</span>
+</div>
+<h4 class="font-headline-sm text-headline-sm text-outline mb-1">Warehouse 9</h4>
+<p class="font-body-md text-sm text-outline mb-4">Scheduled: Yesterday</p>
+<button class="font-button text-xs uppercase text-primary border border-[#D1D1D1] px-3 py-1 rounded w-full hover:bg-surface-container-high">Reschedule</button>
+</div>
+</div>
+</div>
+<!-- Column: Flagged -->
+<div class="w-80 flex flex-col bg-surface-container-lowest border border-error-container rounded-lg">
+<div class="px-4 py-3 border-b border-error-container bg-[#fff5f5] rounded-t flex justify-between items-center">
+<h3 class="font-headline-sm text-headline-sm text-error flex items-center">
+<span class="w-3 h-3 rounded-full bg-error mr-2"></span>
+                            Flagged
+                        </h3>
+<span class="font-label-md text-label-md text-on-error bg-error px-2 py-1 rounded">1</span>
+</div>
+<div class="flex-1 overflow-y-auto column-scroll p-3 space-y-3 bg-[#fbf8fb]">
+<!-- Card Flagged -->
+<div class="bg-surface-container-lowest border border-error rounded p-4 shadow-[0px_4px_12px_rgba(186,26,26,0.1)] cursor-grab relative">
+<div class="flex justify-between items-start mb-2">
+<span class="font-label-md text-label-md text-error bg-error-container px-2 py-1 rounded uppercase">Safety Issue</span>
+<span class="material-symbols-outlined text-error text-sm">warning</span>
+</div>
+<h4 class="font-headline-sm text-headline-sm text-primary mb-1">Substation Alpha</h4>
+<p class="font-body-md text-sm text-on-surface-variant mb-4">Tech reported access blocked.</p>
+<div class="border-t border-error-container pt-3 flex justify-between items-center">
+<div class="flex items-center space-x-2">
+<div class="w-6 h-6 rounded-full bg-error-container flex items-center justify-center text-xs font-bold text-error">PL</div>
+<span class="font-body-md text-sm text-error font-bold">P. Lewis</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+</body></html>

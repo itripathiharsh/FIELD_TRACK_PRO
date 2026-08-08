@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Customer Visit History Report - FieldTrack Pro</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "secondary-container": "#5da9fe",
+                      "surface-container-lowest": "#ffffff",
+                      "on-tertiary-fixed-variant": "#614000",
+                      "border-subtle": "#EDEFF2",
+                      "tertiary-fixed-dim": "#fcbb4f",
+                      "tertiary": "#7d5400",
+                      "secondary-fixed-dim": "#a1c9ff",
+                      "primary": "#00694c",
+                      "surface": "#FFFFFF",
+                      "outline-variant": "#bccac1",
+                      "inverse-primary": "#68dbae",
+                      "primary-fixed": "#86f8c9",
+                      "surface-bright": "#f8f9ff",
+                      "surface-tint": "#006c4e",
+                      "secondary-tint": "#EAF3FC",
+                      "on-background": "#191c20",
+                      "on-primary-fixed": "#002115",
+                      "on-primary": "#ffffff",
+                      "on-tertiary": "#ffffff",
+                      "on-surface-variant": "#3d4943",
+                      "on-error-container": "#93000a",
+                      "background": "#F7F8F9",
+                      "outline": "#6d7a73",
+                      "surface-dim": "#d8dadf",
+                      "surface-container-low": "#f2f3f9",
+                      "primary-container": "#008560",
+                      "primary-tint": "#EAF7F1",
+                      "on-tertiary-fixed": "#281800",
+                      "on-secondary": "#ffffff",
+                      "error-container": "#ffdad6",
+                      "error": "#E24B4A",
+                      "surface-container-highest": "#e1e2e8",
+                      "error-tint": "#FDECEC",
+                      "surface-variant": "#e1e2e8",
+                      "on-error": "#ffffff",
+                      "tertiary-fixed": "#ffddb0",
+                      "text-muted": "#8A919C",
+                      "on-secondary-fixed": "#001c38",
+                      "tertiary-container": "#9d6a00",
+                      "on-secondary-container": "#003d6d",
+                      "on-surface": "#191c20",
+                      "surface-container": "#eceef3",
+                      "on-tertiary-container": "#fffbff",
+                      "warning-tint": "#FFF6E5",
+                      "inverse-on-surface": "#eff0f6",
+                      "secondary": "#0060a8",
+                      "surface-container-high": "#e6e8ed",
+                      "primary-fixed-dim": "#68dbae",
+                      "on-primary-container": "#f5fff7",
+                      "on-secondary-fixed-variant": "#004880",
+                      "secondary-fixed": "#d2e4ff",
+                      "inverse-surface": "#2e3135",
+                      "on-primary-fixed-variant": "#00513a"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "space-4": "16px",
+                      "space-2": "8px",
+                      "space-8": "32px",
+                      "space-6": "24px",
+                      "space-12": "48px",
+                      "space-1": "4px",
+                      "space-3": "12px"
+              },
+              "fontFamily": {
+                      "caption": ["Inter"],
+                      "h2": ["Inter"],
+                      "display": ["Inter"],
+                      "body": ["Inter"],
+                      "h1-mobile": ["Roboto"],
+                      "h1": ["Inter"],
+                      "body-emphasis": ["Inter"],
+                      "micro": ["Inter"],
+                      "h2-mobile": ["Roboto"],
+                      "h3": ["Inter"]
+              },
+              "fontSize": {
+                      "caption": ["14px", {"lineHeight": "1.4", "fontWeight": "400"}],
+                      "h2": ["24px", {"lineHeight": "1.3", "fontWeight": "600"}],
+                      "display": ["36px", {"lineHeight": "1.2", "fontWeight": "700"}],
+                      "body": ["16px", {"lineHeight": "1.5", "fontWeight": "400"}],
+                      "h1-mobile": ["28px", {"lineHeight": "1.25", "fontWeight": "700"}],
+                      "h1": ["30px", {"lineHeight": "1.25", "fontWeight": "700"}],
+                      "body-emphasis": ["16px", {"lineHeight": "1.5", "fontWeight": "600"}],
+                      "micro": ["12px", {"lineHeight": "1.3", "letterSpacing": "0.02em", "fontWeight": "500"}],
+                      "h2-mobile": ["22px", {"lineHeight": "1.3", "fontWeight": "600"}],
+                      "h3": ["20px", {"lineHeight": "1.35", "fontWeight": "600"}]
+              }
+            }
+          }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .material-symbols-outlined.fill {
+            font-variation-settings: 'FILL' 1;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface font-body min-h-screen flex flex-col md:flex-row">
+<!-- SideNavBar (Web Only) -->
+<nav class="hidden md:flex flex-col h-full py-space-6 px-space-4 bg-surface fixed left-0 top-0 h-full w-[240px] border-r border-border-subtle z-20">
+<div class="mb-space-8 px-space-2">
+<h1 class="font-h3 text-h3 font-bold text-primary truncate">FieldTrack Pro</h1>
+<p class="font-caption text-caption text-text-muted mt-1">Field Ops Admin</p>
+</div>
+<div class="flex-1 overflow-y-auto space-y-2">
+<a class="flex items-center gap-space-3 px-space-3 py-space-2 rounded-lg text-on-surface-variant hover:bg-surface-container-low transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="font-body-emphasis text-body-emphasis">Dashboard</span>
+</a>
+<a class="flex items-center gap-space-3 px-space-3 py-space-2 rounded-lg text-on-surface-variant hover:bg-surface-container-low transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">badge</span>
+<span class="font-body-emphasis text-body-emphasis">Employees</span>
+</a>
+<a class="flex items-center gap-space-3 px-space-3 py-space-2 rounded-lg text-on-surface-variant hover:bg-surface-container-low transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">group</span>
+<span class="font-body-emphasis text-body-emphasis">Customers</span>
+</a>
+<a class="flex items-center gap-space-3 px-space-3 py-space-2 rounded-lg text-on-surface-variant hover:bg-surface-container-low transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">location_on</span>
+<span class="font-body-emphasis text-body-emphasis">Visits</span>
+</a>
+<!-- Active State: Reports -->
+<a class="flex items-center gap-space-3 px-space-3 py-space-2 rounded-lg bg-primary-tint text-primary font-body-emphasis text-body-emphasis border-r-4 border-primary transition-all scale-98 active:scale-95" href="#">
+<span class="material-symbols-outlined fill">assessment</span>
+<span>Reports</span>
+</a>
+<a class="flex items-center gap-space-3 px-space-3 py-space-2 rounded-lg text-on-surface-variant hover:bg-surface-container-low transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="font-body-emphasis text-body-emphasis">Settings</span>
+</a>
+</div>
+</nav>
+<!-- Main Content Area -->
+<div class="flex-1 flex flex-col min-w-0 md:ml-[240px]">
+<!-- TopNavBar (Web Only) -->
+<header class="hidden md:flex justify-between items-center px-space-6 h-16 w-full bg-surface border-b border-border-subtle z-10 sticky top-0">
+<div class="flex items-center flex-1">
+<div class="relative w-64">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-text-muted text-sm">search</span>
+<input class="w-full pl-10 pr-4 py-2 bg-surface-container-low border-none rounded-lg font-body text-body text-on-surface focus:ring-2 focus:ring-secondary-container transition-all" placeholder="Search..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-space-4">
+<button class="p-2 text-on-surface-variant hover:text-primary transition-colors duration-200 rounded-full hover:bg-surface-container-low cursor-pointer transition-transform duration-200 hover:scale-105 active:scale-95">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="px-space-4 py-space-2 font-body-emphasis text-body-emphasis text-secondary hover:text-secondary-fixed-variant transition-colors">
+                    Export
+                </button>
+<button class="flex items-center gap-2 p-1 rounded-full hover:bg-surface-container-low transition-colors cursor-pointer transition-transform duration-200 hover:scale-105 active:scale-95">
+<img alt="Admin User Profile" class="w-8 h-8 rounded-full" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCIzbmaRa8gxrlgr4JVUMlHibUg7ngrKntNu-sLnKmsvmRMwbepWMxymIPlqKGPNaKaxZa_9igIz4Vb7fs-1KBscFfTVavsMa32pT2on6N9kUjr2uVQ7e9Itm-ZXdlUzaRFdZGXv-vzGKdS-RjlHxfTCESPblEKaFU2KAMwqLyzgsJiLMdtj8ZBV0vbQkJSfNq2sf5zPWztZ38MMaFdSQUNPr5B4wG6x4sL4_iqthBWxgmwxeOLbXed"/>
+</button>
+</div>
+</header>
+<!-- Canvas / Page Content -->
+<main class="flex-1 p-space-4 md:p-space-6 overflow-y-auto">
+<!-- Page Header -->
+<div class="mb-space-6 flex flex-col md:flex-row md:items-end justify-between gap-space-4">
+<div>
+<h2 class="font-h2-mobile md:font-h2 text-h2-mobile md:text-h2 text-on-surface">Customer Visit History</h2>
+<p class="font-body text-body text-text-muted mt-1">Detailed report of field activity by customer.</p>
+</div>
+<!-- Filters -->
+<div class="flex flex-col sm:flex-row gap-space-3">
+<div class="relative">
+<select class="appearance-none bg-surface border border-outline-variant text-on-surface font-body text-body rounded-lg py-2 pl-3 pr-10 hover:border-secondary focus:border-secondary focus:ring-1 focus:ring-secondary outline-none transition-colors w-full sm:w-auto cursor-pointer shadow-sm">
+<option>Last 30 Days</option>
+<option>Last 7 Days</option>
+<option>This Month</option>
+<option>Custom Range...</option>
+</select>
+<span class="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-on-surface-variant">calendar_today</span>
+</div>
+<div class="relative">
+<select class="appearance-none bg-surface border border-outline-variant text-on-surface font-body text-body rounded-lg py-2 pl-3 pr-10 hover:border-secondary focus:border-secondary focus:ring-1 focus:ring-secondary outline-none transition-colors w-full sm:w-auto cursor-pointer shadow-sm min-w-[200px]">
+<option>All Customers</option>
+<option>Acme Corp</option>
+<option>Globex Inc</option>
+<option>Initech</option>
+</select>
+<span class="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-on-surface-variant">arrow_drop_down</span>
+</div>
+</div>
+</div>
+<!-- Top Level Metrics -->
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-space-4 mb-space-6">
+<!-- Metric Card 1 -->
+<div class="bg-surface rounded-xl p-space-4 border border-border-subtle shadow-sm flex items-center gap-space-4">
+<div class="w-12 h-12 rounded-full bg-primary-tint flex items-center justify-center text-primary flex-shrink-0">
+<span class="material-symbols-outlined fill">storefront</span>
+</div>
+<div>
+<p class="font-caption text-caption text-text-muted">Total Visits</p>
+<p class="font-h2 text-h2 text-on-surface mt-1">342</p>
+</div>
+</div>
+<!-- Metric Card 2 -->
+<div class="bg-surface rounded-xl p-space-4 border border-border-subtle shadow-sm flex items-center gap-space-4">
+<div class="w-12 h-12 rounded-full bg-secondary-tint flex items-center justify-center text-secondary flex-shrink-0">
+<span class="material-symbols-outlined fill">group</span>
+</div>
+<div>
+<p class="font-caption text-caption text-text-muted">Unique Customers</p>
+<p class="font-h2 text-h2 text-on-surface mt-1">87</p>
+</div>
+</div>
+</div>
+<!-- Data Table Card -->
+<div class="bg-surface rounded-xl border border-border-subtle shadow-sm overflow-hidden flex flex-col">
+<!-- Table Header Row -->
+<div class="bg-surface-container-lowest border-b border-border-subtle grid grid-cols-12 gap-4 p-space-4 font-micro text-micro text-text-muted uppercase tracking-wider">
+<div class="col-span-3 md:col-span-2">Date / Time</div>
+<div class="col-span-4 md:col-span-3">Customer</div>
+<div class="hidden md:block col-span-3">Assigned Employee</div>
+<div class="col-span-3 md:col-span-2 text-center md:text-left">Status</div>
+<div class="col-span-2 text-right">Duration</div>
+</div>
+<!-- Table Body -->
+<div class="flex-1 overflow-y-auto">
+<!-- Row 1 -->
+<div class="grid grid-cols-12 gap-4 p-space-4 border-b border-border-subtle items-center hover:bg-surface-bright transition-colors cursor-pointer group">
+<div class="col-span-3 md:col-span-2">
+<p class="font-body-emphasis text-body-emphasis text-on-surface">Oct 24, 2023</p>
+<p class="font-caption text-caption text-text-muted">09:15 AM</p>
+</div>
+<div class="col-span-4 md:col-span-3">
+<p class="font-body-emphasis text-body-emphasis text-on-surface truncate">Acme Corp HQ</p>
+<p class="font-caption text-caption text-text-muted truncate">Routine Maintenance</p>
+</div>
+<div class="hidden md:block col-span-3">
+<div class="flex items-center gap-2">
+<img alt="Avatar" class="w-6 h-6 rounded-full" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC-ILsEJ_RhbRAbhGBxvZEGKX1Cp8W2BnRDBd-XXmxrgohZbXaL_bmNLIQmhPGOpDMUyMtJZI3AkVWFdgVRHDCZheJdwxzvGpQKMhh6WxkYzsCTy5N0Xp5fCEtsbyPS68pYUCIkpSldC-l6e0s6I7XOEKIq6DCSEistueQzr6eRQtXom5D_mdENx3v25__NA_dnIVvoe37exnclOMZyQBINONFodqvVIfFM1u92UqCRolc820yYOhy2"/>
+<span class="font-body text-body text-on-surface">Sarah Jenkins</span>
+</div>
+</div>
+<div class="col-span-3 md:col-span-2 text-center md:text-left">
+<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-primary-tint text-primary-fixed-variant font-micro text-micro border border-primary-container/20">
+                                Completed
+                            </span>
+</div>
+<div class="col-span-2 text-right font-body text-body text-on-surface">
+                            1h 45m
+                        </div>
+</div>
+<!-- Row 2 -->
+<div class="grid grid-cols-12 gap-4 p-space-4 border-b border-border-subtle items-center hover:bg-surface-bright transition-colors cursor-pointer group">
+<div class="col-span-3 md:col-span-2">
+<p class="font-body-emphasis text-body-emphasis text-on-surface">Oct 24, 2023</p>
+<p class="font-caption text-caption text-text-muted">11:30 AM</p>
+</div>
+<div class="col-span-4 md:col-span-3">
+<p class="font-body-emphasis text-body-emphasis text-on-surface truncate">Globex Inc Facility</p>
+<p class="font-caption text-caption text-text-muted truncate">Site Inspection</p>
+</div>
+<div class="hidden md:block col-span-3">
+<div class="flex items-center gap-2">
+<img alt="Avatar" class="w-6 h-6 rounded-full" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDnTHfFI8Yj3Te6vSJKB922ARfiZ6QTalaerEA_eDANtd_t6Y62y4foX-_K3cpvZJOZY0mJC1bMM59R3H3XyUNveYrB1PXUxzQ-8VTsk18SYiHC6z_wO3kz00W7iNWv_HVacsJyPQ17LXC6ERO_EJB21Gh-ez9tjjEr9ipi6YUZkB9Hf5cSQEmmCvJmSG4tJJlrxc6qHjsR3DFlyWt1JS08JX-NE8-U6FtZMSjuoSf7nrZC97L8E2AW"/>
+<span class="font-body text-body text-on-surface">Mike Thompson</span>
+</div>
+</div>
+<div class="col-span-3 md:col-span-2 text-center md:text-left">
+<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-secondary-tint text-secondary-fixed-variant font-micro text-micro border border-secondary/20">
+                                In Progress
+                            </span>
+</div>
+<div class="col-span-2 text-right font-body text-body text-on-surface">
+                            45m
+                        </div>
+</div>
+<!-- Row 3 -->
+<div class="grid grid-cols-12 gap-4 p-space-4 border-b border-border-subtle items-center hover:bg-surface-bright transition-colors cursor-pointer group">
+<div class="col-span-3 md:col-span-2">
+<p class="font-body-emphasis text-body-emphasis text-on-surface">Oct 23, 2023</p>
+<p class="font-caption text-caption text-text-muted">02:00 PM</p>
+</div>
+<div class="col-span-4 md:col-span-3">
+<p class="font-body-emphasis text-body-emphasis text-on-surface truncate">Initech Office</p>
+<p class="font-caption text-caption text-text-muted truncate">Equipment Repair</p>
+</div>
+<div class="hidden md:block col-span-3">
+<div class="flex items-center gap-2">
+<img alt="Avatar" class="w-6 h-6 rounded-full" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBh6HB9GAKdBkb-AgNFTFQTBD7S8x2Ksgmso8YuqsxSnc_gMDPv6gz5nSQqOkTl9_ySvUBYZyEYt6QV--vYhLV7zm0HrwCtR9hywQLCAVzsrTM-nOEW0mbkJHt0boqCS8XIVVYaGERi4LpdR6w0iR3bsz6oR8-7NR2eFdYC1bFx0t32jOktvw7J27vKbJzzWwo9SZIF8dmlKaXIct2yiXRnwAltjj_5aDxW6jMbKdqhgjubb9qmGT90"/>
+<span class="font-body text-body text-on-surface">Elena Rodriguez</span>
+</div>
+</div>
+<div class="col-span-3 md:col-span-2 text-center md:text-left">
+<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-warning-tint text-tertiary font-micro text-micro border border-tertiary/20">
+                                Flagged
+                            </span>
+</div>
+<div class="col-span-2 text-right font-body text-body text-on-surface">
+                            3h 10m
+                        </div>
+</div>
+</div>
+<!-- Empty State (Hidden by default, shown for demonstration if needed) -->
+<!-- 
+                <div class="flex flex-col items-center justify-center p-space-12 text-center h-64">
+                    <img src="placeholder" data-alt="A clean, minimalist 3D illustration of a slightly open empty file folder or clipboard on a clean white desk surface, soft diffuse lighting, professional high-end corporate aesthetic, cool neutral tones." class="w-32 h-32 mb-space-4 object-contain">
+                    <h3 class="font-h3 text-h3 text-on-surface mb-2">No visits found</h3>
+                    <p class="font-body text-body text-text-muted max-w-sm mx-auto">There are no customer visits recorded in the selected date range. Try adjusting your filters.</p>
+                </div> 
+                -->
+</div>
+</main>
+</div>
+</body></html>

@@ -1,0 +1,22 @@
+import logging
+import sys
+
+
+def setup_logging(environment: str = "dev") -> logging.Logger:
+    log_level = logging.DEBUG if environment == "dev" else logging.INFO
+    
+    formatter = logging.Formatter(
+        "[%(asctime)s] [%(levelname)s] [%(name)s] - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S"
+    )
+
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(formatter)
+
+    logger = logging.getLogger("fieldtrackpro")
+    logger.setLevel(log_level)
+    
+    if not logger.handlers:
+        logger.addHandler(handler)
+
+    return logger

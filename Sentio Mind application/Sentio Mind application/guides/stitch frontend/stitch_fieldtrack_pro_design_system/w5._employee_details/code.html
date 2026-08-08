@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Employee Detail - FieldTrack Pro</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Roboto:wght@600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "surface": "#FFFFFF",
+                        "on-background": "#191c20",
+                        "surface-container-lowest": "#ffffff",
+                        "tertiary-fixed": "#ffddb0",
+                        "secondary-fixed-dim": "#a1c9ff",
+                        "on-surface-variant": "#3d4943",
+                        "on-secondary": "#ffffff",
+                        "secondary-tint": "#EAF3FC",
+                        "surface-container-highest": "#e1e2e8",
+                        "inverse-surface": "#2e3135",
+                        "tertiary": "#7d5400",
+                        "secondary-fixed": "#d2e4ff",
+                        "primary-container": "#008560",
+                        "primary-fixed-dim": "#68dbae",
+                        "on-tertiary": "#ffffff",
+                        "surface-container-high": "#e6e8ed",
+                        "primary": "#00694c",
+                        "on-primary-container": "#f5fff7",
+                        "surface-variant": "#e1e2e8",
+                        "surface-container-low": "#f2f3f9",
+                        "outline": "#6d7a73",
+                        "on-secondary-fixed": "#001c38",
+                        "surface-container": "#eceef3",
+                        "surface-dim": "#d8dadf",
+                        "outline-variant": "#bccac1",
+                        "error-container": "#ffdad6",
+                        "error": "#E24B4A",
+                        "inverse-on-surface": "#eff0f6",
+                        "on-primary-fixed": "#002115",
+                        "on-tertiary-fixed": "#281800",
+                        "on-error-container": "#93000a",
+                        "tertiary-fixed-dim": "#fcbb4f",
+                        "border-subtle": "#EDEFF2",
+                        "background": "#F7F8F9",
+                        "surface-tint": "#006c4e",
+                        "warning-tint": "#FFF6E5",
+                        "primary-fixed": "#86f8c9",
+                        "on-secondary-fixed-variant": "#004880",
+                        "inverse-primary": "#68dbae",
+                        "primary-tint": "#EAF7F1",
+                        "surface-bright": "#f8f9ff",
+                        "on-tertiary-container": "#fffbff",
+                        "on-surface": "#191c20",
+                        "on-error": "#ffffff",
+                        "error-tint": "#FDECEC",
+                        "on-tertiary-fixed-variant": "#614000",
+                        "on-secondary-container": "#003d6d",
+                        "secondary-container": "#5da9fe",
+                        "on-primary-fixed-variant": "#00513a",
+                        "on-primary": "#ffffff",
+                        "tertiary-container": "#9d6a00",
+                        "text-muted": "#8A919C",
+                        "secondary": "#0060a8"
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    spacing: {
+                        "space-8": "32px",
+                        "space-4": "16px",
+                        "space-2": "8px",
+                        "space-12": "48px",
+                        "space-3": "12px",
+                        "space-6": "24px",
+                        "space-1": "4px"
+                    },
+                    fontFamily: {
+                        "micro": ["Inter"],
+                        "caption": ["Inter"],
+                        "h1-mobile": ["Roboto"],
+                        "body": ["Inter"],
+                        "h3": ["Inter"],
+                        "h2": ["Inter"],
+                        "h2-mobile": ["Roboto"],
+                        "body-emphasis": ["Inter"],
+                        "display": ["Inter"],
+                        "h1": ["Inter"]
+                    },
+                    fontSize: {
+                        "micro": ["12px", { lineHeight: "1.3", letterSpacing: "0.02em", fontWeight: "500" }],
+                        "caption": ["14px", { lineHeight: "1.4", fontWeight: "400" }],
+                        "h1-mobile": ["28px", { lineHeight: "1.25", fontWeight: "700" }],
+                        "body": ["16px", { lineHeight: "1.5", fontWeight: "400" }],
+                        "h3": ["20px", { lineHeight: "1.35", fontWeight: "600" }],
+                        "h2": ["24px", { lineHeight: "1.3", fontWeight: "600" }],
+                        "h2-mobile": ["22px", { lineHeight: "1.3", fontWeight: "600" }],
+                        "body-emphasis": ["16px", { lineHeight: "1.5", fontWeight: "600" }],
+                        "display": ["36px", { lineHeight: "1.2", fontWeight: "700" }],
+                        "h1": ["30px", { lineHeight: "1.25", fontWeight: "700" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body min-h-screen flex">
+<!-- SideNavBar -->
+<aside class="w-[240px] h-screen fixed left-0 top-0 bg-surface shadow-sm flex flex-col py-space-6 px-space-4 z-10 hidden md:flex">
+<div class="mb-space-8">
+<h1 class="font-h2 text-h2 font-bold text-primary">FieldTrack Pro</h1>
+<p class="font-caption text-caption text-text-muted mt-1">Admin Dashboard</p>
+</div>
+<nav class="flex-1 flex flex-col gap-2">
+<a class="flex items-center gap-3 px-space-4 py-space-3 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="font-body-emphasis text-body-emphasis">Dashboard</span>
+</a>
+<a class="flex items-center gap-3 px-space-4 py-space-3 rounded-lg text-primary font-body-emphasis text-body-emphasis border-r-4 border-primary bg-primary-tint opacity-80 transition-all duration-150" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">badge</span>
+<span>Employees</span>
+</a>
+<a class="flex items-center gap-3 px-space-4 py-space-3 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors" href="#">
+<span class="material-symbols-outlined">group</span>
+<span class="font-body-emphasis text-body-emphasis">Customers</span>
+</a>
+<a class="flex items-center gap-3 px-space-4 py-space-3 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors" href="#">
+<span class="material-symbols-outlined">location_on</span>
+<span class="font-body-emphasis text-body-emphasis">Visits</span>
+</a>
+<a class="flex items-center gap-3 px-space-4 py-space-3 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors" href="#">
+<span class="material-symbols-outlined">assessment</span>
+<span class="font-body-emphasis text-body-emphasis">Reports</span>
+</a>
+<a class="flex items-center gap-3 px-space-4 py-space-3 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="font-body-emphasis text-body-emphasis">Settings</span>
+</a>
+</nav>
+<div class="mt-auto">
+<a class="flex items-center gap-3 px-space-4 py-space-3 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors" href="#">
+<span class="material-symbols-outlined">logout</span>
+<span class="font-body-emphasis text-body-emphasis">Logout</span>
+</a>
+</div>
+</aside>
+<!-- Main Content -->
+<main class="flex-1 ml-[240px] flex flex-col h-screen overflow-hidden">
+<!-- Header -->
+<header class="bg-surface border-b border-surface-container-highest px-space-6 h-[80px] flex items-center justify-between shrink-0 sticky top-0 z-10">
+<div class="flex items-center gap-4">
+<button aria-label="Go back" class="w-10 h-10 rounded-full hover:bg-surface-container flex items-center justify-center transition-colors text-on-surface-variant">
+<span class="material-symbols-outlined">arrow_back</span>
+</button>
+<h2 class="font-h1 text-h1 font-bold text-on-background">Sarah Jenkins</h2>
+</div>
+<button class="h-10 px-space-4 rounded-lg bg-surface border border-outline hover:bg-secondary-tint text-secondary font-body-emphasis text-body-emphasis flex items-center gap-2 transition-colors">
+<span class="material-symbols-outlined text-sm">edit</span>
+                Edit Profile
+            </button>
+</header>
+<!-- Scrollable Content -->
+<div class="flex-1 overflow-y-auto p-space-6 pb-space-12">
+<div class="max-w-6xl mx-auto space-y-space-6">
+<!-- Employee Summary Card -->
+<div class="bg-surface rounded-xl shadow-sm border border-border-subtle p-space-6 flex flex-col md:flex-row gap-space-8 items-start relative overflow-hidden">
+<!-- Decorative background element -->
+<div class="absolute top-0 right-0 w-64 h-64 bg-primary-tint rounded-bl-full opacity-50 -z-0 translate-x-1/4 -translate-y-1/4"></div>
+<div class="relative z-10 flex flex-col sm:flex-row gap-space-6 w-full">
+<div class="w-32 h-32 rounded-full overflow-hidden border-4 border-surface shadow-sm shrink-0">
+<img alt="Sarah Jenkins" class="w-full h-full object-cover" data-alt="Professional headshot of a confident female field worker in a modern urban environment. Soft natural lighting, shallow depth of field. She is wearing a dark teal polo shirt with a subtle company logo, smiling warmly. The overall tone is approachable and highly competent." src="https://lh3.googleusercontent.com/aida-public/AB6AXuD5YTV9iJSfdFI3Njqoi6G4G536mDUm5KCYaXUQ-qmfucLSayjpam-MsJJI5eNCwQd2_AZFqTX9aojclSmypwln320tjlPm2Z9LIKDUMGqEInYkswXv8pk6mUwJU-gWaZ2TZvRD6YAj0JfQcnan5HEGGEbI30xx9i9gxWTQFe4yZ_j8o97_QdILe5Z26u_PfQQB-LXE35UrgQPHw3nZoYE4TDtpxJTGg0lxATsrDzT3xnKvcGVzquj5"/>
+</div>
+<div class="flex-1 flex flex-col justify-center">
+<div class="flex items-center gap-3 mb-1">
+<h3 class="font-h2 text-h2 font-semibold text-on-background">Sarah Jenkins</h3>
+<span class="bg-primary-tint text-primary-container px-3 py-1 rounded-full font-micro text-micro border border-primary-fixed-dim">Active</span>
+</div>
+<p class="font-body text-body text-text-muted mb-space-4">Senior Field Representative • North District</p>
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-y-3 gap-x-6">
+<div class="flex items-center gap-2 text-on-surface-variant font-caption text-caption">
+<span class="material-symbols-outlined text-outline text-[18px]">badge</span>
+<span>EMP-2023-049</span>
+</div>
+<div class="flex items-center gap-2 text-on-surface-variant font-caption text-caption">
+<span class="material-symbols-outlined text-outline text-[18px]">mail</span>
+<span>sarah.jenkins@fieldtrack.com</span>
+</div>
+<div class="flex items-center gap-2 text-on-surface-variant font-caption text-caption">
+<span class="material-symbols-outlined text-outline text-[18px]">location_on</span>
+<span>Northwest Territory</span>
+</div>
+<div class="flex items-center gap-2 text-on-surface-variant font-caption text-caption">
+<span class="material-symbols-outlined text-outline text-[18px]">phone</span>
+<span>(555) 123-4567</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Stats Row -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-space-4">
+<div class="bg-surface rounded-xl shadow-sm border border-border-subtle p-space-4 flex items-center gap-space-4">
+<div class="w-12 h-12 rounded-full bg-primary-tint flex items-center justify-center text-primary">
+<span class="material-symbols-outlined">task_alt</span>
+</div>
+<div>
+<p class="font-caption text-caption text-text-muted mb-1">Visits completed this month</p>
+<p class="font-h3 text-h3 text-on-background">142</p>
+</div>
+</div>
+<div class="bg-surface rounded-xl shadow-sm border border-border-subtle p-space-4 flex items-center gap-space-4">
+<div class="w-12 h-12 rounded-full bg-secondary-tint flex items-center justify-center text-secondary">
+<span class="material-symbols-outlined">schedule</span>
+</div>
+<div>
+<p class="font-caption text-caption text-text-muted mb-1">Avg. visit duration</p>
+<p class="font-h3 text-h3 text-on-background">45 min</p>
+</div>
+</div>
+<div class="bg-surface rounded-xl shadow-sm border border-border-subtle p-space-4 flex items-center gap-space-4">
+<div class="w-12 h-12 rounded-full bg-warning-tint flex items-center justify-center text-tertiary-container">
+<span class="material-symbols-outlined">route</span>
+</div>
+<div>
+<p class="font-caption text-caption text-text-muted mb-1">Distance traveled (approx.)</p>
+<p class="font-h3 text-h3 text-on-background">850 mi</p>
+</div>
+</div>
+</div>
+<!-- Visit History Table -->
+<div class="bg-surface rounded-xl shadow-sm border border-border-subtle overflow-hidden">
+<div class="px-space-6 py-space-4 border-b border-border-subtle flex justify-between items-center bg-surface-bright">
+<h4 class="font-h3 text-h3 font-semibold text-on-background">Recent Visit History</h4>
+<button class="text-secondary font-body-emphasis text-body-emphasis hover:underline">View All</button>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="bg-surface text-text-muted font-micro text-micro border-b border-border-subtle">
+<th class="px-space-6 py-space-3 font-semibold uppercase tracking-wider">Date &amp; Time</th>
+<th class="px-space-6 py-space-3 font-semibold uppercase tracking-wider">Customer</th>
+<th class="px-space-6 py-space-3 font-semibold uppercase tracking-wider">Status</th>
+<th class="px-space-6 py-space-3 font-semibold uppercase tracking-wider">Duration</th>
+</tr>
+</thead>
+<tbody class="font-caption text-caption">
+<tr class="border-b border-border-subtle hover:bg-surface-container-lowest transition-colors group">
+<td class="px-space-6 py-space-4 text-on-background">Oct 24, 2023 • 10:30 AM</td>
+<td class="px-space-6 py-space-4">
+<div class="font-body-emphasis text-on-background">Acme Corp HQ</div>
+<div class="text-text-muted">123 Business Pkwy</div>
+</td>
+<td class="px-space-6 py-space-4">
+<span class="inline-flex items-center px-2.5 py-0.5 rounded-full font-micro text-micro bg-primary-tint text-on-primary-fixed-variant">
+                                            Completed
+                                        </span>
+</td>
+<td class="px-space-6 py-space-4 text-on-surface-variant">55 min</td>
+</tr>
+<tr class="border-b border-border-subtle hover:bg-surface-container-lowest transition-colors group">
+<td class="px-space-6 py-space-4 text-on-background">Oct 24, 2023 • 01:15 PM</td>
+<td class="px-space-6 py-space-4">
+<div class="font-body-emphasis text-on-background">TechSolutions Inc.</div>
+<div class="text-text-muted">456 Innovation Dr</div>
+</td>
+<td class="px-space-6 py-space-4">
+<span class="inline-flex items-center px-2.5 py-0.5 rounded-full font-micro text-micro bg-primary-tint text-on-primary-fixed-variant">
+                                            Completed
+                                        </span>
+</td>
+<td class="px-space-6 py-space-4 text-on-surface-variant">42 min</td>
+</tr>
+<tr class="border-b border-border-subtle hover:bg-surface-container-lowest transition-colors group">
+<td class="px-space-6 py-space-4 text-on-background">Oct 25, 2023 • 09:00 AM</td>
+<td class="px-space-6 py-space-4">
+<div class="font-body-emphasis text-on-background">Global Logistics</div>
+<div class="text-text-muted">789 Warehouse Blvd</div>
+</td>
+<td class="px-space-6 py-space-4">
+<span class="inline-flex items-center px-2.5 py-0.5 rounded-full font-micro text-micro bg-secondary-tint text-on-secondary-fixed-variant">
+                                            In-Progress
+                                        </span>
+</td>
+<td class="px-space-6 py-space-4 text-on-surface-variant">--</td>
+</tr>
+<tr class="hover:bg-surface-container-lowest transition-colors group">
+<td class="px-space-6 py-space-4 text-on-background">Oct 25, 2023 • 03:30 PM</td>
+<td class="px-space-6 py-space-4">
+<div class="font-body-emphasis text-on-background">Smith Manufacturing</div>
+<div class="text-text-muted">101 Factory Ln</div>
+</td>
+<td class="px-space-6 py-space-4">
+<span class="inline-flex items-center px-2.5 py-0.5 rounded-full font-micro text-micro bg-surface-dim text-on-surface">
+                                            Scheduled
+                                        </span>
+</td>
+<td class="px-space-6 py-space-4 text-on-surface-variant">--</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+</div>
+</main>
+</body></html>

@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Employees - FieldTrack Pro</title>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Google Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Roboto:wght@600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Tailwind Config -->
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "surface": "#FFFFFF",
+                        "on-background": "#191c20",
+                        "surface-container-lowest": "#ffffff",
+                        "tertiary-fixed": "#ffddb0",
+                        "secondary-fixed-dim": "#a1c9ff",
+                        "on-surface-variant": "#3d4943",
+                        "on-secondary": "#ffffff",
+                        "secondary-tint": "#EAF3FC",
+                        "surface-container-highest": "#e1e2e8",
+                        "inverse-surface": "#2e3135",
+                        "tertiary": "#7d5400",
+                        "secondary-fixed": "#d2e4ff",
+                        "primary-container": "#008560",
+                        "primary-fixed-dim": "#68dbae",
+                        "on-tertiary": "#ffffff",
+                        "surface-container-high": "#e6e8ed",
+                        "primary": "#00694c",
+                        "on-primary-container": "#f5fff7",
+                        "surface-variant": "#e1e2e8",
+                        "surface-container-low": "#f2f3f9",
+                        "outline": "#6d7a73",
+                        "on-secondary-fixed": "#001c38",
+                        "surface-container": "#eceef3",
+                        "surface-dim": "#d8dadf",
+                        "outline-variant": "#bccac1",
+                        "error-container": "#ffdad6",
+                        "error": "#E24B4A",
+                        "inverse-on-surface": "#eff0f6",
+                        "on-primary-fixed": "#002115",
+                        "on-tertiary-fixed": "#281800",
+                        "on-error-container": "#93000a",
+                        "tertiary-fixed-dim": "#fcbb4f",
+                        "border-subtle": "#EDEFF2",
+                        "background": "#F7F8F9",
+                        "surface-tint": "#006c4e",
+                        "warning-tint": "#FFF6E5",
+                        "primary-fixed": "#86f8c9",
+                        "on-secondary-fixed-variant": "#004880",
+                        "inverse-primary": "#68dbae",
+                        "primary-tint": "#EAF7F1",
+                        "surface-bright": "#f8f9ff",
+                        "on-tertiary-container": "#fffbff",
+                        "on-surface": "#191c20",
+                        "on-error": "#ffffff",
+                        "error-tint": "#FDECEC",
+                        "on-tertiary-fixed-variant": "#614000",
+                        "on-secondary-container": "#003d6d",
+                        "secondary-container": "#5da9fe",
+                        "on-primary-fixed-variant": "#00513a",
+                        "on-primary": "#ffffff",
+                        "tertiary-container": "#9d6a00",
+                        "text-muted": "#8A919C",
+                        "secondary": "#0060a8"
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    spacing: {
+                        "space-8": "32px",
+                        "space-4": "16px",
+                        "space-2": "8px",
+                        "space-12": "48px",
+                        "space-3": "12px",
+                        "space-6": "24px",
+                        "space-1": "4px"
+                    },
+                    fontFamily: {
+                        "micro": ["Inter"],
+                        "caption": ["Inter"],
+                        "h1-mobile": ["Roboto"],
+                        "body": ["Inter"],
+                        "h3": ["Inter"],
+                        "h2": ["Inter"],
+                        "h2-mobile": ["Roboto"],
+                        "body-emphasis": ["Inter"],
+                        "display": ["Inter"],
+                        "h1": ["Inter"]
+                    },
+                    fontSize: {
+                        "micro": ["12px", { lineHeight: "1.3", letterSpacing: "0.02em", fontWeight: "500" }],
+                        "caption": ["14px", { lineHeight: "1.4", fontWeight: "400" }],
+                        "h1-mobile": ["28px", { lineHeight: "1.25", fontWeight: "700" }],
+                        "body": ["16px", { lineHeight: "1.5", fontWeight: "400" }],
+                        "h3": ["20px", { lineHeight: "1.35", fontWeight: "600" }],
+                        "h2": ["24px", { lineHeight: "1.3", fontWeight: "600" }],
+                        "h2-mobile": ["22px", { lineHeight: "1.3", fontWeight: "600" }],
+                        "body-emphasis": ["16px", { lineHeight: "1.5", fontWeight: "600" }],
+                        "display": ["36px", { lineHeight: "1.2", fontWeight: "700" }],
+                        "h1": ["30px", { lineHeight: "1.25", fontWeight: "700" }]
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-background text-on-background font-body text-body min-h-screen antialiased flex selection:bg-primary-tint selection:text-primary">
+<!-- SideNavBar -->
+<aside class="w-[240px] h-screen fixed left-0 top-0 bg-surface shadow-sm z-30 hidden md:block">
+<div class="flex flex-col h-full py-space-6 px-space-4">
+<div class="mb-space-8 px-space-2">
+<h1 class="font-h2 text-h2 font-bold text-primary">FieldTrack Pro</h1>
+<p class="font-caption text-caption text-on-surface-variant mt-1">Admin Dashboard</p>
+</div>
+<nav class="flex-1 flex flex-col gap-1">
+<a class="flex items-center gap-space-3 px-space-4 py-space-3 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+<span>Dashboard</span>
+</a>
+<!-- Active Item: Employees -->
+<a class="flex items-center gap-space-3 px-space-4 py-space-3 rounded-lg text-primary font-body-emphasis border-r-4 border-primary bg-primary-tint opacity-80 transition-all duration-150" href="#">
+<span class="material-symbols-outlined">badge</span>
+<span>Employees</span>
+</a>
+<a class="flex items-center gap-space-3 px-space-4 py-space-3 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors" href="#">
+<span class="material-symbols-outlined">group</span>
+<span>Customers</span>
+</a>
+<a class="flex items-center gap-space-3 px-space-4 py-space-3 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors" href="#">
+<span class="material-symbols-outlined">location_on</span>
+<span>Visits</span>
+</a>
+<a class="flex items-center gap-space-3 px-space-4 py-space-3 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors" href="#">
+<span class="material-symbols-outlined">assessment</span>
+<span>Reports</span>
+</a>
+<div class="mt-auto pt-space-4 border-t border-surface-container-highest">
+<a class="flex items-center gap-space-3 px-space-4 py-space-3 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span>Settings</span>
+</a>
+<a class="flex items-center gap-space-3 px-space-4 py-space-3 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors" href="#">
+<span class="material-symbols-outlined">logout</span>
+<span>Logout</span>
+</a>
+</div>
+</nav>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="flex-1 md:ml-[240px] flex flex-col min-h-screen">
+<!-- TopAppBar (Web Desktop) -->
+<header class="flex justify-between items-center w-full px-space-4 md:px-space-6 h-[64px] z-40 bg-surface border-b border-surface-container-highest sticky top-0 hidden md:flex">
+<div class="flex-1">
+<!-- Left side empty in this design as SideNav handles branding on desktop -->
+</div>
+<!-- Right Actions -->
+<div class="flex items-center gap-space-4">
+<button aria-label="notifications" class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-secondary-tint transition-colors relative">
+<span class="material-symbols-outlined">notifications</span>
+<span class="absolute top-2 right-2 w-2 h-2 bg-error rounded-full"></span>
+</button>
+<button aria-label="account_circle" class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-secondary-tint transition-colors">
+<span class="material-symbols-outlined">account_circle</span>
+</button>
+</div>
+</header>
+<!-- Page Content -->
+<div class="flex-1 p-space-6 max-w-[1280px] w-full mx-auto">
+<!-- Page Header Row -->
+<div class="flex flex-col md:flex-row md:items-center justify-between gap-space-4 mb-space-6">
+<h1 class="font-h1 text-h1 text-on-background">Employees</h1>
+<button class="bg-primary hover:bg-surface-tint text-on-primary px-space-4 py-space-2 rounded-lg font-body-emphasis flex items-center gap-space-2 transition-colors shadow-sm w-fit">
+<span class="material-symbols-outlined text-[20px]">add</span>
+                    + Add Employee
+                </button>
+</div>
+<!-- Filter Bar -->
+<div class="bg-surface rounded-xl border border-surface-container-highest p-space-4 mb-space-6 shadow-sm flex flex-col md:flex-row gap-space-4">
+<!-- Search -->
+<div class="flex-1 relative">
+<span class="material-symbols-outlined absolute left-space-3 top-1/2 -translate-y-1/2 text-outline">search</span>
+<input class="w-full pl-10 pr-space-4 py-space-2 rounded-lg border border-outline-variant focus:border-secondary focus:ring-1 focus:ring-secondary outline-none transition-shadow bg-surface text-on-background font-body placeholder:text-outline h-12" placeholder="Search employees..." type="text"/>
+</div>
+<!-- Territory Dropdown -->
+<div class="w-full md:w-48 relative">
+<select class="w-full pl-space-4 pr-10 py-space-2 rounded-lg border border-outline-variant focus:border-secondary focus:ring-1 focus:ring-secondary outline-none transition-shadow bg-surface text-on-background font-body appearance-none h-12 cursor-pointer">
+<option value="">All Territories</option>
+<option value="north">North Region</option>
+<option value="south">South Region</option>
+<option value="east">East Region</option>
+<option value="west">West Region</option>
+</select>
+<span class="material-symbols-outlined absolute right-space-3 top-1/2 -translate-y-1/2 text-outline pointer-events-none">arrow_drop_down</span>
+</div>
+<!-- Status Dropdown -->
+<div class="w-full md:w-48 relative">
+<select class="w-full pl-space-4 pr-10 py-space-2 rounded-lg border border-outline-variant focus:border-secondary focus:ring-1 focus:ring-secondary outline-none transition-shadow bg-surface text-on-background font-body appearance-none h-12 cursor-pointer">
+<option value="">All Statuses</option>
+<option value="active">Active</option>
+<option value="inactive">Inactive</option>
+<option value="leave">On Leave</option>
+</select>
+<span class="material-symbols-outlined absolute right-space-3 top-1/2 -translate-y-1/2 text-outline pointer-events-none">arrow_drop_down</span>
+</div>
+</div>
+<!-- Data Table Card -->
+<div class="bg-surface rounded-xl border border-surface-container-highest shadow-sm overflow-hidden flex flex-col">
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="bg-surface-container-low border-b border-surface-container-highest">
+<th class="py-space-3 px-space-4 font-body-emphasis text-on-surface-variant font-medium text-sm">Name</th>
+<th class="py-space-3 px-space-4 font-body-emphasis text-on-surface-variant font-medium text-sm">Territory</th>
+<th class="py-space-3 px-space-4 font-body-emphasis text-on-surface-variant font-medium text-sm">Employee Code</th>
+<th class="py-space-3 px-space-4 font-body-emphasis text-on-surface-variant font-medium text-sm">Status</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-surface-container-highest">
+<!-- Row 1 -->
+<tr class="hover:bg-surface-bright transition-colors cursor-pointer group">
+<td class="py-space-4 px-space-4">
+<div class="flex items-center gap-space-3">
+<div class="w-10 h-10 rounded-full bg-secondary-tint text-secondary flex items-center justify-center font-body-emphasis uppercase">
+                                            JS
+                                        </div>
+<div>
+<div class="font-body-emphasis text-on-background group-hover:text-primary transition-colors">Sarah Jenkins</div>
+<div class="font-caption text-caption text-on-surface-variant">Field Technician</div>
+</div>
+</div>
+</td>
+<td class="py-space-4 px-space-4 text-on-background">North Region</td>
+<td class="py-space-4 px-space-4 text-on-surface-variant font-mono text-sm">EMP-1042</td>
+<td class="py-space-4 px-space-4">
+<span class="inline-flex items-center px-2.5 py-1 rounded-full bg-primary-tint text-primary font-micro text-micro border border-primary-fixed">
+                                        Active
+                                    </span>
+</td>
+</tr>
+<!-- Row 2 -->
+<tr class="hover:bg-surface-bright transition-colors cursor-pointer group">
+<td class="py-space-4 px-space-4">
+<div class="flex items-center gap-space-3">
+<div class="w-10 h-10 rounded-full bg-secondary-tint text-secondary flex items-center justify-center font-body-emphasis uppercase">
+                                            MR
+                                        </div>
+<div>
+<div class="font-body-emphasis text-on-background group-hover:text-primary transition-colors">Michael Rodriguez</div>
+<div class="font-caption text-caption text-on-surface-variant">Senior Specialist</div>
+</div>
+</div>
+</td>
+<td class="py-space-4 px-space-4 text-on-background">West Region</td>
+<td class="py-space-4 px-space-4 text-on-surface-variant font-mono text-sm">EMP-0891</td>
+<td class="py-space-4 px-space-4">
+<span class="inline-flex items-center px-2.5 py-1 rounded-full bg-primary-tint text-primary font-micro text-micro border border-primary-fixed">
+                                        Active
+                                    </span>
+</td>
+</tr>
+<!-- Row 3 -->
+<tr class="hover:bg-surface-bright transition-colors cursor-pointer group">
+<td class="py-space-4 px-space-4">
+<div class="flex items-center gap-space-3">
+<div class="w-10 h-10 rounded-full bg-surface-container text-on-surface-variant flex items-center justify-center font-body-emphasis uppercase">
+                                            EP
+                                        </div>
+<div>
+<div class="font-body-emphasis text-on-background group-hover:text-primary transition-colors">Emily Patterson</div>
+<div class="font-caption text-caption text-on-surface-variant">Field Technician</div>
+</div>
+</div>
+</td>
+<td class="py-space-4 px-space-4 text-on-background">South Region</td>
+<td class="py-space-4 px-space-4 text-on-surface-variant font-mono text-sm">EMP-1105</td>
+<td class="py-space-4 px-space-4">
+<span class="inline-flex items-center px-2.5 py-1 rounded-full bg-surface-container text-on-surface-variant font-micro text-micro border border-outline-variant">
+                                        Inactive
+                                    </span>
+</td>
+</tr>
+<!-- Row 4 -->
+<tr class="hover:bg-surface-bright transition-colors cursor-pointer group">
+<td class="py-space-4 px-space-4">
+<div class="flex items-center gap-space-3">
+<img alt="David Chen" class="w-10 h-10 rounded-full object-cover border border-border-subtle" data-alt="A small, high-quality, professional headshot photo of a man in a modern corporate setting, smiling slightly. Bright, even lighting. White background." src="https://lh3.googleusercontent.com/aida-public/AB6AXuA1bx97QlXpD39eMWHBb2kdd2COw1bmKM2mWpz9fj2qUN-oFfd_wT18mm7S47pNTVTfgehiHRXIkGByY34akEVxQJOqLvG3YebDZbc7S_PtXau-CmJLw3Q7Xjt7Ppw-ybiKUeXOi8vjw2bU5HaR2xmoCJ5p8bZuvsC_ojlYsk9cEAIEDpFiMlJyW5D4K-Pfu_ymyapBTEwnvb0TwbVnAZa5kzegNRV9R6YvuJ5WtS3vioGWQU5deWnp"/>
+<div>
+<div class="font-body-emphasis text-on-background group-hover:text-primary transition-colors">David Chen</div>
+<div class="font-caption text-caption text-on-surface-variant">Regional Manager</div>
+</div>
+</div>
+</td>
+<td class="py-space-4 px-space-4 text-on-background">East Region</td>
+<td class="py-space-4 px-space-4 text-on-surface-variant font-mono text-sm">EMP-0234</td>
+<td class="py-space-4 px-space-4">
+<span class="inline-flex items-center px-2.5 py-1 rounded-full bg-primary-tint text-primary font-micro text-micro border border-primary-fixed">
+                                        Active
+                                    </span>
+</td>
+</tr>
+<!-- Row 5 -->
+<tr class="hover:bg-surface-bright transition-colors cursor-pointer group">
+<td class="py-space-4 px-space-4">
+<div class="flex items-center gap-space-3">
+<div class="w-10 h-10 rounded-full bg-warning-tint text-tertiary flex items-center justify-center font-body-emphasis uppercase">
+                                            LW
+                                        </div>
+<div>
+<div class="font-body-emphasis text-on-background group-hover:text-primary transition-colors">Lisa Washington</div>
+<div class="font-caption text-caption text-on-surface-variant">Field Technician</div>
+</div>
+</div>
+</td>
+<td class="py-space-4 px-space-4 text-on-background">North Region</td>
+<td class="py-space-4 px-space-4 text-on-surface-variant font-mono text-sm">EMP-1288</td>
+<td class="py-space-4 px-space-4">
+<span class="inline-flex items-center px-2.5 py-1 rounded-full bg-warning-tint text-tertiary font-micro text-micro border border-tertiary-fixed-dim">
+                                        On Leave
+                                    </span>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Pagination -->
+<div class="bg-surface border-t border-surface-container-highest px-space-4 py-space-3 flex items-center justify-end text-caption font-caption text-on-surface-variant gap-space-2 mt-auto">
+<button class="px-2 py-1 rounded hover:bg-surface-container transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center" disabled="">
+<span class="material-symbols-outlined text-[20px] mr-1">chevron_left</span> Previous
+                    </button>
+<span class="px-2">Page 1 of 6</span>
+<button class="px-2 py-1 rounded hover:bg-surface-container transition-colors text-primary font-medium flex items-center">
+                        Next <span class="material-symbols-outlined text-[20px] ml-1">chevron_right</span>
+</button>
+</div>
+</div>
+</div>
+</main>
+</body></html>

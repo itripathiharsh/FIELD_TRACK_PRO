@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>System Maintenance - FieldTrack Pro</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Roboto:wght@600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-primary-container": "#f5fff7",
+                        "error-tint": "#FDECEC",
+                        "on-surface": "#191c20",
+                        "tertiary-fixed-dim": "#fcbb4f",
+                        "surface-variant": "#e1e2e8",
+                        "on-primary-fixed-variant": "#00513a",
+                        "surface-tint": "#006c4e",
+                        "surface-container-highest": "#e1e2e8",
+                        "inverse-primary": "#68dbae",
+                        "border-subtle": "#EDEFF2",
+                        "on-secondary-fixed": "#001c38",
+                        "on-background": "#191c20",
+                        "error": "#E24B4A",
+                        "secondary-fixed-dim": "#a1c9ff",
+                        "surface-bright": "#f8f9ff",
+                        "on-primary-fixed": "#002115",
+                        "on-error": "#ffffff",
+                        "warning-tint": "#FFF6E5",
+                        "primary": "#00694c",
+                        "on-tertiary-fixed-variant": "#614000",
+                        "error-container": "#ffdad6",
+                        "surface-container-lowest": "#ffffff",
+                        "surface": "#FFFFFF",
+                        "primary-container": "#008560",
+                        "inverse-surface": "#2e3135",
+                        "tertiary-fixed": "#ffddb0",
+                        "secondary-fixed": "#d2e4ff",
+                        "surface-container-high": "#e6e8ed",
+                        "outline-variant": "#bccac1",
+                        "on-secondary-fixed-variant": "#004880",
+                        "outline": "#6d7a73",
+                        "on-tertiary": "#ffffff",
+                        "surface-container-low": "#f2f3f9",
+                        "on-tertiary-container": "#fffbff",
+                        "primary-tint": "#EAF7F1",
+                        "tertiary-container": "#9d6a00",
+                        "on-primary": "#ffffff",
+                        "inverse-on-surface": "#eff0f6",
+                        "on-tertiary-fixed": "#281800",
+                        "surface-container": "#eceef3",
+                        "tertiary": "#7d5400",
+                        "primary-fixed": "#86f8c9",
+                        "background": "#F7F8F9",
+                        "surface-dim": "#d8dadf",
+                        "secondary-container": "#5da9fe",
+                        "on-secondary-container": "#003d6d",
+                        "text-muted": "#8A919C",
+                        "on-surface-variant": "#3d4943",
+                        "secondary-tint": "#EAF3FC",
+                        "on-error-container": "#93000a",
+                        "secondary": "#0060a8",
+                        "on-secondary": "#ffffff",
+                        "primary-fixed-dim": "#68dbae"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "space-8": "32px",
+                        "space-4": "16px",
+                        "space-3": "12px",
+                        "space-2": "8px",
+                        "space-6": "24px",
+                        "space-12": "48px",
+                        "space-1": "4px"
+                    },
+                    "fontFamily": {
+                        "h2-mobile": ["Roboto"],
+                        "caption": ["Inter"],
+                        "body-emphasis": ["Inter"],
+                        "h2": ["Inter"],
+                        "micro": ["Inter"],
+                        "display": ["Inter"],
+                        "h3": ["Inter"],
+                        "h1-mobile": ["Roboto"],
+                        "h1": ["Inter"],
+                        "body": ["Inter"]
+                    },
+                    "fontSize": {
+                        "h2-mobile": ["22px", { "lineHeight": "1.3", "fontWeight": "600" }],
+                        "caption": ["14px", { "lineHeight": "1.4", "fontWeight": "400" }],
+                        "body-emphasis": ["16px", { "lineHeight": "1.5", "fontWeight": "600" }],
+                        "h2": ["24px", { "lineHeight": "1.3", "fontWeight": "600" }],
+                        "micro": ["12px", { "lineHeight": "1.3", "letterSpacing": "0.02em", "fontWeight": "500" }],
+                        "display": ["36px", { "lineHeight": "1.2", "fontWeight": "700" }],
+                        "h3": ["20px", { "lineHeight": "1.35", "fontWeight": "600" }],
+                        "h1-mobile": ["28px", { "lineHeight": "1.25", "fontWeight": "700" }],
+                        "h1": ["30px", { "lineHeight": "1.25", "fontWeight": "700" }],
+                        "body": ["16px", { "lineHeight": "1.5", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+        }
+        
+        .pulse-dot {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: .5; }
+        }
+    </style>
+</head>
+<body class="bg-background min-h-screen flex flex-col font-body text-body text-on-surface">
+<!-- Suppressed Navigation Shells due to linear/transactional intent (Maintenance Screen) -->
+<main class="flex-grow flex items-center justify-center p-space-6 relative overflow-hidden">
+<!-- Background Decorative Elements -->
+<div class="absolute inset-0 pointer-events-none overflow-hidden">
+<div class="absolute -top-[20%] -right-[10%] w-[50%] h-[50%] bg-primary-tint rounded-full mix-blend-multiply filter blur-[80px] opacity-70"></div>
+<div class="absolute -bottom-[20%] -left-[10%] w-[50%] h-[50%] bg-secondary-tint rounded-full mix-blend-multiply filter blur-[80px] opacity-70"></div>
+</div>
+<div class="max-w-3xl w-full z-10">
+<!-- Main Content Container -->
+<div class="glass-panel rounded-xl p-space-8 md:p-space-12 shadow-sm relative overflow-hidden">
+<div class="flex flex-col md:flex-row gap-space-8 items-center">
+<!-- Illustration Area -->
+<div class="w-full md:w-1/2 flex justify-center">
+<img class="w-full max-w-[320px] h-auto object-contain drop-shadow-md rounded-lg" data-alt="A clean, minimalist 3D illustration of server racks and floating digital data blocks in a bright, modern light-mode setting. Soft teal and blue accent lighting gently illuminates the geometric forms against a pristine white background. The composition conveys a sense of organized, professional system maintenance without being overly technical. Smooth gradients and subtle shadows emphasize a premium SaaS aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBbftmMTwuG7OGkwG_vG_EGmgCefnP95WWR5nWiKicygV2v_t8gVnnKH0vwUb9VjHGmzjF814blLytenXglpRd-vJelEQm8lRHFn9pBpqM6wFIO92MT_dMZpZF0wI-B7seG_5sY2RObdJZ_wMW4pPKu2Jt2zFd62FmS38bxWCRJuk3qu1PrLk_yVY7pXTdn1-VRYkqPPrTwB7ua9Mqy9GJuaEyIB8f4Loyod7VnmIcXPmXcYytdHhgM"/>
+</div>
+<!-- Text and Actions Area -->
+<div class="w-full md:w-1/2 flex flex-col items-center md:items-start text-center md:text-left space-y-space-6">
+<div>
+<div class="inline-flex items-center space-x-2 bg-secondary-tint text-secondary px-3 py-1 rounded-full mb-space-4">
+<span class="material-symbols-outlined text-[16px]">build</span>
+<span class="font-micro text-micro uppercase tracking-wider">Scheduled Maintenance</span>
+</div>
+<h1 class="font-display text-display text-on-surface mb-space-2">System Under Maintenance</h1>
+<p class="font-body text-body text-on-surface-variant">
+                                We're currently performing scheduled maintenance to improve your experience. Thank you for your patience.
+                            </p>
+</div>
+<!-- Status Card -->
+<div class="w-full bg-surface border border-border-subtle rounded-lg p-space-4 shadow-sm">
+<div class="flex justify-between items-center mb-space-3">
+<div class="flex items-center space-x-2">
+<div class="w-2 h-2 rounded-full bg-secondary pulse-dot"></div>
+<span class="font-body-emphasis text-body-emphasis text-on-surface">Maintenance Status: In Progress</span>
+</div>
+<span class="font-caption text-caption text-text-muted">65%</span>
+</div>
+<!-- Progress Bar -->
+<div class="w-full bg-surface-container-highest rounded-full h-2 mb-space-4 overflow-hidden">
+<div class="bg-primary h-2 rounded-full transition-all duration-1000 ease-in-out" style="width: 65%;"></div>
+</div>
+<div class="grid grid-cols-2 gap-space-4">
+<div>
+<p class="font-micro text-micro text-text-muted uppercase mb-1">Estimated Completion</p>
+<p class="font-body text-body text-on-surface flex items-center">
+<span class="material-symbols-outlined text-[16px] mr-1 text-on-surface-variant">schedule</span>
+                                        11:30 AM PST
+                                    </p>
+</div>
+<div>
+<p class="font-micro text-micro text-text-muted uppercase mb-1">Last Updated</p>
+<p class="font-body text-body text-on-surface flex items-center">
+<span class="material-symbols-outlined text-[16px] mr-1 text-on-surface-variant">update</span>
+                                        5 mins ago
+                                    </p>
+</div>
+</div>
+</div>
+<!-- Actions -->
+<div class="flex flex-col sm:flex-row w-full gap-space-4 pt-space-2">
+<button class="flex-1 bg-primary hover:bg-primary-container text-on-primary font-body-emphasis text-body-emphasis py-3 px-space-6 rounded-lg transition-colors flex justify-center items-center h-12 shadow-sm">
+<span class="material-symbols-outlined mr-2 text-[20px]">refresh</span>
+                                Retry
+                            </button>
+<button class="flex-1 bg-surface border border-outline hover:bg-surface-container-low text-on-surface font-body-emphasis text-body-emphasis py-3 px-space-6 rounded-lg transition-colors flex justify-center items-center h-12">
+                                Visit Status Page
+                            </button>
+</div>
+</div>
+</div>
+</div>
+<!-- Footer inside main container for alignment -->
+<div class="mt-space-8 text-center flex flex-col items-center justify-center space-y-space-2 text-text-muted font-caption text-caption">
+<p class="font-body-emphasis text-body-emphasis text-on-surface-variant flex items-center">
+<span class="material-symbols-outlined mr-2">verified</span>
+                    FieldTrack Pro
+                </p>
+<div class="flex items-center space-x-4">
+<span>Version 2.4.0</span>
+<span class="w-1 h-1 rounded-full bg-border-subtle"></span>
+<a class="hover:text-primary transition-colors" href="#">Support Email</a>
+</div>
+</div>
+</div>
+</main>
+</body></html>

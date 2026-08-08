@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Productivity Insights - FieldTrack Pro</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "background": "#F7F8F9",
+                        "on-primary-fixed": "#002115",
+                        "on-secondary-container": "#003d6d",
+                        "on-error": "#ffffff",
+                        "primary-tint": "#EAF7F1",
+                        "on-secondary": "#ffffff",
+                        "text-muted": "#8A919C",
+                        "on-tertiary-container": "#fffbff",
+                        "surface-variant": "#e1e2e8",
+                        "surface-container-lowest": "#ffffff",
+                        "surface-container-high": "#e6e8ed",
+                        "primary-fixed": "#86f8c9",
+                        "primary-container": "#008560",
+                        "error-container": "#ffdad6",
+                        "on-background": "#191c20",
+                        "secondary-container": "#5da9fe",
+                        "on-primary-container": "#f5fff7",
+                        "surface-dim": "#d8dadf",
+                        "surface-container-low": "#f2f3f9",
+                        "on-tertiary-fixed-variant": "#614000",
+                        "on-surface": "#191c20",
+                        "inverse-primary": "#68dbae",
+                        "outline-variant": "#bccac1",
+                        "on-tertiary": "#ffffff",
+                        "primary-fixed-dim": "#68dbae",
+                        "tertiary": "#7d5400",
+                        "border-subtle": "#EDEFF2",
+                        "primary": "#00694c",
+                        "secondary-fixed-dim": "#a1c9ff",
+                        "on-surface-variant": "#3d4943",
+                        "inverse-surface": "#2e3135",
+                        "surface": "#FFFFFF",
+                        "tertiary-fixed": "#ffddb0",
+                        "on-tertiary-fixed": "#281800",
+                        "on-primary": "#ffffff",
+                        "on-error-container": "#93000a",
+                        "surface-container": "#eceef3",
+                        "error": "#E24B4A",
+                        "error-tint": "#FDECEC",
+                        "secondary-tint": "#EAF3FC",
+                        "warning-tint": "#FFF6E5",
+                        "tertiary-container": "#9d6a00",
+                        "on-primary-fixed-variant": "#00513a",
+                        "surface-bright": "#f8f9ff",
+                        "outline": "#6d7a73",
+                        "surface-tint": "#006c4e",
+                        "on-secondary-fixed-variant": "#004880",
+                        "secondary-fixed": "#d2e4ff",
+                        "on-secondary-fixed": "#001c38",
+                        "surface-container-highest": "#e1e2e8",
+                        "tertiary-fixed-dim": "#fcbb4f",
+                        "secondary": "#0060a8",
+                        "inverse-on-surface": "#eff0f6"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "space-6": "24px",
+                        "space-3": "12px",
+                        "space-1": "4px",
+                        "space-4": "16px",
+                        "space-2": "8px",
+                        "space-12": "48px",
+                        "space-8": "32px"
+                    },
+                    "fontFamily": {
+                        "caption": ["Inter"],
+                        "micro": ["Inter"],
+                        "h1": ["Inter"],
+                        "h3": ["Inter"],
+                        "body-emphasis": ["Inter"],
+                        "body": ["Inter"],
+                        "h2": ["Inter"],
+                        "display": ["Inter"]
+                    },
+                    "fontSize": {
+                        "caption": ["14px", { "lineHeight": "1.4", "fontWeight": "400" }],
+                        "micro": ["12px", { "lineHeight": "1.3", "letterSpacing": "0.02em", "fontWeight": "500" }],
+                        "h1": ["30px", { "lineHeight": "1.25", "fontWeight": "700" }],
+                        "h3": ["20px", { "lineHeight": "1.35", "fontWeight": "600" }],
+                        "body-emphasis": ["16px", { "lineHeight": "1.5", "fontWeight": "600" }],
+                        "body": ["16px", { "lineHeight": "1.5", "fontWeight": "400" }],
+                        "h2": ["24px", { "lineHeight": "1.3", "fontWeight": "600" }],
+                        "display": ["36px", { "lineHeight": "1.2", "fontWeight": "700" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .icon-fill {
+            font-variation-settings: 'FILL' 1;
+        }
+        
+        /* Simple chart bar animations */
+        @keyframes growUp {
+            from { height: 0; opacity: 0; }
+            to { opacity: 1; }
+        }
+        .chart-bar {
+            transform-origin: bottom;
+            animation: growUp 0.8s ease-out forwards;
+        }
+        .progress-bar-fill {
+            transition: width 1s ease-out;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body text-body min-h-screen antialiased flex">
+<!-- SideNavBar (from JSON) -->
+<nav class="fixed left-0 top-0 h-full w-[240px] bg-surface dark:bg-on-background border-r border-border-subtle dark:border-outline-variant flex flex-col h-full py-space-6 px-space-4 z-20 hidden md:flex">
+<div class="mb-space-8 px-space-2">
+<h1 class="font-h3 text-h3 font-bold text-primary dark:text-primary-fixed">FieldTrack Pro</h1>
+<p class="font-caption text-caption text-text-muted mt-1">Field Ops Admin</p>
+</div>
+<div class="flex-1 space-y-1">
+<a class="flex items-center space-x-3 px-space-3 py-space-2 rounded-lg bg-primary-tint dark:bg-on-primary-fixed-variant text-primary dark:text-primary-fixed font-body-emphasis border-r-4 border-primary scale-98 active:scale-95 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span>Dashboard</span>
+</a>
+<a class="flex items-center space-x-3 px-space-3 py-space-2 rounded-lg text-on-surface-variant dark:text-surface-variant hover:bg-surface-container-low dark:hover:bg-inverse-surface transition-colors duration-200 scale-98 active:scale-95 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="badge">badge</span>
+<span>Employees</span>
+</a>
+<a class="flex items-center space-x-3 px-space-3 py-space-2 rounded-lg text-on-surface-variant dark:text-surface-variant hover:bg-surface-container-low dark:hover:bg-inverse-surface transition-colors duration-200 scale-98 active:scale-95 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="group">group</span>
+<span>Customers</span>
+</a>
+<a class="flex items-center space-x-3 px-space-3 py-space-2 rounded-lg text-on-surface-variant dark:text-surface-variant hover:bg-surface-container-low dark:hover:bg-inverse-surface transition-colors duration-200 scale-98 active:scale-95 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="location_on">location_on</span>
+<span>Visits</span>
+</a>
+<a class="flex items-center space-x-3 px-space-3 py-space-2 rounded-lg text-on-surface-variant dark:text-surface-variant hover:bg-surface-container-low dark:hover:bg-inverse-surface transition-colors duration-200 scale-98 active:scale-95 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="assessment">assessment</span>
+<span>Reports</span>
+</a>
+<a class="flex items-center space-x-3 px-space-3 py-space-2 rounded-lg text-on-surface-variant dark:text-surface-variant hover:bg-surface-container-low dark:hover:bg-inverse-surface transition-colors duration-200 scale-98 active:scale-95 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span>Settings</span>
+</a>
+</div>
+</nav>
+<!-- TopNavBar (from JSON) -->
+<header class="fixed top-0 right-0 w-[calc(100%-240px)] h-16 bg-surface dark:bg-on-background border-b border-border-subtle dark:border-outline-variant flex justify-between items-center px-space-6 ml-[240px] z-20 hidden md:flex">
+<div class="flex-1 max-w-md">
+<div class="relative">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" data-icon="search">search</span>
+<input class="w-full bg-surface-container-low border-none rounded-full pl-10 pr-4 py-2 focus:ring-2 focus:ring-primary text-body font-body outline-none placeholder:text-text-muted" placeholder="Search..." type="text"/>
+</div>
+</div>
+<div class="flex items-center space-x-4">
+<button class="p-2 text-on-surface-variant hover:text-primary transition-colors rounded-full hover:bg-surface-container-low relative">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+<span class="absolute top-1.5 right-1.5 w-2 h-2 bg-error rounded-full"></span>
+</button>
+<button class="font-body-emphasis text-primary hover:text-primary-container transition-colors">Export</button>
+<div class="h-8 w-8 rounded-full bg-secondary-tint overflow-hidden border border-border-subtle cursor-pointer hover:ring-2 hover:ring-primary transition-all">
+<img alt="Admin User Profile" class="w-full h-full object-cover" data-alt="A professional headshot of a female admin user in her 30s with short brown hair, wearing a dark blue blazer. The lighting is bright and corporate, conveying trust and reliability in a modern office setting." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAdHv4rduIQnBN77ysezHiWH2usOU9L7cD6Lozp89s0cEnOairftUUszyKI3U2oU07Lisj2qS5deXftw2qW9UttEDwZ7DkM4U1c8GwQ0jDS52j4RyDyEYGm_HuVIfoRe2Vs9dxVObJjeIBxiMLdmVBwEe1n0utbEchgbviRcp8QJ4Az6m1k0HIqwMGlIWKZ6_UFwkHGhtPCUVmZ_LixlErWOEJb09xGzbSSJmSFIx_rJ1dKijypCdcN"/>
+</div>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-1 ml-[240px] mt-16 p-space-6 max-w-[1280px] mx-auto w-full">
+<!-- Header Section -->
+<div class="flex flex-col md:flex-row md:items-center justify-between mb-space-8 gap-4">
+<div>
+<h1 class="font-h1 text-h1 text-on-surface">Productivity Insights</h1>
+<p class="font-body text-body text-text-muted mt-1">Overview of team performance and field efficiency.</p>
+</div>
+<div class="flex items-center space-x-3">
+<div class="flex items-center bg-surface border border-border-subtle rounded-lg px-space-3 py-space-2 shadow-sm hover:border-primary transition-colors cursor-pointer">
+<span class="material-symbols-outlined text-text-muted mr-2 text-[20px]" data-icon="calendar_today">calendar_today</span>
+<span class="font-body-emphasis text-on-surface text-sm">Last 30 Days</span>
+<span class="material-symbols-outlined text-text-muted ml-2 text-[20px]" data-icon="expand_more">expand_more</span>
+</div>
+<div class="flex items-center bg-surface border border-border-subtle rounded-lg px-space-3 py-space-2 shadow-sm hover:border-primary transition-colors cursor-pointer">
+<span class="material-symbols-outlined text-text-muted mr-2 text-[20px]" data-icon="filter_list">filter_list</span>
+<span class="font-body-emphasis text-on-surface text-sm">All Regions</span>
+<span class="material-symbols-outlined text-text-muted ml-2 text-[20px]" data-icon="expand_more">expand_more</span>
+</div>
+</div>
+</div>
+<!-- KPIs Row (Bento/Card Style) -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-space-4 mb-space-6">
+<!-- Card 1 -->
+<div class="bg-surface rounded-xl border border-border-subtle p-space-4 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
+<div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+<span class="material-symbols-outlined text-4xl text-primary" data-icon="location_on">location_on</span>
+</div>
+<p class="font-caption text-caption text-text-muted mb-2">Total Visits</p>
+<div class="flex items-end space-x-2">
+<h2 class="font-display text-display text-on-surface">1,248</h2>
+<span class="flex items-center text-primary font-micro text-micro bg-primary-tint px-2 py-0.5 rounded-full mb-1">
+<span class="material-symbols-outlined text-[14px] mr-1" data-icon="trending_up">trending_up</span>
+                        +12%
+                    </span>
+</div>
+</div>
+<!-- Card 2 -->
+<div class="bg-surface rounded-xl border border-border-subtle p-space-4 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
+<div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+<span class="material-symbols-outlined text-4xl text-secondary" data-icon="check_circle">check_circle</span>
+</div>
+<p class="font-caption text-caption text-text-muted mb-2">Completion Rate</p>
+<div class="flex items-end space-x-2">
+<h2 class="font-display text-display text-on-surface">98.2%</h2>
+<span class="flex items-center text-primary font-micro text-micro bg-primary-tint px-2 py-0.5 rounded-full mb-1">
+<span class="material-symbols-outlined text-[14px] mr-1" data-icon="trending_up">trending_up</span>
+                        +1.5%
+                    </span>
+</div>
+</div>
+<!-- Card 3 -->
+<div class="bg-surface rounded-xl border border-border-subtle p-space-4 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
+<div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+<span class="material-symbols-outlined text-4xl text-tertiary" data-icon="speed">speed</span>
+</div>
+<p class="font-caption text-caption text-text-muted mb-2">Avg. Productivity Score</p>
+<div class="flex items-end space-x-2">
+<h2 class="font-display text-display text-on-surface">88<span class="text-text-muted text-h3 font-normal">/100</span></h2>
+<span class="flex items-center text-text-muted font-micro text-micro bg-surface-container-low px-2 py-0.5 rounded-full mb-1">
+<span class="material-symbols-outlined text-[14px] mr-1" data-icon="horizontal_rule">horizontal_rule</span>
+                        0%
+                    </span>
+</div>
+</div>
+<!-- Card 4 -->
+<div class="bg-surface rounded-xl border border-border-subtle p-space-4 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
+<div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+<span class="material-symbols-outlined text-4xl text-on-surface-variant" data-icon="route">route</span>
+</div>
+<p class="font-caption text-caption text-text-muted mb-2">Total Distance</p>
+<div class="flex items-end space-x-2">
+<h2 class="font-display text-display text-on-surface">3,450<span class="text-text-muted text-h3 font-normal ml-1">mi</span></h2>
+<span class="text-text-muted font-micro text-micro mb-1 bg-surface-container-lowest px-1">- Approx.</span>
+</div>
+</div>
+</div>
+<!-- Charts Grid -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-space-6 mb-space-6">
+<!-- Column 1: Bar Chart -->
+<div class="bg-surface rounded-xl border border-border-subtle p-space-6 shadow-sm flex flex-col h-[400px]">
+<div class="flex justify-between items-center mb-6">
+<h3 class="font-h3 text-h3 text-on-surface">Visits per Day</h3>
+<button class="text-text-muted hover:text-primary"><span class="material-symbols-outlined" data-icon="more_vert">more_vert</span></button>
+</div>
+<!-- Faux Recharts Bar Chart Area -->
+<div class="flex-1 relative flex items-end justify-between px-2 pb-8 pt-4">
+<!-- Y-Axis Lines & Labels -->
+<div class="absolute left-0 top-0 bottom-8 w-full flex flex-col justify-between z-0">
+<div class="flex items-center border-b border-dashed border-border-subtle w-full h-0 relative">
+<span class="absolute -left-2 -translate-x-full font-micro text-text-muted">60</span>
+</div>
+<div class="flex items-center border-b border-dashed border-border-subtle w-full h-0 relative">
+<span class="absolute -left-2 -translate-x-full font-micro text-text-muted">40</span>
+</div>
+<div class="flex items-center border-b border-dashed border-border-subtle w-full h-0 relative">
+<span class="absolute -left-2 -translate-x-full font-micro text-text-muted">20</span>
+</div>
+<div class="flex items-center border-b border-border-subtle w-full h-0 relative">
+<span class="absolute -left-2 -translate-x-full font-micro text-text-muted">0</span>
+</div>
+</div>
+<!-- Bars (z-10 to sit above grid lines) -->
+<div class="relative z-10 w-[8%] h-[60%] bg-primary-tint hover:bg-primary rounded-t-sm chart-bar flex justify-center group cursor-pointer transition-colors" style="animation-delay: 0.1s">
+<span class="absolute -bottom-6 font-micro text-text-muted">Mon</span>
+<div class="absolute -top-8 bg-inverse-surface text-on-tertiary text-xs py-1 px-2 rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity">36</div>
+</div>
+<div class="relative z-10 w-[8%] h-[85%] bg-primary rounded-t-sm chart-bar flex justify-center group cursor-pointer" style="animation-delay: 0.2s">
+<span class="absolute -bottom-6 font-micro text-text-muted">Tue</span>
+<div class="absolute -top-8 bg-inverse-surface text-on-tertiary text-xs py-1 px-2 rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity">51</div>
+</div>
+<div class="relative z-10 w-[8%] h-[75%] bg-primary-tint hover:bg-primary rounded-t-sm chart-bar flex justify-center group cursor-pointer transition-colors" style="animation-delay: 0.3s">
+<span class="absolute -bottom-6 font-micro text-text-muted">Wed</span>
+<div class="absolute -top-8 bg-inverse-surface text-on-tertiary text-xs py-1 px-2 rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity">45</div>
+</div>
+<div class="relative z-10 w-[8%] h-[90%] bg-primary rounded-t-sm chart-bar flex justify-center group cursor-pointer" style="animation-delay: 0.4s">
+<span class="absolute -bottom-6 font-micro text-text-muted">Thu</span>
+<div class="absolute -top-8 bg-inverse-surface text-on-tertiary text-xs py-1 px-2 rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity">54</div>
+</div>
+<div class="relative z-10 w-[8%] h-[65%] bg-primary-tint hover:bg-primary rounded-t-sm chart-bar flex justify-center group cursor-pointer transition-colors" style="animation-delay: 0.5s">
+<span class="absolute -bottom-6 font-micro text-text-muted">Fri</span>
+<div class="absolute -top-8 bg-inverse-surface text-on-tertiary text-xs py-1 px-2 rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity">39</div>
+</div>
+<div class="relative z-10 w-[8%] h-[30%] bg-surface-variant hover:bg-primary-tint rounded-t-sm chart-bar flex justify-center group cursor-pointer transition-colors" style="animation-delay: 0.6s">
+<span class="absolute -bottom-6 font-micro text-text-muted">Sat</span>
+<div class="absolute -top-8 bg-inverse-surface text-on-tertiary text-xs py-1 px-2 rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity">18</div>
+</div>
+<div class="relative z-10 w-[8%] h-[15%] bg-surface-variant hover:bg-primary-tint rounded-t-sm chart-bar flex justify-center group cursor-pointer transition-colors" style="animation-delay: 0.7s">
+<span class="absolute -bottom-6 font-micro text-text-muted">Sun</span>
+<div class="absolute -top-8 bg-inverse-surface text-on-tertiary text-xs py-1 px-2 rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity">9</div>
+</div>
+</div>
+</div>
+<!-- Column 2: Leaderboard -->
+<div class="bg-surface rounded-xl border border-border-subtle p-space-6 shadow-sm flex flex-col h-[400px]">
+<div class="flex justify-between items-center mb-6">
+<h3 class="font-h3 text-h3 text-on-surface">Top Performers</h3>
+<a class="font-body-emphasis text-sm text-primary hover:underline" href="#">View All</a>
+</div>
+<div class="flex-1 overflow-y-auto pr-2 space-y-4">
+<!-- Leaderboard Item 1 -->
+<div class="flex items-center space-x-4 p-2 rounded-lg hover:bg-surface-container-lowest transition-colors group">
+<div class="w-8 h-8 rounded-full bg-warning-tint text-tertiary-container flex items-center justify-center font-bold text-sm">1</div>
+<div class="flex-1">
+<div class="flex justify-between mb-1">
+<span class="font-body-emphasis text-on-surface text-sm">Sarah Jenkins</span>
+<span class="font-caption text-text-muted text-sm">98/100</span>
+</div>
+<div class="w-full bg-surface-container h-2 rounded-full overflow-hidden">
+<div class="bg-primary h-full progress-bar-fill rounded-full" style="width: 98%;"></div>
+</div>
+</div>
+</div>
+<!-- Leaderboard Item 2 -->
+<div class="flex items-center space-x-4 p-2 rounded-lg hover:bg-surface-container-lowest transition-colors group">
+<div class="w-8 h-8 rounded-full bg-surface-container text-text-muted flex items-center justify-center font-bold text-sm">2</div>
+<div class="flex-1">
+<div class="flex justify-between mb-1">
+<span class="font-body-emphasis text-on-surface text-sm">Marcus Thorne</span>
+<span class="font-caption text-text-muted text-sm">94/100</span>
+</div>
+<div class="w-full bg-surface-container h-2 rounded-full overflow-hidden">
+<div class="bg-primary-fixed-dim h-full progress-bar-fill rounded-full" style="width: 94%;"></div>
+</div>
+</div>
+</div>
+<!-- Leaderboard Item 3 -->
+<div class="flex items-center space-x-4 p-2 rounded-lg hover:bg-surface-container-lowest transition-colors group">
+<div class="w-8 h-8 rounded-full bg-surface-container text-text-muted flex items-center justify-center font-bold text-sm">3</div>
+<div class="flex-1">
+<div class="flex justify-between mb-1">
+<span class="font-body-emphasis text-on-surface text-sm">Elena Rodriguez</span>
+<span class="font-caption text-text-muted text-sm">91/100</span>
+</div>
+<div class="w-full bg-surface-container h-2 rounded-full overflow-hidden">
+<div class="bg-primary-tint h-full progress-bar-fill rounded-full border border-primary-fixed-dim" style="width: 91%;"></div>
+</div>
+</div>
+</div>
+<!-- Leaderboard Item 4 -->
+<div class="flex items-center space-x-4 p-2 rounded-lg hover:bg-surface-container-lowest transition-colors group">
+<div class="w-8 h-8 rounded-full bg-surface-container text-text-muted flex items-center justify-center font-bold text-sm">4</div>
+<div class="flex-1">
+<div class="flex justify-between mb-1">
+<span class="font-body-emphasis text-on-surface text-sm">David Kim</span>
+<span class="font-caption text-text-muted text-sm">88/100</span>
+</div>
+<div class="w-full bg-surface-container h-2 rounded-full overflow-hidden">
+<div class="bg-surface-variant h-full progress-bar-fill rounded-full" style="width: 88%;"></div>
+</div>
+</div>
+</div>
+<!-- Leaderboard Item 5 -->
+<div class="flex items-center space-x-4 p-2 rounded-lg hover:bg-surface-container-lowest transition-colors group">
+<div class="w-8 h-8 rounded-full bg-surface-container text-text-muted flex items-center justify-center font-bold text-sm">5</div>
+<div class="flex-1">
+<div class="flex justify-between mb-1">
+<span class="font-body-emphasis text-on-surface text-sm">Aisha Patel</span>
+<span class="font-caption text-text-muted text-sm">85/100</span>
+</div>
+<div class="w-full bg-surface-container h-2 rounded-full overflow-hidden">
+<div class="bg-surface-variant h-full progress-bar-fill rounded-full" style="width: 85%;"></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Table Section -->
+<div class="bg-surface rounded-xl border border-border-subtle shadow-sm overflow-hidden mb-8">
+<div class="px-space-6 py-space-4 border-b border-border-subtle flex justify-between items-center bg-surface-container-lowest">
+<h3 class="font-h3 text-h3 text-on-surface flex items-center">
+<span class="material-symbols-outlined text-warning-tint text-tertiary-container mr-2" data-icon="warning">warning</span>
+                    Underperforming Visits Focus
+                </h3>
+<div class="flex space-x-2">
+<button class="p-1.5 rounded text-text-muted hover:bg-surface-container-low transition-colors"><span class="material-symbols-outlined text-[20px]" data-icon="search">search</span></button>
+<button class="p-1.5 rounded text-text-muted hover:bg-surface-container-low transition-colors"><span class="material-symbols-outlined text-[20px]" data-icon="filter_list">filter_list</span></button>
+</div>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="border-b border-border-subtle bg-surface-bright">
+<th class="px-space-6 py-space-3 font-micro text-micro text-text-muted font-medium tracking-wider">VISIT ID</th>
+<th class="px-space-6 py-space-3 font-micro text-micro text-text-muted font-medium tracking-wider">EMPLOYEE</th>
+<th class="px-space-6 py-space-3 font-micro text-micro text-text-muted font-medium tracking-wider">ISSUE TYPE</th>
+<th class="px-space-6 py-space-3 font-micro text-micro text-text-muted font-medium tracking-wider">DURATION</th>
+<th class="px-space-6 py-space-3 font-micro text-micro text-text-muted font-medium tracking-wider">VARIANCE</th>
+<th class="px-space-6 py-space-3 font-micro text-micro text-text-muted font-medium tracking-wider text-right">ACTION</th>
+</tr>
+</thead>
+<tbody class="font-body text-sm text-on-surface divide-y divide-border-subtle">
+<tr class="hover:bg-surface-container-lowest transition-colors">
+<td class="px-space-6 py-space-4 font-body-emphasis">#VST-8921</td>
+<td class="px-space-6 py-space-4 flex items-center space-x-3">
+<div class="w-6 h-6 rounded-full bg-secondary-tint text-secondary-fixed flex items-center justify-center font-bold text-[10px]">JD</div>
+<span>John Doe</span>
+</td>
+<td class="px-space-6 py-space-4">
+<span class="bg-error-tint text-on-error-container px-2 py-1 rounded-full font-micro text-[11px] flex w-fit items-center">
+<span class="material-symbols-outlined text-[12px] mr-1" data-icon="timer_off">timer_off</span> Low Duration
+                                </span>
+</td>
+<td class="px-space-6 py-space-4">12 mins <span class="text-text-muted text-xs ml-1">(Exp: 45m)</span></td>
+<td class="px-space-6 py-space-4 text-error font-medium">-73%</td>
+<td class="px-space-6 py-space-4 text-right">
+<button class="text-primary hover:text-primary-container font-body-emphasis text-sm">Review</button>
+</td>
+</tr>
+<tr class="hover:bg-surface-container-lowest transition-colors">
+<td class="px-space-6 py-space-4 font-body-emphasis">#VST-8914</td>
+<td class="px-space-6 py-space-4 flex items-center space-x-3">
+<div class="w-6 h-6 rounded-full bg-surface-variant text-on-surface-variant flex items-center justify-center font-bold text-[10px]">MS</div>
+<span>Mike Smith</span>
+</td>
+<td class="px-space-6 py-space-4">
+<span class="bg-warning-tint text-tertiary-container px-2 py-1 rounded-full font-micro text-[11px] flex w-fit items-center">
+<span class="material-symbols-outlined text-[12px] mr-1" data-icon="route">route</span> High Distance
+                                </span>
+</td>
+<td class="px-space-6 py-space-4">54 mins</td>
+<td class="px-space-6 py-space-4 text-tertiary font-medium">+42mi (Approx.)</td>
+<td class="px-space-6 py-space-4 text-right">
+<button class="text-primary hover:text-primary-container font-body-emphasis text-sm">Review</button>
+</td>
+</tr>
+<tr class="hover:bg-surface-container-lowest transition-colors">
+<td class="px-space-6 py-space-4 font-body-emphasis">#VST-8905</td>
+<td class="px-space-6 py-space-4 flex items-center space-x-3">
+<div class="w-6 h-6 rounded-full bg-surface-variant text-on-surface-variant flex items-center justify-center font-bold text-[10px]">TJ</div>
+<span>Tom Jones</span>
+</td>
+<td class="px-space-6 py-space-4">
+<span class="bg-error-tint text-on-error-container px-2 py-1 rounded-full font-micro text-[11px] flex w-fit items-center">
+<span class="material-symbols-outlined text-[12px] mr-1" data-icon="timer_off">timer_off</span> Low Duration
+                                </span>
+</td>
+<td class="px-space-6 py-space-4">15 mins <span class="text-text-muted text-xs ml-1">(Exp: 30m)</span></td>
+<td class="px-space-6 py-space-4 text-error font-medium">-50%</td>
+<td class="px-space-6 py-space-4 text-right">
+<button class="text-primary hover:text-primary-container font-body-emphasis text-sm">Review</button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</main>
+<script>
+        // Simple script to trigger animations once the page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            setTimeout(() => {
+                const progressBars = document.querySelectorAll('.progress-bar-fill');
+                progressBars.forEach(bar => {
+                    const targetWidth = bar.style.width;
+                    bar.style.width = '0%';
+                    setTimeout(() => {
+                        bar.style.width = targetWidth;
+                    }, 100);
+                });
+            }, 300);
+        });
+    </script>
+</body></html>

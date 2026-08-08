@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>W20 Productivity Dashboard</title>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Google Fonts: League Spartan & Libre Baskerville -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=League+Spartan:wght@400;500;600;700&amp;family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&amp;display=swap" rel="stylesheet"/>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+<!-- Tailwind Config Injection -->
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface-container-highest": "#e4e2e5",
+                        "primary-container": "#14213d",
+                        "surface": "#fbf8fb",
+                        "on-secondary-fixed": "#2a1700",
+                        "on-primary-fixed-variant": "#3a4664",
+                        "surface-dim": "#dbd9dc",
+                        "on-error-container": "#93000a",
+                        "on-surface-variant": "#45464d",
+                        "tertiary-fixed": "#ffddb6",
+                        "surface-tint": "#525e7d",
+                        "surface-container-lowest": "#ffffff",
+                        "error": "#ba1a1a",
+                        "surface-variant": "#e4e2e5",
+                        "on-tertiary-container": "#a58359",
+                        "secondary-fixed": "#ffddb8",
+                        "inverse-on-surface": "#f2f0f3",
+                        "primary-fixed-dim": "#b9c6ea",
+                        "on-secondary-container": "#684000",
+                        "inverse-primary": "#b9c6ea",
+                        "tertiary-fixed-dim": "#e7c092",
+                        "secondary-fixed-dim": "#ffb95f",
+                        "outline": "#75777e",
+                        "tertiary": "#130900",
+                        "on-primary": "#ffffff",
+                        "on-error": "#ffffff",
+                        "surface-bright": "#fbf8fb",
+                        "primary-fixed": "#d9e2ff",
+                        "on-surface": "#1b1b1e",
+                        "on-background": "#1b1b1e",
+                        "secondary": "#855300",
+                        "surface-container": "#f0edf0",
+                        "surface-container-high": "#eae7ea",
+                        "on-tertiary-fixed-variant": "#5c421e",
+                        "on-primary-container": "#7c89aa",
+                        "primary": "#000a24",
+                        "inverse-surface": "#303033",
+                        "on-secondary-fixed-variant": "#653e00",
+                        "on-tertiary-fixed": "#2a1800",
+                        "error-container": "#ffdad6",
+                        "tertiary-container": "#321d00",
+                        "secondary-container": "#ffa515",
+                        "on-tertiary": "#ffffff",
+                        "outline-variant": "#c5c6ce",
+                        "on-primary-fixed": "#0d1b36",
+                        "surface-container-low": "#f5f3f6",
+                        "on-secondary": "#ffffff",
+                        "background": "#fbf8fb",
+                        "brand-gold": "#FCA311",
+                        "brand-border": "#D1D1D1",
+                        "brand-bg": "#E5E5E5"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "container-max": "1440px",
+                        "margin": "32px",
+                        "base": "8px",
+                        "gutter": "24px"
+                    },
+                    "fontFamily": {
+                        "headline-sm": ["League Spartan"],
+                        "label-md": ["League Spartan"],
+                        "button": ["League Spartan"],
+                        "nav-link": ["League Spartan"],
+                        "headline-lg": ["League Spartan"],
+                        "body-md": ["Libre Baskerville"],
+                        "headline-md": ["League Spartan"],
+                        "body-lg": ["Libre Baskerville"],
+                        "headline-lg-mobile": ["League Spartan"]
+                    },
+                    "fontSize": {
+                        "headline-sm": ["20px", { "lineHeight": "1.3", "fontWeight": "600" }],
+                        "label-md": ["14px", { "lineHeight": "1", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "button": ["16px", { "lineHeight": "1", "fontWeight": "700" }],
+                        "nav-link": ["15px", { "lineHeight": "1", "fontWeight": "500" }],
+                        "headline-lg": ["32px", { "lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "body-md": ["16px", { "lineHeight": "1.6", "fontWeight": "400" }],
+                        "headline-md": ["24px", { "lineHeight": "1.3", "fontWeight": "600" }],
+                        "body-lg": ["18px", { "lineHeight": "1.6", "fontWeight": "400" }],
+                        "headline-lg-mobile": ["24px", { "lineHeight": "1.2", "fontWeight": "700" }]
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-brand-bg text-on-background font-body-md min-h-screen flex">
+<!-- SideNavBar (Shared Component) -->
+<nav class="hidden md:flex flex-col h-full py-space-6 px-space-4 bg-primary text-primary-fixed fixed left-0 top-0 h-full w-[280px] border-r border-border-subtle dark:border-outline-variant flat no shadows font-body text-body z-20">
+<div class="px-6 py-8 flex items-center gap-4">
+<div class="w-10 h-10 rounded bg-brand-gold flex items-center justify-center">
+<span class="material-symbols-outlined text-primary text-[24px]">explore</span>
+</div>
+<div>
+<h1 class="font-headline-sm text-headline-sm text-on-primary font-bold">FieldTrack Pro</h1>
+<p class="font-label-md text-label-md text-primary-fixed-dim uppercase mt-1">Field Ops Admin</p>
+</div>
+</div>
+<ul class="flex flex-col gap-2 px-4 mt-8 flex-1">
+<!-- Active State: Dashboard -->
+<li>
+<a class="flex items-center gap-3 px-4 py-3 bg-brand-gold text-primary font-nav-link text-nav-link rounded border-l-4 border-brand-gold" href="#">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">dashboard</span>
+                    Dashboard
+                </a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-4 py-3 text-primary-fixed-dim hover:bg-surface-container-low/10 transition-colors duration-200 font-nav-link text-nav-link rounded border-l-4 border-transparent" href="#">
+<span class="material-symbols-outlined text-[20px]">badge</span>
+                    Employees
+                </a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-4 py-3 text-primary-fixed-dim hover:bg-surface-container-low/10 transition-colors duration-200 font-nav-link text-nav-link rounded border-l-4 border-transparent" href="#">
+<span class="material-symbols-outlined text-[20px]">group</span>
+                    Customers
+                </a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-4 py-3 text-primary-fixed-dim hover:bg-surface-container-low/10 transition-colors duration-200 font-nav-link text-nav-link rounded border-l-4 border-transparent" href="#">
+<span class="material-symbols-outlined text-[20px]">location_on</span>
+                    Visits
+                </a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-4 py-3 text-primary-fixed-dim hover:bg-surface-container-low/10 transition-colors duration-200 font-nav-link text-nav-link rounded border-l-4 border-transparent" href="#">
+<span class="material-symbols-outlined text-[20px]">assessment</span>
+                    Reports
+                </a>
+</li>
+</ul>
+<div class="px-4 mb-8 mt-auto">
+<a class="flex items-center gap-3 px-4 py-3 text-primary-fixed-dim hover:bg-surface-container-low/10 transition-colors duration-200 font-nav-link text-nav-link rounded border-l-4 border-transparent" href="#">
+<span class="material-symbols-outlined text-[20px]">settings</span>
+                Settings
+            </a>
+</div>
+</nav>
+<!-- Main Content Area -->
+<main class="ml-[280px] flex-1 flex flex-col min-h-screen">
+<!-- TopNavBar (Shared Component) -->
+<header class="flex justify-between items-center px-8 h-20 bg-surface border-b border-brand-border sticky top-0 z-10">
+<div class="flex-1">
+<h2 class="font-headline-lg text-headline-lg text-on-surface">Management Insights</h2>
+</div>
+<div class="flex items-center gap-6">
+<!-- Search (Left aligned as per JSON, but pushed to flex-end here due to layout constraints) -->
+<div class="relative">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline">search</span>
+<input class="pl-10 pr-4 py-2 bg-surface-container-lowest border border-brand-border rounded focus:border-primary focus:ring-0 font-body-md text-body-md w-64" placeholder="Search..." type="text"/>
+</div>
+<button class="p-2 text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="font-button text-button uppercase text-primary border border-primary px-6 py-2 rounded hover:bg-surface-container-low transition-colors">
+                    Export
+                </button>
+<button class="flex items-center gap-2 font-button text-button uppercase text-on-primary bg-brand-gold px-6 py-2 rounded">
+                    Profile
+                </button>
+<img alt="Admin User Profile" class="w-10 h-10 rounded-full object-cover border border-brand-border" data-alt="A professional headshot of a corporate manager in a modern, well-lit office setting. The lighting is high-key and corporate. The aesthetic matches a clean, modern dashboard design system." src="https://lh3.googleusercontent.com/aida-public/AB6AXuC2A0zWw7bP6q8ENiu2kD0J8ueD7Tey_hBK7KCnLgu3Yb3MX-5ldSbWh1_wgDgMGlb0oZkWRc20tyQVHRyRQHGqTts3pCP2Ewf3_Xi5-fdOIgCmbyJrWkGFOB4GomqyyW2u7KDKNWrMO5eTmYGM8AbBl0T6WJLxpsbrYZAi3FMPkNXrjfqt6Ve7zpeEmuFUVDba0eUdGdmynuYdCoyJwPOngFEOurvta5oetl5aQesN0pCPND6gH-6d"/>
+</div>
+</header>
+<!-- Dashboard Content -->
+<div class="p-margin flex-1 overflow-y-auto">
+<!-- Grid Layout for Dashboard -->
+<div class="grid grid-cols-12 gap-gutter max-w-container-max mx-auto">
+<!-- KPI Cards (Top Row) -->
+<div class="col-span-12 grid grid-cols-4 gap-gutter mb-8">
+<!-- Card 1 -->
+<div class="bg-surface-container-lowest rounded-xl border border-brand-border overflow-hidden">
+<div class="bg-primary px-6 py-3 border-b border-brand-border">
+<h3 class="font-label-md text-label-md text-on-primary uppercase tracking-wider">Total Field Visits</h3>
+</div>
+<div class="p-6">
+<div class="flex justify-between items-end">
+<span class="font-headline-lg text-headline-lg text-on-surface">2,481</span>
+<div class="flex items-center gap-1 text-green-700 bg-green-100 px-2 py-1 rounded font-label-md text-[12px]">
+<span class="material-symbols-outlined text-[16px]">arrow_upward</span>
+                                    12%
+                                </div>
+</div>
+<p class="font-body-md text-body-md text-outline mt-2 text-sm">vs last month (2,210)</p>
+</div>
+</div>
+<!-- Card 2 -->
+<div class="bg-surface-container-lowest rounded-xl border border-brand-border overflow-hidden">
+<div class="bg-primary px-6 py-3 border-b border-brand-border">
+<h3 class="font-label-md text-label-md text-on-primary uppercase tracking-wider">Avg Completion Time</h3>
+</div>
+<div class="p-6">
+<div class="flex justify-between items-end">
+<span class="font-headline-lg text-headline-lg text-on-surface">1h 42m</span>
+<div class="flex items-center gap-1 text-red-700 bg-red-100 px-2 py-1 rounded font-label-md text-[12px]">
+<span class="material-symbols-outlined text-[16px]">arrow_downward</span>
+                                    4%
+                                </div>
+</div>
+<p class="font-body-md text-body-md text-outline mt-2 text-sm">Target: 1h 30m</p>
+</div>
+</div>
+<!-- Card 3 -->
+<div class="bg-surface-container-lowest rounded-xl border border-brand-border overflow-hidden">
+<div class="bg-primary px-6 py-3 border-b border-brand-border">
+<h3 class="font-label-md text-label-md text-on-primary uppercase tracking-wider">Active Crews</h3>
+</div>
+<div class="p-6">
+<div class="flex justify-between items-end">
+<span class="font-headline-lg text-headline-lg text-on-surface">84 / 92</span>
+<div class="flex items-center gap-1 text-primary bg-primary-fixed px-2 py-1 rounded font-label-md text-[12px]">
+<span class="material-symbols-outlined text-[16px]">check_circle</span>
+                                    91%
+                                </div>
+</div>
+<p class="font-body-md text-body-md text-outline mt-2 text-sm">Deployment rate</p>
+</div>
+</div>
+<!-- Card 4 -->
+<div class="bg-surface-container-lowest rounded-xl border border-brand-border overflow-hidden">
+<div class="bg-primary px-6 py-3 border-b border-brand-border">
+<h3 class="font-label-md text-label-md text-on-primary uppercase tracking-wider">Compliance Score</h3>
+</div>
+<div class="p-6">
+<div class="flex justify-between items-end">
+<span class="font-headline-lg text-headline-lg text-on-surface">98.2%</span>
+<div class="flex items-center gap-1 text-brand-gold bg-tertiary-fixed px-2 py-1 rounded font-label-md text-[12px]">
+<span class="material-symbols-outlined text-[16px]">horizontal_rule</span>
+                                    0%
+                                </div>
+</div>
+<p class="font-body-md text-body-md text-outline mt-2 text-sm">Audit passing rate</p>
+</div>
+</div>
+</div>
+<!-- Main Chart Area -->
+<div class="col-span-8 bg-surface-container-lowest rounded-xl border border-brand-border overflow-hidden flex flex-col">
+<div class="bg-primary px-6 py-4 flex justify-between items-center border-b border-brand-border">
+<h3 class="font-headline-sm text-headline-sm text-on-primary">Productivity by Region (Q3)</h3>
+<div class="flex gap-4">
+<div class="flex items-center gap-2">
+<div class="w-3 h-3 bg-brand-gold rounded-full"></div>
+<span class="font-label-md text-label-md text-on-primary text-[12px]">Completed</span>
+</div>
+<div class="flex items-center gap-2">
+<div class="w-3 h-3 bg-primary-fixed-dim rounded-full"></div>
+<span class="font-label-md text-label-md text-on-primary text-[12px]">Delayed</span>
+</div>
+</div>
+</div>
+<div class="p-6 flex-1 flex flex-col justify-end gap-6 relative min-h-[400px]">
+<!-- Faux Bar Chart -->
+<div class="flex-1 flex items-end justify-around pb-8 border-b border-brand-border">
+<!-- Bar Group 1 -->
+<div class="flex items-end gap-2 h-full">
+<div class="w-12 bg-brand-gold rounded-t relative group" style="height: 85%;">
+<div class="absolute -top-8 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity bg-primary text-on-primary text-xs px-2 py-1 rounded font-label-md">850</div>
+</div>
+<div class="w-12 bg-primary-fixed-dim rounded-t relative group" style="height: 15%;"></div>
+</div>
+<!-- Bar Group 2 -->
+<div class="flex items-end gap-2 h-full">
+<div class="w-12 bg-brand-gold rounded-t" style="height: 60%;"></div>
+<div class="w-12 bg-primary-fixed-dim rounded-t" style="height: 25%;"></div>
+</div>
+<!-- Bar Group 3 -->
+<div class="flex items-end gap-2 h-full">
+<div class="w-12 bg-brand-gold rounded-t" style="height: 95%;"></div>
+<div class="w-12 bg-primary-fixed-dim rounded-t" style="height: 5%;"></div>
+</div>
+<!-- Bar Group 4 -->
+<div class="flex items-end gap-2 h-full">
+<div class="w-12 bg-brand-gold rounded-t" style="height: 40%;"></div>
+<div class="w-12 bg-primary-fixed-dim rounded-t" style="height: 45%;"></div>
+</div>
+</div>
+<!-- X-Axis Labels -->
+<div class="flex justify-around font-label-md text-label-md text-outline">
+<span>North</span>
+<span>South</span>
+<span>East</span>
+<span>West</span>
+</div>
+<!-- Y-Axis Faux Lines -->
+<div class="absolute inset-0 p-6 pointer-events-none flex flex-col justify-between pb-[68px]">
+<div class="border-b border-dashed border-outline-variant w-full"></div>
+<div class="border-b border-dashed border-outline-variant w-full"></div>
+<div class="border-b border-dashed border-outline-variant w-full"></div>
+<div class="border-b border-dashed border-outline-variant w-full"></div>
+</div>
+</div>
+</div>
+<!-- Leaderboard Table -->
+<div class="col-span-4 bg-surface-container-lowest rounded-xl border border-brand-border overflow-hidden">
+<div class="bg-primary px-6 py-4 border-b border-brand-border">
+<h3 class="font-headline-sm text-headline-sm text-on-primary">Top Performing Crews</h3>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left">
+<thead>
+<tr class="bg-surface-container font-label-md text-label-md text-on-surface uppercase border-b border-brand-border">
+<th class="py-3 px-4">Crew ID</th>
+<th class="py-3 px-4">Efficiency</th>
+<th class="py-3 px-4 text-right">Trend</th>
+</tr>
+</thead>
+<tbody class="font-body-md text-body-md">
+<tr class="border-b border-brand-border hover:bg-surface-container-low transition-colors">
+<td class="py-3 px-4 font-label-md font-bold text-primary">CRW-092</td>
+<td class="py-3 px-4">98%</td>
+<td class="py-3 px-4 text-right text-green-700"><span class="material-symbols-outlined text-[18px] align-middle">trending_up</span></td>
+</tr>
+<tr class="border-b border-brand-border bg-[#F9F9F9] hover:bg-surface-container-low transition-colors">
+<td class="py-3 px-4 font-label-md font-bold text-primary">CRW-104</td>
+<td class="py-3 px-4">95%</td>
+<td class="py-3 px-4 text-right text-green-700"><span class="material-symbols-outlined text-[18px] align-middle">trending_up</span></td>
+</tr>
+<tr class="border-b border-brand-border hover:bg-surface-container-low transition-colors">
+<td class="py-3 px-4 font-label-md font-bold text-primary">CRW-015</td>
+<td class="py-3 px-4">91%</td>
+<td class="py-3 px-4 text-right text-brand-gold"><span class="material-symbols-outlined text-[18px] align-middle">trending_flat</span></td>
+</tr>
+<tr class="border-b border-brand-border bg-[#F9F9F9] hover:bg-surface-container-low transition-colors">
+<td class="py-3 px-4 font-label-md font-bold text-primary">CRW-077</td>
+<td class="py-3 px-4">88%</td>
+<td class="py-3 px-4 text-right text-brand-gold"><span class="material-symbols-outlined text-[18px] align-middle">trending_flat</span></td>
+</tr>
+<tr class="hover:bg-surface-container-low transition-colors">
+<td class="py-3 px-4 font-label-md font-bold text-primary">CRW-211</td>
+<td class="py-3 px-4">82%</td>
+<td class="py-3 px-4 text-right text-red-700"><span class="material-symbols-outlined text-[18px] align-middle">trending_down</span></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+</div>
+</main>
+</body></html>
