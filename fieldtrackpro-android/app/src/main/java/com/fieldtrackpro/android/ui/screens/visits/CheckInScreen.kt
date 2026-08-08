@@ -1,4 +1,4 @@
-package com.fieldtrackpro.android.ui.screens.visits
+﻿package com.fieldtrackpro.android.ui.screens.visits
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
@@ -116,7 +116,7 @@ fun CheckInScreen(
                                     color = if (ver.isValid) EmeraldGreen else Slate900
                                 )
                                 Text(
-                                    text = "Distance to customer: ${String.format("%.1f", ver.distanceM)}m (Max allowed: ${ver.allowedRadiusM}m)",
+                                    text = "Distance to customer: ${String.format("%.1f", ver.distanceM)}m (Max allowed: ${ver.geofenceRadiusM}m)",
                                     fontSize = 12.sp
                                 )
                             }
@@ -190,3 +190,4 @@ fun CheckInScreen(
         }
     }
 }
+

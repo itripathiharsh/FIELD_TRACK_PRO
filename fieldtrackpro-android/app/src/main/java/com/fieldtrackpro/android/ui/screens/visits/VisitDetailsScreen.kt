@@ -92,7 +92,7 @@ fun VisitDetailsScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = visit.customerName ?: "Customer #${visit.customerId.take(8)}",
+                                    text = "Customer #${visit.customerId.take(8)}",
                                     fontSize = 18.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Slate900
@@ -102,23 +102,18 @@ fun VisitDetailsScreen(
 
                             Spacer(modifier = Modifier.height(12.dp))
 
-                            DetailItem(label = "Purpose", value = visit.purpose)
+                            // FT-025: only fields the API actually returns are
+                            // shown. The previous version rendered purpose,
+                            // address, scheduled end and a verification-failure
+                            // count that VisitRead has never contained.
                             DetailItem(label = "Customer ID", value = visit.customerId)
-                            DetailItem(label = "Address", value = visit.customerAddress ?: "Not specified")
-                            DetailItem(label = "Scheduled Start", value = visit.scheduledStartTime)
-                            DetailItem(label = "Scheduled End", value = visit.scheduledEndTime)
+                            DetailItem(label = "Scheduled", value = visit.scheduledAt)
 
-                            if (visit.actualCheckInTime != null) {
-                                DetailItem(label = "Checked In", value = visit.actualCheckInTime)
+                            visit.checkInAt?.let {
+                                DetailItem(label = "Checked In", value = it)
                             }
-                            if (visit.actualCheckOutTime != null) {
-                                DetailItem(label = "Checked Out", value = visit.actualCheckOutTime)
-                            }
-                            if (visit.verificationFailureCount > 0) {
-                                DetailItem(
-                                    label = "Verification Failures",
-                                    value = "${visit.verificationFailureCount} failed attempt(s)"
-                                )
+                            visit.checkOutAt?.let {
+                                DetailItem(label = "Checked Out", value = it)
                             }
                         }
                     }

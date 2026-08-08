@@ -5,6 +5,7 @@ import com.fieldtrackpro.android.data.api.CustomerApi
 import com.fieldtrackpro.android.data.api.GeoApi
 import com.fieldtrackpro.android.data.api.MediaApi
 import com.fieldtrackpro.android.data.api.VisitApi
+import com.fieldtrackpro.android.BuildConfig
 import com.fieldtrackpro.android.data.local.TokenManager
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
@@ -40,8 +41,16 @@ object ApiClient {
                 chain.proceed(requestBuilder.build())
             }
 
+            // Security Design s9: never log full tokens or request bodies.
+            // BODY level printed the Authorization header and every payload,
+            // including credentials, into logcat on release builds.
             val loggingInterceptor = HttpLoggingInterceptor().apply {
-                level = HttpLoggingInterceptor.Level.BODY
+                level = if (BuildConfig.DEBUG) {
+                    HttpLoggingInterceptor.Level.BASIC
+                } else {
+                    HttpLoggingInterceptor.Level.NONE
+                }
+                redactHeader("Authorization")
             }
 
             val okHttpClient = OkHttpClient.Builder()

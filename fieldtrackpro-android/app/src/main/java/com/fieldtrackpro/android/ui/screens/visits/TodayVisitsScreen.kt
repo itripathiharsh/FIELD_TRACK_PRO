@@ -1,4 +1,4 @@
-package com.fieldtrackpro.android.ui.screens.visits
+﻿package com.fieldtrackpro.android.ui.screens.visits
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -112,7 +112,7 @@ fun TodayVisitsScreen(
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             Text(
-                                                text = visit.customerName ?: "Customer #${visit.customerId.take(8)}",
+                                                text = "Customer #${visit.customerId.take(8)}",
                                                 fontSize = 16.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 color = Slate900
@@ -123,19 +123,10 @@ fun TodayVisitsScreen(
                                         Spacer(modifier = Modifier.height(6.dp))
 
                                         Text(
-                                            text = "Purpose: ${visit.purpose}",
+                                            text = "Scheduled: ${visit.scheduledAt}",
                                             fontSize = 13.sp,
                                             color = Slate500
                                         )
-
-                                        if (!visit.customerAddress.isNull_or_empty()) {
-                                            Spacer(modifier = Modifier.height(4.dp))
-                                            Text(
-                                                text = "📍 ${visit.customerAddress}",
-                                                fontSize = 12.sp,
-                                                color = Slate500
-                                            )
-                                        }
                                     }
                                 }
                             }
@@ -147,4 +138,3 @@ fun TodayVisitsScreen(
     }
 }
 
-private fun String?.isNull_or_empty(): Boolean = this == null || this.trim().isEmpty()

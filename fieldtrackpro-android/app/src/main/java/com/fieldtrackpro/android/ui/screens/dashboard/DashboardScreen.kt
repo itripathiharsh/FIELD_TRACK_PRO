@@ -1,4 +1,4 @@
-package com.fieldtrackpro.android.ui.screens.dashboard
+﻿package com.fieldtrackpro.android.ui.screens.dashboard
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -248,13 +248,13 @@ fun DashboardScreen(
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = visit.customerName ?: "Customer #${visit.customerId.take(8)}",
+                                        text = "Customer #${visit.customerId.take(8)}",
                                         fontSize = 15.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = Slate900
                                     )
                                     Text(
-                                        text = visit.purpose,
+                                        text = visit.scheduledAt,
                                         fontSize = 13.sp,
                                         color = Slate500
                                     )
@@ -309,3 +309,4 @@ fun QuickActionButton(title: String, icon: ImageVector, onClick: () -> Unit, mod
         }
     }
 }
+
