@@ -49,6 +49,11 @@ class Settings(BaseSettings):
         "http://localhost:3000",
     ]
 
+    # Background jobs
+    # Disabled in tests so a scheduled sweep cannot mutate fixture data while
+    # an assertion is running (FT-021).
+    enable_scheduler: bool = True
+
     # Firebase
     firebase_credentials_path: str = ""
 

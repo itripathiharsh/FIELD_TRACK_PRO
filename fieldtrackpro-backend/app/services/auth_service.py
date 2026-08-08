@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.core.rate_limiter import login_rate_limiter
 from app.core.security import (
     create_access_token,
     generate_refresh_token,
@@ -26,7 +27,16 @@ from app.schemas.user import CurrentUserRead
 
 
 async def login(data: LoginRequest, session: AsyncSession) -> TokenResponse:
-    """Authenticate a user and issue access + refresh tokens."""
+    """
+    Authenticate a user and issue access + refresh tokens.
+
+    FT-041: the rate-limit check runs *before* credentials are examined, so a
+    locked-out identifier costs no password verification work and leaks no
+    information about whether the account exists.
+    """
+    identifier = data.email or data.mobile_number or ""
+    login_rate_limiter.check_allowed(identifier)
+
     user_repo = UserRepository(session)
 
     if data.email:
@@ -35,17 +45,24 @@ async def login(data: LoginRequest, session: AsyncSession) -> TokenResponse:
         user = await user_repo.get_by_mobile(data.mobile_number)
 
     if user is None or not verify_password(data.password, user.password_hash):
+        # A missing account and a wrong password are recorded and reported
+        # identically, so the endpoint cannot be used to enumerate users.
+        login_rate_limiter.record_failure(identifier)
         raise BaseAPIException(
             status_code=401,
             detail="Invalid credentials",
             error_code="AUTH_INVALID_CREDENTIALS",
         )
     if not user.is_active:
+        # Correct credentials, so this is not a brute-force signal; the counter
+        # is not incremented. Access is still refused.
         raise BaseAPIException(
             status_code=403,
             detail="Account is disabled",
             error_code="AUTH_ACCOUNT_DISABLED",
         )
+
+    login_rate_limiter.record_success(identifier)
 
     access_token = create_access_token(str(user.id), user.role.value)
     raw_refresh, token_hash = generate_refresh_token()

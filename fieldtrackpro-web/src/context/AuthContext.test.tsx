@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import React from 'react';
 
 import { AuthProvider, useAuth } from './AuthContext';
+import { apiClient } from '../api/client';
 
 /**
  * FT-001 (CRITICAL) - authentication bypass.
@@ -79,6 +80,7 @@ function mockRejectedLogin() {
 describe('AuthContext - failed login must not create a session (FT-001)', () => {
   beforeEach(() => {
     localStorage.clear();
+    apiClient.clearSession();
   });
 
   it('does not mark the user as authenticated when the backend rejects login', async () => {
@@ -215,7 +217,7 @@ describe('AuthContext - successful login (positive path)', () => {
     });
   }
 
-  it('authenticates and stores the real token', async () => {
+  it('authenticates and keeps the access token OUT of localStorage (FT-040)', async () => {
     mockSuccessfulLogin('ADMIN');
     renderAuth();
     await waitFor(() => expect(screen.getByTestId('loading')).toHaveTextContent('false'));
@@ -224,7 +226,14 @@ describe('AuthContext - successful login (positive path)', () => {
 
     await waitFor(() => expect(screen.getByTestId('authenticated')).toHaveTextContent('true'));
     expect(screen.getByTestId('role')).toHaveTextContent('ADMIN');
-    expect(localStorage.getItem(TOKEN_KEY)).toBe('real.access.token');
+
+    // Security Design s1: the access token must never be persisted.
+    expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
+    expect(apiClient.getAccessToken()).toBe('real.access.token');
+
+    // Nothing anywhere in localStorage may contain the access token.
+    const persisted = Object.keys(localStorage).map((k) => localStorage.getItem(k) ?? '');
+    expect(persisted.some((v) => v.includes('real.access.token'))).toBe(false);
   });
 
   it('honours the role returned by the backend rather than guessing from the email', async () => {

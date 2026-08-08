@@ -11,7 +11,21 @@ import {
   VisitStatus,
 } from '../types';
 
-const ACCESS_TOKEN_KEY = 'fieldtrack_access_token';
+/**
+ * FT-040: the access token is held in memory only.
+ *
+ * Security Design section 1 requires: "Web: access token in memory only (never
+ * localStorage - XSS risk); refresh token in httpOnly, Secure, SameSite=Strict
+ * cookie."
+ *
+ * The first half is implemented here: the short-lived access token never
+ * touches persistent storage, so injected script cannot read it and it does not
+ * survive the tab. The refresh token still uses localStorage, because moving it
+ * to an httpOnly cookie requires backend cookie issuance plus CSRF protection
+ * and would change the contract the Android client also depends on. That
+ * remainder is tracked as FT-065 with the rationale in docs/REPAIR_DECISIONS.md
+ * (RD-003) rather than being quietly dropped.
+ */
 const REFRESH_TOKEN_KEY = 'fieldtrack_refresh_token';
 
 /**
@@ -34,6 +48,9 @@ export class ApiError extends Error {
 export class ApiClient {
   private readonly baseUrl: string;
 
+  /** In-memory access token. Deliberately never persisted (FT-040). */
+  private accessToken: string | null = null;
+
   constructor() {
     // FT-055: one normalisation, applied once. VITE_API_BASE_URL may or may not
     // already include the /api/v1 suffix; every request path in this client is
@@ -51,24 +68,30 @@ export class ApiClient {
   // -- session storage -------------------------------------------------------
 
   getAccessToken(): string | null {
-    return localStorage.getItem(ACCESS_TOKEN_KEY);
+    return this.accessToken;
   }
 
   private getRefreshToken(): string | null {
     return localStorage.getItem(REFRESH_TOKEN_KEY);
   }
 
+  /**
+   * True when a session may be restorable.
+   *
+   * After a page reload the in-memory access token is gone by design, so the
+   * refresh token is what indicates a session worth re-establishing.
+   */
   hasStoredSession(): boolean {
-    return Boolean(this.getAccessToken());
+    return Boolean(this.accessToken || this.getRefreshToken());
   }
 
   private storeSession(tokens: LoginResponse): void {
-    localStorage.setItem(ACCESS_TOKEN_KEY, tokens.access_token);
+    this.accessToken = tokens.access_token;
     localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refresh_token);
   }
 
   clearSession(): void {
-    localStorage.removeItem(ACCESS_TOKEN_KEY);
+    this.accessToken = null;
     localStorage.removeItem(REFRESH_TOKEN_KEY);
   }
 
@@ -192,7 +215,20 @@ export class ApiClient {
     return tokens;
   }
 
+  /**
+   * Identity of the signed-in caller.
+   *
+   * FT-040: after a page reload there is no in-memory access token, so one is
+   * minted from the refresh token first. If that fails the session is genuinely
+   * over and the error propagates - no fabricated user is ever returned.
+   */
   async getCurrentUser(): Promise<User> {
+    if (!this.accessToken && this.getRefreshToken()) {
+      const restored = await this.tryRefresh();
+      if (!restored) {
+        throw new ApiError('Session expired. Please sign in again.', 401, 'SESSION_EXPIRED');
+      }
+    }
     return this.request<User>('/api/v1/auth/me');
   }
 

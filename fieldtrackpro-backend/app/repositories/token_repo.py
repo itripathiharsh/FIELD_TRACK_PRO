@@ -3,9 +3,10 @@ Refresh token repository.
 """
 from __future__ import annotations
 
-from datetime import datetime
+import uuid
+from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.refresh_token import RefreshToken
@@ -31,3 +32,21 @@ class TokenRepository(BaseRepository[RefreshToken]):
             select(RefreshToken).where(RefreshToken.token_hash == token_hash)
         )
         return result.scalar_one_or_none()
+
+    async def revoke_all_for_user(self, user_id: uuid.UUID) -> int:
+        """
+        Revoke every outstanding refresh token for a user.
+
+        Required by the locked auth design (`16_authentication.md` section 3):
+        this is what makes a password change - and employee deactivation -
+        take effect immediately rather than after the 7-day token lifetime.
+
+        Returns the number of tokens revoked.
+        """
+        result = await self.session.execute(
+            update(RefreshToken)
+            .where(RefreshToken.user_id == user_id)
+            .where(RefreshToken.revoked.is_(False))
+            .values(revoked=True)
+        )
+        return int(result.rowcount or 0)

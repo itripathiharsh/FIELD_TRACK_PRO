@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import hash_password, verify_password
 from app.exceptions.custom import BaseAPIException, DuplicateResourceException
 from app.models.user import User
+from app.repositories.token_repo import TokenRepository
 from app.repositories.user_repo import UserRepository
 from app.schemas.user import UserCreate, UserUpdatePassword
 
@@ -48,24 +49,53 @@ async def get_user_by_id(user_id: uuid.UUID, session: AsyncSession) -> User:
 
 
 async def update_password(user: User, data: UserUpdatePassword, session: AsyncSession) -> None:
+    """
+    Change the caller's own password.
+
+    FT-023. Security consequences applied per `16_authentication.md` section 3:
+    every outstanding refresh token for the user is revoked, so a password
+    change immediately ends sessions on other devices. This is the entire point
+    of changing a password after a suspected compromise.
+    """
     if not verify_password(data.old_password, user.password_hash):
         raise BaseAPIException(
             status_code=400,
             detail="Old password is incorrect",
             error_code="AUTH_WRONG_OLD_PASSWORD",
         )
+    if verify_password(data.new_password, user.password_hash):
+        raise BaseAPIException(
+            status_code=400,
+            detail="New password must be different from the current password",
+            error_code="AUTH_PASSWORD_UNCHANGED",
+        )
+
     user.password_hash = hash_password(data.new_password)
     session.add(user)
+
+    await TokenRepository(session).revoke_all_for_user(user.id)
     await session.commit()
 
 
 async def toggle_active(user_id: uuid.UUID, active: bool, session: AsyncSession) -> User:
+    """
+    Enable or disable an account.
+
+    Deactivation revokes outstanding refresh tokens so the session ends at once
+    rather than surviving until the token expires. This is the behaviour the
+    auth design attaches to feature B1 ("deactivate employee").
+    """
     repo = UserRepository(session)
     user = await repo.get_by_id(user_id)
     if user is None:
         raise BaseAPIException(status_code=404, detail="User not found", error_code="USER_NOT_FOUND")
+
     user.is_active = active
     session.add(user)
+
+    if not active:
+        await TokenRepository(session).revoke_all_for_user(user.id)
+
     await session.commit()
     await session.refresh(user)
     return user

@@ -6,7 +6,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, Field
 
 from app.models.user import Role
 
@@ -63,10 +63,15 @@ class CurrentUserRead(BaseModel):
 # Create / update schemas (admin-only)
 # ---------------------------------------------------------------------------
 
+#: Minimum password length. Kept as a named constant so the API, the tests and
+#: the client-side hint cannot drift apart.
+MIN_PASSWORD_LENGTH = 8
+
+
 class UserCreate(BaseModel):
     email: str | None = None
-    mobile_number: str | None = None
-    password: str
+    mobile_number: str | None = Field(default=None, max_length=20)
+    password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=128)
     role: Role = Role.EMPLOYEE
 
     @property
@@ -75,5 +80,7 @@ class UserCreate(BaseModel):
 
 
 class UserUpdatePassword(BaseModel):
-    old_password: str
-    new_password: str
+    """Self-service password change (FT-023)."""
+
+    old_password: str = Field(min_length=1)
+    new_password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=128)

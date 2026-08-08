@@ -25,6 +25,28 @@ class MediaRepository(BaseRepository[VisitMedia]):
         result = await self.session.execute(
             select(VisitMedia)
             .where(VisitMedia.visit_id == visit_id)
-            .order_by(VisitMedia.uploaded_at.desc())
+            .order_by(VisitMedia.uploaded_at.desc(), VisitMedia.id.desc())
         )
+        return result.scalars().all()
+
+    async def find_by_checksum_for_visit(
+        self, visit_id: uuid.UUID, checksum: str
+    ) -> VisitMedia | None:
+        """
+        Return an existing attachment on this visit with identical content.
+
+        FT-036: used to reject a duplicate upload before any bytes are written,
+        so identical "evidence" cannot be attached to the same visit twice.
+        """
+        result = await self.session.execute(
+            select(VisitMedia).where(
+                VisitMedia.visit_id == visit_id,
+                VisitMedia.checksum_sha256 == checksum,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def list_all(self) -> Sequence[VisitMedia]:
+        """Every media row, used by the storage-integrity check."""
+        result = await self.session.execute(select(VisitMedia).order_by(VisitMedia.uploaded_at))
         return result.scalars().all()
