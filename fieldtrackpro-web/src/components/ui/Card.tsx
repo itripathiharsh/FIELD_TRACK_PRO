@@ -38,7 +38,3 @@ export const CardTitle: React.FC<{ children: React.ReactNode; className?: string
 export const CardSubtitle: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className = '' }) => (
   <p className={`font-caption text-caption text-on-surface-variant mt-space-0.5 ${className}`}>{children}</p>
 );
-
-export const CardContent: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className = '' }) => (
-  <div className={className}>{children}</div>
-);

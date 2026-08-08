@@ -157,12 +157,23 @@ fun CheckInScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
+                        // FT-070: coordinates are parsed once, and an
+                        // unparseable value yields null rather than 0.0.
+                        // Defaulting to (0,0) is the same defect as FT-004 on
+                        // the server: it silently relocates the check-in to
+                        // Null Island instead of refusing to submit.
+                        val parsedLat = latText.toDoubleOrNull()
+                        val parsedLon = lonText.toDoubleOrNull()
+                        val hasValidCoordinates = parsedLat != null && parsedLon != null &&
+                            parsedLat in -90.0..90.0 && parsedLon in -180.0..180.0
+
                         OutlinedButton(
                             onClick = {
-                                val lat = latText.toDoubleOrNull() ?: 0.0
-                                val lon = lonText.toDoubleOrNull() ?: 0.0
-                                viewModel.verifyLocationPreflight(customerId, lat, lon)
+                                if (parsedLat != null && parsedLon != null) {
+                                    viewModel.verifyLocationPreflight(customerId, parsedLat, parsedLon)
+                                }
                             },
+                            enabled = hasValidCoordinates,
                             modifier = Modifier.weight(1f)
                         ) {
                             Text("PRE-CHECK GPS")
@@ -170,13 +181,15 @@ fun CheckInScreen(
 
                         Button(
                             onClick = {
-                                val lat = latText.toDoubleOrNull() ?: 0.0
-                                val lon = lonText.toDoubleOrNull() ?: 0.0
-                                viewModel.executeCheckIn(visitId, lat, lon, isOfflineMode = isOfflineMode)
+                                if (parsedLat != null && parsedLon != null) {
+                                    viewModel.executeCheckIn(
+                                        visitId, parsedLat, parsedLon, isOfflineMode = isOfflineMode
+                                    )
+                                }
                             },
                             modifier = Modifier.weight(1f),
                             colors = ButtonDefaults.buttonColors(containerColor = ElectricBlue),
-                            enabled = state !is CheckInState.Processing
+                            enabled = hasValidCoordinates && state !is CheckInState.Processing
                         ) {
                             if (state is CheckInState.Processing) {
                                 CircularProgressIndicator(color = SurfaceWhite, modifier = Modifier.height(20.dp))

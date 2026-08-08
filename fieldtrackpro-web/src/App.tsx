@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+﻿import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Layout } from './components/layout/Layout';
@@ -15,7 +15,6 @@ import { FormsPage } from './pages/FormsPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { ProfilePage } from './pages/ProfilePage';
-import { apiClient } from './api/client';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated, isLoading } = useAuth();
@@ -33,14 +32,9 @@ const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 };
 
 export function AppContent() {
-  const [apiStatus, setApiStatus] = useState<'checking' | 'connected' | 'error'>('checking');
-
-  useEffect(() => {
-    apiClient.getHealth()
-      .then(() => setApiStatus('connected'))
-      .catch(() => setApiStatus('error'));
-  }, []);
-
+  // FT-057: an `apiStatus` state was computed here, passed to Layout, and then
+  // discarded without ever being rendered - a duplicate of the health check
+  // the Header already performs and displays. Removed.
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
@@ -49,7 +43,7 @@ export function AppContent() {
         path="/*"
         element={
           <ProtectedRoute>
-            <Layout apiStatus={apiStatus}>
+            <Layout>
               <Routes>
                 <Route path="/" element={<DashboardPage />} />
                 <Route path="/employees" element={<AdminRoute><EmployeesPage /></AdminRoute>} />
@@ -85,3 +79,4 @@ export function App() {
 }
 
 export default App;
+

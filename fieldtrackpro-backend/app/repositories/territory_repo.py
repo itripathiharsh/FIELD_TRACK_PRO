@@ -14,12 +14,6 @@ class TerritoryRepository(BaseRepository[Territory]):
     def __init__(self, session: AsyncSession) -> None:
         super().__init__(Territory, session)
 
-    async def get_by_name(self, name: str) -> Territory | None:
-        result = await self.session.execute(
-            select(Territory).where(Territory.name == name)
-        )
-        return result.scalar_one_or_none()
-
     async def list_all(self) -> list[Territory]:
         result = await self.session.execute(
             select(Territory).order_by(Territory.name)

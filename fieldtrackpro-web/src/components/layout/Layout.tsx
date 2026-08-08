@@ -1,11 +1,10 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 import { useAuth } from '../../context/AuthContext';
 
 interface LayoutProps {
   children: React.ReactNode;
-  apiStatus?: 'error' | 'checking' | 'connected';
 }
 
 export const Layout: React.FC<LayoutProps> = ({ children }) => {
@@ -40,3 +39,4 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
     </div>
   );
 };
+

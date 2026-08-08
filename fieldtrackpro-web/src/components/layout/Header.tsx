@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Menu, Bell, ShieldCheck, Wifi, WifiOff, Search } from 'lucide-react';
+﻿import React, { useEffect, useState } from 'react';
+import { Menu, ShieldCheck, Wifi, WifiOff } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { apiClient } from '../../api/client';
 
@@ -29,15 +29,14 @@ export const Header: React.FC<HeaderProps> = ({ onMobileMenuToggle }) => {
           <Menu className="w-5 h-5" />
         </button>
 
-        {/* Global Quick Search Input */}
-        <div className="relative hidden sm:block">
-          <Search className="w-4 h-4 text-outline absolute left-space-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-          <input
-            type="text"
-            placeholder="Search telemetry, reps, visits..."
-            className="bg-surface-container-low border border-outline-variant rounded-lg pl-space-8 pr-space-4 py-space-1.5 text-on-surface font-body text-body-md placeholder:text-text-muted focus:outline-none focus:border-primary-container focus:ring-1 focus:ring-primary-container w-64 md:w-80 transition-all"
-          />
-        </div>
+        {/*
+          FT-071: a global search input used to sit here. It accepted typing
+          but had no handler, no state and no endpoint - typing produced
+          nothing at all. There is no global search API in the specification,
+          so the control has been removed rather than left as decorative
+          interactivity. Per-table search remains available and functional on
+          every list page.
+        */}
       </div>
 
       <div className="flex items-center gap-space-4">
@@ -58,14 +57,14 @@ export const Header: React.FC<HeaderProps> = ({ onMobileMenuToggle }) => {
           )}
         </div>
 
-        {/* Notifications Icon */}
-        <button
-          className="p-space-2 text-on-surface-variant hover:text-on-surface hover:bg-surface-container rounded-lg relative transition-colors"
-          aria-label="Notifications"
-        >
-          <Bell className="w-5 h-5" />
-          <span className="w-2 h-2 rounded-full bg-secondary-container absolute top-1.5 right-1.5" />
-        </button>
+        {/*
+          FT-071: a notifications bell used to sit here, permanently displaying
+          an "unread" dot. It had no click handler, and the notifications API
+          (GET /notifications/me) does not exist in this build - the dot could
+          never correspond to anything. Showing a persistent unread indicator
+          for a feature that cannot be opened is misleading, so the control has
+          been removed. The capability is tracked as FT-068.
+        */}
 
         {/* User Role Badge */}
         <div className="hidden lg:flex items-center gap-space-2 pl-space-2 border-l border-surface-container-highest">
@@ -78,3 +77,4 @@ export const Header: React.FC<HeaderProps> = ({ onMobileMenuToggle }) => {
     </header>
   );
 };
+

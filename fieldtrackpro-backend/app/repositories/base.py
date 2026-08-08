@@ -28,21 +28,6 @@ class BaseRepository(Generic[ModelT]):
         )
         return result.scalar_one_or_none()
 
-    async def list(
-        self,
-        *filters: Any,
-        skip: int = 0,
-        limit: int = 50,
-        order_by: Any = None,
-    ) -> Sequence[ModelT]:
-        stmt = select(self.model).offset(skip).limit(limit)
-        if filters:
-            stmt = stmt.where(*filters)
-        if order_by is not None:
-            stmt = stmt.order_by(order_by)
-        result = await self.session.execute(stmt)
-        return result.scalars().all()
-
     async def count(self, *filters: Any) -> int:
         stmt = select(func.count()).select_from(self.model)
         if filters:
@@ -62,7 +47,3 @@ class BaseRepository(Generic[ModelT]):
 
     async def commit(self) -> None:
         await self.session.commit()
-
-    async def refresh(self, entity: ModelT) -> ModelT:
-        await self.session.refresh(entity)
-        return entity

@@ -70,6 +70,3 @@ def require_role(*roles: Role):
         return current_user
 
     return _check
-
-
-AdminRequired = Depends(require_role(Role.ADMIN))
