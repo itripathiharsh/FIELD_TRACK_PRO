@@ -12,21 +12,45 @@
 
 ## 1. Version control state
 
+### As discovered in Phase 0
+
 | Item | Value |
 |---|---|
-| Repository | **NONE — the project is not under version control** |
-| `git rev-parse` at `F:\sentio wala` | `fatal: not a git repository` |
+| Repository | **NONE — the project was not under version control** |
+| `git rev-parse` at project root | `fatal: not a git repository` |
 | `.git` / `.hg` / `.svn` anywhere under project root | none found |
-| `git` binary available | yes (2.55.0.windows.2) |
 | `.gitignore` files present | 3 (backend, web, android) — present but **inert** |
 
-### Consequences (BLOCKER — see §9)
+### RESOLVED at the start of Phase 1 (FT-063)
 
-* No commit hash can be recorded as a rollback point.
-* No branch can be created to isolate repair work.
-* `git diff` cannot be used to review or revert repair changes.
-* FT-043 history purge is **not applicable** — there is no history to purge.
-* **Filesystem snapshots are currently the only rollback mechanism.**
+| Item | Value |
+|---|---|
+| Repository root | `F:\sentio wala\field track pro` |
+| Initialised | yes (`git init`, git 2.55.0.windows.2) |
+| **Baseline commit** | **`18e90881c6fb0f9f772ea86c00f3167cdb516948`** |
+| Baseline tag | `phase0-baseline` |
+| Files tracked | 426 |
+| Working tree at commit | clean |
+| `core.autocrlf` | `false` (preserve line endings exactly) |
+
+#### Secret / artefact exclusion verified before committing
+
+A root `.gitignore` was added on top of the three sub-project files. Staged
+content was audited; every one of these matched **0** staged files:
+
+`.env` · `node_modules` · `*.dump` · `*.zip` · `__pycache__` · `.pytest_cache`
+· `.gradle/` · `/build/` · `*.log` · `pytest_full_output.txt`
+
+* `fieldtrackpro-backend/.env` confirmed ignored via `git check-ignore`
+  (`fieldtrackpro-backend/.gitignore:32`).
+* The three `.env.example` files **are** tracked, by design.
+* Byte-level scan of all 426 staged files for the real DB password and the real
+  JWT secret: **0 occurrences**.
+* Only `media_storage/.gitkeep` is tracked from the storage tree; runtime media
+  is ignored.
+
+**Rollback:** `git reset --hard phase0-baseline` restores the code baseline;
+the verified `pg_dump` in §5 restores the database.
 
 ---
 
