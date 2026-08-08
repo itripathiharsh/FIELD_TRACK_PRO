@@ -137,18 +137,32 @@ fun CheckOutScreen(
 
                     Spacer(modifier = Modifier.height(20.dp))
 
+                    // FT-070: coordinates are parsed once and validated. An
+                    // unparseable field yields null, never 0.0 - defaulting
+                    // would submit a check-out from Null Island, which is the
+                    // client-side twin of the FT-004 server defect.
+                    // (CheckInScreen was corrected earlier; this screen carried
+                    // the identical coercion and was missed at the time.)
+                    val parsedLat = latText.toDoubleOrNull()
+                    val parsedLon = lonText.toDoubleOrNull()
+                    val hasValidCoordinates = parsedLat != null && parsedLon != null &&
+                        parsedLat in -90.0..90.0 && parsedLon in -180.0..180.0
+
                     Button(
                         onClick = {
-                            val lat = latText.toDoubleOrNull() ?: 0.0
-                            val lon = lonText.toDoubleOrNull() ?: 0.0
-                            viewModel.executeCheckOut(visitId, lat, lon, notes = notes, isOfflineMode = isOfflineMode)
+                            if (parsedLat != null && parsedLon != null) {
+                                viewModel.executeCheckOut(
+                                    visitId, parsedLat, parsedLon,
+                                    notes = notes, isOfflineMode = isOfflineMode
+                                )
+                            }
                         },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(50.dp),
                         shape = RoundedCornerShape(8.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = EmeraldGreen),
-                        enabled = state !is CheckInState.Processing
+                        enabled = hasValidCoordinates && state !is CheckInState.Processing
                     ) {
                         if (state is CheckInState.Processing) {
                             CircularProgressIndicator(color = SurfaceWhite, modifier = Modifier.height(24.dp))

@@ -1,6 +1,6 @@
-"""
-Visit service — refactored to use VisitRepository and GeoLogRepository.
-Follows: Router → Service → Repository → DB
+﻿"""
+Visit service â€” refactored to use VisitRepository and GeoLogRepository.
+Follows: Router â†’ Service â†’ Repository â†’ DB
 """
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from app.repositories.visit_repo import VisitRepository
 from app.schemas.visit import CheckInRequest, CheckOutRequest, VisitCreate
 from app.services.customer_service import get_customer, verify_geo_proximity
 from app.services.employee_service import get_employee_by_user_id
-from app.services.visit_state_machine import assert_valid_transition
+from app.services.visit_state_machine import assert_valid_transition, is_terminal
 from app.models.user import User
 
 # Number of geo-verification failures before auto-flagging
@@ -181,7 +181,7 @@ async def check_in(
     await geo_repo.add(log)
 
     if not geo_res.is_valid:
-        # Check if failure threshold reached — auto-flag visit
+        # Check if failure threshold reached â€” auto-flag visit
         fail_count = await geo_repo.count_failed_for_visit(visit.id)
         if fail_count >= GEO_FAILURE_THRESHOLD and visit.status in (VisitStatus.PENDING, VisitStatus.IN_PROGRESS):
             visit.status = VisitStatus.FLAGGED
@@ -276,11 +276,47 @@ async def admin_force_status(
     target_status: VisitStatus,
     session: AsyncSession,
 ) -> Visit:
-    """Admin-only: override visit status without normal state machine guard."""
+    """
+    Admin-only status override.
+
+    This deliberately relaxes the ordinary state machine - the API design lists
+    "manual status override (e.g. mark MISSED)" as an administrative power, and
+    resolving a FLAGGED visit requires moving it to a state the normal flow
+    would not allow.
+
+    FT-074: what it must NOT do is resurrect a terminal visit. Previously it
+    assigned `status` unconditionally, so a COMPLETED visit could be forced
+    back to PENDING and persisted as::
+
+        status = PENDING, check_in_at = <set>, check_out_at = <set>
+
+    That record is incoherent: it reappears as outstanding work while carrying
+    evidence it was finished, and the employee's "today" list would offer a
+    check-in on a visit that already has a check-out.
+
+    `19_business_logic.md` section 1 defines COMPLETED and MISSED as terminal.
+    Reopening one is refused; correcting a wrong outcome is a new visit, not a
+    rewrite of the audited one.
+    """
     visit = await get_visit(visit_id, session)
+
+    if visit.status == target_status:
+        return visit  # no-op
+
+    if is_terminal(visit.status):
+        raise BaseAPIException(
+            status_code=409,
+            detail=(
+                f"Visit is {visit.status.value} and cannot be reopened. "
+                "Schedule a new visit instead."
+            ),
+            error_code="VISIT_TERMINAL_STATE",
+        )
+
     visit.status = target_status
     session.add(visit)
     await session.commit()
     await session.refresh(visit)
     return visit
+
 
