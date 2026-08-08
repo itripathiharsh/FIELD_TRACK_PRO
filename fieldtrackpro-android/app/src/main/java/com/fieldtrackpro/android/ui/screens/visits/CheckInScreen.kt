@@ -1,6 +1,7 @@
 ﻿package com.fieldtrackpro.android.ui.screens.visits
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -52,8 +53,8 @@ fun CheckInScreen(
 ) {
     val state by viewModel.state.collectAsState()
 
-    var latText by remember { mutableStateOf("12.971600") }
-    var lonText by remember { mutableStateOf("77.594600") }
+    var latText by remember { mutableStateOf("") }
+    var lonText by remember { mutableStateOf("") }
     var isOfflineMode by remember { mutableStateOf(false) }
 
     if (state is CheckInState.ActionSuccess) {
@@ -164,8 +165,9 @@ fun CheckInScreen(
                         // Null Island instead of refusing to submit.
                         val parsedLat = latText.toDoubleOrNull()
                         val parsedLon = lonText.toDoubleOrNull()
+                        val isNotNullIsland = parsedLat != 0.0 || parsedLon != 0.0
                         val hasValidCoordinates = parsedLat != null && parsedLon != null &&
-                            parsedLat in -90.0..90.0 && parsedLon in -180.0..180.0
+                            parsedLat in -90.0..90.0 && parsedLon in -180.0..180.0 && isNotNullIsland
 
                         OutlinedButton(
                             onClick = {

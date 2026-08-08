@@ -74,9 +74,9 @@ fun ProfileSettingsScreen(
                     )
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    DetailItem(label = "Full Name", value = tokenManager.getUserName())
-                    DetailItem(label = "Email Address", value = tokenManager.getUserEmail().ifBlank { "N/A" })
-                    DetailItem(label = "Role Profile", value = tokenManager.getUserRole())
+                    DetailItem(label = "Full Name", value = tokenManager.getUserName() ?: "N/A")
+                    DetailItem(label = "Email Address", value = tokenManager.getUserEmail()?.ifBlank { "N/A" } ?: "N/A")
+                    DetailItem(label = "Role Profile", value = tokenManager.getUserRole() ?: "N/A")
                 }
             }
 

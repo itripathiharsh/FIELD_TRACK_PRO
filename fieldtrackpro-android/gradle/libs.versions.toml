@@ -13,6 +13,7 @@ okhttp = "4.12.0"
 room = "2.6.1"
 work = "2.10.0"
 navigationCompose = "2.8.4"
+coroutines = "1.8.1"
 # Keystore-backed encrypted preferences, required by Security Design s1
 # for token storage on device (FT-027).
 securityCrypto = "1.1.0-alpha06"
@@ -39,6 +40,7 @@ retrofit = { group = "com.squareup.retrofit2", name = "retrofit", version.ref = 
 retrofit-converter-gson = { group = "com.squareup.retrofit2", name = "converter-gson", version.ref = "retrofit" }
 okhttp-logging = { group = "com.squareup.okhttp3", name = "logging-interceptor", version.ref = "okhttp" }
 androidx-security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "securityCrypto" }
+kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

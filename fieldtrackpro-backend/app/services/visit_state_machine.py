@@ -6,11 +6,14 @@ from __future__ import annotations
 from app.exceptions.custom import InvalidStateTransitionException
 from app.models.visit import VisitStatus
 
-# Valid transitions per source status
+# Valid transitions per source status.
+# Verified against 19_business_logic.md section 1. Only PENDING visits can
+# transition to MISSED (via the missed-visit scheduler). IN_PROGRESS and
+# FLAGGED visits resolve to COMPLETED or return to IN_PROGRESS, never MISSED.
 _VALID_TRANSITIONS: dict[VisitStatus, set[VisitStatus]] = {
     VisitStatus.PENDING:     {VisitStatus.IN_PROGRESS, VisitStatus.MISSED},
-    VisitStatus.IN_PROGRESS: {VisitStatus.COMPLETED, VisitStatus.FLAGGED, VisitStatus.MISSED},
-    VisitStatus.FLAGGED:     {VisitStatus.IN_PROGRESS, VisitStatus.COMPLETED, VisitStatus.MISSED},
+    VisitStatus.IN_PROGRESS: {VisitStatus.COMPLETED, VisitStatus.FLAGGED},
+    VisitStatus.FLAGGED:     {VisitStatus.IN_PROGRESS, VisitStatus.COMPLETED},
     VisitStatus.COMPLETED:   set(),
     VisitStatus.MISSED:      set(),
 }

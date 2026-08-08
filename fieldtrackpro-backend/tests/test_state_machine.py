@@ -20,10 +20,8 @@ from app.services.visit_state_machine import assert_valid_transition, is_termina
     (VisitStatus.PENDING,     VisitStatus.MISSED),
     (VisitStatus.IN_PROGRESS, VisitStatus.COMPLETED),
     (VisitStatus.IN_PROGRESS, VisitStatus.FLAGGED),
-    (VisitStatus.IN_PROGRESS, VisitStatus.MISSED),
     (VisitStatus.FLAGGED,     VisitStatus.IN_PROGRESS),
     (VisitStatus.FLAGGED,     VisitStatus.COMPLETED),
-    (VisitStatus.FLAGGED,     VisitStatus.MISSED),
 ])
 def test_valid_transition(source, target):
     # Should not raise
@@ -43,6 +41,8 @@ def test_valid_transition(source, target):
     (VisitStatus.MISSED,      VisitStatus.COMPLETED),
     (VisitStatus.PENDING,     VisitStatus.COMPLETED),
     (VisitStatus.PENDING,     VisitStatus.FLAGGED),
+    (VisitStatus.IN_PROGRESS, VisitStatus.MISSED),
+    (VisitStatus.FLAGGED,     VisitStatus.MISSED),
 ])
 def test_invalid_transition_raises(source, target):
     with pytest.raises(InvalidStateTransitionException):

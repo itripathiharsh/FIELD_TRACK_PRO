@@ -32,7 +32,9 @@ data class VisitDto(
     val synced: Boolean = false,
     @SerializedName("created_by") val createdBy: String? = null,
     @SerializedName("created_at") val createdAt: String? = null,
-    @SerializedName("updated_at") val updatedAt: String? = null
+    @SerializedName("updated_at") val updatedAt: String? = null,
+    @kotlin.jvm.Transient val customerName: String? = null,
+    @kotlin.jvm.Transient val customerAddress: String? = null
 ) {
     val isPending: Boolean get() = status == "PENDING"
     val isInProgress: Boolean get() = status == "IN_PROGRESS"
@@ -41,8 +43,8 @@ data class VisitDto(
     /** Check-in is offered for a visit that has not yet started. */
     val canCheckIn: Boolean get() = status == "PENDING" || status == "FLAGGED"
 
-    /** Check-out is offered only once the visit is under way. */
-    val canCheckOut: Boolean get() = status == "IN_PROGRESS"
+    /** Check-out is offered once the visit is under way or flagged for review. */
+    val canCheckOut: Boolean get() = status == "IN_PROGRESS" || status == "FLAGGED"
 }
 
 data class CheckInRequest(

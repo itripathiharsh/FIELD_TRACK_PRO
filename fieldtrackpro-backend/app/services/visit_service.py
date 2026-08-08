@@ -131,7 +131,7 @@ async def get_my_today_visits(current_user: User, session: AsyncSession) -> list
     """Employee: returns today's scheduled visits for the authenticated employee."""
     employee = await get_employee_by_user_id(current_user.id, session)
     repo = VisitRepository(session)
-    today = date.today()
+    today = datetime.now(timezone.utc).date()
     start = datetime(today.year, today.month, today.day, tzinfo=timezone.utc)
     end = start + timedelta(days=1)
     return await repo.get_employee_today_visits(employee.id, start, end)

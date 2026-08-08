@@ -172,9 +172,59 @@ marked as such — never VERIFIED.
 
 ---
 
-## RD-007 — Visual identity untouched
+## RD-008 — Android build environment provisioned
 
-Every frontend change in this program was behavioural. Colours, typography,
+**Context:** FT-024 … FT-027 and FT-070 were blocked for want of a build
+environment (RD-006).
+
+**Decision:** Provision a complete Android build environment:
+- JDK 17 (Eclipse Adoptium) at `C:\Program Files\Eclipse Adoptium\jdk-17.0.17.10-hotspot`
+- Android SDK at `C:\Android\sdk` with command-line tools
+- Gradle 8.9 wrapper generated and preserved
+- compileSdk 35, build-tools 35.0.0, platform-tools installed
+
+All five previously blocked items (FT-024, FT-025, FT-026, FT-027, FT-070)
+are now **VERIFIED** through compilation and 47 unit tests.
+
+**Status:** Implemented and verified.
+
+---
+
+## RD-009 — CheckOutRequest.notes removed
+
+**Context:** During the Android forensic pass, a contract audit revealed that
+`CheckOutRequest.notes` was an invented field not present in the backend API
+schema (`app/schemas/visit.py:30-34`).
+
+**Decision:** Remove the `notes` field from `CheckOutRequest` and from the
+`VisitRepository.checkOut` body construction. The offline queue
+`PendingAction.notes` remains as a local-only field. This is the same class of
+defect that FT-010 addressed on the web (extra keys silently dropped, then
+rejected under `extra="forbid"`).
+
+**Status:** Implemented and verified by `DtoContractTest.checkOutRequest_doesNotContainNotesField`.
+
+---
+
+## RD-010 — Android coordinate (0,0) validation
+
+**Context:** The original FT-070 fix (in BATCH H) only corrected
+`CheckInScreen.kt`. `CheckOutScreen.kt` retained the same `(0,0)` coercion
+defect, which was identified during the forensic pattern hunt.
+
+**Decision:** Add explicit `(0,0)` rejection in both screens. The validation
+rejects coordinates where **both** latitude and longitude are exactly `0.0`
+(Null Island). A single zero coordinate (e.g., on the equator or prime meridian)
+is valid and accepted.
+
+**Status:** Implemented and verified by `CoordinateValidationTest` (16 tests
+including `nullIsland_rejected`).
+
+---
+
+## RD-011 — Visual identity untouched
+
+Every frontend change in this programme was behavioural. Colours, typography,
 spacing, radii, component styling and the approved navy/amber League Spartan +
 Libre Baskerville identity are unchanged. The design-source conflict recorded as
 FT-030 (a stale UI Bible describing a different teal/Inter palette) remains a

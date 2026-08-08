@@ -18,7 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
@@ -193,7 +193,7 @@ fun DashboardScreen(
                     ) {
                         QuickActionButton(
                             title = "Today's Visits",
-                            icon = Icons.Default.List,
+                            icon = Icons.AutoMirrored.Filled.List,
                             onClick = onNavigateToVisits,
                             modifier = Modifier.weight(1f)
                         )

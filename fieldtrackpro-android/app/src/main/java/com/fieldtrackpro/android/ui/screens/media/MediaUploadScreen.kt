@@ -54,14 +54,6 @@ fun MediaUploadScreen(
         viewModel.loadVisitMedia(visitId)
     }
 
-    // Sample JPEG file header bytes for demonstration upload
-    val sampleJpegBytes = byteArrayOf(
-        0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xE0.toByte(), 0x00.toByte(), 0x10.toByte(),
-        'J'.code.toByte(), 'F'.code.toByte(), 'I'.code.toByte(), 'F'.code.toByte(), 0x00.toByte(),
-        0x01.toByte(), 0x01.toByte(), 0x01.toByte(), 0x00.toByte(), 0x60.toByte(), 0x00.toByte(),
-        0x60.toByte(), 0x00.toByte(), 0x00.toByte(), 0x01.toByte(), 0x02.toByte(), 0x03.toByte()
-    )
-
     Scaffold(
         topBar = {
             FieldTrackTopAppBar(
@@ -102,26 +94,28 @@ fun MediaUploadScreen(
                         Spacer(modifier = Modifier.height(12.dp))
                     }
 
-                    Button(
-                        onClick = {
-                            viewModel.uploadMedia(
-                                visitId = visitId,
-                                fileName = "site_inspection_${System.currentTimeMillis()}.jpg",
-                                mimeType = "image/jpeg",
-                                fileBytes = sampleJpegBytes
-                            )
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp),
-                        shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = ElectricBlue),
-                        enabled = state !is MediaState.Loading
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = Slate50),
+                        shape = RoundedCornerShape(8.dp)
                     ) {
-                        if (state is MediaState.Loading) {
-                            CircularProgressIndicator(color = SurfaceWhite, modifier = Modifier.height(20.dp))
-                        } else {
-                            Text("📸 CAPTURE & UPLOAD PHOTO", fontWeight = FontWeight.Bold)
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = "📸 Photo Capture",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Slate900
+                            )
+                            Text(
+                                text = "Camera integration is not yet available in this release.",
+                                fontSize = 12.sp,
+                                color = Slate500
+                            )
                         }
                     }
                 }

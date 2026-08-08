@@ -142,8 +142,7 @@ class VisitRepository(
                 latitude = latitude,
                 longitude = longitude,
                 accuracyM = accuracyM,
-                isMockLocation = isMock,
-                notes = notes
+                isMockLocation = isMock
             )
             val response = visitApi.checkOut(visitId, req)
             if (response.isSuccessful && response.body() != null) {

@@ -43,8 +43,10 @@ class AuthViewModel(
     }
 
     fun logout() {
-        authRepository.logout()
-        _authState.value = AuthState.Idle
+        viewModelScope.launch {
+            authRepository.logout()
+            _authState.value = AuthState.Idle
+        }
     }
 
     fun checkAuthStatus(): Boolean = authRepository.isLoggedIn()

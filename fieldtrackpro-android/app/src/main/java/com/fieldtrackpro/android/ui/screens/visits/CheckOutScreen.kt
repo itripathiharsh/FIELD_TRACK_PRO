@@ -50,9 +50,9 @@ fun CheckOutScreen(
 ) {
     val state by viewModel.state.collectAsState()
 
-    var latText by remember { mutableStateOf("12.971600") }
-    var lonText by remember { mutableStateOf("77.594600") }
-    var notes by remember { mutableStateOf("Completed site meeting and client review.") }
+    var latText by remember { mutableStateOf("") }
+    var lonText by remember { mutableStateOf("") }
+    var notes by remember { mutableStateOf("") }
     var isOfflineMode by remember { mutableStateOf(false) }
 
     if (state is CheckInState.ActionSuccess) {
@@ -145,8 +145,9 @@ fun CheckOutScreen(
                     // the identical coercion and was missed at the time.)
                     val parsedLat = latText.toDoubleOrNull()
                     val parsedLon = lonText.toDoubleOrNull()
+                    val isNotNullIsland = parsedLat != 0.0 || parsedLon != 0.0
                     val hasValidCoordinates = parsedLat != null && parsedLon != null &&
-                        parsedLat in -90.0..90.0 && parsedLon in -180.0..180.0
+                        parsedLat in -90.0..90.0 && parsedLon in -180.0..180.0 && isNotNullIsland
 
                     Button(
                         onClick = {
