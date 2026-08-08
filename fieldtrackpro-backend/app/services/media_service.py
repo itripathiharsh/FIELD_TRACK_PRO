@@ -11,27 +11,22 @@ from typing import Sequence
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions.custom import BaseAPIException
-from app.models.user import Role, User
+from app.models.user import User
 from app.models.visit_media import VisitMedia
 from app.repositories.media_repo import MediaRepository
-from app.services.employee_service import get_employee_by_user_id
 from app.services.file_validation_service import FileValidationService
 from app.services.storage_service import storage_service
-from app.services.visit_service import get_visit
+from app.services.visit_service import get_visit_for_user
 
 
 async def _assert_visit_access(visit_id: uuid.UUID, current_user: User, session: AsyncSession):
-    """Verify that current_user has access permission to target visit."""
-    visit = await get_visit(visit_id, session)
-    if current_user.role == Role.EMPLOYEE:
-        employee = await get_employee_by_user_id(current_user.id, session)
-        if visit.employee_id != employee.id:
-            raise BaseAPIException(
-                status_code=403,
-                detail="You are not assigned to this visit",
-                error_code="VISIT_NOT_ASSIGNED",
-            )
-    return visit
+    """
+    Verify the caller may act on the target visit.
+
+    Delegates to the single ownership rule in visit_service (FT-002) rather than
+    re-implementing it here, so media and visit endpoints can never drift apart.
+    """
+    return await get_visit_for_user(visit_id, current_user, session)
 
 
 async def upload_visit_media(

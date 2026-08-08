@@ -49,5 +49,12 @@ module.exports = {
         'no-console': 'off',
       },
     },
+    {
+      // Context modules intentionally export a provider component alongside
+      // its consumer hook. This is the standard React Context pattern; the
+      // fast-refresh caveat is a dev-server nicety, not a defect.
+      files: ['src/context/**'],
+      rules: { 'react-refresh/only-export-components': 'off' },
+    },
   ],
 };

@@ -1,104 +1,196 @@
-import React, { useEffect, useState } from 'react';
-import { UserPlus, Phone, Mail } from 'lucide-react';
+import React, { useCallback, useEffect, useState } from 'react';
+import { UserPlus, Phone, Mail, Users } from 'lucide-react';
 import { DataTable, Column } from '../components/ui/DataTable';
 import { Modal } from '../components/ui/Modal';
 import { PageHeader } from '../components/ui/PageHeader';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { StatusBadge } from '../components/ui/StatusBadge';
+import { EmptyState } from '../components/ui/EmptyState';
+import { ErrorBanner } from '../components/ui/ErrorBanner';
 import { apiClient } from '../api/client';
-import { User } from '../types';
+import { Employee, Territory, UserRole } from '../types';
 
 export const EmployeesPage: React.FC = () => {
-  const [users, setUsers] = useState<User[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [territories, setTerritories] = useState<Territory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // Form State
+  const [isModalOpen, setIsModalOpen] = useState(false);
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [mobile, setMobile] = useState('');
-  const [role, setRole] = useState<'EMPLOYEE' | 'MANAGER' | 'ADMIN'>('EMPLOYEE');
-  const [password, setPassword] = useState('Secret@1234');
+  const [employeeCode, setEmployeeCode] = useState('');
+  const [territoryId, setTerritoryId] = useState('');
+  // FT-038: the backend Role enum has exactly ADMIN and EMPLOYEE.
+  const [role, setRole] = useState<UserRole>('EMPLOYEE');
+  const [password, setPassword] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
-  const fetchUsers = () => {
+  /**
+   * FT-006: the roster comes from GET /employees. The page previously called
+   * GET /api/v1/users, which does not exist, so the table was always empty
+   * and the failure was silently swallowed.
+   */
+  const fetchEmployees = useCallback(() => {
     setIsLoading(true);
-    apiClient.getUsers()
-      .then((data) => setUsers(data))
-      .catch(() => setUsers([]))
+    apiClient
+      .getEmployees()
+      .then((data) => {
+        setEmployees(data);
+        setError(null);
+      })
+      .catch((err: Error) => {
+        setEmployees([]);
+        setError(err.message || 'Unable to load employees');
+      })
       .finally(() => setIsLoading(false));
-  };
-
-  useEffect(() => {
-    fetchUsers();
   }, []);
 
-  const handleCreateUser = async (e: React.FormEvent) => {
+  useEffect(() => {
+    fetchEmployees();
+    apiClient.getTerritories().then(setTerritories).catch(() => setTerritories([]));
+  }, [fetchEmployees]);
+
+  /**
+   * FT-007: a field representative needs BOTH a user account (credentials) and
+   * an employee profile (name, territory, and the employees.id that visits
+   * reference). The previous single call created only the account, so the new
+   * person could never be assigned a visit.
+   */
+  const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
+
+    if (!email.trim() && !mobile.trim()) {
+      setFormError('Provide an email address or a mobile number.');
+      return;
+    }
+    if (password.length < 8) {
+      setFormError('Password must be at least 8 characters.');
+      return;
+    }
+
+    setIsSaving(true);
     try {
-      await apiClient.createUser({
-        full_name: fullName,
-        email: email || null,
-        mobile: mobile || null,
-        role: role,
-        password: password,
+      const user = await apiClient.createUser({
+        email: email.trim() || null,
+        mobile_number: mobile.trim() || null,
+        password,
+        role,
       });
+
+      await apiClient.createEmployee({
+        user_id: user.id,
+        full_name: fullName.trim(),
+        territory_id: territoryId || null,
+        employee_code: employeeCode.trim() || null,
+      });
+
       setIsModalOpen(false);
       setFullName('');
       setEmail('');
       setMobile('');
-      fetchUsers();
-    } catch (err: any) {
-      setFormError(err.message || 'Failed to create user account');
+      setEmployeeCode('');
+      setTerritoryId('');
+      setPassword('');
+      fetchEmployees();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Failed to create employee');
+    } finally {
+      setIsSaving(false);
     }
   };
 
-  const columns: Column<User>[] = [
+  /** FT-022: deactivation revokes access immediately (Security Design B1). */
+  const handleToggleActive = async (employee: Employee, activate: boolean) => {
+    try {
+      await apiClient.setUserActive(employee.user_id, activate);
+      fetchEmployees();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update account status');
+    }
+  };
+
+  const territoryName = (id: string | null) =>
+    territories.find((t) => t.id === id)?.name ?? 'Unassigned';
+
+  const columns: Column<Employee>[] = [
     {
       header: 'Full Name',
-      accessor: (user) => (
+      accessor: (emp) => (
         <div className="flex items-center gap-space-3">
           <div className="w-8 h-8 rounded-full bg-primary-container text-on-primary-container border border-primary-fixed-dim flex items-center justify-center font-headline-sm text-sm uppercase font-bold shrink-0">
-            {user.full_name.charAt(0)}
+            {emp.full_name.charAt(0)}
           </div>
           <div>
-            <p className="font-headline-sm text-sm text-primary font-bold">{user.full_name}</p>
-            <p className="font-caption text-xs text-on-surface-variant">ID: {user.id.substring(0, 8)}...</p>
+            <p className="font-headline-sm text-sm text-primary font-bold">{emp.full_name}</p>
+            <p className="font-caption text-xs text-on-surface-variant">
+              {emp.employee_code || `ID: ${emp.id.substring(0, 8)}...`}
+            </p>
           </div>
         </div>
       ),
     },
     {
       header: 'Role',
-      accessor: (user) => (
-        <StatusBadge status={user.role} size="sm" showDot={false} />
+      accessor: (emp) => <StatusBadge status={emp.user?.role ?? 'EMPLOYEE'} size="sm" showDot={false} />,
+    },
+    {
+      header: 'Territory',
+      accessor: (emp) => (
+        <span className="font-caption text-xs text-on-surface">{territoryName(emp.territory_id)}</span>
       ),
     },
     {
       header: 'Contact Info',
-      accessor: (user) => (
+      accessor: (emp) => (
         <div className="font-caption text-xs space-y-0.5">
-          {user.email && (
+          {emp.user?.email && (
             <div className="flex items-center gap-1.5 text-on-surface">
               <Mail className="w-3.5 h-3.5 text-outline shrink-0" />
-              <span>{user.email}</span>
+              <span>{emp.user.email}</span>
             </div>
           )}
-          {user.mobile && (
+          {emp.user?.mobile_number && (
             <div className="flex items-center gap-1.5 text-on-surface-variant">
               <Phone className="w-3.5 h-3.5 text-outline shrink-0" />
-              <span>{user.mobile}</span>
+              <span>{emp.user.mobile_number}</span>
             </div>
+          )}
+          {!emp.user?.email && !emp.user?.mobile_number && (
+            <span className="text-outline">—</span>
           )}
         </div>
       ),
     },
     {
-      header: 'Account Status',
-      accessor: (user) => (
-        <StatusBadge status={user.is_active ? 'ACTIVE' : 'DISABLED'} size="sm" />
+      header: 'Account',
+      accessor: (emp) => (
+        <div className="flex items-center gap-space-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={(e) => {
+              e.stopPropagation();
+              void handleToggleActive(emp, false);
+            }}
+          >
+            Deactivate
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={(e) => {
+              e.stopPropagation();
+              void handleToggleActive(emp, true);
+            }}
+          >
+            Activate
+          </Button>
+        </div>
       ),
     },
   ];
@@ -107,7 +199,7 @@ export const EmployeesPage: React.FC = () => {
     <div className="space-y-space-6">
       <PageHeader
         title="Field Representatives & Staff"
-        subtitle="Manage field agents, managers, and system administrator accounts."
+        subtitle="Manage field agents and system administrator accounts."
         actions={
           <Button variant="secondary" size="sm" icon={UserPlus} onClick={() => setIsModalOpen(true)}>
             Add Employee
@@ -115,30 +207,50 @@ export const EmployeesPage: React.FC = () => {
         }
       />
 
-      <DataTable
-        columns={columns}
-        data={users}
-        isLoading={isLoading}
-        searchPlaceholder="Search employees by name, email, role..."
-        searchFilter={(user, q) =>
-          user.full_name.toLowerCase().includes(q.toLowerCase()) ||
-          (user.email ? user.email.toLowerCase().includes(q.toLowerCase()) : false) ||
-          user.role.toLowerCase().includes(q.toLowerCase())
-        }
-      />
+      {error && (
+        <ErrorBanner message={error} onRetry={fetchEmployees} onDismiss={() => setError(null)} />
+      )}
+
+      {!isLoading && !error && employees.length === 0 ? (
+        <EmptyState
+          icon={Users}
+          title="No employees registered yet"
+          subtitle="Register a field representative to start assigning visits."
+          action={
+            <Button variant="secondary" size="sm" icon={UserPlus} onClick={() => setIsModalOpen(true)}>
+              Add Employee
+            </Button>
+          }
+        />
+      ) : (
+        <DataTable
+          columns={columns}
+          data={employees}
+          isLoading={isLoading}
+          searchPlaceholder="Search employees by name, code, email..."
+          searchFilter={(emp, q) => {
+            const needle = q.toLowerCase();
+            return (
+              emp.full_name.toLowerCase().includes(needle) ||
+              (emp.employee_code?.toLowerCase().includes(needle) ?? false) ||
+              (emp.user?.email?.toLowerCase().includes(needle) ?? false)
+            );
+          }}
+        />
+      )}
 
       <Modal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         title="Register New Field Representative"
-        subtitle="Provision field agent credentials and access roles."
+        subtitle="Creates the login account and the employee profile together."
       >
         {formError && (
           <div className="mb-space-4 font-body-md text-xs text-on-error-container bg-error-container p-space-3 rounded-lg border border-error">
             {formError}
           </div>
         )}
-        <form onSubmit={handleCreateUser} className="space-y-space-4">
+        <form onSubmit={handleCreate} className="space-y-space-4">
           <Input
             label="Full Name"
             type="text"
@@ -153,25 +265,58 @@ export const EmployeesPage: React.FC = () => {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="john@fieldtrackpro.com"
+            helperText="Email or mobile number is required."
           />
           <Input
             label="Mobile Phone"
-            type="text"
+            type="tel"
             value={mobile}
             onChange={(e) => setMobile(e.target.value)}
-            placeholder="+19876543210"
+            placeholder="+919876543210"
+          />
+          <Input
+            label="Employee Code"
+            type="text"
+            value={employeeCode}
+            onChange={(e) => setEmployeeCode(e.target.value)}
+            placeholder="EMP-001"
+            helperText="Optional, must be unique."
           />
           <div className="flex flex-col gap-space-1.5">
-            <label className="font-label-md text-label-md text-on-surface uppercase tracking-wider block font-semibold">
+            <label
+              htmlFor="employee-territory"
+              className="font-label-md text-xs text-on-surface uppercase tracking-wider block font-semibold"
+            >
+              Territory
+            </label>
+            <select
+              id="employee-territory"
+              value={territoryId}
+              onChange={(e) => setTerritoryId(e.target.value)}
+              className="w-full h-10 bg-surface border border-outline-variant rounded-lg px-space-3 text-on-surface font-body-md text-sm focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 transition-all"
+            >
+              <option value="">-- Unassigned --</option>
+              {territories.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex flex-col gap-space-1.5">
+            <label
+              htmlFor="employee-role"
+              className="font-label-md text-label-md text-on-surface uppercase tracking-wider block font-semibold"
+            >
               Role Assignment
             </label>
             <select
+              id="employee-role"
               value={role}
-              onChange={(e) => setRole(e.target.value as any)}
+              onChange={(e) => setRole(e.target.value as UserRole)}
               className="w-full h-10 bg-surface border border-outline-variant rounded-lg px-space-3 text-on-surface font-body-md text-sm focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 transition-all"
             >
               <option value="EMPLOYEE">Field Representative (EMPLOYEE)</option>
-              <option value="MANAGER">Field Manager (MANAGER)</option>
               <option value="ADMIN">System Administrator (ADMIN)</option>
             </select>
           </div>
@@ -179,14 +324,16 @@ export const EmployeesPage: React.FC = () => {
             label="Password"
             type="password"
             required
+            minLength={8}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            helperText="Minimum 8 characters."
           />
           <div className="pt-space-4 flex justify-end gap-space-3 border-t border-surface-container-highest mt-space-6">
             <Button type="button" variant="ghost" size="sm" onClick={() => setIsModalOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit" variant="secondary" size="sm">
+            <Button type="submit" variant="secondary" size="sm" isLoading={isSaving}>
               Save Employee
             </Button>
           </div>

@@ -17,9 +17,12 @@ from app.core.security import (
 )
 from app.exceptions.custom import BaseAPIException
 from app.models.refresh_token import RefreshToken
+from app.models.user import User
+from app.repositories.employee_repo import EmployeeRepository
 from app.repositories.token_repo import TokenRepository
 from app.repositories.user_repo import UserRepository
 from app.schemas.auth import LoginRequest, TokenResponse
+from app.schemas.user import CurrentUserRead
 
 
 async def login(data: LoginRequest, session: AsyncSession) -> TokenResponse:
@@ -112,3 +115,30 @@ async def logout(raw_refresh: str, session: AsyncSession) -> None:
         record.revoked = True
         session.add(record)
         await token_repo.commit()
+
+
+async def build_current_user(user: User, session: AsyncSession) -> CurrentUserRead:
+    """
+    Assemble the `/auth/me` identity payload (FT-011).
+
+    An EMPLOYEE has a profile row carrying the display name and territory. An
+    ADMIN has no employee row, so the display name falls back to the account
+    identity (email, then mobile number) rather than being omitted.
+    """
+    employee = await EmployeeRepository(session).get_by_user_id(user.id)
+
+    if employee is not None:
+        full_name = employee.full_name
+    else:
+        full_name = user.email or user.mobile_number or str(user.id)
+
+    return CurrentUserRead(
+        id=user.id,
+        email=user.email,
+        mobile_number=user.mobile_number,
+        full_name=full_name,
+        role=user.role,
+        is_active=user.is_active,
+        territory_id=employee.territory_id if employee else None,
+        employee_id=employee.id if employee else None,
+    )

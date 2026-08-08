@@ -38,6 +38,27 @@ class UserSummary(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class CurrentUserRead(BaseModel):
+    """
+    Identity payload for `GET /auth/me`.
+
+    FT-011: the client needs a display name and the caller's territory to render
+    the shell correctly. `full_name` and `territory_id` come from the linked
+    employee profile; administrators have no employee row, so `full_name` falls
+    back to the account identity rather than being omitted (an absent field
+    previously forced the UI to invent one).
+    """
+
+    id: uuid.UUID
+    email: str | None
+    mobile_number: str | None
+    full_name: str
+    role: Role
+    is_active: bool
+    territory_id: uuid.UUID | None = None
+    employee_id: uuid.UUID | None = None
+
+
 # ---------------------------------------------------------------------------
 # Create / update schemas (admin-only)
 # ---------------------------------------------------------------------------

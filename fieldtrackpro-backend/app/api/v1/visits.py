@@ -42,13 +42,22 @@ async def create_visit(
 
 @router.get("", response_model=list[VisitRead], dependencies=[AnyAuth])
 async def list_visits(
+    current_user: CurrentUser,
     session: DbSession,
     employee_id: uuid.UUID | None = Query(default=None),
     status: VisitStatus | None = Query(default=None),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, le=200),
 ):
-    return await visit_service.list_visits(session, employee_id, status, skip, limit)
+    """
+    List visits.
+
+    FT-002: results are scoped to the caller. An EMPLOYEE receives only their
+    own visits; an ADMIN receives all and may filter by `employee_id`.
+    """
+    return await visit_service.list_visits(
+        session, current_user, employee_id, status, skip, limit
+    )
 
 
 @router.get("/me/today", response_model=list[VisitRead])
@@ -58,8 +67,13 @@ async def my_today_visits(current_user: CurrentUser, session: DbSession):
 
 
 @router.get("/{visit_id}", response_model=VisitRead, dependencies=[AnyAuth])
-async def get_visit(visit_id: uuid.UUID, session: DbSession):
-    return await visit_service.get_visit(visit_id, session)
+async def get_visit(
+    visit_id: uuid.UUID,
+    current_user: CurrentUser,
+    session: DbSession,
+):
+    """FT-002: object-level ownership is enforced, not just role membership."""
+    return await visit_service.get_visit_for_user(visit_id, current_user, session)
 
 
 @router.post("/{visit_id}/check-in", response_model=VisitRead)

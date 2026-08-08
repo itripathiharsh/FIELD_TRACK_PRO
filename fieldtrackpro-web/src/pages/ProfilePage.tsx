@@ -9,6 +9,10 @@ import { StatusBadge } from '../components/ui/StatusBadge';
 export const ProfilePage: React.FC = () => {
   const { user, logout } = useAuth();
 
+  const handleLogout = () => {
+    void logout();
+  };
+
   return (
     <div className="space-y-space-6 max-w-2xl font-body-md text-on-surface">
       <PageHeader
@@ -40,12 +44,12 @@ export const ProfilePage: React.FC = () => {
           </div>
           <div>
             <p className="font-label-md text-xs text-on-surface-variant uppercase font-semibold">Mobile Phone</p>
-            <p className="text-on-surface font-medium mt-0.5">{user?.mobile || 'Not set'}</p>
+            <p className="text-on-surface font-medium mt-0.5">{user?.mobile_number || 'Not set'}</p>
           </div>
         </div>
 
         <div className="pt-space-4 border-t border-surface-container-highest">
-          <Button variant="danger" size="md" icon={LogOut} onClick={logout} className="w-full">
+          <Button variant="danger" size="md" icon={LogOut} onClick={handleLogout} className="w-full">
             Sign Out Session
           </Button>
         </div>

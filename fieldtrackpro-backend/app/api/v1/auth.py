@@ -11,11 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.deps.auth import CurrentUser
 from app.database import get_async_session
 from app.schemas.auth import (
-    AccessTokenResponse,
     LoginRequest,
     RefreshRequest,
     TokenResponse,
 )
+from app.schemas.user import CurrentUserRead
 from app.services import auth_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -41,13 +41,12 @@ async def logout(data: RefreshRequest, session: DbSession):
     await auth_service.logout(data.refresh_token, session)
 
 
-@router.get("/me", response_model=dict, summary="Current user")
-async def me(current_user: CurrentUser):
-    """Return identity information for the authenticated caller."""
-    return {
-        "id": str(current_user.id),
-        "email": current_user.email,
-        "mobile_number": current_user.mobile_number,
-        "role": current_user.role.value,
-        "is_active": current_user.is_active,
-    }
+@router.get("/me", response_model=CurrentUserRead, summary="Current user")
+async def me(current_user: CurrentUser, session: DbSession) -> CurrentUserRead:
+    """
+    Return identity information for the authenticated caller.
+
+    FT-011: includes `full_name`, `territory_id` and `employee_id` so the client
+    can render the user shell and scope employee views without guessing.
+    """
+    return await auth_service.build_current_user(current_user, session)

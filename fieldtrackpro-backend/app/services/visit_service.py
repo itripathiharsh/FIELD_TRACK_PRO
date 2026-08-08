@@ -25,7 +25,55 @@ from app.models.user import User
 GEO_FAILURE_THRESHOLD = 3
 
 
+async def _resolve_employee_scope(
+    current_user: User, session: AsyncSession
+) -> uuid.UUID | None:
+    """
+    Return the employee id a caller is restricted to, or None for unrestricted.
+
+    FT-002: ADMIN sees everything; EMPLOYEE is confined to their own records.
+    Centralised here so every visit-scoped operation shares one rule instead of
+    re-implementing it (the audit found the same check copy-pasted four times,
+    and absent entirely from the two read paths).
+    """
+    if current_user.role == Role.ADMIN:
+        return None
+    employee = await get_employee_by_user_id(current_user.id, session)
+    return employee.id
+
+
+async def assert_visit_access(
+    visit: Visit, current_user: User, session: AsyncSession
+) -> Visit:
+    """
+    Enforce object-level ownership on a visit (Security Design section 2).
+
+    A valid EMPLOYEE token is not sufficient authorisation: the visit must also
+    belong to that employee.
+    """
+    scope = await _resolve_employee_scope(current_user, session)
+    if scope is not None and visit.employee_id != scope:
+        raise BaseAPIException(
+            status_code=403,
+            detail="You are not assigned to this visit",
+            error_code="VISIT_NOT_ASSIGNED",
+        )
+    return visit
+
+
 async def create_visit(data: VisitCreate, created_by: uuid.UUID, session: AsyncSession) -> Visit:
+    """
+    Admin: schedule a visit.
+
+    FT-006: the customer and employee are validated up front. Previously an
+    unknown id reached the database and surfaced as an unhandled
+    ForeignKeyViolation (HTTP 500) instead of a meaningful 404.
+    """
+    from app.services.employee_service import get_employee
+
+    await get_customer(data.customer_id, session)
+    await get_employee(data.employee_id, session)
+
     repo = VisitRepository(session)
     visit = Visit(
         customer_id=data.customer_id,
@@ -40,6 +88,7 @@ async def create_visit(data: VisitCreate, created_by: uuid.UUID, session: AsyncS
 
 
 async def get_visit(visit_id: uuid.UUID, session: AsyncSession) -> Visit:
+    """Load a visit without authorisation. Callers must enforce access."""
     repo = VisitRepository(session)
     visit = await repo.get_full(visit_id)
     if visit is None:
@@ -47,13 +96,33 @@ async def get_visit(visit_id: uuid.UUID, session: AsyncSession) -> Visit:
     return visit
 
 
+async def get_visit_for_user(
+    visit_id: uuid.UUID, current_user: User, session: AsyncSession
+) -> Visit:
+    """FT-002: load a visit and enforce object-level ownership."""
+    visit = await get_visit(visit_id, session)
+    return await assert_visit_access(visit, current_user, session)
+
+
 async def list_visits(
     session: AsyncSession,
+    current_user: User,
     employee_id: uuid.UUID | None = None,
     status: VisitStatus | None = None,
     skip: int = 0,
     limit: int = 50,
 ) -> list[Visit]:
+    """
+    List visits, scoped to the caller.
+
+    FT-002: an EMPLOYEE is confined to their own visits regardless of the
+    `employee_id` filter they supply, so the filter cannot be used to enumerate
+    colleagues' schedules and customer coordinates.
+    """
+    scope = await _resolve_employee_scope(current_user, session)
+    if scope is not None:
+        employee_id = scope
+
     repo = VisitRepository(session)
     return await repo.list_filtered(employee_id, status, skip, limit)
 
@@ -77,17 +146,7 @@ async def check_in(
     from app.services.customer_service import _extract_coords_from_wkt
     from app.services.geo_verification_service import GeoVerificationService
 
-    visit = await get_visit(visit_id, session)
-
-    # Ownership check for employees
-    if current_user.role == Role.EMPLOYEE:
-        employee = await get_employee_by_user_id(current_user.id, session)
-        if visit.employee_id != employee.id:
-            raise BaseAPIException(
-                status_code=403,
-                detail="You are not assigned to this visit",
-                error_code="VISIT_NOT_ASSIGNED",
-            )
+    visit = await get_visit_for_user(visit_id, current_user, session)
 
     # Idempotency: if key matches a previous successful check-in, return current visit
     if data.idempotency_key:
@@ -154,16 +213,7 @@ async def check_out(
     from app.services.customer_service import _extract_coords_from_wkt
     from app.services.geo_verification_service import GeoVerificationService
 
-    visit = await get_visit(visit_id, session)
-
-    if current_user.role == Role.EMPLOYEE:
-        employee = await get_employee_by_user_id(current_user.id, session)
-        if visit.employee_id != employee.id:
-            raise BaseAPIException(
-                status_code=403,
-                detail="You are not assigned to this visit",
-                error_code="VISIT_NOT_ASSIGNED",
-            )
+    visit = await get_visit_for_user(visit_id, current_user, session)
 
     assert_valid_transition(visit.status, VisitStatus.COMPLETED)
 
@@ -218,16 +268,7 @@ async def get_visit_geo_logs(
     session: AsyncSession,
 ) -> list[GeoVerificationLog]:
     """Retrieve immutable geo verification audit logs for a visit."""
-    visit = await get_visit(visit_id, session)
-
-    if current_user.role == Role.EMPLOYEE:
-        employee = await get_employee_by_user_id(current_user.id, session)
-        if visit.employee_id != employee.id:
-            raise BaseAPIException(
-                status_code=403,
-                detail="You are not assigned to this visit",
-                error_code="VISIT_NOT_ASSIGNED",
-            )
+    await get_visit_for_user(visit_id, current_user, session)
 
     geo_repo = GeoLogRepository(session)
     return await geo_repo.list_by_visit(visit_id)

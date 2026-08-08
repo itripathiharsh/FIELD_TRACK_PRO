@@ -1,46 +1,83 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Eye, Plus, Calendar } from 'lucide-react';
+import { Eye, Plus, Calendar, CalendarCheck } from 'lucide-react';
 import { DataTable, Column } from '../components/ui/DataTable';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { Modal } from '../components/ui/Modal';
 import { PageHeader } from '../components/ui/PageHeader';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
+import { EmptyState } from '../components/ui/EmptyState';
+import { ErrorBanner } from '../components/ui/ErrorBanner';
+import { useAuth } from '../context/AuthContext';
 import { apiClient } from '../api/client';
-import { Visit, VisitStatus, Customer, User } from '../types';
+import { Customer, Employee, Visit, VisitStatus } from '../types';
+
+const FILTERS: Array<'ALL' | VisitStatus> = [
+  'ALL',
+  'PENDING',
+  'IN_PROGRESS',
+  'COMPLETED',
+  'FLAGGED',
+  'MISSED',
+];
 
 export const VisitsPage: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
+
   const [visits, setVisits] = useState<Visit[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [employees, setEmployees] = useState<User[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [selectedFilter, setSelectedFilter] = useState<string>('ALL');
+  const [error, setError] = useState<string | null>(null);
+  const [selectedFilter, setSelectedFilter] = useState<'ALL' | VisitStatus>('ALL');
 
-  // Modal & Form state
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
-  const [scheduledAt, setScheduledAt] = useState(new Date(Date.now() + 86400000).toISOString().slice(0, 16));
+  const [scheduledAt, setScheduledAt] = useState(
+    new Date(Date.now() + 86400000).toISOString().slice(0, 16),
+  );
   const [formError, setFormError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
-  const fetchVisits = (status?: VisitStatus) => {
+  const fetchVisits = useCallback((status?: VisitStatus) => {
     setIsLoading(true);
-    apiClient.getVisits(status)
-      .then((data) => setVisits(data))
-      .catch(() => setVisits([]))
+    apiClient
+      .getVisits(status)
+      .then((data) => {
+        setVisits(data);
+        setError(null);
+      })
+      .catch((err: Error) => {
+        setVisits([]);
+        setError(err.message || 'Unable to load visits');
+      })
       .finally(() => setIsLoading(false));
-  };
-
-  useEffect(() => {
-    fetchVisits(selectedFilter === 'ALL' ? undefined : (selectedFilter as VisitStatus));
-  }, [selectedFilter]);
-
-  useEffect(() => {
-    apiClient.getCustomers().then(setCustomers).catch(() => []);
-    apiClient.getUsers().then(setEmployees).catch(() => []);
   }, []);
+
+  useEffect(() => {
+    fetchVisits(selectedFilter === 'ALL' ? undefined : selectedFilter);
+  }, [selectedFilter, fetchVisits]);
+
+  // Reference data for the scheduling form. Admin-only: the employee roster
+  // endpoint is admin-scoped, so employees must not request it.
+  useEffect(() => {
+    if (!isAdmin) return;
+    apiClient.getCustomers().then(setCustomers).catch(() => setCustomers([]));
+    // FT-006: the roster comes from /employees and yields employees.id, which
+    // is what visits.employee_id references. The previous getUsers() call hit
+    // a non-existent endpoint (405), leaving this dropdown permanently empty.
+    apiClient.getEmployees().then(setEmployees).catch(() => setEmployees([]));
+  }, [isAdmin]);
+
+  const customerNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    customers.forEach((c) => map.set(c.id, c.name));
+    return map;
+  }, [customers]);
 
   const handleCreateVisit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -49,6 +86,7 @@ export const VisitsPage: React.FC = () => {
       setFormError('Please select both a customer and an employee.');
       return;
     }
+    setIsSaving(true);
     try {
       await apiClient.createVisit({
         customer_id: selectedCustomerId,
@@ -56,9 +94,13 @@ export const VisitsPage: React.FC = () => {
         scheduled_at: new Date(scheduledAt).toISOString(),
       });
       setIsModalOpen(false);
-      fetchVisits(selectedFilter === 'ALL' ? undefined : (selectedFilter as VisitStatus));
-    } catch (err: any) {
-      setFormError(err.message || 'Failed to schedule visit');
+      setSelectedCustomerId('');
+      setSelectedEmployeeId('');
+      fetchVisits(selectedFilter === 'ALL' ? undefined : selectedFilter);
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Failed to schedule visit');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -68,41 +110,34 @@ export const VisitsPage: React.FC = () => {
       accessor: (visit) => (
         <div>
           <p className="font-headline-sm text-sm text-primary font-bold">
-            {visit.customer_name || `Customer #${visit.customer_id.substring(0, 8)}`}
+            {visit.customer_name ||
+              customerNameById.get(visit.customer_id) ||
+              `Customer #${visit.customer_id.substring(0, 8)}`}
           </p>
-          <p className="font-caption text-xs text-on-surface-variant font-mono">ID: {visit.id.substring(0, 8)}...</p>
+          <p className="font-caption text-xs text-on-surface-variant font-mono">
+            ID: {visit.id.substring(0, 8)}...
+          </p>
         </div>
       ),
     },
     {
-      header: 'Purpose / Status',
-      accessor: (visit) => (
-        <div className="space-y-1">
-          <p className="font-body-md text-xs text-on-surface">{visit.purpose || 'Site Inspection'}</p>
-          <StatusBadge status={visit.status} size="sm" />
-        </div>
-      ),
+      header: 'Status',
+      accessor: (visit) => <StatusBadge status={visit.status} size="sm" />,
     },
     {
       header: 'Scheduled Time',
       accessor: (visit) => (
         <div className="font-caption text-xs text-on-surface-variant flex items-center gap-1.5 font-medium">
           <Calendar className="w-3.5 h-3.5 text-outline shrink-0" />
-          <span>
-            {visit.scheduled_start_time
-              ? new Date(visit.scheduled_start_time).toLocaleString()
-              : (visit as any).scheduled_at
-              ? new Date((visit as any).scheduled_at).toLocaleString()
-              : 'N/A'}
-          </span>
+          <span>{new Date(visit.scheduled_at).toLocaleString()}</span>
         </div>
       ),
     },
     {
-      header: 'Geo Failures',
+      header: 'Check-In',
       accessor: (visit) => (
-        <span className={`font-label-md text-xs ${visit.verification_failure_count > 0 ? 'text-secondary font-bold bg-secondary-fixed/40 px-2 py-0.5 rounded inline-block' : 'text-on-surface-variant font-medium'}`}>
-          {visit.verification_failure_count || 0} attempt(s)
+        <span className="font-caption text-xs text-on-surface-variant">
+          {visit.check_in_at ? new Date(visit.check_in_at).toLocaleString() : '—'}
         </span>
       ),
     },
@@ -124,29 +159,39 @@ export const VisitsPage: React.FC = () => {
     },
   ];
 
-  const filterOptions = ['ALL', 'PENDING', 'IN_PROGRESS', 'COMPLETED', 'FLAGGED', 'MISSED'];
-
   return (
     <div className="space-y-space-6">
       <PageHeader
         title="Visit Dispatch & Execution"
         subtitle="Field visit scheduling, execution tracking, and geo-verification status."
         actions={
-          <Button variant="secondary" size="sm" icon={Plus} onClick={() => setIsModalOpen(true)}>
-            Schedule Visit
-          </Button>
+          /* FT-044: scheduling is an admin capability; the control is not shown
+             to field staff, whose requests the API rejects with 403. */
+          isAdmin ? (
+            <Button variant="secondary" size="sm" icon={Plus} onClick={() => setIsModalOpen(true)}>
+              Schedule Visit
+            </Button>
+          ) : undefined
         }
       />
 
-      {/* Filter Tabs */}
+      {error && (
+        <ErrorBanner
+          message={error}
+          onRetry={() => fetchVisits(selectedFilter === 'ALL' ? undefined : selectedFilter)}
+          onDismiss={() => setError(null)}
+        />
+      )}
+
       <div className="flex items-center gap-space-2 border-b border-surface-container-highest pb-space-3 overflow-x-auto select-none">
-        {filterOptions.map((filter) => {
+        {FILTERS.map((filter) => {
           const isSelected = selectedFilter === filter;
           return (
             <button
               key={filter}
               type="button"
               onClick={() => setSelectedFilter(filter)}
+              aria-pressed={isSelected}
               className={`px-space-3.5 py-space-1.5 rounded-lg font-label-md text-xs uppercase tracking-wider transition-all cursor-pointer font-bold ${
                 isSelected
                   ? 'bg-primary text-on-primary shadow-xs active:scale-95'
@@ -159,18 +204,37 @@ export const VisitsPage: React.FC = () => {
         })}
       </div>
 
-      <DataTable
-        columns={columns}
-        data={visits}
-        isLoading={isLoading}
-        searchPlaceholder="Search visits by customer, purpose, ID..."
-        searchFilter={(v, q) =>
-          (v.customer_name ? v.customer_name.toLowerCase().includes(q.toLowerCase()) : false) ||
-          (v.purpose ? v.purpose.toLowerCase().includes(q.toLowerCase()) : false) ||
-          v.id.toLowerCase().includes(q.toLowerCase())
-        }
-        onRowClick={(visit) => navigate(`/visits/${visit.id}`)}
-      />
+      {!isLoading && !error && visits.length === 0 ? (
+        <EmptyState
+          icon={CalendarCheck}
+          title={selectedFilter === 'ALL' ? 'No visits scheduled' : `No ${selectedFilter.replace('_', ' ').toLowerCase()} visits`}
+          subtitle={
+            isAdmin
+              ? 'Schedule a visit to dispatch a field representative to a customer site.'
+              : 'Visits assigned to you will appear here.'
+          }
+          action={
+            isAdmin ? (
+              <Button variant="secondary" size="sm" icon={Plus} onClick={() => setIsModalOpen(true)}>
+                Schedule Visit
+              </Button>
+            ) : undefined
+          }
+        />
+      ) : (
+        <DataTable
+          columns={columns}
+          data={visits}
+          isLoading={isLoading}
+          searchPlaceholder="Search visits by customer or ID..."
+          searchFilter={(v, q) => {
+            const needle = q.toLowerCase();
+            const name = v.customer_name || customerNameById.get(v.customer_id) || '';
+            return name.toLowerCase().includes(needle) || v.id.toLowerCase().includes(needle);
+          }}
+          onRowClick={(visit) => navigate(`/visits/${visit.id}`)}
+        />
+      )}
 
       <Modal
         isOpen={isModalOpen}
@@ -185,10 +249,14 @@ export const VisitsPage: React.FC = () => {
         )}
         <form onSubmit={handleCreateVisit} className="space-y-space-4">
           <div className="flex flex-col gap-space-1.5">
-            <label className="font-label-md text-xs text-on-surface uppercase tracking-wider block font-semibold">
+            <label
+              htmlFor="visit-customer"
+              className="font-label-md text-xs text-on-surface uppercase tracking-wider block font-semibold"
+            >
               Select Customer
             </label>
             <select
+              id="visit-customer"
               required
               value={selectedCustomerId}
               onChange={(e) => setSelectedCustomerId(e.target.value)}
@@ -196,26 +264,47 @@ export const VisitsPage: React.FC = () => {
             >
               <option value="">-- Choose Customer --</option>
               {customers.map((c) => (
-                <option key={c.id} value={c.id}>{c.name} ({c.address})</option>
+                <option key={c.id} value={c.id}>
+                  {c.name} ({c.address})
+                </option>
               ))}
             </select>
+            {customers.length === 0 && (
+              <p className="font-caption text-xs text-error">
+                No customers available. Add a customer account first.
+              </p>
+            )}
           </div>
+
           <div className="flex flex-col gap-space-1.5">
-            <label className="font-label-md text-xs text-on-surface uppercase tracking-wider block font-semibold">
+            <label
+              htmlFor="visit-employee"
+              className="font-label-md text-xs text-on-surface uppercase tracking-wider block font-semibold"
+            >
               Assigned Field Employee
             </label>
             <select
+              id="visit-employee"
               required
               value={selectedEmployeeId}
               onChange={(e) => setSelectedEmployeeId(e.target.value)}
               className="w-full h-10 bg-surface border border-outline-variant rounded-lg px-space-3 text-on-surface font-body-md text-sm focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 transition-all cursor-pointer"
             >
               <option value="">-- Choose Employee --</option>
-              {employees.map((e) => (
-                <option key={e.id} value={e.id}>{e.email} ({e.role})</option>
+              {employees.map((emp) => (
+                <option key={emp.id} value={emp.id}>
+                  {emp.full_name}
+                  {emp.employee_code ? ` (${emp.employee_code})` : ''}
+                </option>
               ))}
             </select>
+            {employees.length === 0 && (
+              <p className="font-caption text-xs text-error">
+                No employee profiles available. Register a field representative first.
+              </p>
+            )}
           </div>
+
           <Input
             label="Scheduled Date & Time"
             type="datetime-local"
@@ -223,11 +312,12 @@ export const VisitsPage: React.FC = () => {
             value={scheduledAt}
             onChange={(e) => setScheduledAt(e.target.value)}
           />
+
           <div className="pt-space-4 flex justify-end gap-space-3 border-t border-surface-container-highest mt-space-6">
             <Button type="button" variant="ghost" size="sm" onClick={() => setIsModalOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit" variant="secondary" size="sm">
+            <Button type="submit" variant="secondary" size="sm" isLoading={isSaving}>
               Dispatch Visit
             </Button>
           </div>

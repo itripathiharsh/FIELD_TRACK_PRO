@@ -3,11 +3,21 @@ Auth request/response schemas.
 """
 from __future__ import annotations
 
-from pydantic import BaseModel, EmailStr, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, model_validator
 
 
 class LoginRequest(BaseModel):
-    """Login with email or mobile number + password."""
+    """
+    Login with email or mobile number + password.
+
+    FT-010: `extra="forbid"` is deliberate. The web client previously sent
+    `mobile` instead of `mobile_number`; with the default `ignore` behaviour
+    pydantic silently discarded it and the request failed as "no identity
+    supplied" for reasons invisible to the caller. Rejecting unknown keys turns
+    a silent contract mismatch into an explicit 422.
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
     email: str | None = None
     mobile_number: str | None = None
