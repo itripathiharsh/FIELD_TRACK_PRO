@@ -109,9 +109,13 @@ async def test_uploaded_media_is_listed_for_the_visit(
 
 # --- Scenario 28: authenticated download ------------------------------------
 
-async def test_authenticated_download_returns_original_bytes(
+async def test_authenticated_download_returns_pre_signed_url(
     client: AsyncClient, employee_headers, visit_id, created_media
 ):
+    """
+    Security Design Section 4: access only via pre-signed URLs.
+    The download endpoint returns a pre-signed URL, not raw bytes.
+    """
     up = await client.post(
         f"/api/v1/visits/{visit_id}/media",
         files={"file": ("photo.jpg", VALID_JPEG, "image/jpeg")},
@@ -123,8 +127,10 @@ async def test_authenticated_download_returns_original_bytes(
         f"/api/v1/media/{up.json()['id']}/download", headers=employee_headers
     )
     assert dl.status_code == 200, dl.text
-    assert dl.content == VALID_JPEG
-    assert dl.headers["content-type"].startswith("image/")
+    body = dl.json()
+    assert "download_url" in body, "Response must contain pre-signed URL"
+    assert "expires_in_minutes" in body, "Response must contain expiry"
+    assert body["expires_in_minutes"] == 15
 
 
 async def test_download_without_auth_is_rejected(

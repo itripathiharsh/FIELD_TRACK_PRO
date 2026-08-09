@@ -61,6 +61,9 @@ dependencies {
     // FT-027: Keystore-backed encrypted credential storage.
     implementation(libs.androidx.security.crypto)
 
+    // WorkManager for resilient uploads (Phase 6 Section 7)
+    implementation(libs.androidx.work.runtime.ktx)
+
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(libs.androidx.junit)

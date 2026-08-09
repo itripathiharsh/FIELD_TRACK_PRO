@@ -30,6 +30,9 @@ VALID_SIGNATURE_MAGIC = {
     b"\xFF\xD8\xFF": "image/jpeg",
 }
 
+# Explicit allowed signature types (validated server-side)
+VALID_SIGNED_BY = {"EMPLOYEE", "CUSTOMER"}
+
 
 async def _assert_visit_access(visit_id: uuid.UUID, current_user: User, session: AsyncSession):
     """Verify the caller may act on the target visit."""
@@ -98,6 +101,14 @@ async def upload_signature(
     """
     await _assert_visit_access(visit_id, current_user, session)
 
+    # 0. Explicitly validate signature type (server-side, never trust client)
+    if signature_type.value not in VALID_SIGNED_BY:
+        raise BaseAPIException(
+            status_code=400,
+            detail=f"signature_type must be one of: {', '.join(sorted(VALID_SIGNED_BY))}",
+            error_code="INVALID_SIGNATURE_TYPE",
+        )
+
     # 1. Decode and validate the signature image
     image_bytes, content_type = _decode_signature_image(signature_image_base64)
 
@@ -157,14 +168,14 @@ async def list_visit_signatures(
     return list(await repo.list_by_visit(visit_id))
 
 
-async def download_signature_bytes(
+async def get_signature_for_download(
     signature_id: uuid.UUID,
     current_user: User,
     session: AsyncSession,
-) -> tuple[bytes, str]:
+) -> VisitSignature:
     """
-    Download raw signature image bytes.
-    Returns (image_bytes, content_type).
+    Retrieve a signature record for download, with authorization check.
+    Returns the signature record (storage key used for pre-signed URL generation).
     """
     repo = SignatureRepository(session)
     signature = await repo.get_by_id(signature_id)
@@ -175,7 +186,19 @@ async def download_signature_bytes(
             error_code="SIGNATURE_NOT_FOUND",
         )
     await _assert_visit_access(signature.visit_id, current_user, session)
+    return signature
 
+
+async def download_signature_bytes(
+    signature_id: uuid.UUID,
+    current_user: User,
+    session: AsyncSession,
+) -> tuple[bytes, str]:
+    """
+    Download raw signature image bytes (for backward compatibility).
+    Returns (image_bytes, content_type).
+    """
+    signature = await get_signature_for_download(signature_id, current_user, session)
     image_bytes = await storage_service.download(signature.storage_key)
     content_type = "image/png"
     return image_bytes, content_type

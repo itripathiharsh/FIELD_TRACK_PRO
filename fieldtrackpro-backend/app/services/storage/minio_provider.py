@@ -5,6 +5,8 @@ Integrates with S3-compatible MinIO object store buckets.
 from __future__ import annotations
 
 import io
+from datetime import timedelta
+
 from app.exceptions.custom import BaseAPIException
 from app.services.storage.base import BaseStorageProvider
 
@@ -94,3 +96,24 @@ class MinIOStorageProvider(BaseStorageProvider):
             return True
         except Exception:
             return False
+
+    async def generate_presigned_url(self, storage_key: str, expiry_minutes: int = 15) -> str:
+        """
+        Generate a pre-signed URL for temporary access to a stored object.
+
+        Security Design Section 4: access only via pre-signed URLs with short expiry.
+        The URL expires after the specified number of minutes.
+        """
+        client = self._get_client()
+        try:
+            return client.presigned_get_object(
+                self.bucket_name,
+                storage_key,
+                expires=timedelta(minutes=expiry_minutes),
+            )
+        except Exception as err:
+            raise BaseAPIException(
+                status_code=500,
+                detail=f"Failed to generate access URL: {str(err)}",
+                error_code="PRESIGNED_URL_ERROR",
+            )

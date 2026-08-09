@@ -29,3 +29,8 @@ class BaseStorageProvider(ABC):
     async def exists(self, storage_key: str) -> bool:
         """Check if object exists at storage key."""
         pass
+
+    @abstractmethod
+    async def generate_presigned_url(self, storage_key: str, expiry_minutes: int = 15) -> str:
+        """Generate a pre-signed URL for temporary access to the object."""
+        pass

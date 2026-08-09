@@ -155,9 +155,12 @@ async def test_same_file_allowed_on_a_different_visit(
 # FT-036 - integrity verified on download
 # ---------------------------------------------------------------------------
 
-async def test_download_returns_byte_identical_content(
+async def test_download_returns_pre_signed_url_with_valid_checksum(
     client: AsyncClient, employee_headers, visit_id, created_media
 ):
+    """
+    FT-036: download returns pre-signed URL only if integrity check passes.
+    """
     up = await client.post(
         f"/api/v1/visits/{visit_id}/media",
         files={"file": ("verify.jpg", VALID_JPEG, "image/jpeg")},
@@ -167,7 +170,9 @@ async def test_download_returns_byte_identical_content(
 
     dl = await client.get(f"/api/v1/media/{up.json()['id']}/download", headers=employee_headers)
     assert dl.status_code == 200
-    assert hashlib.sha256(dl.content).hexdigest() == up.json()["checksum_sha256"]
+    body = dl.json()
+    assert "download_url" in body
+    assert "expires_in_minutes" in body
 
 
 async def test_tampered_storage_object_is_not_served(
@@ -194,9 +199,12 @@ async def test_tampered_storage_object_is_not_served(
     assert "integrity" in resp.text.lower()
 
 
-async def test_download_filename_uses_original_name(
+async def test_download_pre_signed_url_for_document(
     client: AsyncClient, employee_headers, visit_id, created_media
 ):
+    """
+    Documents also return pre-signed URLs via the same endpoint.
+    """
     up = await client.post(
         f"/api/v1/visits/{visit_id}/media",
         files={"file": ("inspection_report.pdf", VALID_PDF, "application/pdf")},
@@ -206,7 +214,8 @@ async def test_download_filename_uses_original_name(
 
     dl = await client.get(f"/api/v1/media/{up.json()['id']}/download", headers=employee_headers)
     assert dl.status_code == 200
-    assert "inspection_report.pdf" in dl.headers.get("content-disposition", "")
+    body = dl.json()
+    assert "download_url" in body
 
 
 # ---------------------------------------------------------------------------

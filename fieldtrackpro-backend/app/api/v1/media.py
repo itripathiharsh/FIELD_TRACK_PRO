@@ -1,12 +1,14 @@
 """
 Media router: REST endpoints for visit attachments, file upload, download, and deletion.
+
+Security: All file access goes through pre-signed URLs (Security Design Section 4).
 """
 from __future__ import annotations
 
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Response, UploadFile, status
+from fastapi import APIRouter, Depends, File, Query, Response, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps.auth import CurrentUser
@@ -25,6 +27,7 @@ router = APIRouter(tags=["Media Management"])
 async def upload_media(
     visit_id: uuid.UUID,
     file: UploadFile = File(...),
+    is_document: bool = Query(default=False, description="True for document uploads (PDF/DOC), False for images"),
     current_user: CurrentUser = None,
     session: AsyncSession = Depends(get_async_session),
 ) -> MediaRead:
@@ -37,6 +40,7 @@ async def upload_media(
         file_bytes=file_bytes,
         current_user=current_user,
         session=session,
+        is_document=is_document,
     )
 
 
@@ -69,22 +73,25 @@ async def get_media_metadata(
 
 
 @router.get("/media/{media_id}/download")
-async def download_media(
+async def get_media_download_url(
     media_id: uuid.UUID,
+    expiry_minutes: int = Query(default=15, ge=1, le=60, description="URL expiry in minutes (1-60)"),
     current_user: CurrentUser = None,
     session: AsyncSession = Depends(get_async_session),
 ):
-    """Download binary content of a media attachment."""
-    file_bytes, content_type, filename = await media_service.download_media_bytes(
+    """
+    Get a pre-signed URL for media download.
+
+    Security Design Section 4: access only via pre-signed URLs with short expiry.
+    The URL expires after the specified number of minutes (default 15).
+    """
+    url = await media_service.get_media_download_url(
         media_id=media_id,
         current_user=current_user,
         session=session,
+        expiry_minutes=expiry_minutes,
     )
-    return Response(
-        content=file_bytes,
-        media_type=content_type,
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
+    return {"download_url": url, "expires_in_minutes": expiry_minutes}
 
 
 @router.delete("/media/{media_id}", status_code=status.HTTP_204_NO_CONTENT)

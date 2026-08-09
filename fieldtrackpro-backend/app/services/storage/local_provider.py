@@ -56,3 +56,17 @@ class LocalStorageProvider(BaseStorageProvider):
     async def exists(self, storage_key: str) -> bool:
         target_path = self._resolve_path(storage_key)
         return target_path.exists()
+
+    async def generate_presigned_url(self, storage_key: str, expiry_minutes: int = 15) -> str:
+        """
+        Local storage does not support pre-signed URLs.
+        Returns a local file path for development purposes.
+        """
+        target_path = self._resolve_path(storage_key)
+        if not target_path.exists():
+            raise BaseAPIException(
+                status_code=404,
+                detail="Media file not found in storage",
+                error_code="FILE_NOT_FOUND_IN_STORAGE",
+            )
+        return f"file://{target_path}"

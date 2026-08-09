@@ -1,35 +1,43 @@
 """
 File Validation Service: server-side magic byte analysis, MIME verification,
 file size constraints, checksum generation, and path sanitization.
+
+Uses python-magic (libmagic) for content-based type detection rather than
+trusting client-declared MIME type or file extension.
 """
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import re
 import uuid
 
+import magic
+
 from app.exceptions.custom import BaseAPIException
 from app.models.visit_media import MediaType
+
+logger = logging.getLogger("fieldtrackpro")
 
 
 class FileValidationService:
     """Server-side file inspector and security validator."""
 
-    MAX_FILE_SIZE_BYTES: int = 10 * 1024 * 1024  # 10 MB limit
+    MAX_IMAGE_SIZE_BYTES: int = 10 * 1024 * 1024  # 10 MB limit for images
+    MAX_DOCUMENT_SIZE_BYTES: int = 20 * 1024 * 1024  # 20 MB limit for documents
 
-    # True magic byte headers mapped to (MIME type, MediaType enum)
-    MAGIC_SIGNATURES: dict[bytes, tuple[str, MediaType]] = {
-        b"\xFF\xD8\xFF": ("image/jpeg", MediaType.PHOTO),
-        b"\x89PNG\r\n\x1a\n": ("image/png", MediaType.PHOTO),
-        b"%PDF": ("application/pdf", MediaType.DOCUMENT),
+    ALLOWED_IMAGE_TYPES: set[str] = {"image/jpeg", "image/png", "image/webp"}
+    ALLOWED_DOCUMENT_TYPES: set[str] = {
+        "application/pdf",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     }
 
     @classmethod
     def sanitize_filename(cls, filename: str) -> str:
         """Strip directory paths and unsafe characters from raw filename."""
         base_name = os.path.basename(filename)
-        # Remove anything except alphanumeric, dots, hyphens, and underscores
         cleaned = re.sub(r"[^a-zA-Z0-9._-]", "_", base_name)
         return cleaned or "unnamed_file"
 
@@ -39,61 +47,123 @@ class FileValidationService:
         return hashlib.sha256(file_bytes).hexdigest()
 
     @classmethod
-    def validate_and_inspect(
-        cls,
-        file_bytes: bytes,
-        original_filename: str,
-        client_mime_type: str | None = None,
-    ) -> tuple[str, MediaType, str, str]:
+    def detect_mime_type(cls, file_bytes: bytes) -> str:
         """
-        Validate file safety and return (detected_mime, media_type, sanitized_filename, checksum).
-        
-        Raises
-        ------
-        BaseAPIException if file is empty, corrupted, oversized, or has unknown magic bytes.
+        Detect MIME type from actual file content using python-magic.
+
+        This reads the magic bytes of the file, not the client-declared
+        Content-Type header or the file extension.
         """
-        # 1. Check file size
-        file_size = len(file_bytes)
-        if file_size == 0:
+        try:
+            return magic.from_buffer(file_bytes[:8192], mime=True)
+        except Exception as e:
+            logger.warning("python-magic detection failed: %s", e)
+            return "application/octet-stream"
+
+    @classmethod
+    def validate_image(cls, file_bytes: bytes, original_filename: str) -> tuple[str, MediaType, str, str]:
+        """
+        Validate an image file and return (detected_mime, media_type, sanitized_filename, checksum).
+
+        Raises BaseAPIException if file is empty, oversized, or has invalid content.
+        """
+        if len(file_bytes) == 0:
             raise BaseAPIException(
                 status_code=400,
                 detail="Uploaded file is empty (0 bytes)",
                 error_code="INVALID_FILE_EMPTY",
             )
-        if file_size > cls.MAX_FILE_SIZE_BYTES:
+        if len(file_bytes) > cls.MAX_IMAGE_SIZE_BYTES:
             raise BaseAPIException(
                 status_code=413,
-                detail=f"File size ({file_size} bytes) exceeds maximum limit ({cls.MAX_FILE_SIZE_BYTES} bytes)",
+                detail=f"Image size ({len(file_bytes)} bytes) exceeds maximum limit ({cls.MAX_IMAGE_SIZE_BYTES} bytes)",
                 error_code="FILE_TOO_LARGE",
             )
 
-        # 2. Magic byte inspection
-        detected_mime: str | None = None
-        media_type: MediaType | None = None
-
-        # Check exact header matches
-        for sig, (mime, m_type) in cls.MAGIC_SIGNATURES.items():
-            if file_bytes.startswith(sig):
-                detected_mime = mime
-                media_type = m_type
-                break
-
-        # WEBP special check
-        if not detected_mime and file_bytes.startswith(b"RIFF") and b"WEBP" in file_bytes[:16]:
-            detected_mime = "image/webp"
-            media_type = MediaType.PHOTO
-
-        if not detected_mime or not media_type:
+        detected_mime = cls.detect_mime_type(file_bytes)
+        if detected_mime not in cls.ALLOWED_IMAGE_TYPES:
             raise BaseAPIException(
                 status_code=415,
-                detail="Unsupported or corrupt file type. Only JPEG, PNG, WEBP, and PDF files are allowed.",
+                detail=f"Unsupported image type (detected: {detected_mime}). Only JPEG, PNG, and WEBP are allowed.",
                 error_code="UNSUPPORTED_MEDIA_TYPE",
             )
 
         sanitized_name = cls.sanitize_filename(original_filename)
         checksum = cls.compute_sha256(file_bytes)
+        return detected_mime, MediaType.PHOTO, sanitized_name, checksum
 
-        return detected_mime, media_type, sanitized_name, checksum
+    @classmethod
+    def validate_document(cls, file_bytes: bytes, original_filename: str) -> tuple[str, MediaType, str, str]:
+        """
+        Validate a document file and return (detected_mime, media_type, sanitized_filename, checksum).
+
+        Raises BaseAPIException if file is empty, oversized, or has invalid content.
+        """
+        if len(file_bytes) == 0:
+            raise BaseAPIException(
+                status_code=400,
+                detail="Uploaded file is empty (0 bytes)",
+                error_code="INVALID_FILE_EMPTY",
+            )
+        if len(file_bytes) > cls.MAX_DOCUMENT_SIZE_BYTES:
+            raise BaseAPIException(
+                status_code=413,
+                detail=f"Document size ({len(file_bytes)} bytes) exceeds maximum limit ({cls.MAX_DOCUMENT_SIZE_BYTES} bytes)",
+                error_code="FILE_TOO_LARGE",
+            )
+
+        detected_mime = cls.detect_mime_type(file_bytes)
+        if detected_mime not in cls.ALLOWED_DOCUMENT_TYPES:
+            raise BaseAPIException(
+                status_code=415,
+                detail=f"Unsupported document type (detected: {detected_mime}). Only PDF, DOC, and DOCX are allowed.",
+                error_code="UNSUPPORTED_MEDIA_TYPE",
+            )
+
+        sanitized_name = cls.sanitize_filename(original_filename)
+        checksum = cls.compute_sha256(file_bytes)
+        return detected_mime, MediaType.DOCUMENT, sanitized_name, checksum
+
+    @classmethod
+    def validate_and_inspect(
+        cls,
+        file_bytes: bytes,
+        original_filename: str,
+        expected_type: MediaType | None = None,
+    ) -> tuple[str, MediaType, str, str]:
+        """
+        Validate file safety and return (detected_mime, media_type, sanitized_filename, checksum).
+
+        Uses python-magic for content-based type detection. If expected_type is
+        provided, validates against that specific type's rules. Otherwise,
+        auto-detects the type based on content.
+
+        Raises BaseAPIException if file is empty, corrupted, oversized, or has unknown magic bytes.
+        """
+        # Check empty file first (before type detection)
+        if len(file_bytes) == 0:
+            raise BaseAPIException(
+                status_code=400,
+                detail="Uploaded file is empty (0 bytes)",
+                error_code="INVALID_FILE_EMPTY",
+            )
+
+        if expected_type == MediaType.DOCUMENT:
+            return cls.validate_document(file_bytes, original_filename)
+
+        # Auto-detect: try image first, then document
+        detected_mime = cls.detect_mime_type(file_bytes)
+        if detected_mime in cls.ALLOWED_IMAGE_TYPES:
+            return cls.validate_image(file_bytes, original_filename)
+        elif detected_mime in cls.ALLOWED_DOCUMENT_TYPES:
+            return cls.validate_document(file_bytes, original_filename)
+        else:
+            # Cannot determine type - reject
+            raise BaseAPIException(
+                status_code=415,
+                detail=f"Unsupported file type (detected: {detected_mime}). Only images (JPEG, PNG, WEBP) and documents (PDF, DOC, DOCX) are allowed.",
+                error_code="UNSUPPORTED_MEDIA_TYPE",
+            )
 
     @classmethod
     def generate_storage_key(cls, visit_id: uuid.UUID, media_id: uuid.UUID, sanitized_name: str) -> str:

@@ -43,5 +43,14 @@ class StorageService:
         """Check if object exists at storage key."""
         return await self._provider.exists(storage_key)
 
+    async def generate_presigned_url(self, storage_key: str, expiry_minutes: int = 15) -> str:
+        """
+        Generate a pre-signed URL for temporary access to a stored object.
+
+        Security Design Section 4: access only via pre-signed URLs with short expiry.
+        Returns a URL that expires after the specified number of minutes.
+        """
+        return await self._provider.generate_presigned_url(storage_key, expiry_minutes)
+
 
 storage_service = StorageService()
