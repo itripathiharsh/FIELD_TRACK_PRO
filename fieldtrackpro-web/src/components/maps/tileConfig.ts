@@ -1,48 +1,68 @@
 /**
  * Map tile provider configuration.
  *
- * Environment-driven tile URL configuration.
- * Default: OpenStreetMap raster tiles via MapLibre demo.
+ * Environment-driven tile provider configuration.
+ * Default: OpenStreetMap raster tiles (no API key required).
  * Production: Set VITE_MAPLIBRE_TILE_URL to a commercial provider or self-hosted tiles.
  *
- * IMPORTANT: Public/community tile services must not be abused for production traffic.
+ * IMPORTANT: OpenStreetMap tile usage policy applies for production traffic.
  * For production use, configure a commercial provider or self-hosted tile server.
  */
 
 export interface TileProviderConfig {
-    styleUrl: string;
+    styleUrl: string | null;
+    styleObject: object | null;
     attribution: string;
 }
 
-/**
- * Default tile provider configuration.
- * Uses MapLibre demo tiles (suitable for development only).
- */
-const DEFAULT_TILE_CONFIG: TileProviderConfig = {
-    styleUrl: 'https://demotiles.maplibre.org/style.json',
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+const OSM_STYLE_OBJECT: object = {
+    version: 8,
+    sources: {
+        osm: {
+            type: 'raster',
+            tiles: [
+                'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png',
+            ],
+            tileSize: 256,
+            attribution: '\u00a9 OpenStreetMap contributors',
+        },
+    },
+    layers: [
+        {
+            id: 'osm',
+            type: 'raster',
+            source: 'osm',
+        },
+    ],
 };
 
-/**
- * Get tile provider configuration from environment or use defaults.
- */
+const OSM_ATTRIBUTION =
+    '\u00a9 <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+
+function getDefaultConfig(): TileProviderConfig {
+    return {
+        styleUrl: null,
+        styleObject: OSM_STYLE_OBJECT,
+        attribution: OSM_ATTRIBUTION,
+    };
+}
+
 export function getTileProviderConfig(): TileProviderConfig {
     const envUrl = import.meta.env.VITE_MAPLIBRE_TILE_URL;
 
     if (envUrl) {
         return {
             styleUrl: envUrl,
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+            styleObject: null,
+            attribution: OSM_ATTRIBUTION,
         };
     }
 
-    return DEFAULT_TILE_CONFIG;
+    return getDefaultConfig();
 }
 
-/**
- * Validate that a tile URL is properly configured.
- */
-export function isTileConfigured(): Boolean {
-    const config = getTileProviderConfig();
-    return config.styleUrl.length > 0;
+export function isTileConfigured(): boolean {
+    return true;
 }

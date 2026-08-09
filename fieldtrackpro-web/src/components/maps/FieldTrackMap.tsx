@@ -27,6 +27,8 @@ export interface FieldTrackMapProps {
     onError?: (error: string) => void;
 }
 
+const LOADING_TIMEOUT_MS = 15000;
+
 /**
  * FieldTrack Pro Map component using MapLibre GL JS.
  *
@@ -44,62 +46,88 @@ export function FieldTrackMap({
 }: FieldTrackMapProps) {
     const mapContainer = useRef<HTMLDivElement>(null);
     const map = useRef<maplibregl.Map | null>(null);
+    const loadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-
-    // Validate coordinates
-    const hasValidCenter = centerLat != null && centerLng != null &&
-        centerLat >= -90 && centerLat <= 90 &&
-        centerLng >= -180 && centerLng <= 180 &&
-        !(centerLat === 0 && centerLng === 0);
 
     useEffect(() => {
         if (!mapContainer.current || map.current) return;
 
         const tileConfig = getTileProviderConfig();
 
+        const hasValidCenter =
+            centerLat != null &&
+            centerLng != null &&
+            centerLat >= -90 &&
+            centerLat <= 90 &&
+            centerLng >= -180 &&
+            centerLng <= 180 &&
+            !(centerLat === 0 && centerLng === 0);
+
+        const handleMapError = (msg: string) => {
+            setError(msg);
+            setIsLoading(false);
+            if (loadTimeoutRef.current) {
+                clearTimeout(loadTimeoutRef.current);
+                loadTimeoutRef.current = null;
+            }
+            onError?.(msg);
+        };
+
         try {
+            const styleConfig = tileConfig.styleUrl
+                ? { style: tileConfig.styleUrl }
+                : { style: tileConfig.styleObject as maplibregl.StyleSpecification };
+
             map.current = new maplibregl.Map({
                 container: mapContainer.current,
-                style: tileConfig.styleUrl,
+                ...styleConfig,
                 center: hasValidCenter ? [centerLng!, centerLat!] : [77.5946, 12.9716],
                 zoom: hasValidCenter ? zoom : 4,
             });
 
             map.current.addControl(new maplibregl.NavigationControl(), 'top-right');
 
+            loadTimeoutRef.current = setTimeout(() => {
+                handleMapError(
+                    'Map loading timed out. Please check your network connection and try again.'
+                );
+            }, LOADING_TIMEOUT_MS);
+
             map.current.on('load', () => {
+                if (loadTimeoutRef.current) {
+                    clearTimeout(loadTimeoutRef.current);
+                    loadTimeoutRef.current = null;
+                }
                 setIsLoading(false);
             });
 
             map.current.on('error', (e: { error?: { message?: string } }) => {
                 const msg = e.error?.message || 'Failed to load map tiles';
-                setError(msg);
-                setIsLoading(false);
-                onError?.(msg);
+                handleMapError(`Map loading failed: ${msg}`);
             });
         } catch (e) {
             const msg = e instanceof Error ? e.message : 'Failed to initialize map';
-            setError(msg);
-            setIsLoading(false);
-            onError?.(msg);
+            handleMapError(msg);
         }
 
         return () => {
+            if (loadTimeoutRef.current) {
+                clearTimeout(loadTimeoutRef.current);
+                loadTimeoutRef.current = null;
+            }
             map.current?.remove();
             map.current = null;
         };
-    }, []);
+    }, [centerLat, centerLng, zoom, onError]);
 
     // Update markers when they change
     useEffect(() => {
         if (!map.current) return;
 
-        // Remove existing markers
         const existingMarkers = document.querySelectorAll('.maplibre-marker');
         existingMarkers.forEach((m) => m.remove());
 
-        // Add new markers
         markers.forEach((marker) => {
             if (!marker.latitude || !marker.longitude) return;
             if (marker.latitude === 0 && marker.longitude === 0) return;
@@ -122,7 +150,8 @@ export function FieldTrackMap({
                 .setLngLat([marker.longitude, marker.latitude])
                 .setPopup(
                     new maplibregl.Popup({ offset: 25 }).setText(
-                        marker.label || `Location (${marker.latitude.toFixed(4)}, ${marker.longitude.toFixed(4)})`
+                        marker.label ||
+                            `Location (${marker.latitude.toFixed(4)}, ${marker.longitude.toFixed(4)})`
                     )
                 )
                 .addTo(map.current!);
@@ -134,9 +163,13 @@ export function FieldTrackMap({
             <div
                 style={{ height }}
                 className="flex items-center justify-center bg-surface-container-low rounded-lg"
+                role="alert"
+                aria-live="polite"
             >
                 <div className="text-center p-space-5">
-                    <p className="font-headline-sm text-sm text-on-surface-variant font-semibold">Map unavailable</p>
+                    <p className="font-headline-sm text-sm text-on-surface-variant font-semibold">
+                        Map unavailable
+                    </p>
                     <p className="font-caption text-xs text-outline mt-1">{error}</p>
                 </div>
             </div>
@@ -149,6 +182,8 @@ export function FieldTrackMap({
                 <div
                     style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10 }}
                     className="flex items-center justify-center bg-surface-container-low"
+                    aria-live="polite"
+                    aria-busy="true"
                 >
                     <div className="text-center">
                         <div className="w-10 h-10 border-4 border-primary-container border-t-secondary-container rounded-full animate-spin mx-auto mb-space-2.5" />
@@ -156,7 +191,10 @@ export function FieldTrackMap({
                     </div>
                 </div>
             )}
-            <div ref={mapContainer} style={{ width: '100%', height: '100%', borderRadius: '8px', overflow: 'hidden' }} />
+            <div
+                ref={mapContainer}
+                style={{ width: '100%', height: '100%', borderRadius: '8px', overflow: 'hidden' }}
+            />
         </div>
     );
 }
