@@ -12,6 +12,9 @@
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
+    <!-- Google Maps feature (not required for devices without Google Play) -->
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+
     <application
         android:name=".FieldTrackApp"
         android:allowBackup="false"
@@ -30,6 +33,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Google Maps API Key (Phase 4 Section 1) -->
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="${MAPS_API_KEY}" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

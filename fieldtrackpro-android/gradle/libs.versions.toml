@@ -41,6 +41,9 @@ retrofit-converter-gson = { group = "com.squareup.retrofit2", name = "converter-
 okhttp-logging = { group = "com.squareup.okhttp3", name = "logging-interceptor", version.ref = "okhttp" }
 androidx-security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "securityCrypto" }
 androidx-work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "work" }
+gms-play-services-maps = { group = "com.google.android.gms", name = "play-services-maps", version = "19.0.0" }
+gms-play-services-location = { group = "com.google.android.gms", name = "play-services-location", version = "21.3.0" }
+maps-compose = { group = "com.google.maps.android", name = "maps-compose", version = "6.2.1" }
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
 
 [plugins]
