@@ -5,6 +5,7 @@ import { Modal } from '../components/ui/Modal';
 import { PageHeader } from '../components/ui/PageHeader';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
+import { Select } from '../components/ui/Select';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { EmptyState } from '../components/ui/EmptyState';
 import { ErrorBanner } from '../components/ui/ErrorBanner';
@@ -282,44 +283,28 @@ export const EmployeesPage: React.FC = () => {
             placeholder="EMP-001"
             helperText="Optional, must be unique."
           />
-          <div className="flex flex-col gap-space-1.5">
-            <label
-              htmlFor="employee-territory"
-              className="font-label-md text-xs text-on-surface uppercase tracking-wider block font-semibold"
-            >
-              Territory
-            </label>
-            <select
-              id="employee-territory"
-              value={territoryId}
-              onChange={(e) => setTerritoryId(e.target.value)}
-              className="w-full h-10 bg-surface border border-outline-variant rounded-lg px-space-3 text-on-surface font-body-md text-sm focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 transition-all"
-            >
-              <option value="">-- Unassigned --</option>
-              {territories.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="flex flex-col gap-space-1.5">
-            <label
-              htmlFor="employee-role"
-              className="font-label-md text-label-md text-on-surface uppercase tracking-wider block font-semibold"
-            >
-              Role Assignment
-            </label>
-            <select
-              id="employee-role"
-              value={role}
-              onChange={(e) => setRole(e.target.value as UserRole)}
-              className="w-full h-10 bg-surface border border-outline-variant rounded-lg px-space-3 text-on-surface font-body-md text-sm focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 transition-all"
-            >
-              <option value="EMPLOYEE">Field Representative (EMPLOYEE)</option>
-              <option value="ADMIN">System Administrator (ADMIN)</option>
-            </select>
-          </div>
+          <Select
+            id="employee-territory"
+            label="Territory"
+            value={territoryId}
+            onChange={(e) => setTerritoryId(e.target.value)}
+          >
+            <option value="">-- Unassigned --</option>
+            {territories.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </Select>
+          <Select
+            id="employee-role"
+            label="Role Assignment"
+            value={role}
+            onChange={(e) => setRole(e.target.value as UserRole)}
+          >
+            <option value="EMPLOYEE">Field Representative (EMPLOYEE)</option>
+            <option value="ADMIN">System Administrator (ADMIN)</option>
+          </Select>
           <Input
             label="Password"
             type="password"

@@ -7,6 +7,7 @@ import { Modal } from '../components/ui/Modal';
 import { PageHeader } from '../components/ui/PageHeader';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
+import { Select } from '../components/ui/Select';
 import { EmptyState } from '../components/ui/EmptyState';
 import { ErrorBanner } from '../components/ui/ErrorBanner';
 import { useAuth } from '../context/AuthContext';
@@ -248,62 +249,38 @@ export const VisitsPage: React.FC = () => {
           </div>
         )}
         <form onSubmit={handleCreateVisit} className="space-y-space-4">
-          <div className="flex flex-col gap-space-1.5">
-            <label
-              htmlFor="visit-customer"
-              className="font-label-md text-xs text-on-surface uppercase tracking-wider block font-semibold"
-            >
-              Select Customer
-            </label>
-            <select
-              id="visit-customer"
-              required
-              value={selectedCustomerId}
-              onChange={(e) => setSelectedCustomerId(e.target.value)}
-              className="w-full h-10 bg-surface border border-outline-variant rounded-lg px-space-3 text-on-surface font-body-md text-sm focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 transition-all cursor-pointer"
-            >
-              <option value="">-- Choose Customer --</option>
-              {customers.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} ({c.address})
-                </option>
-              ))}
-            </select>
-            {customers.length === 0 && (
-              <p className="font-caption text-xs text-error">
-                No customers available. Add a customer account first.
-              </p>
-            )}
-          </div>
+          <Select
+            id="visit-customer"
+            label="Select Customer"
+            required
+            value={selectedCustomerId}
+            onChange={(e) => setSelectedCustomerId(e.target.value)}
+            error={customers.length === 0 ? 'No customers available. Add a customer account first.' : undefined}
+          >
+            <option value="">-- Choose Customer --</option>
+            {customers.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name} ({c.address})
+              </option>
+            ))}
+          </Select>
 
-          <div className="flex flex-col gap-space-1.5">
-            <label
-              htmlFor="visit-employee"
-              className="font-label-md text-xs text-on-surface uppercase tracking-wider block font-semibold"
-            >
-              Assigned Field Employee
-            </label>
-            <select
-              id="visit-employee"
-              required
-              value={selectedEmployeeId}
-              onChange={(e) => setSelectedEmployeeId(e.target.value)}
-              className="w-full h-10 bg-surface border border-outline-variant rounded-lg px-space-3 text-on-surface font-body-md text-sm focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 transition-all cursor-pointer"
-            >
-              <option value="">-- Choose Employee --</option>
-              {employees.map((emp) => (
-                <option key={emp.id} value={emp.id}>
-                  {emp.full_name}
-                  {emp.employee_code ? ` (${emp.employee_code})` : ''}
-                </option>
-              ))}
-            </select>
-            {employees.length === 0 && (
-              <p className="font-caption text-xs text-error">
-                No employee profiles available. Register a field representative first.
-              </p>
-            )}
-          </div>
+          <Select
+            id="visit-employee"
+            label="Assigned Field Employee"
+            required
+            value={selectedEmployeeId}
+            onChange={(e) => setSelectedEmployeeId(e.target.value)}
+            error={employees.length === 0 ? 'No employee profiles available. Register a field representative first.' : undefined}
+          >
+            <option value="">-- Choose Employee --</option>
+            {employees.map((emp) => (
+              <option key={emp.id} value={emp.id}>
+                {emp.full_name}
+                {emp.employee_code ? ` (${emp.employee_code})` : ''}
+              </option>
+            ))}
+          </Select>
 
           <Input
             label="Scheduled Date & Time"

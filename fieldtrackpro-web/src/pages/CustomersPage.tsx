@@ -5,6 +5,7 @@ import { Modal } from '../components/ui/Modal';
 import { PageHeader } from '../components/ui/PageHeader';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
+import { Select } from '../components/ui/Select';
 import { EmptyState } from '../components/ui/EmptyState';
 import { ErrorBanner } from '../components/ui/ErrorBanner';
 import { apiClient } from '../api/client';
@@ -309,27 +310,19 @@ export const CustomersPage: React.FC = () => {
             onChange={(e) => set('geofenceRadius', e.target.value)}
             helperText="Maximum allowed distance from this point at check-in."
           />
-          <div className="flex flex-col gap-space-1.5">
-            <label
-              htmlFor="customer-territory"
-              className="font-label-md text-xs text-on-surface uppercase tracking-wider block font-semibold"
-            >
-              Territory
-            </label>
-            <select
-              id="customer-territory"
-              value={form.territoryId}
-              onChange={(e) => set('territoryId', e.target.value)}
-              className="w-full h-10 bg-surface border border-outline-variant rounded-lg px-space-3 text-on-surface font-body-md text-sm focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 transition-all cursor-pointer"
-            >
-              <option value="">-- Unassigned --</option>
-              {territories.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          <Select
+            id="customer-territory"
+            label="Territory"
+            value={form.territoryId}
+            onChange={(e) => set('territoryId', e.target.value)}
+          >
+            <option value="">-- Unassigned --</option>
+            {territories.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </Select>
           <div className="pt-space-4 flex justify-end gap-space-3 border-t border-surface-container-highest mt-space-6">
             <Button type="button" variant="ghost" size="sm" onClick={() => setIsModalOpen(false)}>
               Cancel
