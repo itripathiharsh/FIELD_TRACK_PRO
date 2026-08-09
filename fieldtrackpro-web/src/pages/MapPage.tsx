@@ -2,9 +2,13 @@ import React, { useEffect, useState } from 'react';
 import { Card } from '../components/ui/Card';
 import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState } from '../components/ui/EmptyState';
+import { ErrorBanner } from '../components/ui/ErrorBanner';
 import { FieldTrackMap, MapMarker } from '../components/maps/FieldTrackMap';
 import { apiClient } from '../api/client';
 import { Customer } from '../types';
+
+/** Matches the `secondary-container` token in tailwind.config.js (#ffa515) — the app's accent color, used here so the Legend swatch and rendered map pins never disagree. */
+const MARKER_COLOR = '#ffa515';
 
 /**
  * Map page for visualizing customer locations.
@@ -50,7 +54,7 @@ export const MapPage: React.FC = () => {
         latitude: c.location!.latitude,
         longitude: c.location!.longitude,
         label: c.name,
-        color: '#1976D2',
+        color: MARKER_COLOR,
     }));
 
     // Calculate center from valid customer locations
@@ -62,16 +66,14 @@ export const MapPage: React.FC = () => {
         : undefined;
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-space-6">
             <PageHeader
                 title="Customer Locations Map"
                 subtitle="Geographic distribution of customer sites."
             />
 
             {error && (
-                <Card>
-                    <p className="text-error">{error}</p>
-                </Card>
+                <ErrorBanner message={error} onRetry={loadCustomers} onDismiss={() => setError(null)} />
             )}
 
             {isLoading ? (
@@ -104,24 +106,24 @@ export const MapPage: React.FC = () => {
 
             {selectedCustomer && (
                 <Card>
-                    <h3 className="text-lg font-bold text-on-surface mb-2">{selectedCustomer.name}</h3>
-                    <p className="text-sm text-on-surface-variant">
+                    <h3 className="font-headline-sm text-headline-sm text-primary font-bold mb-space-2">{selectedCustomer.name}</h3>
+                    <p className="font-caption text-xs text-on-surface-variant">
                         Lat: {selectedCustomer.location?.latitude.toFixed(6)}, Lng: {selectedCustomer.location?.longitude.toFixed(6)}
                     </p>
-                    <p className="text-sm text-on-surface-variant">
+                    <p className="font-caption text-xs text-on-surface-variant">
                         Geofence: {selectedCustomer.geofence_radius_m}m
                     </p>
-                    <p className="text-sm text-on-surface-variant">
+                    <p className="font-caption text-xs text-on-surface-variant">
                         Address: {selectedCustomer.address}
                     </p>
                 </Card>
             )}
 
             <Card>
-                <h3 className="text-lg font-bold text-on-surface mb-2">Legend</h3>
-                <div className="flex items-center gap-4 text-sm text-on-surface-variant">
-                    <div className="flex items-center gap-2">
-                        <div className="w-4 h-4 rounded-full bg-primary border-2 border-white shadow" />
+                <h3 className="font-headline-sm text-headline-sm text-primary font-bold mb-space-2">Legend</h3>
+                <div className="flex items-center gap-space-4 font-caption text-xs text-on-surface-variant">
+                    <div className="flex items-center gap-space-2">
+                        <div className="w-4 h-4 rounded-full border-2 border-white shadow" style={{ backgroundColor: MARKER_COLOR }} />
                         <span>Customer Location</span>
                     </div>
                 </div>

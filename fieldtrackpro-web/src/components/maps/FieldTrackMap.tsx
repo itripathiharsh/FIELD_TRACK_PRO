@@ -109,7 +109,7 @@ export function FieldTrackMap({
             el.style.width = '24px';
             el.style.height = '24px';
             el.style.borderRadius = '50%';
-            el.style.backgroundColor = marker.color || '#1976D2';
+            el.style.backgroundColor = marker.color || '#ffa515';
             el.style.border = '3px solid white';
             el.style.boxShadow = '0 2px 4px rgba(0,0,0,0.3)';
             el.style.cursor = 'pointer';
@@ -131,10 +131,13 @@ export function FieldTrackMap({
 
     if (error) {
         return (
-            <div style={{ height, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f5f5f5', borderRadius: '8px' }}>
-                <div style={{ textAlign: 'center', padding: '20px' }}>
-                    <p style={{ color: '#666', fontSize: '14px' }}>Map unavailable</p>
-                    <p style={{ color: '#999', fontSize: '12px' }}>{error}</p>
+            <div
+                style={{ height }}
+                className="flex items-center justify-center bg-surface-container-low rounded-lg"
+            >
+                <div className="text-center p-space-5">
+                    <p className="font-headline-sm text-sm text-on-surface-variant font-semibold">Map unavailable</p>
+                    <p className="font-caption text-xs text-outline mt-1">{error}</p>
                 </div>
             </div>
         );
@@ -143,10 +146,13 @@ export function FieldTrackMap({
     return (
         <div style={{ position: 'relative', height }}>
             {isLoading && (
-                <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f5f5f5', zIndex: 10 }}>
-                    <div style={{ textAlign: 'center' }}>
-                        <div style={{ width: '40px', height: '40px', border: '4px solid #e0e0e0', borderTopColor: '#1976D2', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 10px' }} />
-                        <p style={{ color: '#666', fontSize: '14px' }}>Loading map...</p>
+                <div
+                    style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10 }}
+                    className="flex items-center justify-center bg-surface-container-low"
+                >
+                    <div className="text-center">
+                        <div className="w-10 h-10 border-4 border-primary-container border-t-secondary-container rounded-full animate-spin mx-auto mb-space-2.5" />
+                        <p className="font-caption text-xs text-on-surface-variant">Loading map...</p>
                     </div>
                 </div>
             )}
