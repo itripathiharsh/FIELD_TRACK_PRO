@@ -10,6 +10,7 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { ErrorBanner } from '../components/ui/ErrorBanner';
 import { apiClient } from '../api/client';
 import { Customer, Territory } from '../types';
+import { validatePhoneNumber } from '../utils/phoneValidation';
 
 /** Blank form state for creating a customer. */
 const emptyForm = {
@@ -99,6 +100,12 @@ export const CustomersPage: React.FC = () => {
     const radius = parseInt(form.geofenceRadius, 10);
     if (Number.isNaN(radius) || radius <= 0) {
       setFormError('Geofence radius must be a positive number of metres.');
+      return;
+    }
+
+    const phoneError = validatePhoneNumber(form.contactNumber);
+    if (phoneError) {
+      setFormError(phoneError);
       return;
     }
 
@@ -271,7 +278,7 @@ export const CustomersPage: React.FC = () => {
             value={form.contactNumber}
             onChange={(e) => set('contactNumber', e.target.value)}
             placeholder="+91 98765 43210"
-            helperText="Phone number, maximum 20 characters."
+            helperText="Phone number: digits, +, -, spaces, parentheses. Max 20 characters."
           />
           <Input
             label="Address"

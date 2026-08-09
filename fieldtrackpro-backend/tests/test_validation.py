@@ -153,3 +153,163 @@ async def test_create_user_no_identity(client: AsyncClient):
     )
     # Should fail at service level (422) or DB level
     assert resp.status_code in (422, 500, 503)
+
+
+# ---------------------------------------------------------------------------
+# Phone number validation (contact_number / mobile_number)
+# ---------------------------------------------------------------------------
+
+
+@requires_db
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "contact_number",
+    [
+        "+919876543210",
+        "+1 555-123-4567",
+        "1234567890",
+        "(555) 123-4567",
+        "+44 20 7946 0958",
+        "1",
+    ],
+)
+async def test_create_customer_valid_phone_numbers(client: AsyncClient, contact_number: str):
+    """Valid phone number formats should be accepted."""
+    resp = await client.post(
+        "/api/v1/customers",
+        json={
+            "name": "Phone Test Customer",
+            "contact_number": contact_number,
+            "address": "123 Test St",
+            "location": {"latitude": 12.9716, "longitude": 77.5946},
+        },
+        headers=admin_headers(),
+    )
+    assert resp.status_code == 201, f"Expected 201 for '{contact_number}', got {resp.status_code}: {resp.text}"
+
+
+@requires_db
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "contact_number",
+    [
+        "ABCDEREZ@",
+        "hello",
+        "123abc",
+        "!@#$%^&*",
+        "abcdefghijklmnopqrst",
+        "",
+    ],
+)
+async def test_create_customer_invalid_phone_numbers(client: AsyncClient, contact_number: str):
+    """Invalid phone number values should be rejected with 422."""
+    resp = await client.post(
+        "/api/v1/customers",
+        json={
+            "name": "Phone Test Customer",
+            "contact_number": contact_number,
+            "address": "123 Test St",
+            "location": {"latitude": 12.9716, "longitude": 77.5946},
+        },
+        headers=admin_headers(),
+    )
+    assert resp.status_code == 422, f"Expected 422 for '{contact_number}', got {resp.status_code}: {resp.text}"
+
+
+@requires_db
+@pytest.mark.asyncio
+async def test_create_customer_phone_too_long(client: AsyncClient):
+    """Phone numbers exceeding 20 characters should be rejected."""
+    resp = await client.post(
+        "/api/v1/customers",
+        json={
+            "name": "Phone Test Customer",
+            "contact_number": "+1-555-123-456789012345",
+            "address": "123 Test St",
+            "location": {"latitude": 12.9716, "longitude": 77.5946},
+        },
+        headers=admin_headers(),
+    )
+    assert resp.status_code == 422
+
+
+@requires_db
+@pytest.mark.asyncio
+async def test_update_customer_invalid_phone(client: AsyncClient):
+    """PATCH should also reject invalid phone numbers."""
+    # First create a valid customer
+    create_resp = await client.post(
+        "/api/v1/customers",
+        json={
+            "name": "Update Phone Test",
+            "contact_number": "+919876543210",
+            "address": "123 Test St",
+            "location": {"latitude": 12.9716, "longitude": 77.5946},
+        },
+        headers=admin_headers(),
+    )
+    assert create_resp.status_code == 201
+    customer_id = create_resp.json()["id"]
+
+    # Try to update with invalid phone
+    resp = await client.patch(
+        f"/api/v1/customers/{customer_id}",
+        json={"contact_number": "ABCDEREZ@"},
+        headers=admin_headers(),
+    )
+    assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+
+    # Verify the original phone was NOT changed
+    get_resp = await client.get(f"/api/v1/customers/{customer_id}", headers=admin_headers())
+    assert get_resp.json()["contact_number"] == "+919876543210"
+
+
+@requires_db
+@pytest.mark.asyncio
+async def test_create_user_valid_mobile_numbers(client: AsyncClient):
+    """Valid mobile number formats should be accepted for user creation."""
+    import uuid
+    valid_numbers = [
+        "+919876543211",
+        "+1 555-123-4568",
+        "(555) 123-4568",
+        "+44 20 7946 0959",
+    ]
+    for mobile_number in valid_numbers:
+        unique_email = f"phone_valid_{uuid.uuid4().hex[:8]}@test.com"
+        resp = await client.post(
+            "/api/v1/users",
+            json={
+                "email": unique_email,
+                "mobile_number": mobile_number,
+                "password": "securepassword123",
+            },
+            headers=admin_headers(),
+        )
+        assert resp.status_code == 201, f"Expected 201 for '{mobile_number}', got {resp.status_code}: {resp.text}"
+
+
+@requires_db
+@pytest.mark.asyncio
+async def test_create_user_invalid_mobile_numbers(client: AsyncClient):
+    """Invalid mobile number values should be rejected with 422."""
+    import uuid
+    invalid_numbers = [
+        "ABCDEREZ@",
+        "hello",
+        "123abc",
+        "!@#$%^&*",
+        "abcdefghijklmnopqrstuvwxyz",
+    ]
+    for mobile_number in invalid_numbers:
+        unique_email = f"phone_invalid_{uuid.uuid4().hex[:8]}@test.com"
+        resp = await client.post(
+            "/api/v1/users",
+            json={
+                "email": unique_email,
+                "mobile_number": mobile_number,
+                "password": "securepassword123",
+            },
+            headers=admin_headers(),
+        )
+        assert resp.status_code == 422, f"Expected 422 for '{mobile_number}', got {resp.status_code}: {resp.text}"

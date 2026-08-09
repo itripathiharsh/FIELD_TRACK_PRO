@@ -3,11 +3,14 @@ Customer request/response schemas.
 """
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from app.validation import PHONE_PATTERN, PHONE_MAX_LENGTH
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from app.models.customer import Customer as CustomerModel
@@ -40,7 +43,12 @@ class CustomerCreate(BaseModel):
     name: str = Field(min_length=1, max_length=150)
     # FT-013: bounded to the column width so an over-long value is a 422 with a
     # clear message, not a database error surfaced as 500.
-    contact_number: str = Field(min_length=1, max_length=20)
+    # Phone validation: only digits, +, -, spaces, parentheses allowed.
+    contact_number: str = Field(
+        min_length=1,
+        max_length=PHONE_MAX_LENGTH,
+        pattern=PHONE_PATTERN,
+    )
     contact_person: str | None = Field(default=None, max_length=150)
     address: str = Field(min_length=1)
     location: LocationIn
@@ -50,7 +58,12 @@ class CustomerCreate(BaseModel):
 
 class CustomerUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=150)
-    contact_number: str | None = Field(default=None, min_length=1, max_length=20)
+    contact_number: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=PHONE_MAX_LENGTH,
+        pattern=PHONE_PATTERN,
+    )
     contact_person: str | None = Field(default=None, max_length=150)
     address: str | None = Field(default=None, min_length=1)
     location: LocationIn | None = None

@@ -9,6 +9,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 from app.models.user import Role
+from app.validation import PHONE_PATTERN, PHONE_MAX_LENGTH
 
 
 # ---------------------------------------------------------------------------
@@ -70,7 +71,11 @@ MIN_PASSWORD_LENGTH = 8
 
 class UserCreate(BaseModel):
     email: str | None = None
-    mobile_number: str | None = Field(default=None, max_length=20)
+    mobile_number: str | None = Field(
+        default=None,
+        max_length=PHONE_MAX_LENGTH,
+        pattern=PHONE_PATTERN,
+    )
     password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=128)
     role: Role = Role.EMPLOYEE
 

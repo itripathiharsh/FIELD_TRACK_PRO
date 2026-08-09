@@ -11,6 +11,7 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { ErrorBanner } from '../components/ui/ErrorBanner';
 import { apiClient } from '../api/client';
 import { Employee, Territory, UserRole } from '../types';
+import { validatePhoneNumber } from '../utils/phoneValidation';
 
 export const EmployeesPage: React.FC = () => {
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -68,6 +69,13 @@ export const EmployeesPage: React.FC = () => {
     if (!email.trim() && !mobile.trim()) {
       setFormError('Provide an email address or a mobile number.');
       return;
+    }
+    if (mobile.trim()) {
+      const mobileError = validatePhoneNumber(mobile);
+      if (mobileError) {
+        setFormError(mobileError);
+        return;
+      }
     }
     if (password.length < 8) {
       setFormError('Password must be at least 8 characters.');
