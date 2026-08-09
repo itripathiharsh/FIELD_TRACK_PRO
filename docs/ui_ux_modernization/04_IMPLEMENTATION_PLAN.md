@@ -1,0 +1,11 @@
+# Implementation Plan
+
+Ordered by leverage (highest-impact, lowest-risk first), matching the defect ledger IDs.
+
+1. **D-01 — `tailwind.config.js`**: add the missing `space-0.5/1.5/2.5/3.5/5/7/9/10/11` keys to `theme.extend.spacing`. Single file, additive only. This alone resolves the four explicitly reported input/icon defects plus the button-gap, modal-padding, badge-gap, table-row-padding, and empty-state-padding sub-symptoms cataloged under D-01, with zero risk of visual regression to anything that was already rendering correctly (no existing key is touched).
+2. **D-05 — `components/ui/Select.tsx` (new) + 5 call sites**: create the component, then swap `CustomersPage.tsx`, `EmployeesPage.tsx` (×2), `VisitsPage.tsx` (×2) to use it in place of the raw `<select>` blocks, preserving every existing prop (`value`, `onChange`, `required`, options, ids) exactly.
+3. **D-02 / D-03 / D-04 — `MapPage.tsx` + `FieldTrackMap.tsx`**: normalize MapPage's heading/spacing classes to existing tokens, swap its raw error `<p>` for `ErrorBanner`, and align marker/legend color plus the map component's internal loading/error styling to existing tokens instead of hardcoded hex.
+4. **D-06 — `Modal.tsx`**: add `role`/`aria-modal`/`aria-labelledby`. **`components/ui/ErrorBoundary.tsx` (new) + `main.tsx`**: wrap `<App />`.
+5. **Verification**: `tsc --noEmit`, `eslint`, `vitest run`, `vite build` — confirm no new errors/failures beyond the pre-existing D-07 baseline items, then start the dev server and visually inspect the pages most affected by D-01 (Login, any DataTable search box, a Modal, the status filter pills) plus the Map page for D-02/03/04.
+6. **Documentation**: `05_COMPLETION_REPORT.md` and `06_VISUAL_VERIFICATION.md` written from the actual verification output, not from intent.
+7. **Commits**: one commit for the token fix (D-01) since it's the load-bearing change; one for the `Select` consolidation (D-05); one for the Map page/component fixes (D-02/03/04); one for the a11y/ErrorBoundary additions (D-06); one for the documentation set. Nothing unrelated (the pre-existing `App.test.tsx` diff, the backend temp file, the other untracked docs folder) is included in any of these commits.
