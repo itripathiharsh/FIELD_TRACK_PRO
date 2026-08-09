@@ -32,4 +32,7 @@ sealed class Screen(val route: String) {
     object SubmissionSuccess : Screen("submission_success/{visitId}") {
         fun createRoute(visitId: String) = "submission_success/$visitId"
     }
+    object RequirementForm : Screen("requirement_form/{visitId}") {
+        fun createRoute(visitId: String) = "requirement_form/$visitId"
+    }
 }

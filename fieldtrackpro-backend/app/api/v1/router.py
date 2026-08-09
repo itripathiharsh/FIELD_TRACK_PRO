@@ -11,6 +11,7 @@ from app.api.v1 import (
     media,
     signatures,
     reports,
+    requirement_forms,
 )
 
 api_router = APIRouter()
@@ -26,3 +27,4 @@ api_router.include_router(geo.router)
 api_router.include_router(media.router)
 api_router.include_router(signatures.router)
 api_router.include_router(reports.router)
+api_router.include_router(requirement_forms.router)

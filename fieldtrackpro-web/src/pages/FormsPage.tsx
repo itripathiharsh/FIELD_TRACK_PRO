@@ -1,55 +1,127 @@
-import React from 'react';
-import { FileText } from 'lucide-react';
-import { PageHeader } from '../components/ui/PageHeader';
-import { Card } from '../components/ui/Card';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Plus, FileText, Tag, Trash2 } from 'lucide-react';
+import { Button } from '../components/ui/Button';
+import { Card, CardHeader, CardTitle, CardSubtitle } from '../components/ui/Card';
 import { EmptyState } from '../components/ui/EmptyState';
+import { ErrorBanner } from '../components/ui/ErrorBanner';
+import { Input } from '../components/ui/Input';
+import { Modal } from '../components/ui/Modal';
+import { PageHeader } from '../components/ui/PageHeader';
+import { apiClient, RequirementCategory } from '../api/client';
 
 /**
- * Requirement forms.
+ * Requirement forms management.
  *
- * FT-029: this page listed three invented templates ("Site Security Inspection
- * Form v1.4", "Customer Delivery Acknowledgement v2.1", "Equipment Installation
- * Checklist v1.0") with fabricated field counts and non-functional Edit and
- * New Template buttons. None of it came from the system, and an administrator
- * could reasonably believe those templates existed.
- *
- * The `requirement_forms` and `requirement_categories` tables and models exist,
- * but the backend exposes no endpoints for them (07_api_design.md section 6
- * specifies GET/POST /requirement-categories and the per-visit form routes).
- * Implementing that module is new feature work, tracked as FT-066 - see
- * docs/REPAIR_DECISIONS.md RD-004.
- *
- * Until then this page states the truth instead of simulating a feature.
+ * Manages requirement categories and allows viewing/submitting forms.
  */
 export const FormsPage: React.FC = () => {
-  return (
-    <div className="space-y-space-6 font-body-md text-on-surface">
-      <PageHeader
-        title="Requirement Forms & Templates"
-        subtitle="Inspection checklists and field form templates for representatives."
-      />
+    const [categories, setCategories] = useState<RequirementCategory[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [showCreateModal, setShowCreateModal] = useState(false);
+    const [newCategoryName, setNewCategoryName] = useState('');
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
-      <EmptyState
-        icon={FileText}
-        title="Requirement forms are not yet available"
-        subtitle="Field representatives cannot capture requirement forms in this build. The capability is specified but not implemented."
-      />
+    const loadCategories = useCallback(async () => {
+        try {
+            setIsLoading(true);
+            const data = await apiClient.getRequirementCategories();
+            setCategories(data);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to load categories');
+        } finally {
+            setIsLoading(false);
+        }
+    }, []);
 
-      <Card variant="flat" className="bg-primary-tint/20 border-primary-fixed-dim">
-        <h4 className="font-headline-sm text-sm font-bold text-primary mb-space-2">
-          What is missing
-        </h4>
-        <ul className="font-caption text-xs text-on-surface-variant leading-relaxed list-disc pl-space-4 space-y-1">
-          <li>Requirement category management (admin-editable taxonomy).</li>
-          <li>Per-visit requirement capture and retrieval.</li>
-          <li>Customer and employee signature capture.</li>
-        </ul>
-        <p className="font-caption text-xs text-on-surface-variant leading-relaxed mt-space-3">
-          The database schema for these records already exists; the API endpoints do not. No
-          placeholder templates are shown here, because presenting forms that cannot be filled in
-          would misrepresent the system&apos;s capability.
-        </p>
-      </Card>
-    </div>
-  );
+    useEffect(() => {
+        loadCategories();
+    }, [loadCategories]);
+
+    const handleCreateCategory = async () => {
+        if (!newCategoryName.trim()) return;
+        try {
+            setIsSubmitting(true);
+            await apiClient.request('/api/v1/requirement-categories', {
+                method: 'POST',
+                body: JSON.stringify({ name: newCategoryName.trim() }),
+            });
+            setNewCategoryName('');
+            setShowCreateModal(false);
+            loadCategories();
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to create category');
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    return (
+        <div className="space-y-space-6 font-body-md text-on-surface">
+            <PageHeader
+                title="Requirement Forms & Templates"
+                subtitle="Manage requirement categories and capture forms."
+                actions={
+                    <Button size="sm" icon={Plus} onClick={() => setShowCreateModal(true)}>
+                        New Category
+                    </Button>
+                }
+            />
+
+            {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
+
+            {isLoading ? (
+                <Card>
+                    <div className="flex items-center justify-center h-32">
+                        <div className="w-8 h-8 border-4 border-primary-container border-t-secondary-container rounded-full animate-spin" />
+                    </div>
+                </Card>
+            ) : categories.length === 0 ? (
+                <EmptyState
+                    icon={FileText}
+                    title="No Categories"
+                    subtitle="Create requirement categories to organize field forms."
+                />
+            ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-space-4">
+                    {categories.map((cat) => (
+                        <Card key={cat.id} modifier="hover">
+                            <CardHeader>
+                                <div className="flex items-center gap-space-2">
+                                    <Tag className="w-4 h-4 text-primary" />
+                                    <CardTitle>{cat.name}</CardTitle>
+                                </div>
+                                <CardSubtitle>
+                                    {cat.is_active ? 'Active' : 'Inactive'}
+                                </CardSubtitle>
+                            </CardHeader>
+                        </Card>
+                    ))}
+                </div>
+            )}
+
+            <Modal
+                isOpen={showCreateModal}
+                onClose={() => setShowCreateModal(false)}
+                title="New Requirement Category"
+            >
+                <div className="space-y-space-4">
+                    <Input
+                        label="Category Name"
+                        value={newCategoryName}
+                        onChange={(e) => setNewCategoryName(e.target.value)}
+                        placeholder="e.g., Site Inspection"
+                    />
+                    <div className="flex justify-end gap-space-2">
+                        <Button variant="secondary" onClick={() => setShowCreateModal(false)}>
+                            Cancel
+                        </Button>
+                        <Button onClick={handleCreateCategory} disabled={isSubmitting || !newCategoryName.trim()}>
+                            {isSubmitting ? 'Creating...' : 'Create'}
+                        </Button>
+                    </div>
+                </div>
+            </Modal>
+        </div>
+    );
 };

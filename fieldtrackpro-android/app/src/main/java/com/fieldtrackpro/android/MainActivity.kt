@@ -16,6 +16,7 @@ import com.fieldtrackpro.android.ui.theme.FieldTrackProTheme
 import com.fieldtrackpro.android.ui.viewmodel.AuthViewModel
 import com.fieldtrackpro.android.ui.viewmodel.CheckInViewModel
 import com.fieldtrackpro.android.ui.viewmodel.MediaViewModel
+import com.fieldtrackpro.android.ui.viewmodel.RequirementViewModel
 import com.fieldtrackpro.android.ui.viewmodel.VisitDetailsViewModel
 import com.fieldtrackpro.android.ui.viewmodel.VisitsViewModel
 
@@ -31,6 +32,7 @@ class MainActivity : ComponentActivity() {
         val visitDetailsViewModel = VisitDetailsViewModel(tokenManager, offlineQueueManager)
         val checkInViewModel = CheckInViewModel(tokenManager, offlineQueueManager)
         val mediaViewModel = MediaViewModel(tokenManager)
+        val requirementViewModel = RequirementViewModel(tokenManager)
 
         setContent {
             FieldTrackProTheme {
@@ -47,7 +49,8 @@ class MainActivity : ComponentActivity() {
                         visitsViewModel = visitsViewModel,
                         visitDetailsViewModel = visitDetailsViewModel,
                         checkInViewModel = checkInViewModel,
-                        mediaViewModel = mediaViewModel
+                        mediaViewModel = mediaViewModel,
+                        requirementViewModel = requirementViewModel
                     )
                 }
             }

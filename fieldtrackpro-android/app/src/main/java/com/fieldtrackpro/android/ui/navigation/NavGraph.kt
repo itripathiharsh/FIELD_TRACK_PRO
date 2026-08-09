@@ -22,10 +22,12 @@ import com.fieldtrackpro.android.ui.screens.visits.CheckInScreen
 import com.fieldtrackpro.android.ui.screens.visits.CheckOutScreen
 import com.fieldtrackpro.android.ui.screens.visits.TodayVisitsScreen
 import com.fieldtrackpro.android.ui.screens.maps.MapScreen
+import com.fieldtrackpro.android.ui.screens.requirements.RequirementFormScreen
 import com.fieldtrackpro.android.ui.screens.visits.VisitDetailsScreen
 import com.fieldtrackpro.android.ui.viewmodel.AuthViewModel
 import com.fieldtrackpro.android.ui.viewmodel.CheckInViewModel
 import com.fieldtrackpro.android.ui.viewmodel.MediaViewModel
+import com.fieldtrackpro.android.ui.viewmodel.RequirementViewModel
 import com.fieldtrackpro.android.ui.viewmodel.VisitDetailsViewModel
 import com.fieldtrackpro.android.ui.viewmodel.VisitsViewModel
 
@@ -38,7 +40,8 @@ fun NavGraph(
     visitsViewModel: VisitsViewModel,
     visitDetailsViewModel: VisitDetailsViewModel,
     checkInViewModel: CheckInViewModel,
-    mediaViewModel: MediaViewModel
+    mediaViewModel: MediaViewModel,
+    requirementViewModel: RequirementViewModel = RequirementViewModel(TokenManager(LocalContext.current))
 ) {
     NavHost(
         navController = navController,
@@ -229,6 +232,21 @@ fun NavGraph(
                     navController.navigate(Screen.Dashboard.route) {
                         popUpTo(Screen.Splash.route) { inclusive = true }
                     }
+                }
+            )
+        }
+
+        composable(
+            route = Screen.RequirementForm.route,
+            arguments = listOf(navArgument("visitId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val visitId = backStackEntry.arguments?.getString("visitId") ?: ""
+            RequirementFormScreen(
+                visitId = visitId,
+                viewModel = requirementViewModel,
+                onNavigateBack = { navController.popBackStack() },
+                onSubmitSuccess = {
+                    navController.navigate(Screen.SubmissionSuccess.createRoute(visitId))
                 }
             )
         }

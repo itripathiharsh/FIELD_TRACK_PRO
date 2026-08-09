@@ -532,6 +532,56 @@ export class ApiClient {
       `/api/v1/reports/geo-verification${query ? `?${query}` : ''}`
     );
   }
+
+  // -- requirement forms -----------------------------------------------------
+
+  async getRequirementCategories(): Promise<RequirementCategory[]> {
+    return this.request<RequirementCategory[]>('/api/v1/requirement-categories');
+  }
+
+  async submitRequirementForm(
+    visitId: string,
+    data: {
+      category_id: string;
+      description: string;
+      priority: string;
+      expected_timeline: string;
+      budget_range?: string;
+      notes?: string;
+    },
+  ): Promise<RequirementForm> {
+    return this.request<RequirementForm>(`/api/v1/visits/${visitId}/requirement-form`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getRequirementForm(visitId: string): Promise<RequirementForm | null> {
+    try {
+      return await this.request<RequirementForm>(`/api/v1/visits/${visitId}/requirement-form`);
+    } catch {
+      return null;
+    }
+  }
+}
+
+export interface RequirementCategory {
+  id: string;
+  name: string;
+  is_active: boolean;
+}
+
+export interface RequirementForm {
+  id: string;
+  visit_id: string;
+  category_id: string;
+  category_name: string | null;
+  description: string;
+  priority: string;
+  expected_timeline: string;
+  budget_range: string | null;
+  notes: string | null;
+  submitted_at: string;
 }
 
 export interface EmployeeReportRow {
@@ -566,12 +616,12 @@ export interface ProductivityDashboardData {
 }
 
 export interface GeoReportRow {
-  visit_id: string;
-  employee_name: string;
-  customer_name: string;
-  attempted_at: string;
-  verification_type: string;
-  is_valid: boolean;
+    visit_id: string;
+    employee_name: string;
+    customer_name: string;
+    attempted_at: string;
+    verification_type: string;
+    is_valid: boolean;
   distance_m: number;
   failure_reason: string | null;
 }
