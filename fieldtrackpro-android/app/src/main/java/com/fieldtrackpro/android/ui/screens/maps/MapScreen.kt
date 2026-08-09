@@ -1,6 +1,5 @@
 package com.fieldtrackpro.android.ui.screens.maps
 
-import android.Manifest
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,6 +29,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fieldtrackpro.android.BuildConfig
+import com.fieldtrackpro.android.data.local.TokenManager
+import com.fieldtrackpro.android.data.model.CustomerDto
+import com.fieldtrackpro.android.data.remote.ApiClient
+import com.fieldtrackpro.android.data.repository.CustomerRepository
+import com.fieldtrackpro.android.data.repository.Resource
 import com.fieldtrackpro.android.services.LocationCaptureService
 import com.fieldtrackpro.android.ui.components.ErrorBanner
 import com.fieldtrackpro.android.ui.components.FieldTrackTopAppBar
@@ -52,37 +56,55 @@ import org.maplibre.android.maps.Style
  * - Shows device location when permission available
  * - Handles permission denied, GPS unavailable, loading, error states
  * - Rejects invalid coordinates and Null Island
+ *
+ * @param customerId The customer ID to display on the map
+ * @param onNavigateBack Callback to navigate back
  */
 @Composable
 fun MapScreen(
-    customerLat: Double?,
-    customerLng: Double?,
-    customerName: String,
-    onNavigateBack: () -> Unit,
-    onNavigateToCustomer: () -> Unit
+    customerId: String,
+    onNavigateBack: () -> Unit
 ) {
     val context = LocalContext.current
     val locationService = remember { LocationCaptureService(context) }
 
-    var mapView by remember { mutableStateOf<MapView?>(null) }
+    var customer by remember { mutableStateOf<CustomerDto?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var deviceLocation by remember { mutableStateOf<com.fieldtrackpro.android.services.LocationResult?>(null) }
     var hasPermission by remember { mutableStateOf(locationService.hasLocationPermission()) }
     var isLocationEnabled by remember { mutableStateOf(locationService.isLocationEnabled()) }
-    var coordinatesValid by remember { mutableStateOf(false) }
 
-    // Validate coordinates
-    LaunchedEffect(customerLat, customerLng) {
-        coordinatesValid = customerLat != null && customerLng != null &&
-            NavigationHelper.isValidCoordinate(customerLat, customerLng)
-        isLoading = false
+    // Fetch customer data from API
+    LaunchedEffect(customerId) {
+        try {
+            val tokenManager = TokenManager(context)
+            val customerRepository = com.fieldtrackpro.android.data.repository.CustomerRepository(
+                customerApi = ApiClient.createCustomerApi(tokenManager)
+            )
+            when (val result = customerRepository.getCustomerById(customerId)) {
+                is Resource.Success -> {
+                    customer = result.data
+                    isLoading = false
+                }
+                is Resource.Error -> {
+                    errorMessage = result.message
+                    isLoading = false
+                }
+                else -> {
+                    isLoading = false
+                }
+            }
+        } catch (e: Exception) {
+            errorMessage = "Failed to load customer: ${e.localizedMessage}"
+            isLoading = false
+        }
     }
 
     Scaffold(
         topBar = {
             FieldTrackTopAppBar(
-                title = "Location Map",
+                title = customer?.let { "Location: ${it.name}" } ?: "Location Map",
                 onBackClick = onNavigateBack
             )
         }
@@ -113,7 +135,7 @@ fun MapScreen(
                     }
                 }
 
-                !coordinatesValid -> {
+                customer == null -> {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -127,14 +149,14 @@ fun MapScreen(
                         ) {
                             Column(modifier = Modifier.padding(20.dp)) {
                                 Text(
-                                    text = "Invalid Location",
+                                    text = "Customer Not Found",
                                     fontSize = 18.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Slate900
                                 )
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text(
-                                    text = "This customer does not have valid coordinates. Please update the customer record.",
+                                    text = "The requested customer could not be found.",
                                     fontSize = 14.sp,
                                     color = Slate500
                                 )
@@ -144,33 +166,68 @@ fun MapScreen(
                 }
 
                 else -> {
-                    // Map is valid - render MapLibre view
-                    MapLibreMapView(
-                        customerLat = customerLat!!,
-                        customerLng = customerLng!!,
-                        customerName = customerName,
-                        deviceLocation = deviceLocation,
-                        hasPermission = hasPermission,
-                        isLocationEnabled = isLocationEnabled,
-                        onMapReady = { mapView = it },
-                        onError = { errorMessage = it }
-                    )
-                }
-            }
+                    val cust = customer!!
+                    val lat = cust.latitude
+                    val lng = cust.longitude
+                    val coordinatesValid = lat != null && lng != null &&
+                        NavigationHelper.isValidCoordinate(lat, lng)
 
-            // Navigation button at bottom
-            if (coordinatesValid) {
-                Button(
-                    onClick = onNavigateToCustomer,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(16.dp)
-                        .fillMaxWidth()
-                        .height(50.dp),
-                    shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = ElectricBlue)
-                ) {
-                    Text("NAVIGATE TO CUSTOMER", fontWeight = FontWeight.Bold)
+                    if (!coordinatesValid) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(20.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(containerColor = SurfaceWhite),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(20.dp)) {
+                                    Text(
+                                        text = "Invalid Location",
+                                        fontSize = 18.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Slate900
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(
+                                        text = "This customer does not have valid coordinates. Please update the customer record.",
+                                        fontSize = 14.sp,
+                                        color = Slate500
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        // Map is valid - render MapLibre view
+                        MapLibreMapView(
+                            customerLat = lat!!,
+                            customerLng = lng!!,
+                            customerName = cust.name,
+                            deviceLocation = deviceLocation,
+                            hasPermission = hasPermission,
+                            isLocationEnabled = isLocationEnabled,
+                            onError = { errorMessage = it }
+                        )
+                    }
+
+                    // Navigation button at bottom
+                    Button(
+                        onClick = {
+                            NavigationHelper.navigateToCustomer(context, lat!!, lng!!, cust.name)
+                        },
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(16.dp)
+                            .fillMaxWidth()
+                            .height(50.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = ElectricBlue)
+                    ) {
+                        Text("NAVIGATE TO CUSTOMER", fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }
@@ -188,7 +245,6 @@ private fun MapLibreMapView(
     deviceLocation: com.fieldtrackpro.android.services.LocationResult?,
     hasPermission: Boolean,
     isLocationEnabled: Boolean,
-    onMapReady: (MapView) -> Unit,
     onError: (String) -> Unit
 ) {
     val context = LocalContext.current
@@ -214,7 +270,6 @@ private fun MapLibreMapView(
                                 .build()
                         }
                     }
-                    onMapReady(mv)
                 }
             }
 

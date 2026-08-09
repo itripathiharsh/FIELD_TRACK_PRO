@@ -18,6 +18,7 @@ import com.fieldtrackpro.android.ui.screens.sync.OfflineQueueScreen
 import com.fieldtrackpro.android.ui.screens.visits.CheckInScreen
 import com.fieldtrackpro.android.ui.screens.visits.CheckOutScreen
 import com.fieldtrackpro.android.ui.screens.visits.TodayVisitsScreen
+import com.fieldtrackpro.android.ui.screens.maps.MapScreen
 import com.fieldtrackpro.android.ui.screens.visits.VisitDetailsScreen
 import com.fieldtrackpro.android.ui.viewmodel.AuthViewModel
 import com.fieldtrackpro.android.ui.viewmodel.CheckInViewModel
@@ -97,7 +98,8 @@ fun NavGraph(
                 onNavigateBack = { navController.popBackStack() },
                 onNavigateToCheckIn = { vId, cId -> navController.navigate(Screen.CheckIn.createRoute(vId, cId)) },
                 onNavigateToCheckOut = { vId, cId -> navController.navigate(Screen.CheckOut.createRoute(vId, cId)) },
-                onNavigateToMedia = { vId -> navController.navigate(Screen.MediaUpload.createRoute(vId)) }
+                onNavigateToMedia = { vId -> navController.navigate(Screen.MediaUpload.createRoute(vId)) },
+                onNavigateToMap = { cId -> navController.navigate(Screen.Map.createRoute(cId)) }
             )
         }
 
@@ -166,6 +168,17 @@ fun NavGraph(
             OfflineQueueScreen(
                 offlineQueueManager = offlineQueueManager,
                 visitsViewModel = visitsViewModel,
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(
+            route = Screen.Map.route,
+            arguments = listOf(navArgument("customerId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val customerId = backStackEntry.arguments?.getString("customerId") ?: ""
+            MapScreen(
+                customerId = customerId,
                 onNavigateBack = { navController.popBackStack() }
             )
         }

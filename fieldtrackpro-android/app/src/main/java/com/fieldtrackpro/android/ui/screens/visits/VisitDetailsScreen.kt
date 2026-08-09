@@ -39,6 +39,7 @@ import com.fieldtrackpro.android.ui.theme.Slate50
 import com.fieldtrackpro.android.ui.theme.Slate500
 import com.fieldtrackpro.android.ui.theme.Slate900
 import com.fieldtrackpro.android.ui.theme.SurfaceWhite
+import com.fieldtrackpro.android.utils.NavigationHelper
 import com.fieldtrackpro.android.ui.viewmodel.VisitDetailState
 import com.fieldtrackpro.android.ui.viewmodel.VisitDetailsViewModel
 
@@ -49,7 +50,8 @@ fun VisitDetailsScreen(
     onNavigateBack: () -> Unit,
     onNavigateToCheckIn: (String, String) -> Unit,
     onNavigateToCheckOut: (String, String) -> Unit,
-    onNavigateToMedia: (String) -> Unit
+    onNavigateToMedia: (String) -> Unit,
+    onNavigateToMap: (String) -> Unit = {}
 ) {
     val detailState by viewModel.detailState.collectAsState()
 
@@ -153,6 +155,37 @@ fun VisitDetailsScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text("ATTACHMENTS & MEDIA")
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Map Preview Section (Android Screen List #6: "map preview, Navigate + Start Visit buttons")
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = SurfaceWhite)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                text = "Customer Location",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Slate900
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "View customer location on map and get directions.",
+                                fontSize = 12.sp,
+                                color = Slate500
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            OutlinedButton(
+                                onClick = { onNavigateToMap(visit.customerId) },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("VIEW ON MAP")
+                            }
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(24.dp))

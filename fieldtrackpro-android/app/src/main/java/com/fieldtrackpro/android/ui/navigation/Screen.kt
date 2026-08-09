@@ -19,4 +19,7 @@ sealed class Screen(val route: String) {
     }
     object ProfileSettings : Screen("profile_settings")
     object OfflineQueue : Screen("offline_queue")
+    object Map : Screen("map/{customerId}") {
+        fun createRoute(customerId: String) = "map/$customerId"
+    }
 }
