@@ -16,6 +16,8 @@ import { ReportsPage } from './pages/ReportsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { MapPage } from './pages/MapPage';
+import { EmployeeDetailPage } from './pages/EmployeeDetailPage';
+import { CustomerDetailPage } from './pages/CustomerDetailPage';
 
 const AuthLoadingFallback: React.FC = () => (
   <div className="min-h-screen bg-background flex flex-col items-center justify-center text-on-surface">
@@ -63,6 +65,8 @@ export function AppContent() {
                 <Route path="/visits/:id" element={<VisitDetailsPage />} />
                 <Route path="/geo-logs" element={<AdminRoute><GeoLogsPage /></AdminRoute>} />
                 <Route path="/map" element={<AdminRoute><MapPage /></AdminRoute>} />
+                <Route path="/employees/:id" element={<AdminRoute><EmployeeDetailPage /></AdminRoute>} />
+                <Route path="/customers/:id" element={<AdminRoute><CustomerDetailPage /></AdminRoute>} />
                 <Route path="/media" element={<AdminRoute><MediaViewerPage /></AdminRoute>} />
                 <Route path="/forms" element={<FormsPage />} />
                 <Route path="/reports" element={<AdminRoute><ReportsPage /></AdminRoute>} />

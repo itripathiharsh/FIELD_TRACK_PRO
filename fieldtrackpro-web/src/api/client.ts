@@ -502,6 +502,78 @@ export class ApiClient {
     }
     return URL.createObjectURL(await response.blob());
   }
+
+  // -- reports ---------------------------------------------------------------
+
+  async getEmployeeReport(startDate?: string, endDate?: string): Promise<EmployeeReportRow[]> {
+    const params = new URLSearchParams();
+    if (startDate) params.set('start_date', startDate);
+    if (endDate) params.set('end_date', endDate);
+    const query = params.toString();
+    return this.request<EmployeeReportRow[]>(
+      `/api/v1/reports/employees${query ? `?${query}` : ''}`
+    );
+  }
+
+  async getCustomerVisitHistory(customerId: string): Promise<CustomerHistoryRow[]> {
+    return this.request<CustomerHistoryRow[]>(`/api/v1/reports/customers/${customerId}/history`);
+  }
+
+  async getProductivityDashboard(): Promise<ProductivityDashboardData> {
+    return this.request<ProductivityDashboardData>('/api/v1/reports/productivity');
+  }
+
+  async getGeoVerificationReport(startDate?: string, endDate?: string): Promise<GeoReportRow[]> {
+    const params = new URLSearchParams();
+    if (startDate) params.set('start_date', startDate);
+    if (endDate) params.set('end_date', endDate);
+    const query = params.toString();
+    return this.request<GeoReportRow[]>(
+      `/api/v1/reports/geo-verification${query ? `?${query}` : ''}`
+    );
+  }
+}
+
+export interface EmployeeReportRow {
+  employee_id: string;
+  employee_name: string;
+  total_visits: number;
+  completed_visits: number;
+  pending_visits: number;
+  missed_visits: number;
+  flagged_visits: number;
+  completion_rate: number;
+}
+
+export interface CustomerHistoryRow {
+  visit_id: string;
+  scheduled_at: string;
+  status: string;
+  employee_name: string;
+  check_in_at?: string;
+  check_out_at?: string;
+}
+
+export interface ProductivityDashboardData {
+  total_employees: number;
+  active_employees: number;
+  total_visits_today: number;
+  completed_visits_today: number;
+  pending_visits_today: number;
+  missed_visits_today: number;
+  flagged_visits_today: number;
+  avg_visits_per_employee: number;
+}
+
+export interface GeoReportRow {
+  visit_id: string;
+  employee_name: string;
+  customer_name: string;
+  attempted_at: string;
+  verification_type: string;
+  is_valid: boolean;
+  distance_m: number;
+  failure_reason: string | null;
 }
 
 export const apiClient = new ApiClient();

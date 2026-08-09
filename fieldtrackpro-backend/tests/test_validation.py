@@ -270,10 +270,10 @@ async def test_create_user_valid_mobile_numbers(client: AsyncClient):
     """Valid mobile number formats should be accepted for user creation."""
     import uuid
     valid_numbers = [
-        "+919876543211",
-        "+1 555-123-4568",
-        "(555) 123-4568",
-        "+44 20 7946 0959",
+        "+919876543221",
+        "+1 555-123-4578",
+        "(555) 123-4578",
+        "+44 20 7946 0979",
     ]
     for mobile_number in valid_numbers:
         unique_email = f"phone_valid_{uuid.uuid4().hex[:8]}@test.com"
