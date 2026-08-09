@@ -26,7 +26,7 @@ const OSM_STYLE_OBJECT: object = {
                 'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png',
             ],
             tileSize: 256,
-            attribution: '\u00a9 OpenStreetMap contributors',
+            attribution: '© OpenStreetMap contributors',
         },
     },
     layers: [
@@ -39,7 +39,7 @@ const OSM_STYLE_OBJECT: object = {
 };
 
 const OSM_ATTRIBUTION =
-    '\u00a9 <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+    '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 
 function getDefaultConfig(): TileProviderConfig {
     return {
@@ -49,10 +49,19 @@ function getDefaultConfig(): TileProviderConfig {
     };
 }
 
+function isValidUrl(url: string): boolean {
+    try {
+        new URL(url);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
 export function getTileProviderConfig(): TileProviderConfig {
     const envUrl = import.meta.env.VITE_MAPLIBRE_TILE_URL;
 
-    if (envUrl) {
+    if (envUrl && isValidUrl(envUrl) && !envUrl.includes('YOUR_')) {
         return {
             styleUrl: envUrl,
             styleObject: null,

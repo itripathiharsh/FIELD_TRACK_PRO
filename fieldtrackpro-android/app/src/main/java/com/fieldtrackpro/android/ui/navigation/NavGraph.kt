@@ -11,8 +11,11 @@ import com.fieldtrackpro.android.data.local.OfflineQueueManager
 import com.fieldtrackpro.android.data.local.TokenManager
 import com.fieldtrackpro.android.ui.screens.auth.LoginScreen
 import com.fieldtrackpro.android.ui.screens.dashboard.DashboardScreen
+import com.fieldtrackpro.android.ui.screens.media.AttachmentPreviewScreen
 import com.fieldtrackpro.android.ui.screens.media.MediaUploadScreen
 import com.fieldtrackpro.android.ui.screens.profile.ProfileSettingsScreen
+import com.fieldtrackpro.android.ui.screens.visits.SubmissionSuccessScreen
+import com.fieldtrackpro.android.ui.screens.visits.VisitSummaryScreen
 import com.fieldtrackpro.android.ui.screens.splash.SplashScreen
 import com.fieldtrackpro.android.ui.screens.sync.OfflineQueueScreen
 import com.fieldtrackpro.android.ui.screens.visits.CheckInScreen
@@ -180,6 +183,53 @@ fun NavGraph(
             MapScreen(
                 customerId = customerId,
                 onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(
+            route = Screen.AttachmentPreview.route,
+            arguments = listOf(
+                navArgument("mediaId") { type = NavType.StringType },
+                navArgument("fileName") { type = NavType.StringType },
+                navArgument("isPhoto") { type = NavType.BoolType }
+            )
+        ) { backStackEntry ->
+            val mediaId = backStackEntry.arguments?.getString("mediaId") ?: ""
+            val fileName = backStackEntry.arguments?.getString("fileName") ?: "attachment"
+            val isPhoto = backStackEntry.arguments?.getBoolean("isPhoto") ?: false
+            AttachmentPreviewScreen(
+                mediaId = mediaId,
+                fileName = fileName,
+                isPhoto = isPhoto,
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(
+            route = Screen.VisitSummary.route,
+            arguments = listOf(navArgument("visitId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val visitId = backStackEntry.arguments?.getString("visitId") ?: ""
+            VisitSummaryScreen(
+                visitId = visitId,
+                onNavigateBack = { navController.popBackStack() },
+                onSubmit = { navController.navigate(Screen.SubmissionSuccess.createRoute(visitId)) },
+                onCancel = { navController.popBackStack() }
+            )
+        }
+
+        composable(
+            route = Screen.SubmissionSuccess.route,
+            arguments = listOf(navArgument("visitId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val visitId = backStackEntry.arguments?.getString("visitId") ?: ""
+            SubmissionSuccessScreen(
+                visitId = visitId,
+                onNavigateToDashboard = {
+                    navController.navigate(Screen.Dashboard.route) {
+                        popUpTo(Screen.Splash.route) { inclusive = true }
+                    }
+                }
             )
         }
     }

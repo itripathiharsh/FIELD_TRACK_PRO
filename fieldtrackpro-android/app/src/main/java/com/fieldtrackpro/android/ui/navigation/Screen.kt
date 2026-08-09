@@ -22,4 +22,14 @@ sealed class Screen(val route: String) {
     object Map : Screen("map/{customerId}") {
         fun createRoute(customerId: String) = "map/$customerId"
     }
+    object AttachmentPreview : Screen("attachment_preview/{mediaId}/{fileName}/{isPhoto}") {
+        fun createRoute(mediaId: String, fileName: String, isPhoto: Boolean) =
+            "attachment_preview/$mediaId/$fileName/$isPhoto"
+    }
+    object VisitSummary : Screen("visit_summary/{visitId}") {
+        fun createRoute(visitId: String) = "visit_summary/$visitId"
+    }
+    object SubmissionSuccess : Screen("submission_success/{visitId}") {
+        fun createRoute(visitId: String) = "submission_success/$visitId"
+    }
 }
