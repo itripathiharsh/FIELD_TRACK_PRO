@@ -1,14 +1,14 @@
 package com.fieldtrackpro.android.services
 
-import android.annotation.SuppressLint
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
+import android.os.Bundle
 import android.os.Looper
-import com.google.android.gms.location.FusedLocationProviderClient
-import com.google.android.gms.location.LocationCallback
-import com.google.android.gms.location.LocationRequest
-import com.google.android.gms.location.LocationServices
-import com.google.android.gms.location.Priority
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -25,17 +25,38 @@ data class LocationResult(
 )
 
 /**
- * Service for capturing device location using Google's Fused Location Provider.
+ * Service for capturing device location using Android's standard LocationManager.
  *
  * Phase 4 Section 2: "Event-based location capture at check-in and check-out,
  * not a continuously updating live feed."
  *
- * Uses high accuracy GPS for check-in/out verification.
+ * Uses Android's built-in LocationManager (no Google Play Services required),
+ * making it compatible with MapLibre and devices without Google Play.
  */
 class LocationCaptureService(private val context: Context) {
 
-    private val fusedLocationClient: FusedLocationProviderClient =
-        LocationServices.getFusedLocationProviderClient(context)
+    private val locationManager: LocationManager =
+        context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+
+    /**
+     * Check if location permissions are granted.
+     */
+    fun hasLocationPermission(): Boolean {
+        return ContextCompat.checkSelfPermission(
+            context, Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(
+                context, Manifest.permission.ACCESS_COARSE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    /**
+     * Check if GPS/location services are enabled.
+     */
+    fun isLocationEnabled(): Boolean {
+        return locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) ||
+            locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+    }
 
     /**
      * Capture the current device location.
@@ -44,72 +65,114 @@ class LocationCaptureService(private val context: Context) {
      * @throws SecurityException if location permission not granted
      * @throws Exception if location unavailable
      */
-    @SuppressLint("MissingPermission")
     suspend fun getCurrentLocation(): LocationResult = suspendCancellableCoroutine { cont ->
-        val locationRequest = LocationRequest.Builder(
-            Priority.PRIORITY_HIGH_ACCURACY,
-            10000L
-        ).apply {
-            setWaitForAccurateLocation(true)
-            setMinUpdateIntervalMillis(5000L)
-        }.build()
+        if (!hasLocationPermission()) {
+            cont.resumeWithException(SecurityException("Location permission not granted"))
+            return@suspendCancellableCoroutine
+        }
 
-        val callback = object : LocationCallback() {
-            override fun onLocationResult(result: com.google.android.gms.location.LocationResult) {
-                result.lastLocation?.let { location ->
-                    if (cont.isActive) {
-                        cont.resume(location.toLocationResult())
-                        fusedLocationClient.removeLocationUpdates(this)
+        if (!isLocationEnabled()) {
+            cont.resumeWithException(Exception("Location services are disabled"))
+            return@suspendCancellableCoroutine
+        }
+
+        val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+        var locationReceived = false
+
+        for (provider in providers) {
+            if (!locationManager.isProviderEnabled(provider)) continue
+
+            // Try getting last known location first
+            try {
+                val lastLocation = locationManager.getLastKnownLocation(provider)
+                if (lastLocation != null && !locationReceived) {
+                    locationReceived = true
+                    cont.resume(lastLocation.toLocationResult())
+                    return@suspendCancellableCoroutine
+                }
+            } catch (e: SecurityException) {
+                // Permission issue, continue
+            }
+
+            // Request fresh location
+            val listener = object : LocationListener {
+                override fun onLocationChanged(location: Location) {
+                    if (!locationReceived) {
+                        locationReceived = true
+                        locationManager.removeUpdates(this)
+                        if (cont.isActive) {
+                            cont.resume(location.toLocationResult())
+                        }
                     }
-                } ?: run {
-                    if (cont.isActive) {
-                        cont.resumeWithException(Exception("Location unavailable"))
-                        fusedLocationClient.removeLocationUpdates(this)
+                }
+
+                @Deprecated("Deprecated in API 29")
+                override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
+
+                override fun onProviderEnabled(provider: String) {}
+
+                override fun onProviderDisabled(provider: String) {
+                    if (!locationReceived) {
+                        locationManager.removeUpdates(this)
                     }
                 }
             }
-        }
 
-        try {
-            fusedLocationClient.requestLocationUpdates(
-                locationRequest,
-                callback,
-                Looper.getMainLooper()
-            )
-        } catch (e: Exception) {
-            if (cont.isActive) {
-                cont.resumeWithException(e)
+            try {
+                locationManager.requestLocationUpdates(
+                    provider,
+                    5000L, // min time between updates (ms)
+                    0f,    // min distance between updates (m)
+                    listener,
+                    Looper.getMainLooper()
+                )
+            } catch (e: SecurityException) {
+                // Permission issue, continue to next provider
             }
         }
 
         cont.invokeOnCancellation {
-            fusedLocationClient.removeLocationUpdates(callback)
+            // Clean up listeners on cancellation
+        }
+
+        if (!locationReceived) {
+            if (cont.isActive) {
+                cont.resumeWithException(Exception("Unable to determine location. Please ensure GPS is enabled."))
+            }
         }
     }
 
     /**
      * Get the last known location (may be null).
      */
-    @SuppressLint("MissingPermission")
-    suspend fun getLastLocation(): LocationResult? = suspendCancellableCoroutine { cont ->
-        fusedLocationClient.lastLocation
-            .addOnSuccessListener { location ->
-                if (cont.isActive) {
-                    cont.resume(location?.toLocationResult())
+    suspend fun getLastLocation(): LocationResult? {
+        if (!hasLocationPermission()) return null
+
+        val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+
+        for (provider in providers) {
+            try {
+                if (locationManager.isProviderEnabled(provider)) {
+                    val location = locationManager.getLastKnownLocation(provider)
+                    if (location != null) return location.toLocationResult()
                 }
+            } catch (e: SecurityException) {
+                // Permission issue, continue
             }
-            .addOnFailureListener { e ->
-                if (cont.isActive) {
-                    cont.resumeWithException(e)
-                }
-            }
+        }
+        return null
     }
 
     private fun Location.toLocationResult(): LocationResult = LocationResult(
         latitude = latitude,
         longitude = longitude,
         accuracy = accuracy,
-        isMockLocation = isFromMockProvider,
+        isMockLocation = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            isMock
+        } else {
+            @Suppress("DEPRECATION")
+            isFromMockProvider
+        },
         timestamp = time
     )
 }

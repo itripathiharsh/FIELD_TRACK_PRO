@@ -17,10 +17,12 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // Google Maps API Key (Phase 4 Section 1)
-        // Set MAPS_API_KEY in local.properties or gradle.properties
-        val mapsApiKey: String = project.findProperty("MAPS_API_KEY") as? String ?: ""
-        manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
+        // MapLibre tile provider URL (environment-configurable)
+        // Default: OpenStreetMap raster tiles via a public demo endpoint.
+        // For production, set MAPLIBRE_TILE_URL in local.properties or gradle.properties.
+        val maplibreTileUrl: String = project.findProperty("MAPLIBRE_TILE_URL") as? String
+            ?: "https://demotiles.maplibre.org/style.json"
+        buildConfigField("String", "MAPLIBRE_TILE_URL", "\"$maplibreTileUrl\"")
     }
 
     buildTypes {
@@ -69,10 +71,9 @@ dependencies {
     // WorkManager for resilient uploads (Phase 6 Section 7)
     implementation(libs.androidx.work.runtime.ktx)
 
-    // Google Maps SDK (Phase 4 Section 1)
-    implementation(libs.gms.play.services.maps)
-    implementation(libs.gms.play.services.location)
-    implementation(libs.maps.compose)
+    // MapLibre SDK (Phase 4 Section 1 - MapLibre decision)
+    implementation(libs.maplibre.sdk)
+    implementation(libs.maplibre.annotations)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
