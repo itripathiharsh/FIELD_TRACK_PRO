@@ -23,11 +23,17 @@ router = APIRouter(tags=["Requirement Forms"])
 
 @router.get("/requirement-categories", response_model=list[RequirementCategoryRead])
 async def list_categories(
+    current_user: CurrentUser = None,
     session: AsyncSession = Depends(get_async_session),
 ) -> list[RequirementCategoryRead]:
     """List all active requirement categories."""
-    categories = await requirement_service.list_categories(session)
-    return [RequirementCategoryRead.model_validate(c) for c in categories]
+    try:
+        categories = await requirement_service.list_categories(session)
+        return [RequirementCategoryRead.model_validate(c) for c in categories]
+    except Exception as e:
+        import logging
+        logging.getLogger("fieldtrackpro").exception("Failed to list categories: %s", e)
+        raise
 
 
 @router.post(
