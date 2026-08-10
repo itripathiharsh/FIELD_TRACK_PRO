@@ -28,6 +28,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.util.Log
 import com.fieldtrackpro.android.BuildConfig
 import com.fieldtrackpro.android.data.local.TokenManager
 import com.fieldtrackpro.android.data.model.CustomerDto
@@ -262,12 +263,15 @@ private fun MapLibreMapView(
             val mapView = remember {
                 MapView(context).also { mv ->
                     mv.getMapAsync { mapLibre ->
-                        mapLibre.setStyle(Style.Builder().fromUri(styleUrl)) { _ ->
+                        mapLibre.setStyle(Style.Builder().fromUri(styleUrl)) { style ->
                             // Move camera to customer location
                             mapLibre.cameraPosition = CameraPosition.Builder()
                                 .target(LatLng(customerLat, customerLng))
                                 .zoom(14.0)
                                 .build()
+
+                            // Customer location is centered on the map
+                            // Marker can be added here if needed
                         }
                     }
                 }
