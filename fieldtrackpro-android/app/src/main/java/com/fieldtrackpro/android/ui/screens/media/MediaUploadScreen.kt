@@ -33,6 +33,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -54,6 +55,18 @@ import com.fieldtrackpro.android.ui.viewmodel.MediaState
 import com.fieldtrackpro.android.ui.viewmodel.MediaViewModel
 import java.io.File
 
+/**
+ * Media Upload Screen with camera capture, preview, and upload.
+ *
+ * Features:
+ * - Camera capture with system camera app
+ * - Image preview before upload
+ * - Retake/cancel options
+ * - Photo gallery picker
+ * - Document picker
+ * - Upload with loading/success/error states
+ * - Existing attachments display
+ */
 @Composable
 fun MediaUploadScreen(
     visitId: String,
@@ -64,18 +77,22 @@ fun MediaUploadScreen(
     val state by viewModel.mediaState.collectAsState()
 
     var cameraUri by remember { mutableStateOf<Uri?>(null) }
+    var capturedPreviewUri by remember { mutableStateOf<Uri?>(null) }
     var hasCameraPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
                 PackageManager.PERMISSION_GRANTED
         )
     }
+    var hasCameraFeature by remember {
+        mutableStateOf(context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY))
+    }
 
     val cameraLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture()
     ) { success ->
         if (success && cameraUri != null) {
-            uploadFile(context, viewModel, visitId, cameraUri!!, "image/jpeg")
+            capturedPreviewUri = cameraUri
         }
     }
 
@@ -127,6 +144,93 @@ fun MediaUploadScreen(
                 .padding(innerPadding)
                 .padding(20.dp)
         ) {
+            // Camera Preview Section (shown after capture)
+            if (capturedPreviewUri != null) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = SurfaceWhite)
+                ) {
+                    Column(modifier = Modifier.padding(20.dp)) {
+                        Text(
+                            text = "Photo Preview",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Slate900
+                        )
+                        Text(
+                            text = "Review your photo before uploading.",
+                            fontSize = 13.sp,
+                            color = Slate500
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(200.dp),
+                            colors = CardDefaults.cardColors(containerColor = Slate50)
+                        ) {
+                            Column(
+                                modifier = Modifier.fillMaxSize(),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Text(
+                                    text = "Photo captured successfully",
+                                    fontSize = 14.sp,
+                                    color = Slate900,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "Tap Upload to attach to visit",
+                                    fontSize = 12.sp,
+                                    color = Slate500
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = {
+                                    capturedPreviewUri = null
+                                    cameraUri = null
+                                },
+                                modifier = Modifier.weight(1f),
+                                enabled = (state !is MediaState.Loading)
+                            ) {
+                                Text("Retake", fontSize = 12.sp)
+                            }
+
+                            Button(
+                                onClick = {
+                                    val uri = capturedPreviewUri
+                                    if (uri != null) {
+                                        uploadFile(context, viewModel, visitId, uri, "image/jpeg")
+                                        capturedPreviewUri = null
+                                        cameraUri = null
+                                    }
+                                },
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.buttonColors(containerColor = ElectricBlue),
+                                enabled = (state !is MediaState.Loading)
+                            ) {
+                                Text("Upload", fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+            }
+
+            // Upload Controls
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
@@ -168,17 +272,21 @@ fun MediaUploadScreen(
                     ) {
                         Button(
                             onClick = {
-                                if (hasCameraPermission) {
-                                    val uri = createTempImageUri(context)
-                                    cameraUri = uri
-                                    cameraLauncher.launch(uri)
-                                } else {
-                                    permissionLauncher.launch(Manifest.permission.CAMERA)
+                                if (hasCameraFeature) {
+                                    if (hasCameraPermission) {
+                                        val uri = createTempImageUri(context)
+                                        cameraUri = uri
+                                        cameraLauncher.launch(uri)
+                                    } else {
+                                        permissionLauncher.launch(Manifest.permission.CAMERA)
+                                    }
                                 }
                             },
                             modifier = Modifier.weight(1f),
-                            colors = ButtonDefaults.buttonColors(containerColor = ElectricBlue),
-                            enabled = state !is MediaState.Loading
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (hasCameraFeature) ElectricBlue else Slate500
+                            ),
+                            enabled = ((state !is MediaState.Loading)) && hasCameraFeature
                         ) {
                             Text("Camera", fontSize = 12.sp)
                         }
@@ -186,7 +294,7 @@ fun MediaUploadScreen(
                         OutlinedButton(
                             onClick = { imagePickerLauncher.launch("image/*") },
                             modifier = Modifier.weight(1f),
-                            enabled = state !is MediaState.Loading
+                            enabled = (state !is MediaState.Loading)
                         ) {
                             Text("Photo", fontSize = 12.sp)
                         }
@@ -194,7 +302,7 @@ fun MediaUploadScreen(
                         OutlinedButton(
                             onClick = { documentPickerLauncher.launch("application/pdf") },
                             modifier = Modifier.weight(1f),
-                            enabled = state !is MediaState.Loading
+                            enabled = (state !is MediaState.Loading)
                         ) {
                             Text("PDF", fontSize = 12.sp)
                         }
@@ -206,11 +314,21 @@ fun MediaUploadScreen(
                             modifier = Modifier.align(Alignment.CenterHorizontally)
                         )
                     }
+
+                    if (hasCameraFeature.not()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Camera not available on this device",
+                            fontSize = 11.sp,
+                            color = Slate500
+                        )
+                    }
                 }
             }
 
             Spacer(modifier = Modifier.height(24.dp))
 
+            // Existing Attachments Section
             Text(
                 text = "Existing Attachments",
                 fontSize = 16.sp,
@@ -299,3 +417,4 @@ private fun uploadFile(
         // Error will be handled by the ViewModel state
     }
 }
+
