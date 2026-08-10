@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fieldtrackpro.android.ui.components.EmptyState
 import com.fieldtrackpro.android.ui.components.FieldTrackTopAppBar
+import com.fieldtrackpro.android.ui.components.GeofenceStatusCard
 import com.fieldtrackpro.android.ui.components.LoadingScreen
 import com.fieldtrackpro.android.ui.components.StatusBadge
 import com.fieldtrackpro.android.ui.theme.AmberWarning
@@ -51,7 +52,8 @@ fun VisitDetailsScreen(
     onNavigateToCheckIn: (String, String) -> Unit,
     onNavigateToCheckOut: (String, String) -> Unit,
     onNavigateToMedia: (String) -> Unit,
-    onNavigateToMap: (String) -> Unit = {}
+    onNavigateToMap: (String) -> Unit,
+    geofenceViewModel: com.fieldtrackpro.android.ui.viewmodel.GeofenceViewModel
 ) {
     val detailState by viewModel.detailState.collectAsState()
 
@@ -122,18 +124,28 @@ fun VisitDetailsScreen(
 
                     Spacer(modifier = Modifier.height(20.dp))
 
+                    val geofenceUiState by geofenceViewModel.uiState.collectAsState()
+
+                    LaunchedEffect(visit.customerId) {
+                        geofenceViewModel.checkPermissions()
+                    }
+
                     // Action Buttons based on status
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         if (visit.status == "PENDING" || visit.status == "FLAGGED") {
+                            val canCheckIn = !geofenceUiState.isMonitoring || geofenceUiState.isInside
                             Button(
                                 onClick = { onNavigateToCheckIn(visit.id, visit.customerId) },
                                 modifier = Modifier.weight(1f),
-                                colors = ButtonDefaults.buttonColors(containerColor = ElectricBlue)
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (canCheckIn) ElectricBlue else Slate500
+                                ),
+                                enabled = canCheckIn
                             ) {
-                                Text("CHECK-IN GPS")
+                                Text(if (canCheckIn) "CHECK-IN GPS" else "OUTSIDE AREA")
                             }
                         }
 
@@ -156,6 +168,17 @@ fun VisitDetailsScreen(
                     ) {
                         Text("ATTACHMENTS & MEDIA")
                     }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Geofence Status Section
+                    GeofenceStatusCard(
+                        isInside = geofenceUiState.isInside,
+                        isOutside = geofenceUiState.isOutside,
+                        hasPermission = geofenceUiState.hasPermission,
+                        isLocationEnabled = geofenceUiState.isLocationEnabled,
+                        isMonitoring = geofenceUiState.isMonitoring
+                    )
 
                     Spacer(modifier = Modifier.height(12.dp))
 

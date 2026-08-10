@@ -41,7 +41,8 @@ fun NavGraph(
     visitDetailsViewModel: VisitDetailsViewModel,
     checkInViewModel: CheckInViewModel,
     mediaViewModel: MediaViewModel,
-    requirementViewModel: RequirementViewModel = RequirementViewModel(TokenManager(LocalContext.current))
+    requirementViewModel: RequirementViewModel = RequirementViewModel(TokenManager(LocalContext.current)),
+    geofenceViewModel: com.fieldtrackpro.android.ui.viewmodel.GeofenceViewModel = com.fieldtrackpro.android.ui.viewmodel.GeofenceViewModel(android.app.Application())
 ) {
     NavHost(
         navController = navController,
@@ -105,6 +106,7 @@ fun NavGraph(
                 onNavigateToCheckIn = { vId, cId -> navController.navigate(Screen.CheckIn.createRoute(vId, cId)) },
                 onNavigateToCheckOut = { vId, cId -> navController.navigate(Screen.CheckOut.createRoute(vId, cId)) },
                 onNavigateToMedia = { vId -> navController.navigate(Screen.MediaUpload.createRoute(vId)) },
+                geofenceViewModel = geofenceViewModel,
                 onNavigateToMap = { cId -> navController.navigate(Screen.Map.createRoute(cId)) }
             )
         }

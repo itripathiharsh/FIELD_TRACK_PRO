@@ -43,6 +43,7 @@ androidx-security-crypto = { group = "androidx.security", name = "security-crypt
 androidx-work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "work" }
 maplibre-sdk = { group = "org.maplibre.gl", name = "android-sdk", version = "11.8.0" }
 maplibre-annotations = { group = "org.maplibre.gl", name = "android-plugin-annotation-v9", version = "3.0.2" }
+gms-play-services-location = { group = "com.google.android.gms", name = "play-services-location", version = "21.3.0" }
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
 
 [plugins]

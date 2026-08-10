@@ -75,6 +75,9 @@ dependencies {
     implementation(libs.maplibre.sdk)
     implementation(libs.maplibre.annotations)
 
+    // Google Play Services Location for Geofencing (Phase 4 Section 3)
+    implementation(libs.gms.play.services.location)
+
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(libs.androidx.junit)

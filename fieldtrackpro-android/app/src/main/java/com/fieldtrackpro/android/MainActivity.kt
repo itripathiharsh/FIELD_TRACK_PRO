@@ -15,6 +15,7 @@ import com.fieldtrackpro.android.ui.navigation.NavGraph
 import com.fieldtrackpro.android.ui.theme.FieldTrackProTheme
 import com.fieldtrackpro.android.ui.viewmodel.AuthViewModel
 import com.fieldtrackpro.android.ui.viewmodel.CheckInViewModel
+import com.fieldtrackpro.android.ui.viewmodel.GeofenceViewModel
 import com.fieldtrackpro.android.ui.viewmodel.MediaViewModel
 import com.fieldtrackpro.android.ui.viewmodel.RequirementViewModel
 import com.fieldtrackpro.android.ui.viewmodel.VisitDetailsViewModel
@@ -33,6 +34,7 @@ class MainActivity : ComponentActivity() {
         val checkInViewModel = CheckInViewModel(tokenManager, offlineQueueManager)
         val mediaViewModel = MediaViewModel(tokenManager)
         val requirementViewModel = RequirementViewModel(tokenManager)
+        val geofenceViewModel = GeofenceViewModel(application)
 
         setContent {
             FieldTrackProTheme {
@@ -50,7 +52,8 @@ class MainActivity : ComponentActivity() {
                         visitDetailsViewModel = visitDetailsViewModel,
                         checkInViewModel = checkInViewModel,
                         mediaViewModel = mediaViewModel,
-                        requirementViewModel = requirementViewModel
+                        requirementViewModel = requirementViewModel,
+                        geofenceViewModel = geofenceViewModel
                     )
                 }
             }
