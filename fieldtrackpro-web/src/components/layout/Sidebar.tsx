@@ -31,6 +31,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => 
     { name: 'Territories', path: '/territories', icon: Map, roles: ['ADMIN', 'MANAGER'] },
     { name: 'Customers', path: '/customers', icon: Building2, roles: ['ADMIN', 'MANAGER'] },
     { name: 'Visits', path: '/visits', icon: CalendarCheck, roles: ['ADMIN', 'MANAGER', 'EMPLOYEE'] },
+    { name: 'Map', path: '/map', icon: MapPin, roles: ['ADMIN', 'MANAGER'] },
     { name: 'Geo Logs', path: '/geo-logs', icon: MapPin, roles: ['ADMIN', 'MANAGER'] },
     { name: 'Media Vault', path: '/media', icon: Image, roles: ['ADMIN', 'MANAGER'] },
     { name: 'Requirement Forms', path: '/forms', icon: FileText, roles: ['ADMIN', 'MANAGER', 'EMPLOYEE'] },
