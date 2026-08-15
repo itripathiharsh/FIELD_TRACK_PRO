@@ -55,10 +55,10 @@ class VisitsViewModel(
 
     fun syncOfflineQueue(onComplete: (Int) -> Unit) {
         viewModelScope.launch {
-            val count = repository.syncOfflineQueue()
+            val result = repository.syncOfflineQueue()
             updateOfflineCount()
             loadVisits()
-            onComplete(count)
+            onComplete(result.syncedCount)
         }
     }
 }

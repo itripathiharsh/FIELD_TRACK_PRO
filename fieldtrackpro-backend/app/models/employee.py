@@ -16,6 +16,9 @@ class Employee(Base):
     territory_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("territories.id", ondelete="SET NULL"), nullable=True)
     employee_code: Mapped[Optional[str]] = mapped_column(String(50), unique=True, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
     user: Mapped["User"] = relationship(back_populates="employee")
     territory: Mapped[Optional["Territory"]] = relationship(back_populates="employees")

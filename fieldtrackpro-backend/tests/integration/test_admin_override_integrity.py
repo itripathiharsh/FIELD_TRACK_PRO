@@ -27,12 +27,18 @@ Rules asserted here:
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 from httpx import AsyncClient
 
 from tests.integration.conftest import create_visit, requires_db
 
 pytestmark = [requires_db, pytest.mark.integration, pytest.mark.asyncio]
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 async def _complete_visit(client, admin_headers, employee_headers, seeded_world, track) -> str:
@@ -45,6 +51,7 @@ async def _complete_visit(client, admin_headers, employee_headers, seeded_world,
         "latitude": seeded_world["customer_lat"],
         "longitude": seeded_world["customer_lng"],
         "accuracy_m": 8.0,
+        "captured_at": _now_iso(),
     }
     assert (
         await client.post(
@@ -151,7 +158,7 @@ async def test_admin_can_resolve_a_flagged_visit(
     for _ in range(3):
         await client.post(
             f"/api/v1/visits/{visit_id}/check-in",
-            json={"latitude": 13.0827, "longitude": 80.2707, "accuracy_m": 8.0},
+            json={"latitude": 13.0827, "longitude": 80.2707, "accuracy_m": 8.0, "captured_at": _now_iso()},
             headers=employee_headers,
         )
     assert db.fetch_one("SELECT status FROM visits WHERE id = %s", (visit_id,))["status"] == "FLAGGED"

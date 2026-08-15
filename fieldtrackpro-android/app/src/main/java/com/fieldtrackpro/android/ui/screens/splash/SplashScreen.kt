@@ -7,17 +7,17 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fieldtrackpro.android.data.local.TokenManager
-import com.fieldtrackpro.android.ui.theme.ElectricBlue
-import com.fieldtrackpro.android.ui.theme.Slate900
+import com.fieldtrackpro.android.ui.theme.FieldTrackAmber
+import com.fieldtrackpro.android.ui.theme.FieldTrackNavy
 import com.fieldtrackpro.android.ui.theme.SurfaceWhite
 import kotlinx.coroutines.delay
 
@@ -39,24 +39,23 @@ fun SplashScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Slate900),
+            .background(FieldTrackNavy),
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 text = "FieldTrack Pro",
-                fontSize = 32.sp,
-                fontWeight = FontWeight.Bold,
-                color = ElectricBlue
+                style = MaterialTheme.typography.displayLarge,
+                color = FieldTrackAmber
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = "Enterprise Field Operations & Geo Verification",
-                fontSize = 14.sp,
-                color = SurfaceWhite.copy(alpha = 0.7f)
+                style = MaterialTheme.typography.bodyMedium,
+                color = SurfaceWhite.copy(alpha = 0.8f)
             )
             Spacer(modifier = Modifier.height(32.dp))
-            CircularProgressIndicator(color = ElectricBlue)
+            CircularProgressIndicator(color = FieldTrackAmber)
         }
     }
 }

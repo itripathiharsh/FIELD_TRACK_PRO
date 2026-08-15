@@ -1,6 +1,7 @@
 package com.fieldtrackpro.android.ui.viewmodel
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.fieldtrackpro.android.data.local.OfflineQueueManager
 import com.fieldtrackpro.android.data.local.TokenManager
@@ -9,6 +10,7 @@ import com.fieldtrackpro.android.data.model.VisitDto
 import com.fieldtrackpro.android.data.remote.ApiClient
 import com.fieldtrackpro.android.data.repository.Resource
 import com.fieldtrackpro.android.data.repository.VisitRepository
+import com.fieldtrackpro.android.workers.OfflineSyncScheduler
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -20,12 +22,15 @@ sealed class CheckInState {
     data class VerifySuccess(val verify: LocationVerifyResponse) : CheckInState()
     data class ActionSuccess(val visit: VisitDto, val message: String) : CheckInState()
     data class Error(val message: String) : CheckInState()
+    /** Saved to the offline queue and will sync automatically once the device has connectivity - not a rejection. */
+    data class Queued(val message: String) : CheckInState()
 }
 
 class CheckInViewModel(
+    application: Application,
     tokenManager: TokenManager,
     offlineQueueManager: OfflineQueueManager
-) : ViewModel() {
+) : AndroidViewModel(application) {
 
     private val repository = VisitRepository(
         visitApi = ApiClient.createVisitApi(tokenManager),
@@ -48,23 +53,71 @@ class CheckInViewModel(
         }
     }
 
-    fun executeCheckIn(visitId: String, lat: Double, lon: Double, isOfflineMode: Boolean = false) {
+    fun executeCheckIn(
+        visitId: String,
+        lat: Double,
+        lon: Double,
+        capturedAtMillis: Long,
+        accuracyM: Double? = null,
+        isMock: Boolean = false,
+        isOfflineMode: Boolean = false,
+    ) {
         viewModelScope.launch {
             _state.value = CheckInState.Processing
-            when (val res = repository.checkIn(visitId, lat, lon, isOfflineMode = isOfflineMode)) {
+            when (
+                val res = repository.checkIn(
+                    visitId, lat, lon,
+                    capturedAtMillis = capturedAtMillis,
+                    accuracyM = accuracyM ?: 15.0,
+                    isMock = isMock,
+                    isOfflineMode = isOfflineMode,
+                )
+            ) {
                 is Resource.Success -> _state.value = CheckInState.ActionSuccess(res.data, "Check-in successful!")
-                is Resource.Error -> _state.value = CheckInState.Error(res.message)
+                is Resource.Error -> {
+                    if (res.isQueued) {
+                        OfflineSyncScheduler.scheduleSync(getApplication())
+                        _state.value = CheckInState.Queued(res.message)
+                    } else {
+                        _state.value = CheckInState.Error(res.message)
+                    }
+                }
                 else -> {}
             }
         }
     }
 
-    fun executeCheckOut(visitId: String, lat: Double, lon: Double, notes: String?, isOfflineMode: Boolean = false) {
+    fun executeCheckOut(
+        visitId: String,
+        lat: Double,
+        lon: Double,
+        notes: String?,
+        capturedAtMillis: Long,
+        accuracyM: Double? = null,
+        isMock: Boolean = false,
+        isOfflineMode: Boolean = false,
+    ) {
         viewModelScope.launch {
             _state.value = CheckInState.Processing
-            when (val res = repository.checkOut(visitId, lat, lon, notes = notes, isOfflineMode = isOfflineMode)) {
+            when (
+                val res = repository.checkOut(
+                    visitId, lat, lon,
+                    capturedAtMillis = capturedAtMillis,
+                    accuracyM = accuracyM ?: 15.0,
+                    isMock = isMock,
+                    notes = notes,
+                    isOfflineMode = isOfflineMode,
+                )
+            ) {
                 is Resource.Success -> _state.value = CheckInState.ActionSuccess(res.data, "Check-out successful!")
-                is Resource.Error -> _state.value = CheckInState.Error(res.message)
+                is Resource.Error -> {
+                    if (res.isQueued) {
+                        OfflineSyncScheduler.scheduleSync(getApplication())
+                        _state.value = CheckInState.Queued(res.message)
+                    } else {
+                        _state.value = CheckInState.Error(res.message)
+                    }
+                }
                 else -> {}
             }
         }

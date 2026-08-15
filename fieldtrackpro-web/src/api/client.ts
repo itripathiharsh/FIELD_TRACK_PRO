@@ -1,13 +1,39 @@
 import { ENV } from '../config/env';
 import {
+  AccountSummary,
   Customer,
   Employee,
+  EmployeeActivity,
+  FormRender,
+  FormSection,
+  FormSubmission,
+  FormSubmissionDetail,
+  FormTemplate,
+  FormTemplateSummary,
+  FormQuestion,
   GeoVerificationLog,
+  ImportBatchRead,
+  ImportPreviewResponse,
+  ImportTargetFieldConfig,
+  Invoice,
   LoginResponse,
+  OrderRead,
+  OutletMatchStrategy,
+  Payment,
+  PaymentMethod,
+  PaymentProof,
+  PaymentStatus,
+  QuestionOption,
+  QuestionType,
+  SignatureDownloadResponse,
   Territory,
+  TerritoryAssignmentCreate,
+  TerritoryAssignmentHistory,
+  TerritoryAssignmentRead,
   User,
   Visit,
   VisitMedia,
+  VisitSignature,
   VisitStatus,
 } from '../types';
 
@@ -303,6 +329,28 @@ export class ApiClient {
     });
   }
 
+  // -- P2-C: employee activity -------------------------------------------------
+
+  async getEmployeeActivity(employeeId: string): Promise<EmployeeActivity> {
+    return this.request<EmployeeActivity>(`/api/v1/employees/${employeeId}/activity`);
+  }
+
+  // -- P2-D: territory reassignment ---------------------------------------------
+
+  async getTerritoryAssignmentHistory(employeeId: string): Promise<TerritoryAssignmentHistory> {
+    return this.request<TerritoryAssignmentHistory>(`/api/v1/employees/${employeeId}/territory-assignments`);
+  }
+
+  async createTerritoryAssignment(
+    employeeId: string,
+    data: TerritoryAssignmentCreate,
+  ): Promise<TerritoryAssignmentRead> {
+    return this.request<TerritoryAssignmentRead>(`/api/v1/employees/${employeeId}/territory-assignments`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
   // -- users -----------------------------------------------------------------
 
   async createUser(data: {
@@ -322,6 +370,10 @@ export class ApiClient {
       `/api/v1/users/${userId}/${active ? 'activate' : 'deactivate'}`,
       { method: 'PATCH' },
     );
+  }
+
+  async getUserById(userId: string): Promise<User> {
+    return this.request<User>(`/api/v1/users/${userId}`);
   }
 
   // -- customers -------------------------------------------------------------
@@ -373,17 +425,44 @@ export class ApiClient {
     return this.request<Territory[]>('/api/v1/territories');
   }
 
-  async createTerritory(name: string): Promise<Territory> {
+  async getTerritoryById(id: string): Promise<Territory> {
+    return this.request<Territory>(`/api/v1/territories/${id}`);
+  }
+
+  async createTerritory(
+    data:
+      | string
+      | {
+          name: string;
+          center_latitude?: number | null;
+          center_longitude?: number | null;
+          radius_km?: number | null;
+          status?: string;
+        },
+  ): Promise<Territory> {
+    const payload = typeof data === 'string' ? { name: data } : data;
     return this.request<Territory>('/api/v1/territories', {
       method: 'POST',
-      body: JSON.stringify({ name }),
+      body: JSON.stringify(payload),
     });
   }
 
-  async updateTerritory(id: string, name: string): Promise<Territory> {
+  async updateTerritory(
+    id: string,
+    data:
+      | string
+      | {
+          name?: string;
+          center_latitude?: number | null;
+          center_longitude?: number | null;
+          radius_km?: number | null;
+          status?: string;
+        },
+  ): Promise<Territory> {
+    const payload = typeof data === 'string' ? { name: data } : data;
     return this.request<Territory>(`/api/v1/territories/${id}`, {
       method: 'PATCH',
-      body: JSON.stringify({ name }),
+      body: JSON.stringify(payload),
     });
   }
 
@@ -415,8 +494,21 @@ export class ApiClient {
     customer_id: string;
     employee_id: string;
     scheduled_at: string;
+    required_form_id?: string | null;
   }): Promise<Visit> {
     return this.request<Visit>('/api/v1/visits', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async bulkCreateVisits(data: {
+    customer_ids: string[];
+    employee_id: string;
+    scheduled_at: string;
+    required_form_id?: string | null;
+  }): Promise<Visit[]> {
+    return this.request<Visit[]>('/api/v1/visits/bulk', {
       method: 'POST',
       body: JSON.stringify(data),
     });
@@ -433,6 +525,14 @@ export class ApiClient {
     });
   }
 
+  /** Admin: assign/change/clear ("no form required") the form a visit requires. */
+  async setVisitRequiredForm(visitId: string, requiredFormId: string | null): Promise<Visit> {
+    return this.request<Visit>(`/api/v1/visits/${visitId}/required-form`, {
+      method: 'PATCH',
+      body: JSON.stringify({ required_form_id: requiredFormId }),
+    });
+  }
+
   async checkIn(
     visitId: string,
     data: {
@@ -440,6 +540,9 @@ export class ApiClient {
       longitude: number;
       accuracy_m?: number;
       is_mock_location?: boolean;
+      // When the device actually captured this GPS fix - required by the
+      // backend's freshness check (rejects fixes older than 24h).
+      captured_at: string;
       idempotency_key?: string;
     },
   ): Promise<Visit> {
@@ -456,6 +559,7 @@ export class ApiClient {
       longitude: number;
       accuracy_m?: number;
       is_mock_location?: boolean;
+      captured_at: string;
     },
   ): Promise<Visit> {
     return this.request<Visit>(`/api/v1/visits/${visitId}/check-out`, {
@@ -492,15 +596,27 @@ export class ApiClient {
    * plain <img src> or <a href> cannot send, so previews and downloads returned
    * 403. Fetching the blob with credentials and handing back an object URL
    * keeps the endpoint protected while letting the browser render it.
+   *
+   * /media/{id}/download itself only returns a JSON `{ download_url }`
+   * pointer (a pre-signed link, short-lived and separately authorized) - the
+   * actual file bytes live at that second URL. This previously blob-ified the
+   * JSON response itself, so every preview/download was a broken image
+   * containing the metadata text instead of the photo.
    */
   async getMediaObjectUrl(mediaId: string): Promise<string> {
-    const response = await fetch(this.url(`/api/v1/media/${mediaId}/download`), {
+    const metaResponse = await fetch(this.url(`/api/v1/media/${mediaId}/download`), {
       headers: this.authHeader(),
     });
-    if (!response.ok) {
-      throw await this.parseError(response);
+    if (!metaResponse.ok) {
+      throw await this.parseError(metaResponse);
     }
-    return URL.createObjectURL(await response.blob());
+    const { download_url } = (await metaResponse.json()) as { download_url: string };
+
+    const fileResponse = await fetch(download_url);
+    if (!fileResponse.ok) {
+      throw new Error(`Failed to download media file (${fileResponse.status})`);
+    }
+    return URL.createObjectURL(await fileResponse.blob());
   }
 
   // -- reports ---------------------------------------------------------------
@@ -533,10 +649,132 @@ export class ApiClient {
     );
   }
 
+
+  // -- signatures -------------------------------------------------------------
+
+  async getVisitSignatures(visitId: string): Promise<VisitSignature[]> {
+    return this.request<VisitSignature[]>(`/api/v1/visits/${visitId}/signatures`);
+  }
+
+  async getSignatureDownloadUrl(signatureId: string): Promise<SignatureDownloadResponse> {
+    return this.request<SignatureDownloadResponse>(`/api/v1/signatures/${signatureId}/download`);
+  }
+
+  // -- P1: outlet account / invoices / payments (Collections) -----------------
+
+  async getCustomerAccount(customerId: string): Promise<AccountSummary> {
+    return this.request<AccountSummary>(`/api/v1/customers/${customerId}/account`);
+  }
+
+  async getCustomerInvoices(customerId: string): Promise<Invoice[]> {
+    return this.request<Invoice[]>(`/api/v1/customers/${customerId}/invoices`);
+  }
+
+  /** Every order captured across this outlet's full visit history (P2-B). */
+  async getCustomerOrders(customerId: string): Promise<OrderRead[]> {
+    return this.request<OrderRead[]>(`/api/v1/customers/${customerId}/orders`);
+  }
+
+  async createInvoice(data: {
+    customer_id: string;
+    invoice_number: string;
+    invoice_date: string;
+    due_date?: string | null;
+    amount: number;
+    brand?: string | null;
+    source_reference?: string | null;
+  }): Promise<Invoice> {
+    return this.request<Invoice>('/api/v1/invoices', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async createPayment(data: {
+    visit_id: string;
+    invoice_id?: string | null;
+    amount: number;
+    payment_method: PaymentMethod;
+    payment_date: string;
+    cheque_number?: string | null;
+    cheque_bank_name?: string | null;
+    utr_reference?: string | null;
+    notes?: string | null;
+  }): Promise<Payment> {
+    return this.request<Payment>('/api/v1/payments', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getPayment(paymentId: string): Promise<Payment> {
+    return this.request<Payment>(`/api/v1/payments/${paymentId}`);
+  }
+
+  async uploadPaymentProof(paymentId: string, file: File): Promise<PaymentProof> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.request<PaymentProof>(`/api/v1/payments/${paymentId}/proof`, {
+      method: 'POST',
+      body: formData,
+    });
+  }
+
+  /** Mirrors getMediaObjectUrl's two-step fetch: metadata JSON, then the real file bytes. */
+  async getPaymentProofObjectUrl(proofId: string): Promise<string> {
+    const metaResponse = await fetch(this.url(`/api/v1/payments/proofs/${proofId}/download`), {
+      headers: this.authHeader(),
+    });
+    if (!metaResponse.ok) {
+      throw await this.parseError(metaResponse);
+    }
+    const { download_url } = (await metaResponse.json()) as { download_url: string };
+    const fileResponse = await fetch(download_url);
+    if (!fileResponse.ok) {
+      throw new Error(`Failed to download payment proof (${fileResponse.status})`);
+    }
+    return URL.createObjectURL(await fileResponse.blob());
+  }
+
+  async getPaymentReviewQueue(status?: PaymentStatus): Promise<Payment[]> {
+    const query = status ? `?status=${status}` : '';
+    return this.request<Payment[]>(`/api/v1/payments/queue${query}`);
+  }
+
+  async verifyPayment(paymentId: string): Promise<Payment> {
+    return this.request<Payment>(`/api/v1/payments/${paymentId}/verify`, { method: 'POST' });
+  }
+
+  async rejectPayment(paymentId: string, rejectionReason: string): Promise<Payment> {
+    return this.request<Payment>(`/api/v1/payments/${paymentId}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ rejection_reason: rejectionReason }),
+    });
+  }
+
+  /** Order capture: a photographed diary order + optional short note - reuses the media upload path. */
+  async uploadOrderCapture(visitId: string, file: File, note?: string): Promise<VisitMedia> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const params = new URLSearchParams({ is_order: 'true' });
+    if (note) params.set('note', note);
+    return this.request<VisitMedia>(`/api/v1/visits/${visitId}/media?${params.toString()}`, {
+      method: 'POST',
+      body: formData,
+    });
+  }
+
   // -- requirement forms -----------------------------------------------------
 
   async getRequirementCategories(): Promise<RequirementCategory[]> {
     return this.request<RequirementCategory[]>('/api/v1/requirement-categories');
+  }
+
+  async createRequirementCategory(name: string): Promise<RequirementCategory> {
+    return this.request<RequirementCategory>('/api/v1/requirement-categories', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    });
   }
 
   async submitRequirementForm(
@@ -562,6 +800,212 @@ export class ApiClient {
     } catch {
       return null;
     }
+  }
+
+  // -- form template builder --------------------------------------------------
+
+  async createFormTemplate(data: { name: string; description?: string | null; category_id?: string | null }): Promise<FormTemplate> {
+    return this.request<FormTemplate>('/api/v1/form-templates', { method: 'POST', body: JSON.stringify(data) });
+  }
+
+  async getFormTemplates(params?: { status?: string; category_id?: string }): Promise<FormTemplateSummary[]> {
+    const query = params
+      ? '?' + new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined) as [string, string][]).toString()
+      : '';
+    return this.request<FormTemplateSummary[]>(`/api/v1/form-templates${query}`);
+  }
+
+  async getFormTemplate(id: string): Promise<FormTemplate> {
+    return this.request<FormTemplate>(`/api/v1/form-templates/${id}`);
+  }
+
+  async updateFormTemplate(id: string, data: { name?: string; description?: string | null; category_id?: string | null }): Promise<FormTemplate> {
+    return this.request<FormTemplate>(`/api/v1/form-templates/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+  }
+
+  async deleteFormTemplate(id: string): Promise<void> {
+    return this.request<void>(`/api/v1/form-templates/${id}`, { method: 'DELETE' });
+  }
+
+  async publishFormTemplate(id: string): Promise<FormTemplate> {
+    return this.request<FormTemplate>(`/api/v1/form-templates/${id}/publish`, { method: 'POST' });
+  }
+
+  async unpublishFormTemplate(id: string): Promise<FormTemplate> {
+    return this.request<FormTemplate>(`/api/v1/form-templates/${id}/unpublish`, { method: 'POST' });
+  }
+
+  async archiveFormTemplate(id: string): Promise<FormTemplate> {
+    return this.request<FormTemplate>(`/api/v1/form-templates/${id}/archive`, { method: 'POST' });
+  }
+
+  async duplicateFormTemplate(id: string): Promise<FormTemplate> {
+    return this.request<FormTemplate>(`/api/v1/form-templates/${id}/duplicate`, { method: 'POST' });
+  }
+
+  /** Employee-facing: the published structure to render and fill in. */
+  async getFormRender(id: string): Promise<FormRender> {
+    return this.request<FormRender>(`/api/v1/form-templates/${id}/render`);
+  }
+
+  async addFormSection(formId: string, data: { title: string; description?: string | null; display_order?: number }): Promise<FormSection> {
+    return this.request<FormSection>(`/api/v1/form-templates/${formId}/sections`, { method: 'POST', body: JSON.stringify(data) });
+  }
+
+  async updateFormSection(sectionId: string, data: { title?: string; description?: string | null; display_order?: number }): Promise<FormSection> {
+    return this.request<FormSection>(`/api/v1/sections/${sectionId}`, { method: 'PATCH', body: JSON.stringify(data) });
+  }
+
+  async deleteFormSection(sectionId: string): Promise<void> {
+    return this.request<void>(`/api/v1/sections/${sectionId}`, { method: 'DELETE' });
+  }
+
+  async addFormQuestion(
+    formId: string,
+    data: {
+      section_id: string;
+      question_text: string;
+      question_type: QuestionType;
+      required?: boolean;
+      help_text?: string | null;
+      placeholder?: string | null;
+      display_order?: number;
+      validation_config?: Record<string, unknown> | null;
+      options?: { label: string; value: string; display_order?: number }[];
+    },
+  ): Promise<FormQuestion> {
+    return this.request<FormQuestion>(`/api/v1/form-templates/${formId}/questions`, { method: 'POST', body: JSON.stringify(data) });
+  }
+
+  async updateFormQuestion(
+    questionId: string,
+    data: Partial<{
+      section_id: string;
+      question_text: string;
+      question_type: QuestionType;
+      required: boolean;
+      help_text: string | null;
+      placeholder: string | null;
+      display_order: number;
+      validation_config: Record<string, unknown> | null;
+      options: { label: string; value: string; display_order?: number }[];
+    }>,
+  ): Promise<FormQuestion> {
+    return this.request<FormQuestion>(`/api/v1/questions/${questionId}`, { method: 'PATCH', body: JSON.stringify(data) });
+  }
+
+  async deleteFormQuestion(questionId: string): Promise<void> {
+    return this.request<void>(`/api/v1/questions/${questionId}`, { method: 'DELETE' });
+  }
+
+  async duplicateFormQuestion(questionId: string): Promise<FormQuestion> {
+    return this.request<FormQuestion>(`/api/v1/questions/${questionId}/duplicate`, { method: 'POST' });
+  }
+
+  async addQuestionOption(questionId: string, data: { label: string; value?: string; display_order?: number }): Promise<QuestionOption> {
+    return this.request<QuestionOption>(`/api/v1/questions/${questionId}/options`, { method: 'POST', body: JSON.stringify(data) });
+  }
+
+  async updateQuestionOption(optionId: string, data: { label?: string; value?: string; display_order?: number }): Promise<QuestionOption> {
+    return this.request<QuestionOption>(`/api/v1/question-options/${optionId}`, { method: 'PATCH', body: JSON.stringify(data) });
+  }
+
+  async deleteQuestionOption(optionId: string): Promise<void> {
+    return this.request<void>(`/api/v1/question-options/${optionId}`, { method: 'DELETE' });
+  }
+
+  // -- form submissions ---------------------------------------------------
+
+  /** Upserts a draft: same (form, visit, employee) triple always resolves to one submission. */
+  async saveFormSubmission(data: { form_id: string; visit_id: string; answers: { question_id: string; answer_value: string | null }[] }): Promise<FormSubmission> {
+    return this.request<FormSubmission>('/api/v1/form-submissions', { method: 'POST', body: JSON.stringify(data) });
+  }
+
+  async submitFormSubmission(submissionId: string): Promise<FormSubmission> {
+    return this.request<FormSubmission>(`/api/v1/form-submissions/${submissionId}/submit`, { method: 'POST' });
+  }
+
+  async getFormSubmission(submissionId: string): Promise<FormSubmissionDetail> {
+    return this.request<FormSubmissionDetail>(`/api/v1/form-submissions/${submissionId}`);
+  }
+
+  async getFormSubmissions(params?: { form_id?: string; visit_id?: string }): Promise<FormSubmission[]> {
+    const query = params
+      ? '?' + new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined) as [string, string][]).toString()
+      : '';
+    return this.request<FormSubmission[]>(`/api/v1/form-submissions${query}`);
+  }
+
+  /**
+   * The PDF endpoint requires the Authorization header, which a plain
+   * `<a href>` cannot send (same reason MediaThumbnail fetches bytes itself -
+   * see FT-015). Returns an object URL the caller must revoke after use.
+   */
+  async getSubmissionPdfObjectUrl(submissionId: string): Promise<string> {
+    const response = await fetch(this.url(`/api/v1/form-submissions/${submissionId}/pdf`), {
+      headers: this.authHeader(),
+    });
+    if (!response.ok) {
+      throw await this.parseError(response);
+    }
+    return URL.createObjectURL(await response.blob());
+  }
+
+  // -- Excel/MIS import --------------------------------------------------------
+
+  async getImportTargetFields(): Promise<Record<string, ImportTargetFieldConfig>> {
+    return this.request<Record<string, ImportTargetFieldConfig>>('/api/v1/imports/target-fields');
+  }
+
+  async previewImportFile(file: File, sheetName?: string): Promise<ImportPreviewResponse> {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (sheetName) formData.append('sheet_name', sheetName);
+    return this.request<ImportPreviewResponse>('/api/v1/imports/preview', {
+      method: 'POST',
+      body: formData,
+    });
+  }
+
+  async validateImportFile(
+    file: File,
+    request: {
+      sheet_name: string;
+      column_mapping: Record<string, string>;
+      outlet_match_strategy: OutletMatchStrategy;
+      allow_generated_invoice_numbers: boolean;
+    },
+  ): Promise<ImportBatchRead> {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('request', JSON.stringify(request));
+    return this.request<ImportBatchRead>('/api/v1/imports/validate', {
+      method: 'POST',
+      body: formData,
+    });
+  }
+
+  async commitImportBatch(batchId: string): Promise<ImportBatchRead> {
+    return this.request<ImportBatchRead>(`/api/v1/imports/${batchId}/commit`, { method: 'POST' });
+  }
+
+  async getImportBatches(skip = 0, limit = 50): Promise<ImportBatchRead[]> {
+    return this.request<ImportBatchRead[]>(`/api/v1/imports?skip=${skip}&limit=${limit}`);
+  }
+
+  async getImportBatch(batchId: string): Promise<ImportBatchRead> {
+    return this.request<ImportBatchRead>(`/api/v1/imports/${batchId}`);
+  }
+
+  /** Mirrors getSubmissionPdfObjectUrl's authorized-blob-fetch pattern for a CSV download. */
+  async getImportErrorsCsvObjectUrl(batchId: string): Promise<string> {
+    const response = await fetch(this.url(`/api/v1/imports/${batchId}/errors.csv`), {
+      headers: this.authHeader(),
+    });
+    if (!response.ok) {
+      throw await this.parseError(response);
+    }
+    return URL.createObjectURL(await response.blob());
   }
 }
 

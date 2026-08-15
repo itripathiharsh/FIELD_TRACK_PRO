@@ -23,6 +23,20 @@ class GeofenceManager(private val context: Context) {
         private const val TAG = "GeofenceManager"
         private const val GEOFENCE_EXPIRATION_NS = Geofence.NEVER_EXPIRE
         private const val GEOFENCE_LOITERING_DELAY_MS = 5000
+
+        /**
+         * P1-8: the geofence id that must be removed before registering
+         * [newGeofenceId], given whatever is currently monitored - null if
+         * nothing needs removing (nothing was registered yet, or it's
+         * already the same geofence). Pulled out as a pure function, with no
+         * Context/GeofencingClient dependency, specifically so this decision
+         * is unit-testable without an Android framework/instrumented test -
+         * this is the exact logic GeofenceViewModel.startMonitoring calls,
+         * not a hand-copied duplicate of it.
+         */
+        fun idToRemoveBeforeRegistering(currentGeofenceId: String?, newGeofenceId: String): String? {
+            return currentGeofenceId?.takeIf { it != newGeofenceId }
+        }
     }
 
     private val geofencingClient: GeofencingClient =

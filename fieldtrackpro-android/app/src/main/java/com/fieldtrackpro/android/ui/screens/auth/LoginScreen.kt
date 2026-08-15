@@ -13,6 +13,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
@@ -30,12 +31,12 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fieldtrackpro.android.ui.components.ErrorBanner
-import com.fieldtrackpro.android.ui.theme.ElectricBlue
-import com.fieldtrackpro.android.ui.theme.Slate50
-import com.fieldtrackpro.android.ui.theme.Slate500
-import com.fieldtrackpro.android.ui.theme.Slate700
-import com.fieldtrackpro.android.ui.theme.Slate900
+import com.fieldtrackpro.android.ui.theme.FieldTrackAmber
+import com.fieldtrackpro.android.ui.theme.FieldTrackNavy
+import com.fieldtrackpro.android.ui.theme.SurfaceOffWhite
 import com.fieldtrackpro.android.ui.theme.SurfaceWhite
+import com.fieldtrackpro.android.ui.theme.TextMuted
+import com.fieldtrackpro.android.ui.theme.TextPrimary
 import com.fieldtrackpro.android.ui.viewmodel.AuthState
 import com.fieldtrackpro.android.ui.viewmodel.AuthViewModel
 
@@ -56,7 +57,7 @@ fun LoginScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Slate50)
+            .background(SurfaceOffWhite)
             .padding(24.dp),
         contentAlignment = Alignment.Center
     ) {
@@ -69,14 +70,13 @@ fun LoginScreen(
         ) {
             Text(
                 text = "FieldTrack Pro",
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Bold,
-                color = Slate900
+                style = MaterialTheme.typography.displayMedium,
+                color = FieldTrackNavy
             )
             Text(
                 text = "Sign in with your employee account",
-                fontSize = 14.sp,
-                color = Slate500
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextMuted
             )
             Spacer(modifier = Modifier.height(24.dp))
 
@@ -92,8 +92,8 @@ fun LoginScreen(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = ElectricBlue,
-                    focusedLabelColor = ElectricBlue
+                    focusedBorderColor = FieldTrackNavy,
+                    focusedLabelColor = FieldTrackNavy
                 )
             )
 
@@ -108,8 +108,8 @@ fun LoginScreen(
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                 modifier = Modifier.fillMaxWidth(),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = ElectricBlue,
-                    focusedLabelColor = ElectricBlue
+                    focusedBorderColor = FieldTrackNavy,
+                    focusedLabelColor = FieldTrackNavy
                 )
             )
 
@@ -122,12 +122,15 @@ fun LoginScreen(
                     .fillMaxWidth()
                     .height(50.dp),
                 shape = RoundedCornerShape(8.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = ElectricBlue)
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = FieldTrackNavy,
+                    contentColor = SurfaceWhite
+                )
             ) {
                 if (authState is AuthState.Loading) {
                     CircularProgressIndicator(color = SurfaceWhite, modifier = Modifier.height(24.dp))
                 } else {
-                    Text("SIGN IN", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Text("SIGN IN", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = SurfaceWhite)
                 }
             }
         }

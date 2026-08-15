@@ -35,7 +35,7 @@ async def login(data: LoginRequest, session: AsyncSession) -> TokenResponse:
     information about whether the account exists.
     """
     identifier = data.email or data.mobile_number or ""
-    login_rate_limiter.check_allowed(identifier)
+    await login_rate_limiter.check_allowed(identifier, session)
 
     user_repo = UserRepository(session)
 
@@ -47,7 +47,7 @@ async def login(data: LoginRequest, session: AsyncSession) -> TokenResponse:
     if user is None or not verify_password(data.password, user.password_hash):
         # A missing account and a wrong password are recorded and reported
         # identically, so the endpoint cannot be used to enumerate users.
-        login_rate_limiter.record_failure(identifier)
+        await login_rate_limiter.record_failure(identifier, session)
         raise BaseAPIException(
             status_code=401,
             detail="Invalid credentials",
@@ -62,7 +62,7 @@ async def login(data: LoginRequest, session: AsyncSession) -> TokenResponse:
             error_code="AUTH_ACCOUNT_DISABLED",
         )
 
-    login_rate_limiter.record_success(identifier)
+    await login_rate_limiter.record_success(identifier, session)
 
     access_token = create_access_token(str(user.id), user.role.value)
     raw_refresh, token_hash = generate_refresh_token()
@@ -146,8 +146,16 @@ async def build_current_user(user: User, session: AsyncSession) -> CurrentUserRe
 
     if employee is not None:
         full_name = employee.full_name
+        # P2-D: the currently EFFECTIVE territory (an active temporary
+        # reassignment wins over the base assignment), not the raw column -
+        # this is the one place the employee's own session actually reflects
+        # the reassignment rules.
+        from app.services.territory_assignment_service import get_effective_territory_id
+
+        territory_id = await get_effective_territory_id(employee.id, session)
     else:
         full_name = user.email or user.mobile_number or str(user.id)
+        territory_id = None
 
     return CurrentUserRead(
         id=user.id,
@@ -156,6 +164,6 @@ async def build_current_user(user: User, session: AsyncSession) -> CurrentUserRe
         full_name=full_name,
         role=user.role,
         is_active=user.is_active,
-        territory_id=employee.territory_id if employee else None,
+        territory_id=territory_id,
         employee_id=employee.id if employee else None,
     )

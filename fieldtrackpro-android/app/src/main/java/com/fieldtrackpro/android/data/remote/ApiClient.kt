@@ -1,9 +1,12 @@
 package com.fieldtrackpro.android.data.remote
 
 import com.fieldtrackpro.android.data.api.AuthApi
+import com.fieldtrackpro.android.data.api.CollectionApi
 import com.fieldtrackpro.android.data.api.CustomerApi
+import com.fieldtrackpro.android.data.api.FormTemplateApi
 import com.fieldtrackpro.android.data.api.GeoApi
 import com.fieldtrackpro.android.data.api.MediaApi
+import com.fieldtrackpro.android.data.api.NotificationApi
 import com.fieldtrackpro.android.data.api.RequirementApi
 import com.fieldtrackpro.android.data.api.SignatureApi
 import com.fieldtrackpro.android.data.api.VisitApi
@@ -20,7 +23,17 @@ object ApiClient {
     // Default emulator base URL pointing to host FastAPI backend (http://10.0.2.2:8000/)
     private var baseUrl: String = "http://10.0.2.2:8000/"
 
+    /**
+     * P0-3: a debug/QA convenience only. Production builds must not let a
+     * user redirect all API traffic - including the bearer token on every
+     * request - to an arbitrary endpoint. Enforced here, not just by hiding
+     * the settings UI, so this stays safe even if some other debug-only
+     * screen ever calls it directly.
+     */
     fun setCustomBaseUrl(url: String) {
+        if (!BuildConfig.DEBUG) {
+            return
+        }
         if (url.isNotBlank()) {
             baseUrl = if (url.endsWith("/")) url else "$url/"
             retrofitInstance = null // reset for dynamic backend URL switching
@@ -84,14 +97,40 @@ object ApiClient {
     fun createMediaApi(tokenManager: TokenManager): MediaApi =
         getRetrofit(tokenManager).create(MediaApi::class.java)
 
+    fun createOkHttpClientForDownload(tokenManager: TokenManager): okhttp3.OkHttpClient {
+        val authInterceptor = Interceptor { chain ->
+            val originalRequest = chain.request()
+            val token = tokenManager.getAccessToken()
+            val requestBuilder = originalRequest.newBuilder()
+            if (!token.isNull_or_empty()) {
+                requestBuilder.header("Authorization", "Bearer $token")
+            }
+            chain.proceed(requestBuilder.build())
+        }
+        return OkHttpClient.Builder()
+            .addInterceptor(authInterceptor)
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .build()
+    }
+
     fun createGeoApi(tokenManager: TokenManager): GeoApi =
         getRetrofit(tokenManager).create(GeoApi::class.java)
 
     fun createRequirementApi(tokenManager: TokenManager): RequirementApi =
         getRetrofit(tokenManager).create(RequirementApi::class.java)
 
+    fun createFormTemplateApi(tokenManager: TokenManager): FormTemplateApi =
+        getRetrofit(tokenManager).create(FormTemplateApi::class.java)
+
     fun createSignatureApi(tokenManager: TokenManager): SignatureApi =
         getRetrofit(tokenManager).create(SignatureApi::class.java)
+
+    fun createNotificationApi(tokenManager: TokenManager): NotificationApi =
+        getRetrofit(tokenManager).create(NotificationApi::class.java)
+
+    fun createCollectionApi(tokenManager: TokenManager): CollectionApi =
+        getRetrofit(tokenManager).create(CollectionApi::class.java)
 
     private fun String?.isNull_or_empty(): Boolean = this == null || this.trim().isEmpty()
 }

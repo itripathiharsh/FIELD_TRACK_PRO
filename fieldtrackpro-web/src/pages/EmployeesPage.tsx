@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { UserPlus, Phone, Mail, Users } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { UserPlus, Phone, Mail, MailOpen, Users, Eye } from 'lucide-react';
 import { DataTable, Column } from '../components/ui/DataTable';
 import { Modal } from '../components/ui/Modal';
 import { PageHeader } from '../components/ui/PageHeader';
@@ -14,10 +15,11 @@ import { Employee, Territory, UserRole } from '../types';
 import { validatePhoneNumber } from '../utils/phoneValidation';
 
 export const EmployeesPage: React.FC = () => {
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [territories, setTerritories] = useState<Territory[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+    const navigate = useNavigate();
+    const [employees, setEmployees] = useState<Employee[]>([]);
+    const [territories, setTerritories] = useState<Territory[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [fullName, setFullName] = useState('');
@@ -176,29 +178,60 @@ export const EmployeesPage: React.FC = () => {
       ),
     },
     {
+      header: 'Status',
+      accessor: (emp) => (
+        <StatusBadge status={emp.user?.is_active ? 'ACTIVE' : 'INACTIVE'} size="sm" showDot={true} />
+      ),
+    },
+    {
       header: 'Account',
       accessor: (emp) => (
         <div className="flex items-center gap-space-2">
           <Button
             variant="outline"
             size="sm"
+            icon={Eye}
             onClick={(e) => {
               e.stopPropagation();
-              void handleToggleActive(emp, false);
+              navigate(`/employees/${emp.id}`);
             }}
           >
-            Deactivate
+            Profile
           </Button>
           <Button
-            variant="ghost"
+            variant="outline"
             size="sm"
+            icon={MailOpen}
             onClick={(e) => {
               e.stopPropagation();
-              void handleToggleActive(emp, true);
+              navigate(`/users/${emp.user_id}`);
             }}
           >
-            Activate
+            User
           </Button>
+          {emp.user?.is_active ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                void handleToggleActive(emp, false);
+              }}
+            >
+              Deactivate
+            </Button>
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                void handleToggleActive(emp, true);
+              }}
+            >
+              Activate
+            </Button>
+          )}
         </div>
       ),
     },
@@ -245,6 +278,7 @@ export const EmployeesPage: React.FC = () => {
               (emp.user?.email?.toLowerCase().includes(needle) ?? false)
             );
           }}
+          onRowClick={(emp) => navigate(`/employees/${emp.id}`)}
         />
       )}
 

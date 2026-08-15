@@ -133,6 +133,62 @@ async def test_authenticated_download_returns_pre_signed_url(
     assert body["expires_in_minutes"] == 15
 
 
+async def test_presigned_download_url_actually_serves_the_uploaded_bytes(
+    client: AsyncClient, employee_headers, visit_id, created_media
+):
+    """
+    P0 fix: the pre-signed download_url returned above must itself be a real,
+    fetchable HTTP(S) URL that serves the actual file bytes with no separate
+    Authorization header (that's the point of a pre-signed link - it carries
+    its own short-lived credential). It previously was a bare `file://
+    <server-disk-path>` string, unusable by any remote client (web or
+    Android) and carrying no signature or expiry at all.
+    """
+    up = await client.post(
+        f"/api/v1/visits/{visit_id}/media",
+        files={"file": ("photo.jpg", VALID_JPEG, "image/jpeg")},
+        headers=employee_headers,
+    )
+    created_media.append(up.json()["id"])
+
+    dl = await client.get(
+        f"/api/v1/media/{up.json()['id']}/download", headers=employee_headers
+    )
+    download_url = dl.json()["download_url"]
+    assert download_url.startswith("http://") or download_url.startswith("https://"), (
+        f"download_url must be a real fetchable URL, got: {download_url}"
+    )
+
+    # Fetch the file itself with NO Authorization header - the signature is
+    # the credential, matching how a real pre-signed object-store URL works.
+    relative = download_url.split("/api/v1", 1)[1]
+    file_resp = await client.get(f"/api/v1{relative}")
+    assert file_resp.status_code == 200, file_resp.text
+    assert file_resp.content == VALID_JPEG
+    assert file_resp.headers["content-type"] == "image/jpeg"
+
+
+async def test_presigned_download_url_rejects_tampered_signature(
+    client: AsyncClient, employee_headers, visit_id, created_media
+):
+    up = await client.post(
+        f"/api/v1/visits/{visit_id}/media",
+        files={"file": ("photo.jpg", VALID_JPEG, "image/jpeg")},
+        headers=employee_headers,
+    )
+    created_media.append(up.json()["id"])
+
+    dl = await client.get(
+        f"/api/v1/media/{up.json()['id']}/download", headers=employee_headers
+    )
+    download_url = dl.json()["download_url"]
+    relative = download_url.split("/api/v1", 1)[1]
+    tampered = relative[:-1] + ("0" if relative[-1] != "0" else "1")
+
+    resp = await client.get(f"/api/v1{tampered}")
+    assert resp.status_code == 403
+
+
 async def test_download_without_auth_is_rejected(
     client: AsyncClient, employee_headers, visit_id, created_media
 ):

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Plus, MapPin, Building2, Pencil } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Plus, MapPin, Building2, Pencil, Eye } from 'lucide-react';
 import { DataTable, Column } from '../components/ui/DataTable';
 import { Modal } from '../components/ui/Modal';
 import { PageHeader } from '../components/ui/PageHeader';
@@ -25,10 +26,11 @@ const emptyForm = {
 };
 
 export const CustomersPage: React.FC = () => {
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [territories, setTerritories] = useState<Territory[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+    const navigate = useNavigate();
+    const [customers, setCustomers] = useState<Customer[]>([]);
+    const [territories, setTerritories] = useState<Territory[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -187,17 +189,30 @@ export const CustomersPage: React.FC = () => {
     {
       header: 'Action',
       accessor: (cust) => (
-        <Button
-          variant="outline"
-          size="sm"
-          icon={Pencil}
-          onClick={(e) => {
-            e.stopPropagation();
-            openEdit(cust);
-          }}
-        >
-          Edit
-        </Button>
+        <div className="flex gap-1">
+          <Button
+            variant="outline"
+            size="sm"
+            icon={Eye}
+            onClick={(e) => {
+              e.stopPropagation();
+              navigate(`/customers/${cust.id}`);
+            }}
+          >
+            View
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            icon={Pencil}
+            onClick={(e) => {
+              e.stopPropagation();
+              openEdit(cust);
+            }}
+          >
+            Edit
+          </Button>
+        </div>
       ),
     },
   ];
@@ -239,6 +254,7 @@ export const CustomersPage: React.FC = () => {
             cust.name.toLowerCase().includes(q.toLowerCase()) ||
             cust.address.toLowerCase().includes(q.toLowerCase())
           }
+          onRowClick={(cust) => navigate(`/customers/${cust.id}`)}
         />
       )}
 

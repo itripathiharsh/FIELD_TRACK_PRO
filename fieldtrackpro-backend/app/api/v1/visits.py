@@ -15,10 +15,12 @@ from app.models.user import Role
 from app.models.visit import VisitStatus
 from app.schemas.geo import GeoVerificationLogRead
 from app.schemas.visit import (
+    BulkVisitCreate,
     CheckInRequest,
     CheckOutRequest,
     VisitCreate,
     VisitRead,
+    VisitRequiredFormUpdate,
     VisitStatusUpdate,
 )
 from app.services import visit_service
@@ -117,3 +119,24 @@ async def force_status(
 ):
     """Admin: force override visit status."""
     return await visit_service.admin_force_status(visit_id, data.status, session)
+
+
+@router.patch("/{visit_id}/required-form", response_model=VisitRead, dependencies=[AdminOnly])
+async def set_required_form(
+    visit_id: uuid.UUID,
+    data: VisitRequiredFormUpdate,
+    session: DbSession,
+):
+    """Admin: assign/change/clear the form template required for this visit."""
+    return await visit_service.update_visit_required_form(visit_id, data.required_form_id, session)
+
+
+@router.post("/bulk", response_model=list[VisitRead], status_code=201, dependencies=[AdminOnly])
+async def bulk_create_visits(
+    data: BulkVisitCreate,
+    current_user: CurrentUser,
+    session: DbSession,
+) -> list[VisitRead]:
+    """Admin: bulk schedule visits for multiple customers."""
+    visits = await visit_service.bulk_create_visits(data, current_user.id, session)
+    return [VisitRead.model_validate(v) for v in visits]

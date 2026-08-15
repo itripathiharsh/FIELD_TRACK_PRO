@@ -18,6 +18,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -34,26 +35,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fieldtrackpro.android.ui.components.ErrorBanner
 import com.fieldtrackpro.android.ui.components.FieldTrackTopAppBar
-import com.fieldtrackpro.android.ui.theme.ElectricBlue
-import com.fieldtrackpro.android.ui.theme.Slate50
-import com.fieldtrackpro.android.ui.theme.Slate500
-import com.fieldtrackpro.android.ui.theme.Slate900
+import com.fieldtrackpro.android.ui.theme.FieldTrackNavy
+import com.fieldtrackpro.android.ui.theme.SurfaceOffWhite
 import com.fieldtrackpro.android.ui.theme.SurfaceWhite
+import com.fieldtrackpro.android.ui.theme.TextMuted
+import com.fieldtrackpro.android.ui.theme.TextPrimary
 import com.fieldtrackpro.android.ui.viewmodel.RequirementState
 import com.fieldtrackpro.android.ui.viewmodel.RequirementViewModel
 
-/**
- * Requirement Form Screen.
- *
- * Allows field representatives to capture customer requirements during a visit.
- * Fields per Requirements doc Section 4.1:
- * - Category (dropdown)
- * - Description (required)
- * - Priority (Low/Medium/High)
- * - Expected Timeline
- * - Budget Range (optional)
- * - Notes (optional)
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RequirementFormScreen(
@@ -109,7 +98,7 @@ fun RequirementFormScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Slate50)
+                .background(SurfaceOffWhite)
                 .padding(innerPadding)
                 .padding(16.dp)
                 .verticalScroll(rememberScrollState())
@@ -120,26 +109,25 @@ fun RequirementFormScreen(
             }
 
             if (state is RequirementState.Loading) {
-                CircularProgressIndicator()
+                CircularProgressIndicator(color = FieldTrackNavy)
                 Spacer(modifier = Modifier.height(12.dp))
             }
 
             Text(
                 text = "Customer Requirements",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = Slate900
+                style = MaterialTheme.typography.titleLarge,
+                color = FieldTrackNavy
             )
             Text(
                 text = "Capture site requirements and customer needs.",
-                fontSize = 13.sp,
-                color = Slate500
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextMuted
             )
 
             Spacer(modifier = Modifier.height(16.dp))
 
             // Category Dropdown
-            Text(text = "Category *", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Slate900)
+            Text(text = "Category *", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
             ExposedDropdownMenuBox(
                 expanded = categoryExpanded,
                 onExpandedChange = { categoryExpanded = it }
@@ -173,7 +161,7 @@ fun RequirementFormScreen(
             Spacer(modifier = Modifier.height(12.dp))
 
             // Description
-            Text(text = "Description *", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Slate900)
+            Text(text = "Description *", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
             OutlinedTextField(
                 value = description,
                 onValueChange = { description = it },
@@ -185,13 +173,14 @@ fun RequirementFormScreen(
             Spacer(modifier = Modifier.height(12.dp))
 
             // Priority
-            Text(text = "Priority *", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Slate900)
+            Text(text = "Priority *", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
             Row {
                 listOf("LOW", "MEDIUM", "HIGH").forEach { p ->
                     Button(
                         onClick = { priority = p },
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = if (priority == p) ElectricBlue else Slate50
+                            containerColor = if (priority == p) FieldTrackNavy else SurfaceOffWhite,
+                            contentColor = if (priority == p) SurfaceWhite else TextPrimary
                         ),
                         modifier = Modifier.padding(end = 8.dp)
                     ) {
@@ -203,7 +192,7 @@ fun RequirementFormScreen(
             Spacer(modifier = Modifier.height(12.dp))
 
             // Expected Timeline
-            Text(text = "Expected Timeline *", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Slate900)
+            Text(text = "Expected Timeline *", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
             OutlinedTextField(
                 value = expectedTimeline,
                 onValueChange = { expectedTimeline = it },
@@ -214,7 +203,7 @@ fun RequirementFormScreen(
             Spacer(modifier = Modifier.height(12.dp))
 
             // Budget Range (optional)
-            Text(text = "Budget Range (optional)", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Slate900)
+            Text(text = "Budget Range (optional)", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
             OutlinedTextField(
                 value = budgetRange,
                 onValueChange = { budgetRange = it },
@@ -225,7 +214,7 @@ fun RequirementFormScreen(
             Spacer(modifier = Modifier.height(12.dp))
 
             // Notes (optional)
-            Text(text = "Notes (optional)", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Slate900)
+            Text(text = "Notes (optional)", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
             OutlinedTextField(
                 value = notes,
                 onValueChange = { notes = it },
@@ -253,14 +242,17 @@ fun RequirementFormScreen(
                     .fillMaxWidth()
                     .height(50.dp),
                 shape = RoundedCornerShape(8.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = ElectricBlue),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = FieldTrackNavy,
+                    contentColor = SurfaceWhite
+                ),
                 enabled = selectedCategoryId.isNotBlank() && description.isNotBlank() &&
                     expectedTimeline.isNotBlank() && state !is RequirementState.Loading
             ) {
                 if (state is RequirementState.Loading) {
                     CircularProgressIndicator(color = SurfaceWhite, modifier = Modifier.height(20.dp))
                 } else {
-                    Text("SUBMIT REQUIREMENTS", fontWeight = FontWeight.Bold)
+                    Text("SUBMIT REQUIREMENTS", fontWeight = FontWeight.Bold, color = SurfaceWhite)
                 }
             }
         }

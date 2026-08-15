@@ -8,7 +8,12 @@ import com.fieldtrackpro.android.data.model.UserDto
 
 sealed class Resource<T> {
     data class Success<T>(val data: T) : Resource<T>()
-    data class Error<T>(val message: String, val code: Int? = null) : Resource<T>()
+    // isQueued distinguishes "this was saved to the offline queue for later
+    // automatic sync" from a genuine server rejection - both currently
+    // surface through this same Error case (differentiated only by message
+    // text previously), which made them indistinguishable to a UI that
+    // wants to show a calmer, non-alarming treatment for the queued case.
+    data class Error<T>(val message: String, val code: Int? = null, val isQueued: Boolean = false) : Resource<T>()
     class Loading<T> : Resource<T>()
 }
 

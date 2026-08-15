@@ -1,23 +1,46 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { KeyRound, LogOut } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { PageHeader } from '../components/ui/PageHeader';
-import { Card } from '../components/ui/Card';
+import { Card, CardHeader, CardTitle, CardSubtitle } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { StatusBadge } from '../components/ui/StatusBadge';
+import { ErrorBanner } from '../components/ui/ErrorBanner';
+import { EmptyState } from '../components/ui/EmptyState';
 import { apiClient } from '../api/client';
+import { Employee } from '../types';
 
 const MIN_PASSWORD_LENGTH = 8;
 
 export const ProfilePage: React.FC = () => {
   const { user, logout } = useAuth();
+  const [employee, setEmployee] = useState<Employee | null>(null);
+  const [isLoadingEmployee, setIsLoadingEmployee] = useState(true);
+  const [employeeError, setEmployeeError] = useState<string | null>(null);
 
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+
+  const loadEmployee = useCallback(async () => {
+    try {
+      setIsLoadingEmployee(true);
+      const emp = await apiClient.getMyEmployeeProfile();
+      setEmployee(emp);
+    } catch {
+      setEmployeeError('No employee profile found for this account.');
+      setEmployee(null);
+    } finally {
+      setIsLoadingEmployee(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadEmployee();
+  }, [loadEmployee]);
 
   const handleLogout = () => {
     void logout();
@@ -114,6 +137,57 @@ export const ProfilePage: React.FC = () => {
           <Button variant="danger" size="md" icon={LogOut} onClick={handleLogout} className="w-full">
             Sign Out Session
           </Button>
+        </div>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Employee Profile</CardTitle>
+          <CardSubtitle>Your field representative profile from the server.</CardSubtitle>
+        </CardHeader>
+        <div className="p-space-5">
+          {isLoadingEmployee ? (
+            <div className="flex items-center justify-center h-32" role="status">
+              <div className="w-8 h-8 border-4 border-primary-container border-t-secondary-container rounded-full animate-spin" />
+            </div>
+          ) : employeeError ? (
+            <ErrorBanner message={employeeError} onRetry={loadEmployee} />
+          ) : employee ? (
+            <div className="space-y-space-4">
+              <div>
+                <p className="font-label-md text-xs text-on-surface-variant uppercase font-semibold">
+                  Full Name
+                </p>
+                <p className="text-on-surface font-medium mt-0.5">{employee.full_name}</p>
+              </div>
+              <div>
+                <p className="font-label-md text-xs text-on-surface-variant uppercase font-semibold">
+                  Employee Code
+                </p>
+                <p className="text-on-surface font-medium mt-0.5">{employee.employee_code || '—'}</p>
+              </div>
+              <div>
+                <p className="font-label-md text-xs text-on-surface-variant uppercase font-semibold">
+                  Territory
+                </p>
+                <p className="text-on-surface font-medium mt-0.5">{employee.territory_id || 'Unassigned'}</p>
+              </div>
+              <div>
+                <p className="font-label-md text-xs text-on-surface-variant uppercase font-semibold">
+                  Contact Email
+                </p>
+                <p className="text-on-surface font-medium mt-0.5">{employee.user?.email || '—'}</p>
+              </div>
+              <div>
+                <p className="font-label-md text-xs text-on-surface-variant uppercase font-semibold">
+                  Contact Phone
+                </p>
+                <p className="text-on-surface font-medium mt-0.5">{employee.user?.mobile_number || '—'}</p>
+              </div>
+            </div>
+          ) : (
+            <EmptyState title="No employee profile" subtitle="No employee profile is linked to this account." />
+          )}
         </div>
       </Card>
 

@@ -198,6 +198,26 @@ def _purge_test_artifacts() -> None:
             "  WHERE e.employee_code LIKE %s)",
             (f"{TEST_MARKER}%",),
         )
+        # P1: payments/invoices are FK RESTRICT against visits/customers/
+        # employees, so they must be purged before those rows or the deletes
+        # below fail with a foreign key violation.
+        cur.execute(
+            "DELETE FROM payment_proofs WHERE payment_id IN ("
+            "  SELECT p.id FROM payments p"
+            "  JOIN employees e ON e.id = p.employee_id"
+            "  WHERE e.employee_code LIKE %s)",
+            (f"{TEST_MARKER}%",),
+        )
+        cur.execute(
+            "DELETE FROM payments WHERE employee_id IN ("
+            "  SELECT id FROM employees WHERE employee_code LIKE %s)",
+            (f"{TEST_MARKER}%",),
+        )
+        cur.execute(
+            "DELETE FROM invoices WHERE customer_id IN ("
+            "  SELECT id FROM customers WHERE name LIKE %s)",
+            (f"{TEST_MARKER}%",),
+        )
         cur.execute(
             "DELETE FROM visits WHERE employee_id IN ("
             "  SELECT id FROM employees WHERE employee_code LIKE %s)",
@@ -209,6 +229,19 @@ def _purge_test_artifacts() -> None:
             (f"{TEST_MARKER}%",),
         )
         cur.execute("DELETE FROM customers WHERE name LIKE %s", (f"{TEST_MARKER}%",))
+        # P2-D: territory_id and created_by are RESTRICT (not CASCADE) on
+        # this table specifically so history rows never silently lose their
+        # reference - which means test teardown must clear them explicitly
+        # before the territories/users deletes below, or those deletes 409.
+        # employee_id IS CASCADE, so this also mops up any row an
+        # interrupted test left behind on a since-deleted test employee.
+        cur.execute(
+            "DELETE FROM employee_territory_assignments WHERE "
+            "  employee_id IN (SELECT id FROM employees WHERE employee_code LIKE %s)"
+            "  OR territory_id IN (SELECT id FROM territories WHERE name LIKE %s)"
+            "  OR created_by IN (SELECT id FROM users WHERE email LIKE %s)",
+            (f"{TEST_MARKER}%", f"{TEST_MARKER}%", f"{TEST_MARKER}%"),
+        )
         cur.execute("DELETE FROM employees WHERE employee_code LIKE %s", (f"{TEST_MARKER}%",))
         cur.execute(
             "DELETE FROM refresh_tokens WHERE user_id IN ("
@@ -333,9 +366,37 @@ def created_visits() -> Iterator[list[str]]:
         return
     # Owner connection: audit rows are insert-only for the application role.
     with db_cursor(privileged=True) as cur:
+        # visit_signatures rows themselves cascade automatically (ON DELETE
+        # CASCADE on visit_id), but the storage bytes they reference do not -
+        # collect the keys first so the actual files can be removed below,
+        # the same way created_media does for visit media.
+        cur.execute("SELECT storage_key FROM visit_signatures WHERE visit_id = ANY(%s::uuid[])", (ids,))
+        signature_keys = [r["storage_key"] for r in cur.fetchall()]
         cur.execute("DELETE FROM geo_verification_logs WHERE visit_id = ANY(%s::uuid[])", (ids,))
         cur.execute("DELETE FROM visit_media WHERE visit_id = ANY(%s::uuid[])", (ids,))
         cur.execute("DELETE FROM visits WHERE id = ANY(%s::uuid[])", (ids,))
+    _remove_storage_files(signature_keys)
+
+
+@pytest.fixture
+def created_forms() -> Iterator[list[str]]:
+    """Track form_template ids created inside a test so they are always cleaned up."""
+    ids: list[str] = []
+    yield ids
+    if not ids:
+        return
+    with db_cursor() as cur:
+        # Submissions are ON DELETE RESTRICT against form_templates by design
+        # (an answered form must not vanish out from under its data), so
+        # submissions/answers must go first; sections/questions/options/
+        # versions all cascade from the template itself.
+        cur.execute(
+            "DELETE FROM form_answers WHERE submission_id IN ("
+            "  SELECT id FROM form_submissions WHERE form_id = ANY(%s::uuid[]))",
+            (ids,),
+        )
+        cur.execute("DELETE FROM form_submissions WHERE form_id = ANY(%s::uuid[])", (ids,))
+        cur.execute("DELETE FROM form_templates WHERE id = ANY(%s::uuid[])", (ids,))
 
 
 @pytest.fixture
@@ -346,6 +407,40 @@ def created_customers() -> Iterator[list[str]]:
         return
     with db_cursor() as cur:
         cur.execute("DELETE FROM customers WHERE id = ANY(%s::uuid[])", (ids,))
+
+
+@pytest.fixture
+def created_territories() -> Iterator[list[str]]:
+    """Track territory ids created inside a test so they are always cleaned up."""
+    ids: list[str] = []
+    yield ids
+    if not ids:
+        return
+    with db_cursor(privileged=True) as cur:
+        cur.execute("DELETE FROM employee_territory_assignments WHERE territory_id = ANY(%s::uuid[])", (ids,))
+        cur.execute("DELETE FROM territories WHERE id = ANY(%s::uuid[])", (ids,))
+
+
+def _remove_storage_files(keys: list[str]) -> None:
+    """Delete local-storage bytes for the given storage keys, and the
+    now-empty per-visit directory each one leaves behind, so a test run
+    never accumulates orphaned files under media_storage."""
+    base = os.path.abspath(settings.media_storage_path)
+    for key in keys:
+        path = os.path.abspath(os.path.join(base, key))
+        if not path.startswith(base):
+            continue
+        if os.path.isfile(path):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+        parent = os.path.dirname(path)
+        if parent.startswith(base) and parent != base and os.path.isdir(parent):
+            try:
+                os.rmdir(parent)
+            except OSError:
+                pass
 
 
 @pytest.fixture
@@ -360,6 +455,37 @@ def created_media() -> Iterator[list[str]]:
         cur.execute("SELECT storage_key FROM visit_media WHERE id = ANY(%s::uuid[])", (ids,))
         keys = [r["storage_key"] for r in cur.fetchall()]
         cur.execute("DELETE FROM visit_media WHERE id = ANY(%s::uuid[])", (ids,))
+    _remove_storage_files(keys)
+
+
+@pytest.fixture
+def created_invoices() -> Iterator[list[str]]:
+    """Track invoice ids created inside a test so they are always cleaned up."""
+    ids: list[str] = []
+    yield ids
+    if not ids:
+        return
+    with db_cursor() as cur:
+        # Payments referencing these invoices only SET NULL on delete, so no
+        # ordering concern here - but do it first anyway to keep payment rows
+        # from silently losing their invoice_id if a test expects the FK to
+        # still exist mid-test.
+        cur.execute("DELETE FROM invoices WHERE id = ANY(%s::uuid[])", (ids,))
+
+
+@pytest.fixture
+def created_payments() -> Iterator[list[str]]:
+    """Remove payment rows AND any proof bytes they wrote to local storage."""
+    ids: list[str] = []
+    yield ids
+    if not ids:
+        return
+    keys: list[str] = []
+    with db_cursor() as cur:
+        cur.execute("SELECT storage_key FROM payment_proofs WHERE payment_id = ANY(%s::uuid[])", (ids,))
+        keys = [r["storage_key"] for r in cur.fetchall()]
+        cur.execute("DELETE FROM payment_proofs WHERE payment_id = ANY(%s::uuid[])", (ids,))
+        cur.execute("DELETE FROM payments WHERE id = ANY(%s::uuid[])", (ids,))
     base = os.path.abspath(settings.media_storage_path)
     for key in keys:
         path = os.path.abspath(os.path.join(base, key))
@@ -370,7 +496,6 @@ def created_media() -> Iterator[list[str]]:
                 os.remove(path)
             except OSError:
                 pass
-        # Remove the now-empty per-visit directory so storage is left pristine.
         parent = os.path.dirname(path)
         if parent.startswith(base) and parent != base and os.path.isdir(parent):
             try:
@@ -435,15 +560,19 @@ async def create_visit(
     employee_id: str,
     track: list[str],
     scheduled_at: str | None = None,
+    required_form_id: str | None = None,
 ) -> str:
     """Create a visit via the real API and register it for cleanup."""
+    payload = {
+        "customer_id": customer_id,
+        "employee_id": employee_id,
+        "scheduled_at": scheduled_at or iso_in(0.5),
+    }
+    if required_form_id is not None:
+        payload["required_form_id"] = required_form_id
     resp = await client.post(
         "/api/v1/visits",
-        json={
-            "customer_id": customer_id,
-            "employee_id": employee_id,
-            "scheduled_at": scheduled_at or iso_in(0.5),
-        },
+        json=payload,
         headers=admin_headers,
     )
     assert resp.status_code == 201, f"visit setup failed: {resp.status_code} {resp.text}"

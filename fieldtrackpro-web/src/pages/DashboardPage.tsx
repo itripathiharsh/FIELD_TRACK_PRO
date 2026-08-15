@@ -276,20 +276,6 @@ export const DashboardPage: React.FC = () => {
                     <ArrowUpRight className="w-4 h-4 text-primary group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
                   </button>
 
-                  <button
-                    onClick={() => navigate('/media')}
-                    className="w-full text-left p-space-3.5 rounded-lg bg-surface-container-low border border-outline-variant hover:border-primary-container transition-all flex items-center justify-between group cursor-pointer"
-                  >
-                    <div>
-                      <p className="font-label-md text-sm text-primary font-bold group-hover:text-secondary-container transition-colors">
-                        Media Attachments
-                      </p>
-                      <p className="font-caption text-xs text-on-surface-variant">
-                        Inspect site photos and files
-                      </p>
-                    </div>
-                    <ArrowUpRight className="w-4 h-4 text-primary group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
-                  </button>
                 </>
               )}
             </div>

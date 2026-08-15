@@ -93,6 +93,22 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
             return
         }
 
+        // P1-8: already monitoring this exact geofence - re-registering with
+        // the platform API is a needless duplicate call, so skip it.
+        if (currentGeofenceId == visitId) {
+            return
+        }
+
+        // P1-8: a different geofence was left registered (e.g. the previous
+        // visit's) - remove it first. Without this, switching from visit A
+        // to visit B left A's geofence registered forever (only
+        // currentGeofenceId moved to B; the OS-level registration for A was
+        // never told to stop), accumulating stale geofences toward the
+        // platform's ~100-per-app ceiling.
+        GeofenceManager.idToRemoveBeforeRegistering(currentGeofenceId, visitId)?.let {
+            geofenceManager.removeGeofence(it)
+        }
+
         currentGeofenceId = visitId
 
         // Register geofence

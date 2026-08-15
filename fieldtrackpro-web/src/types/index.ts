@@ -42,6 +42,7 @@ export interface Employee {
     email: string | null;
     mobile_number: string | null;
     role: UserRole;
+    is_active: boolean;
   };
 }
 
@@ -63,15 +64,24 @@ export interface Customer {
   location: GeoPoint;
   geofence_radius_m: number;
   territory_id: string | null;
+  /** External-system cross-reference (Tally ledger code, Excel/MIS import key). */
+  outlet_code: string | null;
   created_by: string;
   created_at: string;
 }
+
+export type TerritoryStatus = 'ACTIVE' | 'INACTIVE';
 
 /** Response of `GET /api/v1/territories`. */
 export interface Territory {
   id: string;
   name: string;
+  center_latitude?: number | null;
+  center_longitude?: number | null;
+  radius_km?: number | null;
+  status?: TerritoryStatus;
   created_at: string;
+  updated_at?: string | null;
 }
 
 export type VisitStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'FLAGGED' | 'MISSED';
@@ -93,6 +103,10 @@ export interface Visit {
   customer_name?: string | null;
   employee_name?: string | null;
   geo_failure_count?: number;
+  /** The form template an employee must fill for this visit, if any. */
+  required_form_id: string | null;
+  required_form_name: string | null;
+  required_form_status: FormStatus | null;
 }
 
 /** Response of `GET /api/v1/visits/{id}/geo-logs`. */
@@ -109,7 +123,7 @@ export interface GeoVerificationLog {
   idempotency_key: string | null;
 }
 
-export type MediaType = 'PHOTO' | 'DOCUMENT';
+export type MediaType = 'PHOTO' | 'DOCUMENT' | 'ORDER';
 
 /** Response of `GET /api/v1/visits/{id}/media`. */
 export interface VisitMedia {
@@ -119,11 +133,478 @@ export interface VisitMedia {
   media_type: MediaType;
   storage_key: string;
   file_size_bytes: number;
+  original_filename?: string | null;
+  /** Only meaningful for ORDER media - the optional order note/summary. */
+  note?: string | null;
   uploaded_at: string;
+}
+
+// -- P1: Collections / Invoices / Payments ----------------------------------
+
+export type InvoiceSource = 'MANUAL' | 'EXCEL_IMPORT' | 'TALLY';
+export type PaymentStatusLabel = 'UNPAID' | 'PARTIALLY_PAID' | 'PAID';
+export type AgingStatus = 'NORMAL' | 'WARNING' | 'OVERDUE' | 'PAID';
+export type MisBucket = '0-15' | '16-30' | '31-60' | '61-90' | '90+';
+export type PaymentMethod = 'CASH' | 'CHEQUE' | 'ONLINE';
+export type PaymentStatus = 'PENDING_VERIFICATION' | 'VERIFIED' | 'REJECTED';
+
+/** Response of `GET /api/v1/customers/{id}/invoices` and `POST /api/v1/invoices`. */
+export interface Invoice {
+  id: string;
+  customer_id: string;
+  invoice_number: string;
+  invoice_date: string;
+  due_date: string | null;
+  amount: string;
+  brand: string | null;
+  source: InvoiceSource;
+  source_reference: string | null;
+  created_by: string;
+  created_at: string;
+  // Computed aging - always from the backend, never recomputed here.
+  verified_paid_amount: string;
+  remaining_amount: string;
+  days_outstanding: number;
+  payment_status: PaymentStatusLabel;
+  aging_status: AgingStatus;
+  mis_bucket: MisBucket;
+}
+
+export interface PaymentProof {
+  id: string;
+  payment_id: string;
+  storage_key: string;
+  file_size_bytes: number;
+  original_filename: string | null;
+  uploaded_by: string | null;
+  uploaded_at: string;
+}
+
+/** Response of `GET/POST /api/v1/payments*` (the "Collection"). */
+export interface Payment {
+  id: string;
+  visit_id: string;
+  customer_id: string;
+  employee_id: string;
+  invoice_id: string | null;
+  amount: string;
+  payment_method: PaymentMethod;
+  payment_date: string;
+  cheque_number: string | null;
+  cheque_bank_name: string | null;
+  utr_reference: string | null;
+  notes: string | null;
+  status: PaymentStatus;
+  rejection_reason: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  created_by: string;
+  created_at: string;
+  proofs: PaymentProof[];
+  customer_name?: string | null;
+  outlet_code?: string | null;
+  employee_name?: string | null;
+  territory_name?: string | null;
+}
+
+export interface BrandSummary {
+  brand: string;
+  total_invoiced: string;
+  total_paid: string;
+  total_outstanding: string;
+  overdue_amount: string;
+  invoice_count: number;
+  payment_count: number;
+  latest_invoice_date: string | null;
+  latest_payment_date: string | null;
+}
+
+/** Response of `GET /api/v1/customers/{id}/account` - the Outlet Account panel. */
+export interface AccountSummary {
+  customer_id: string;
+  customer_name: string;
+  outlet_code: string | null;
+  total_invoiced: string;
+  total_paid: string;
+  total_outstanding: string;
+  overdue_amount: string;
+  max_days_outstanding: number;
+  collection_status: AgingStatus;
+  most_recent_payment: Payment | null;
+  recent_invoices: Invoice[];
+  recent_payments: Payment[];
+  brand_summary: BrandSummary[];
 }
 
 export interface LoginResponse {
   access_token: string;
   refresh_token: string;
   token_type: string;
+}
+
+export type SignatureType = 'EMPLOYEE' | 'CUSTOMER';
+export type SignatureCaptureMethod = 'SIGNATURE' | 'PHOTO_UPLOAD';
+
+export interface VisitSignature {
+  id: string;
+  visit_id: string;
+  signature_type: SignatureType;
+  capture_method: SignatureCaptureMethod;
+  storage_key: string;
+  content_type: string | null;
+  file_size_bytes: number | null;
+  created_by: string | null;
+  signed_at: string;
+  superseded_at: string | null;
+}
+
+export interface SignatureDownloadResponse {
+  download_url: string;
+  expires_in_minutes: number;
+}
+
+// -- Form Template Builder ---------------------------------------------------
+// Mirrors app/schemas/form_template.py exactly.
+
+export type FormStatus = 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
+
+export type QuestionType =
+  | 'SHORT_TEXT'
+  | 'LONG_TEXT'
+  | 'MULTIPLE_CHOICE'
+  | 'CHECKBOXES'
+  | 'DROPDOWN'
+  | 'YES_NO'
+  | 'NUMBER'
+  | 'DATE'
+  | 'TIME'
+  | 'DATE_TIME'
+  | 'FILE_UPLOAD'
+  | 'PHOTO_UPLOAD'
+  | 'EMAIL'
+  | 'PHONE'
+  | 'URL'
+  | 'RATING';
+
+export type SubmissionStatus = 'DRAFT' | 'SUBMITTED' | 'IN_REVIEW' | 'APPROVED' | 'REJECTED';
+
+export interface QuestionOption {
+  id: string;
+  question_id: string;
+  label: string;
+  value: string;
+  display_order: number;
+}
+
+export interface FormQuestion {
+  id: string;
+  section_id: string;
+  form_id: string;
+  question_text: string;
+  help_text: string | null;
+  question_type: QuestionType;
+  required: boolean;
+  display_order: number;
+  placeholder: string | null;
+  validation_config: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+  options: QuestionOption[];
+}
+
+export interface FormSection {
+  id: string;
+  form_id: string;
+  title: string;
+  description: string | null;
+  display_order: number;
+  created_at: string;
+  updated_at: string;
+  questions: FormQuestion[];
+}
+
+/** Response of `GET/POST/PATCH /api/v1/form-templates[/{id}]`. */
+export interface FormTemplate {
+  id: string;
+  name: string;
+  description: string | null;
+  category_id: string | null;
+  status: FormStatus;
+  version: number;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  published_at: string | null;
+  archived_at: string | null;
+  sections: FormSection[];
+  category_name: string | null;
+  question_count: number;
+}
+
+/** Response of `GET /api/v1/form-templates` (list view - lighter than FormTemplate). */
+export interface FormTemplateSummary {
+  id: string;
+  name: string;
+  description: string | null;
+  category_id: string | null;
+  status: FormStatus;
+  version: number;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  published_at: string | null;
+  category_name: string | null;
+  question_count: number;
+  submission_count: number;
+  /** How many visits currently require this template. */
+  visit_count: number;
+}
+
+/** Response of `GET /api/v1/form-templates/{id}/render` - what an employee fills in. */
+export interface FormRender {
+  id: string;
+  name: string;
+  description: string | null;
+  version: number;
+  status: FormStatus;
+  sections: FormSection[];
+}
+
+export interface FormAnswer {
+  id: string;
+  submission_id: string;
+  question_id: string;
+  answer_value: string | null;
+  created_at: string;
+  updated_at: string;
+  question_text: string | null;
+  question_type: QuestionType | null;
+  options: QuestionOption[];
+}
+
+/** Response of `POST /api/v1/form-submissions` and `.../submit`. */
+export interface FormSubmission {
+  id: string;
+  form_id: string;
+  form_version: number;
+  visit_id: string;
+  submitted_by: string;
+  status: SubmissionStatus;
+  started_at: string;
+  submitted_at: string | null;
+  created_at: string;
+  updated_at: string;
+  form_name: string | null;
+  employee_name: string | null;
+  customer_name: string | null;
+  outlet_code: string | null;
+  visit_scheduled_at: string | null;
+  answers: FormAnswer[];
+}
+
+/** Response of `GET /api/v1/form-submissions/{id}` - full admin review payload. */
+export interface FormSubmissionDetail {
+  id: string;
+  form_id: string;
+  form_name: string;
+  form_version: number;
+  visit_id: string;
+  submitted_by: string;
+  employee_name: string | null;
+  customer_name: string | null;
+  outlet_code: string | null;
+  territory_name: string | null;
+  visit_scheduled_at: string | null;
+  status: SubmissionStatus;
+  started_at: string;
+  submitted_at: string | null;
+  answers: FormAnswer[];
+  sections: FormSection[];
+}
+
+// -- Excel/MIS Import ---------------------------------------------------------
+// Mirrors app/schemas/import_batch.py and app/services/import_service.py exactly.
+
+export type ImportStatus = 'PENDING' | 'VALIDATED' | 'COMMITTED' | 'FAILED';
+export type OutletMatchStrategy = 'outlet_code' | 'name_and_territory';
+
+/** One entry of `GET /api/v1/imports/target-fields`. */
+export interface ImportTargetFieldConfig {
+  label: string;
+  required: boolean;
+  aliases: string[];
+}
+
+/** Response of `POST /api/v1/imports/preview`. */
+export interface ImportPreviewResponse {
+  sheet_name: string;
+  all_sheets: string[];
+  columns: string[];
+  sample_rows: string[][];
+  total_data_rows: number;
+  truncated: boolean;
+  suggested_mapping: Record<string, string | null>;
+  target_fields: Record<string, ImportTargetFieldConfig>;
+}
+
+export interface ImportRowError {
+  row: number;
+  error: string;
+  suggested_fix: string;
+}
+
+export interface ImportRowWarning {
+  row: number;
+  warning: string;
+}
+
+/** Shape of `ImportBatchRead.summary` - mirrors import_service.create_import_batch's summary dict. */
+export interface ImportSummary {
+  territories_created: number;
+  employees_matched: number;
+  employees_unresolved: number;
+  customers_created: number;
+  customers_updated: number;
+  invoices_created: number;
+  invoices_updated: number;
+  invoices_skipped_duplicate: number;
+  payments_created: number;
+  duplicate_outlet_codes_with_inconsistent_names: { outlet_code: string; names_seen: string[] }[];
+  warnings: ImportRowWarning[];
+  rows_with_warnings: number;
+}
+
+/** Response of `POST /api/v1/imports/validate`, `.../commit`, `GET /api/v1/imports[/{id}]`. */
+export interface ImportBatchRead {
+  id: string;
+  filename: string;
+  sheet_name: string;
+  uploaded_by: string;
+  uploaded_at: string;
+  column_mapping: Record<string, string>;
+  outlet_match_strategy: OutletMatchStrategy;
+  status: ImportStatus;
+  summary: ImportSummary | null;
+  error_report: ImportRowError[] | null;
+  rows_processed: number;
+  rows_created: number;
+  rows_updated: number;
+  rows_skipped: number;
+  rows_error: number;
+  committed_at: string | null;
+  committed_by: string | null;
+  failure_reason: string | null;
+  uploaded_by_email: string | null;
+}
+
+// -- P2-B: Order capture -------------------------------------------------------
+// Mirrors app/schemas/media.py's OrderRead exactly.
+
+/** Response of `GET /api/v1/customers/{id}/orders`. */
+export interface OrderRead {
+  id: string;
+  visit_id: string;
+  media_type: MediaType;
+  storage_key: string;
+  file_size_bytes: number;
+  checksum_sha256: string | null;
+  original_filename: string | null;
+  note: string | null;
+  uploaded_by: string | null;
+  uploaded_at: string;
+  visit_scheduled_at: string | null;
+  employee_name: string | null;
+}
+
+// -- P2-C: Employee Activity ----------------------------------------------------
+// Mirrors app/schemas/employee_activity.py exactly.
+
+export interface EmployeeActivityVisit {
+  id: string;
+  customer_id: string;
+  customer_name: string;
+  outlet_code: string | null;
+  scheduled_at: string;
+  check_in_at: string | null;
+  check_out_at: string | null;
+  duration_minutes: number | null;
+  status: VisitStatus;
+  geo_failure_count: number;
+}
+
+export interface EmployeeActivityCollection {
+  id: string;
+  customer_id: string;
+  customer_name: string | null;
+  amount: string;
+  payment_method: PaymentMethod;
+  payment_date: string;
+  status: PaymentStatus;
+}
+
+export interface EmployeeActivityOrder {
+  id: string;
+  visit_id: string;
+  note: string | null;
+  uploaded_at: string;
+}
+
+/** Response of `GET /api/v1/employees/{id}/activity`. */
+export interface EmployeeActivity {
+  employee_id: string;
+  full_name: string;
+  employee_code: string | null;
+  territory_id: string | null;
+  territory_name: string | null;
+  is_active: boolean;
+
+  visits_total: number;
+  visits_completed: number;
+  visits_missed: number;
+  visits_flagged: number;
+  visits: EmployeeActivityVisit[];
+
+  collections_total: number;
+  collections_pending: number;
+  collections_verified: number;
+  collections_rejected: number;
+  collections_verified_amount: string;
+  collections: EmployeeActivityCollection[];
+
+  orders_total: number;
+  orders: EmployeeActivityOrder[];
+}
+
+// -- P2-D: Territory Reassignment ------------------------------------------------
+// Mirrors app/schemas/territory_assignment.py exactly.
+
+export type AssignmentType = 'PERMANENT' | 'TEMPORARY';
+
+export interface TerritoryAssignmentCreate {
+  territory_id: string;
+  assignment_type: AssignmentType;
+  start_date: string;
+  end_date?: string | null;
+}
+
+export interface TerritoryAssignmentRead {
+  id: string;
+  employee_id: string;
+  territory_id: string;
+  territory_name: string;
+  assignment_type: AssignmentType;
+  start_date: string;
+  end_date: string | null;
+  created_by: string;
+  created_by_email: string | null;
+  created_at: string;
+  is_current: boolean;
+}
+
+/** Response of `GET /api/v1/employees/{id}/territory-assignments`. */
+export interface TerritoryAssignmentHistory {
+  employee_id: string;
+  effective_territory_id: string | null;
+  effective_territory_name: string | null;
+  assignments: TerritoryAssignmentRead[];
 }

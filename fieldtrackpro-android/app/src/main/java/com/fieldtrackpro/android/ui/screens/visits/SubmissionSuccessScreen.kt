@@ -10,7 +10,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -20,15 +23,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.fieldtrackpro.android.ui.theme.EmeraldGreen
-import com.fieldtrackpro.android.ui.theme.Slate50
-import com.fieldtrackpro.android.ui.theme.Slate900
+import com.fieldtrackpro.android.ui.theme.FieldTrackNavy
+import com.fieldtrackpro.android.ui.theme.SuccessGreen
+import com.fieldtrackpro.android.ui.theme.SurfaceOffWhite
+import com.fieldtrackpro.android.ui.theme.SurfaceWhite
+import com.fieldtrackpro.android.ui.theme.TextMuted
+import com.fieldtrackpro.android.ui.theme.TextPrimary
 
-/**
- * Submission Success State (Android Screen #17).
- *
- * Confirmation screen shown after successful visit submission.
- */
 @Composable
 fun SubmissionSuccessScreen(
     visitId: String,
@@ -38,7 +39,7 @@ fun SubmissionSuccessScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Slate50)
+                .background(SurfaceOffWhite)
                 .padding(innerPadding)
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -47,7 +48,7 @@ fun SubmissionSuccessScreen(
             Icon(
                 imageVector = Icons.Default.CheckCircle,
                 contentDescription = "Success",
-                tint = EmeraldGreen,
+                tint = SuccessGreen,
                 modifier = Modifier.size(72.dp)
             )
 
@@ -55,9 +56,8 @@ fun SubmissionSuccessScreen(
 
             Text(
                 text = "Visit Submitted",
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold,
-                color = Slate900,
+                style = MaterialTheme.typography.headlineLarge,
+                color = FieldTrackNavy,
                 textAlign = TextAlign.Center
             )
 
@@ -65,8 +65,8 @@ fun SubmissionSuccessScreen(
 
             Text(
                 text = "Visit ${visitId.take(8)} has been successfully submitted.",
-                fontSize = 16.sp,
-                color = Slate900,
+                style = MaterialTheme.typography.bodyLarge,
+                color = TextPrimary,
                 textAlign = TextAlign.Center
             )
 
@@ -74,18 +74,22 @@ fun SubmissionSuccessScreen(
 
             Text(
                 text = "Returning to dashboard...",
-                fontSize = 14.sp,
-                color = Slate900,
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextMuted,
                 textAlign = TextAlign.Center
             )
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            androidx.compose.material3.Button(
+            Button(
                 onClick = onNavigateToDashboard,
-                modifier = androidx.compose.ui.Modifier.height(50.dp)
+                modifier = Modifier.height(50.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = FieldTrackNavy,
+                    contentColor = SurfaceWhite
+                )
             ) {
-                Text("GO TO DASHBOARD", fontWeight = FontWeight.Bold)
+                Text("GO TO DASHBOARD", fontWeight = FontWeight.Bold, color = SurfaceWhite)
             }
         }
     }

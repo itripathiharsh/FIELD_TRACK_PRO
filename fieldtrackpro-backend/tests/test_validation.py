@@ -6,7 +6,41 @@ from __future__ import annotations
 import pytest
 from httpx import AsyncClient
 
-from tests.conftest import admin_headers, requires_db
+from tests.conftest import admin_headers, requires_db, IS_DB_MIGRATED
+
+# These tests POST directly against the real configured database (no
+# separate test DB, no transaction rollback) and previously left every
+# created row behind - repeated pytest runs had produced hundreds of
+# "Phone Test Customer"/"Update Phone Test"/"Test" rows and dozens of
+# "phone_valid_*@test.com"/"phone_invalid_*@test.com" users in the shared
+# dev database. This fixture deletes exactly the rows this file creates
+# (by name/email pattern) after each test, mirroring the cleanup discipline
+# tests/integration/conftest.py already applies to its own fixtures.
+_VALIDATION_TEST_CUSTOMER_NAMES = ("Phone Test Customer", "Update Phone Test", "Test")
+
+
+@pytest.fixture(autouse=True)
+def _cleanup_validation_test_rows():
+    yield
+    if not IS_DB_MIGRATED:
+        return
+    from sqlalchemy import create_engine, text
+    from app.config import settings
+
+    sync_url = settings.database_url.replace("+asyncpg", "")
+    engine = create_engine(sync_url, connect_args={"connect_timeout": 3})
+    with engine.begin() as conn:
+        conn.execute(
+            text("DELETE FROM customers WHERE name = ANY(:names)"),
+            {"names": list(_VALIDATION_TEST_CUSTOMER_NAMES)},
+        )
+        conn.execute(
+            text("DELETE FROM refresh_tokens WHERE user_id IN (SELECT id FROM users WHERE email LIKE 'phone_valid_%' OR email LIKE 'phone_invalid_%' OR email = 'new@x.com')"),
+        )
+        conn.execute(
+            text("DELETE FROM users WHERE email LIKE 'phone_valid_%' OR email LIKE 'phone_invalid_%' OR email = 'new@x.com'"),
+        )
+    engine.dispose()
 
 
 # ---------------------------------------------------------------------------
@@ -270,12 +304,12 @@ async def test_create_user_valid_mobile_numbers(client: AsyncClient):
     """Valid mobile number formats should be accepted for user creation."""
     import uuid
     import uuid
-    unique_prefix = uuid.uuid4().hex[:6]
+    unique_suffix = uuid.uuid4().int % 100000000
     valid_numbers = [
-        f"+91{unique_prefix}001",
-        f"+91{unique_prefix}002",
-        f"+91{unique_prefix}003",
-        f"+91{unique_prefix}004",
+        f"91{unique_suffix:08d}100",
+        f"91{unique_suffix:08d}200",
+        f"91{unique_suffix:08d}300",
+        f"91{unique_suffix:08d}400",
     ]
     for mobile_number in valid_numbers:
         unique_email = f"phone_valid_{uuid.uuid4().hex[:8]}@test.com"

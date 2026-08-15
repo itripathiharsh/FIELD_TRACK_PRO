@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, ShieldCheck, Image as ImageIcon, MapPin, Upload, LogOut } from 'lucide-react';
+import { ArrowLeft, ShieldCheck, Image as ImageIcon, MapPin, Upload, LogOut, FileSignature, ClipboardList, Eye, PlayCircle, PackagePlus } from 'lucide-react';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -8,8 +8,11 @@ import { Input } from '../components/ui/Input';
 import { ErrorBanner } from '../components/ui/ErrorBanner';
 import { useAuth } from '../context/AuthContext';
 import { apiClient } from '../api/client';
-import { Customer, GeoVerificationLog, Visit, VisitMedia, VisitStatus } from '../types';
+import { AccountSummary, Customer, FormSubmission, GeoVerificationLog, Visit, VisitMedia, VisitSignature, VisitStatus } from '../types';
 import { MediaThumbnail } from '../components/ui/MediaThumbnail';
+import { SignatureThumbnail } from '../components/ui/SignatureThumbnail';
+import { AccountSummaryCard } from '../components/ui/AccountSummaryCard';
+import { CollectPaymentModal } from '../components/ui/CollectPaymentModal';
 
 export const VisitDetailsPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -21,13 +24,25 @@ export const VisitDetailsPage: React.FC = () => {
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [geoLogs, setGeoLogs] = useState<GeoVerificationLog[]>([]);
   const [mediaList, setMediaList] = useState<VisitMedia[]>([]);
+  const [signatures, setSignatures] = useState<VisitSignature[]>([]);
+  const currentSignatures = signatures.filter((sig) => sig.superseded_at === null);
+  const [formSubmissions, setFormSubmissions] = useState<FormSubmission[]>([]);
+  const [account, setAccount] = useState<AccountSummary | null>(null);
+  const [isCollectModalOpen, setIsCollectModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Geo action state
+  // Geo action state. Latitude/longitude/accuracy are intentionally never
+  // editable by the user (see useMyLocation's comment below) - they exist
+  // only to display whatever the browser's GPS just reported. capturedAt
+  // records when that reading happened, sent to the server so it can reject
+  // check-ins built from a stale/replayed fix; hasRealCapture gates
+  // submission so a check-in can never fire without a genuine GPS read.
   const [lat, setLat] = useState('');
   const [lng, setLng] = useState('');
   const [accuracy, setAccuracy] = useState('10');
+  const [capturedAt, setCapturedAt] = useState<string | null>(null);
+  const [hasRealCapture, setHasRealCapture] = useState(false);
   const [geoStatus, setGeoStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [isSubmittingGeo, setIsSubmittingGeo] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
@@ -37,6 +52,12 @@ export const VisitDetailsPage: React.FC = () => {
   const [uploadStatus, setUploadStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [isUploading, setIsUploading] = useState(false);
 
+  // Order capture state (P2-B) - reuses the media upload pipeline with is_order=true.
+  const [orderFile, setOrderFile] = useState<File | null>(null);
+  const [orderNote, setOrderNote] = useState('');
+  const [orderStatus, setOrderStatus] = useState<{ ok: boolean; text: string } | null>(null);
+  const [isCapturingOrder, setIsCapturingOrder] = useState(false);
+
   const reload = useCallback(async () => {
     if (!id) return;
     setError(null);
@@ -44,14 +65,22 @@ export const VisitDetailsPage: React.FC = () => {
       const visitData = await apiClient.getVisitById(id);
       setVisit(visitData);
 
-      const [logs, media, cust] = await Promise.all([
+      const [logs, media, cust, sigs, submissions, acct] = await Promise.all([
         apiClient.getVisitGeoLogs(id).catch(() => [] as GeoVerificationLog[]),
         apiClient.getVisitMedia(id).catch(() => [] as VisitMedia[]),
         apiClient.getCustomerById(visitData.customer_id).catch(() => null),
+        apiClient.getVisitSignatures(id).catch(() => [] as VisitSignature[]),
+        // Scoped to this visit only - the form(s) actually required for it
+        // are already on visitData.required_form_id, not a global catalog.
+        apiClient.getFormSubmissions({ visit_id: id }).catch(() => [] as FormSubmission[]),
+        apiClient.getCustomerAccount(visitData.customer_id).catch(() => null),
       ]);
       setGeoLogs(logs);
       setMediaList(media);
       setCustomer(cust);
+      setSignatures(sigs);
+      setFormSubmissions(submissions);
+      setAccount(acct);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load visit details');
     }
@@ -68,7 +97,9 @@ export const VisitDetailsPage: React.FC = () => {
    * The coordinate fields start empty and are filled from the browser
    * Geolocation API. They were previously pre-populated with fixed Bengaluru
    * coordinates, which invited a check-in that had nothing to do with where
-   * the user actually was.
+   * the user actually was. The fields are also read-only (see the JSX below)
+   * - this is the ONLY place lat/lng/accuracy/capturedAt are ever set, so a
+   * check-in can never be built from hand-typed coordinates.
    */
   const useMyLocation = () => {
     if (!navigator.geolocation) {
@@ -81,6 +112,8 @@ export const VisitDetailsPage: React.FC = () => {
         setLat(String(pos.coords.latitude));
         setLng(String(pos.coords.longitude));
         if (pos.coords.accuracy) setAccuracy(String(Math.round(pos.coords.accuracy)));
+        setCapturedAt(new Date().toISOString());
+        setHasRealCapture(true);
         setGeoStatus(null);
         setIsLocating(false);
       },
@@ -100,6 +133,10 @@ export const VisitDetailsPage: React.FC = () => {
 
   const submitGeoAction = async (action: 'check-in' | 'check-out') => {
     if (!id) return;
+    if (!hasRealCapture || !capturedAt) {
+      setGeoStatus({ ok: false, text: 'Capture your location before continuing.' });
+      return;
+    }
     const latitude = parseFloat(lat);
     const longitude = parseFloat(lng);
     if (Number.isNaN(latitude) || Number.isNaN(longitude)) {
@@ -114,6 +151,7 @@ export const VisitDetailsPage: React.FC = () => {
         longitude,
         accuracy_m: accuracy ? parseFloat(accuracy) : undefined,
         is_mock_location: false,
+        captured_at: capturedAt,
       };
       if (action === 'check-in') {
         // FT-037: an idempotency key makes a retried check-in safe.
@@ -123,6 +161,7 @@ export const VisitDetailsPage: React.FC = () => {
         await apiClient.checkOut(id, payload);
         setGeoStatus({ ok: true, text: 'Check-out verified. Visit completed.' });
       }
+      setHasRealCapture(false);
       await reload();
     } catch (err) {
       setGeoStatus({
@@ -152,6 +191,24 @@ export const VisitDetailsPage: React.FC = () => {
       });
     } finally {
       setIsUploading(false);
+    }
+  };
+
+  const handleCaptureOrder = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!id || !orderFile) return;
+    setOrderStatus(null);
+    setIsCapturingOrder(true);
+    try {
+      await apiClient.uploadOrderCapture(id, orderFile, orderNote.trim() || undefined);
+      setOrderStatus({ ok: true, text: 'Order captured successfully.' });
+      setOrderFile(null);
+      setOrderNote('');
+      await reload();
+    } catch (err) {
+      setOrderStatus({ ok: false, text: err instanceof Error ? err.message : 'Order capture failed' });
+    } finally {
+      setIsCapturingOrder(false);
     }
   };
 
@@ -309,12 +366,16 @@ export const VisitDetailsPage: React.FC = () => {
               </Button>
 
               <div className="grid grid-cols-3 gap-space-2">
+                {/* Read-only display of whatever "Use My Current Location"
+                    just captured - these must never be user-editable, or a
+                    rep could type in an outlet's coordinates without
+                    actually being there. */}
                 <Input
                   label="LATITUDE"
                   type="number"
                   step="any"
                   value={lat}
-                  onChange={(e) => setLat(e.target.value)}
+                  readOnly
                   placeholder="—"
                 />
                 <Input
@@ -322,7 +383,7 @@ export const VisitDetailsPage: React.FC = () => {
                   type="number"
                   step="any"
                   value={lng}
-                  onChange={(e) => setLng(e.target.value)}
+                  readOnly
                   placeholder="—"
                 />
                 <Input
@@ -330,7 +391,7 @@ export const VisitDetailsPage: React.FC = () => {
                   type="number"
                   step="any"
                   value={accuracy}
-                  onChange={(e) => setAccuracy(e.target.value)}
+                  readOnly
                 />
               </div>
 
@@ -341,7 +402,7 @@ export const VisitDetailsPage: React.FC = () => {
                   size="md"
                   className="w-full"
                   isLoading={isSubmittingGeo}
-                  disabled={!lat || !lng}
+                  disabled={!hasRealCapture}
                   onClick={() => void submitGeoAction('check-in')}
                 >
                   Perform Check-In
@@ -358,7 +419,7 @@ export const VisitDetailsPage: React.FC = () => {
                   icon={LogOut}
                   className="w-full"
                   isLoading={isSubmittingGeo}
-                  disabled={!lat || !lng}
+                  disabled={!hasRealCapture}
                   onClick={() => void submitGeoAction('check-out')}
                 >
                   Perform Check-Out
@@ -410,12 +471,12 @@ export const VisitDetailsPage: React.FC = () => {
           )}
         </Card>
 
-        {/* Media */}
+        {/* Media (generic attachments - order captures have their own section below) */}
         <Card variant="default" className="space-y-space-4">
           <div className="flex items-center gap-space-2 border-b border-surface-container-highest pb-space-3">
             <ImageIcon className="w-5 h-5 text-primary" />
             <h3 className="font-headline-sm text-base font-bold text-primary">
-              Attached Media &amp; Files ({mediaList.length})
+              Attached Media &amp; Files ({mediaList.filter((m) => m.media_type !== 'ORDER').length})
             </h3>
           </div>
 
@@ -459,13 +520,13 @@ export const VisitDetailsPage: React.FC = () => {
             </Button>
           </form>
 
-          {mediaList.length === 0 ? (
+          {mediaList.filter((m) => m.media_type !== 'ORDER').length === 0 ? (
             <p className="font-caption text-xs text-on-surface-variant py-space-4 text-center">
               No media attachments uploaded for this visit.
             </p>
           ) : (
             <div className="space-y-space-3 max-h-72 overflow-y-auto pr-space-1">
-              {mediaList.map((media) => (
+              {mediaList.filter((m) => m.media_type !== 'ORDER').map((media) => (
                 <MediaThumbnail
                   key={media.id}
                   media={media}
@@ -476,7 +537,158 @@ export const VisitDetailsPage: React.FC = () => {
             </div>
           )}
         </Card>
+
+        {/* Order capture (P2-B) - a photographed order diary note, tied to this visit/outlet. */}
+        <Card variant="default" className="space-y-space-4">
+          <div className="flex items-center gap-space-2 border-b border-surface-container-highest pb-space-3">
+            <PackagePlus className="w-5 h-5 text-primary" />
+            <h3 className="font-headline-sm text-base font-bold text-primary">
+              Orders ({mediaList.filter((m) => m.media_type === 'ORDER').length})
+            </h3>
+          </div>
+
+          <form
+            onSubmit={handleCaptureOrder}
+            className="p-space-4 bg-surface-container-low border border-outline-variant rounded-xl space-y-space-3"
+          >
+            <p className="font-headline-sm text-sm text-primary font-bold flex items-center gap-space-1.5">
+              <PackagePlus className="w-4 h-4 text-secondary-container" /> Capture Order
+            </p>
+            {orderStatus && (
+              <div
+                className={`p-space-2.5 rounded-lg border font-body-md text-xs ${
+                  orderStatus.ok
+                    ? 'bg-primary-container text-on-primary-container border-primary-container'
+                    : 'bg-error-container text-on-error-container border-error'
+                }`}
+              >
+                {orderStatus.text}
+              </div>
+            )}
+            <textarea
+              value={orderNote}
+              onChange={(e) => setOrderNote(e.target.value)}
+              placeholder="Order diary note - e.g. 5x Usha fans, 2x Singer mixers"
+              rows={2}
+              className="w-full bg-surface border border-outline-variant rounded-lg px-space-3 py-space-2 text-on-surface font-body-md text-sm placeholder:text-outline focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 transition-all resize-vertical"
+            />
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              aria-label="Order photo"
+              onChange={(e) => setOrderFile(e.target.files ? e.target.files[0] : null)}
+              className="w-full bg-surface border border-outline-variant rounded-lg px-space-3 py-space-2 text-on-surface font-body-md text-xs file:bg-surface-container file:text-on-surface file:border-0 file:rounded file:px-space-2 file:py-space-1 file:mr-space-2 cursor-pointer"
+            />
+            <Button
+              type="submit"
+              variant="secondary"
+              size="md"
+              className="w-full"
+              icon={PackagePlus}
+              disabled={!orderFile}
+              isLoading={isCapturingOrder}
+            >
+              Save Order
+            </Button>
+          </form>
+
+          {mediaList.filter((m) => m.media_type === 'ORDER').length === 0 ? (
+            <p className="font-caption text-xs text-on-surface-variant py-space-4 text-center">
+              No orders captured for this visit yet.
+            </p>
+          ) : (
+            <div className="space-y-space-3 max-h-72 overflow-y-auto pr-space-1">
+              {mediaList.filter((m) => m.media_type === 'ORDER').map((media) => (
+                <MediaThumbnail key={media.id} media={media} onDeleted={() => void reload()} canDelete />
+              ))}
+            </div>
+          )}
+        </Card>
+
+        {/* P1: Outlet Account - outstanding/aging/history + Collect Payment, right in the visit workflow */}
+        {account && (
+          <AccountSummaryCard
+            account={account}
+            onCollectPayment={visit?.status === 'IN_PROGRESS' ? () => setIsCollectModalOpen(true) : undefined}
+          />
+        )}
+
+        {/* Required Form - the ONE form template assigned to this visit
+            (Forms-as-a-Visit-workflow fix). Never a global list of every
+            published template - that was the bug: any employee opening any
+            visit used to see the same catalog of every form in the system. */}
+        <Card variant="default" className="space-y-space-4">
+          <div className="flex items-center gap-space-2 border-b border-surface-container-highest pb-space-3">
+            <ClipboardList className="w-5 h-5 text-primary" />
+            <h3 className="font-headline-sm text-base font-bold text-primary">Required Form</h3>
+          </div>
+
+          {!visit?.required_form_id ? (
+            <p className="font-caption text-xs text-on-surface-variant py-space-4 text-center">
+              No form required for this visit.
+            </p>
+          ) : (
+            (() => {
+              const submission = formSubmissions.find((s) => s.form_id === visit.required_form_id);
+              return (
+                <div className="p-space-3.5 bg-surface-container-low border border-outline-variant rounded-lg flex items-center justify-between gap-space-3">
+                  <div className="min-w-0">
+                    <p className="font-headline-sm text-sm text-primary font-bold truncate">{visit.required_form_name}</p>
+                    <p className="font-caption text-xs text-on-surface-variant">
+                      Status: {submission ? (submission.status === 'SUBMITTED' ? 'Submitted' : 'Draft') : 'Not Started'}
+                      {submission?.submitted_at ? ` · ${new Date(submission.submitted_at).toLocaleString()}` : ''}
+                    </p>
+                    {visit.required_form_status === 'ARCHIVED' && (
+                      <p className="font-caption text-xs text-secondary mt-0.5">This form has since been archived.</p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-space-2 shrink-0">
+                    {submission && <StatusBadge status={submission.status} size="sm" />}
+                    {submission?.status === 'SUBMITTED' ? (
+                      <Button variant="outline" size="sm" icon={Eye} onClick={() => navigate(`/visits/${id}/forms/${visit.required_form_id}`)}>
+                        View
+                      </Button>
+                    ) : (
+                      <Button variant="secondary" size="sm" icon={PlayCircle} onClick={() => navigate(`/visits/${id}/forms/${visit.required_form_id}`)}>
+                        {submission ? 'Continue' : 'Start Form'}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              );
+            })()
+          )}
+        </Card>
+
+        {/* Signatures - only the current (non-superseded) capture per type is
+            shown here; a replaced capture is kept server-side as an audit
+            trail, not as a second visible entry. */}
+        {currentSignatures.length > 0 && (
+          <Card variant="default" className="space-y-space-4">
+            <div className="flex items-center gap-space-2 border-b border-surface-container-highest pb-space-3">
+              <FileSignature className="w-5 h-5 text-primary" />
+              <h3 className="font-headline-sm text-base font-bold text-primary">
+                Signatures &amp; Acknowledgements ({currentSignatures.length})
+              </h3>
+            </div>
+            <div className="space-y-space-3">
+              {currentSignatures.map((sig) => (
+                <SignatureThumbnail key={sig.id} signature={sig} />
+              ))}
+            </div>
+          </Card>
+        )}
       </div>
+
+      {id && (
+        <CollectPaymentModal
+          isOpen={isCollectModalOpen}
+          onClose={() => setIsCollectModalOpen(false)}
+          visitId={id}
+          outstandingInvoices={account?.recent_invoices?.filter((inv) => Number(inv.remaining_amount) > 0) ?? []}
+          onCollected={() => void reload()}
+        />
+      )}
     </div>
   );
 };

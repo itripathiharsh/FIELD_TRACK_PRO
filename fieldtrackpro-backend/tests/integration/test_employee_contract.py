@@ -77,3 +77,48 @@ async def test_employee_me_still_returns_the_account(
     resp = await client.get("/api/v1/employees/me", headers=employee_headers)
     assert resp.status_code == 200, resp.text
     assert resp.json()["user"]["email"] == seeded_world["employee_email"]
+
+
+async def test_employee_cannot_get_another_employee_by_id(
+    client: AsyncClient, employee_headers, seeded_world
+):
+    """
+    P0 (Authentication & Roles): GET /employees/{id} previously allowed any
+    authenticated employee to fetch any other employee's full profile,
+    including the linked account's email/mobile/role, with no ownership
+    check. It must be admin-only, matching GET /employees.
+    """
+    resp = await client.get(
+        f"/api/v1/employees/{seeded_world['other_employee_id']}",
+        headers=employee_headers,
+    )
+    assert resp.status_code == 403, resp.text
+
+
+async def test_employee_cannot_get_own_employee_by_id(
+    client: AsyncClient, employee_headers, seeded_world
+):
+    """Employees must use /employees/me; the by-id route is admin-only even for self."""
+    resp = await client.get(
+        f"/api/v1/employees/{seeded_world['employee_id']}",
+        headers=employee_headers,
+    )
+    assert resp.status_code == 403, resp.text
+
+
+async def test_unauthenticated_cannot_get_employee_by_id(
+    client: AsyncClient, seeded_world
+):
+    resp = await client.get(f"/api/v1/employees/{seeded_world['employee_id']}")
+    assert resp.status_code == 401, resp.text
+
+
+async def test_admin_can_still_get_employee_by_id(
+    client: AsyncClient, admin_headers, seeded_world
+):
+    """Regression guard: the AdminOnly fix must not break admin access."""
+    resp = await client.get(
+        f"/api/v1/employees/{seeded_world['employee_id']}", headers=admin_headers
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["id"] == str(seeded_world["employee_id"])

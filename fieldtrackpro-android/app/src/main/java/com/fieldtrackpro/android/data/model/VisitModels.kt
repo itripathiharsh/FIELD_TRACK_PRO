@@ -33,6 +33,9 @@ data class VisitDto(
     @SerializedName("created_by") val createdBy: String? = null,
     @SerializedName("created_at") val createdAt: String? = null,
     @SerializedName("updated_at") val updatedAt: String? = null,
+    @SerializedName("required_form_id") val requiredFormId: String? = null,
+    @SerializedName("required_form_name") val requiredFormName: String? = null,
+    @SerializedName("required_form_status") val requiredFormStatus: String? = null,
     @kotlin.jvm.Transient val customerName: String? = null,
     @kotlin.jvm.Transient val customerAddress: String? = null
 ) {
@@ -53,6 +56,12 @@ data class CheckInRequest(
     @SerializedName("accuracy_m") val accuracyM: Double? = null,
     @SerializedName("is_mock_location") val isMockLocation: Boolean = false,
     /**
+     * When the device's GPS sensor actually captured this fix, ISO-8601 UTC.
+     * The backend rejects a fix older than 24h - this can differ from "now"
+     * by hours if the device was offline and this is a queued retry.
+     */
+    @SerializedName("captured_at") val capturedAt: String,
+    /**
      * Client-generated key so a replayed offline request is not double-logged.
      * The backend enforces uniqueness per visit.
      */
@@ -63,7 +72,8 @@ data class CheckOutRequest(
     val latitude: Double,
     val longitude: Double,
     @SerializedName("accuracy_m") val accuracyM: Double? = null,
-    @SerializedName("is_mock_location") val isMockLocation: Boolean = false
+    @SerializedName("is_mock_location") val isMockLocation: Boolean = false,
+    @SerializedName("captured_at") val capturedAt: String
 )
 
 data class LocationVerifyRequest(

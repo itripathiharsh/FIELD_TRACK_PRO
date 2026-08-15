@@ -10,14 +10,23 @@ import { CustomersPage } from './pages/CustomersPage';
 import { VisitsPage } from './pages/VisitsPage';
 import { VisitDetailsPage } from './pages/VisitDetailsPage';
 import { GeoLogsPage } from './pages/GeoLogsPage';
-import { MediaViewerPage } from './pages/MediaViewerPage';
 import { FormsPage } from './pages/FormsPage';
+import { FormBuilderPage } from './pages/FormBuilderPage';
+import { FormPreviewPage } from './pages/FormPreviewPage';
+import { FormSubmissionsPage } from './pages/FormSubmissionsPage';
+import { FormSubmissionDetailPage } from './pages/FormSubmissionDetailPage';
+import { FormFillPage } from './pages/FormFillPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { MapPage } from './pages/MapPage';
 import { EmployeeDetailPage } from './pages/EmployeeDetailPage';
 import { CustomerDetailPage } from './pages/CustomerDetailPage';
+import { UserDetailPage } from './pages/UserDetailPage';
+import { TerritoryDetailPage } from './pages/TerritoryDetailPage';
+import { PaymentReviewPage } from './pages/PaymentReviewPage';
+import { ImportWizardPage } from './pages/ImportWizardPage';
+import { ImportHistoryPage } from './pages/ImportHistoryPage';
 
 const AuthLoadingFallback: React.FC = () => (
   <div className="min-h-screen bg-background flex flex-col items-center justify-center text-on-surface">
@@ -60,6 +69,7 @@ export function AppContent() {
                 <Route path="/" element={<DashboardPage />} />
                 <Route path="/employees" element={<AdminRoute><EmployeesPage /></AdminRoute>} />
                 <Route path="/territories" element={<AdminRoute><TerritoriesPage /></AdminRoute>} />
+                <Route path="/territories/:id" element={<AdminRoute><TerritoryDetailPage /></AdminRoute>} />
                 <Route path="/customers" element={<AdminRoute><CustomersPage /></AdminRoute>} />
                 <Route path="/visits" element={<VisitsPage />} />
                 <Route path="/visits/:id" element={<VisitDetailsPage />} />
@@ -67,9 +77,21 @@ export function AppContent() {
                 <Route path="/map" element={<AdminRoute><MapPage /></AdminRoute>} />
                 <Route path="/employees/:id" element={<AdminRoute><EmployeeDetailPage /></AdminRoute>} />
                 <Route path="/customers/:id" element={<AdminRoute><CustomerDetailPage /></AdminRoute>} />
-                <Route path="/media" element={<AdminRoute><MediaViewerPage /></AdminRoute>} />
-                <Route path="/forms" element={<FormsPage />} />
+                <Route path="/users/:id" element={<AdminRoute><UserDetailPage /></AdminRoute>} />
+                {/* P2-E: standalone Media Vault removed - media now lives only where it
+                    was created (Visit → Media/Orders, Payment → Proof, Form → Attachments).
+                    An old bookmark to /media falls through to the wildcard route below. */}
+                <Route path="/forms" element={<AdminRoute><FormsPage /></AdminRoute>} />
+                <Route path="/forms/new" element={<AdminRoute><FormBuilderPage /></AdminRoute>} />
+                <Route path="/forms/:id/edit" element={<AdminRoute><FormBuilderPage /></AdminRoute>} />
+                <Route path="/forms/:id/preview" element={<AdminRoute><FormPreviewPage /></AdminRoute>} />
+                <Route path="/forms/:id/submissions" element={<AdminRoute><FormSubmissionsPage /></AdminRoute>} />
+                <Route path="/forms/:id/submissions/:submissionId" element={<AdminRoute><FormSubmissionDetailPage /></AdminRoute>} />
+                <Route path="/visits/:visitId/forms/:formId" element={<FormFillPage />} />
                 <Route path="/reports" element={<AdminRoute><ReportsPage /></AdminRoute>} />
+                <Route path="/payments" element={<AdminRoute><PaymentReviewPage /></AdminRoute>} />
+                <Route path="/imports" element={<AdminRoute><ImportHistoryPage /></AdminRoute>} />
+                <Route path="/imports/new" element={<AdminRoute><ImportWizardPage /></AdminRoute>} />
                 <Route path="/settings" element={<AdminRoute><SettingsPage /></AdminRoute>} />
                 <Route path="/profile" element={<ProfilePage />} />
                 <Route path="*" element={<Navigate to="/" replace />} />

@@ -7,12 +7,18 @@ The audit trail is the system's legal defensibility and cannot currently be read
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 from httpx import AsyncClient
 
 from tests.integration.conftest import create_visit, requires_db
 
 pytestmark = [requires_db, pytest.mark.integration, pytest.mark.asyncio]
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 # --- Scenario 17: successful geo event writes a log -------------------------
@@ -30,6 +36,7 @@ async def test_successful_check_in_writes_geo_log(
             "latitude": seeded_world["customer_lat"],
             "longitude": seeded_world["customer_lng"],
             "accuracy_m": 8.0,
+            "captured_at": _now_iso(),
         },
         headers=employee_headers,
     )
@@ -58,7 +65,7 @@ async def test_failed_check_in_writes_audit_record(
     )
     resp = await client.post(
         f"/api/v1/visits/{visit_id}/check-in",
-        json={"latitude": 13.0827, "longitude": 80.2707, "accuracy_m": 8.0},
+        json={"latitude": 13.0827, "longitude": 80.2707, "accuracy_m": 8.0, "captured_at": _now_iso()},
         headers=employee_headers,
     )
     assert resp.status_code == 422
@@ -89,6 +96,7 @@ async def test_mock_location_attempt_is_recorded_distinctly(
             "longitude": seeded_world["customer_lng"],
             "accuracy_m": 5.0,
             "is_mock_location": True,
+            "captured_at": _now_iso(),
         },
         headers=employee_headers,
     )
@@ -113,7 +121,7 @@ async def test_geo_logs_can_be_read_back_by_admin(
     )
     await client.post(
         f"/api/v1/visits/{visit_id}/check-in",
-        json={"latitude": 13.0827, "longitude": 80.2707, "accuracy_m": 8.0},
+        json={"latitude": 13.0827, "longitude": 80.2707, "accuracy_m": 8.0, "captured_at": _now_iso()},
         headers=employee_headers,
     )
 
@@ -134,7 +142,7 @@ async def test_assigned_employee_can_read_own_geo_logs(
     )
     await client.post(
         f"/api/v1/visits/{visit_id}/check-in",
-        json={"latitude": 13.0827, "longitude": 80.2707, "accuracy_m": 8.0},
+        json={"latitude": 13.0827, "longitude": 80.2707, "accuracy_m": 8.0, "captured_at": _now_iso()},
         headers=employee_headers,
     )
     resp = await client.get(f"/api/v1/visits/{visit_id}/geo-logs", headers=employee_headers)
@@ -168,7 +176,7 @@ async def test_geo_log_ordering_is_deterministic(
     for lon in (80.2707, 80.2708, 80.2709):
         await client.post(
             f"/api/v1/visits/{visit_id}/check-in",
-            json={"latitude": 13.0827, "longitude": lon, "accuracy_m": 8.0},
+            json={"latitude": 13.0827, "longitude": lon, "accuracy_m": 8.0, "captured_at": _now_iso()},
             headers=employee_headers,
         )
 
@@ -199,7 +207,7 @@ async def test_three_failures_flag_the_visit(
     for _ in range(3):
         await client.post(
             f"/api/v1/visits/{visit_id}/check-in",
-            json={"latitude": 13.0827, "longitude": 80.2707, "accuracy_m": 8.0},
+            json={"latitude": 13.0827, "longitude": 80.2707, "accuracy_m": 8.0, "captured_at": _now_iso()},
             headers=employee_headers,
         )
 

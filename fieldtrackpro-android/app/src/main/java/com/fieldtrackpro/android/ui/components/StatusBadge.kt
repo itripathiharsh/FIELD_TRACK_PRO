@@ -4,30 +4,29 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.fieldtrackpro.android.ui.theme.AmberWarning
-import com.fieldtrackpro.android.ui.theme.CoralRed
-import com.fieldtrackpro.android.ui.theme.ElectricBlue
-import com.fieldtrackpro.android.ui.theme.EmeraldGreen
-import com.fieldtrackpro.android.ui.theme.Slate500
+import com.fieldtrackpro.android.ui.theme.ErrorRed
+import com.fieldtrackpro.android.ui.theme.FieldTrackAmber
+import com.fieldtrackpro.android.ui.theme.FieldTrackNavy
+import com.fieldtrackpro.android.ui.theme.SuccessGreen
+import com.fieldtrackpro.android.ui.theme.TextMuted
 
 @Composable
 fun StatusBadge(status: String, modifier: Modifier = Modifier) {
     val (bgColor, textColor, label) = when (status.uppercase()) {
-        "PENDING" -> Triple(ElectricBlue.copy(alpha = 0.15f), ElectricBlue, "PENDING")
-        "IN_PROGRESS" -> Triple(EmeraldGreen.copy(alpha = 0.15f), EmeraldGreen, "IN PROGRESS")
-        "COMPLETED" -> Triple(EmeraldGreen.copy(alpha = 0.2f), EmeraldGreen, "COMPLETED")
-        "FLAGGED" -> Triple(AmberWarning.copy(alpha = 0.2f), AmberWarning, "FLAGGED")
-        "MISSED" -> Triple(CoralRed.copy(alpha = 0.15f), CoralRed, "MISSED")
-        else -> Triple(Slate500.copy(alpha = 0.15f), Slate500, status.uppercase())
+        "PENDING" -> Triple(FieldTrackNavy.copy(alpha = 0.15f), FieldTrackNavy, "PENDING")
+        "IN_PROGRESS" -> Triple(SuccessGreen.copy(alpha = 0.15f), SuccessGreen, "IN PROGRESS")
+        "COMPLETED", "VERIFIED", "PAID", "NORMAL" -> Triple(SuccessGreen.copy(alpha = 0.2f), SuccessGreen, status.uppercase().replace('_', ' '))
+        "FLAGGED", "WARNING", "PARTIALLY_PAID" -> Triple(FieldTrackAmber.copy(alpha = 0.2f), FieldTrackAmber, status.uppercase().replace('_', ' '))
+        "MISSED", "OVERDUE", "REJECTED" -> Triple(ErrorRed.copy(alpha = 0.15f), ErrorRed, status.uppercase().replace('_', ' '))
+        "PENDING_VERIFICATION", "UNPAID" -> Triple(FieldTrackNavy.copy(alpha = 0.15f), FieldTrackNavy, status.uppercase().replace('_', ' '))
+        else -> Triple(TextMuted.copy(alpha = 0.15f), TextMuted, status.uppercase())
     }
 
     Box(

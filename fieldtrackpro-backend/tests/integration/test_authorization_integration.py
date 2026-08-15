@@ -117,6 +117,155 @@ async def test_employee_cannot_read_geo_logs_of_others_visit(
     assert resp.status_code in (403, 404), "location history must not leak across employees"
 
 
+# --- P0-1: customer/outlet directory scoping --------------------------------
+#
+# GET /customers and GET /customers/{id} previously had no employee/territory
+# scoping at all - any authenticated employee could list or fetch any outlet
+# nationwide. The fix reuses the exact ownership rule account_service already
+# established for the (more sensitive) account/invoices/orders endpoints: an
+# EMPLOYEE may see an outlet only if they have at least one visit assigned to
+# it. These tests create their own customer (not seeded_world's, which every
+# other test file also reads) so this file's cleanup doesn't race others.
+
+async def _create_customer(client: AsyncClient, admin_headers, name: str, created_customers) -> str:
+    resp = await client.post(
+        "/api/v1/customers",
+        json={
+            "name": name,
+            "contact_number": "+919876500099",
+            "address": "1 Ownership Test Road",
+            "location": {"latitude": 12.9716, "longitude": 77.5946},
+        },
+        headers=admin_headers,
+    )
+    assert resp.status_code == 201, resp.text
+    customer_id = resp.json()["id"]
+    created_customers.append(customer_id)
+    return customer_id
+
+
+async def test_employee_can_view_outlet_they_have_a_visit_for(
+    client: AsyncClient, admin_headers, employee_headers, seeded_world, created_visits
+):
+    await create_visit(
+        client, admin_headers, seeded_world["customer_id"],
+        seeded_world["employee_id"], created_visits,
+    )
+    resp = await client.get(f"/api/v1/customers/{seeded_world['customer_id']}", headers=employee_headers)
+    assert resp.status_code == 200, resp.text
+
+
+async def test_employee_cannot_view_outlet_they_have_no_visit_for(
+    client: AsyncClient, admin_headers, employee_headers, created_customers
+):
+    """P0-1: direct ID manipulation must not bypass authorization - an
+    employee who simply guesses/enumerates a customer_id they were never
+    assigned a visit for must be refused, not served the outlet's PII/GPS."""
+    other_customer_id = await _create_customer(
+        client, admin_headers, "__itest__Unassigned Outlet", created_customers
+    )
+    resp = await client.get(f"/api/v1/customers/{other_customer_id}", headers=employee_headers)
+    assert resp.status_code == 403, (
+        "P0-1: an employee must not be able to view an outlet they have no visit assigned to"
+    )
+    assert resp.json()["error"]["code"] == "OUTLET_NOT_ASSIGNED"
+
+
+async def test_customer_list_is_scoped_to_employees_own_visits(
+    client: AsyncClient, admin_headers, employee_headers, seeded_world, created_visits, created_customers
+):
+    await create_visit(
+        client, admin_headers, seeded_world["customer_id"],
+        seeded_world["employee_id"], created_visits,
+    )
+    unassigned_customer_id = await _create_customer(
+        client, admin_headers, "__itest__Not In My List", created_customers
+    )
+
+    resp = await client.get("/api/v1/customers", headers=employee_headers)
+    assert resp.status_code == 200, resp.text
+    ids = [c["id"] for c in resp.json()]
+    assert seeded_world["customer_id"] in ids, "employee must see an outlet they have a visit for"
+    assert unassigned_customer_id not in ids, (
+        "P0-1: employee customer list leaked an outlet they have no visit assigned to"
+    )
+
+
+async def test_admin_customer_list_and_detail_remain_unrestricted(
+    client: AsyncClient, admin_headers, created_customers, created_territories
+):
+    """
+    Preserve existing behaviour for the role that legitimately has broader
+    access: an ADMIN must see an outlet with zero visits assigned to anyone.
+    Scoped to a dedicated fresh territory (rather than an unfiltered list) so
+    the assertion doesn't depend on default, unordered pagination picking up
+    this row among whatever other test data currently exists.
+    """
+    territory_resp = await client.post(
+        "/api/v1/territories", json={"name": "__itest__Admin Unrestricted Territory"}, headers=admin_headers
+    )
+    assert territory_resp.status_code == 201, territory_resp.text
+    territory_id = territory_resp.json()["id"]
+    created_territories.append(territory_id)
+
+    customer_resp = await client.post(
+        "/api/v1/customers",
+        json={
+            "name": "__itest__Admin Sees Everything",
+            "contact_number": "+919876500099",
+            "address": "1 Ownership Test Road",
+            "location": {"latitude": 12.9716, "longitude": 77.5946},
+            "territory_id": territory_id,
+        },
+        headers=admin_headers,
+    )
+    assert customer_resp.status_code == 201, customer_resp.text
+    customer_id = customer_resp.json()["id"]
+    created_customers.append(customer_id)
+
+    detail = await client.get(f"/api/v1/customers/{customer_id}", headers=admin_headers)
+    assert detail.status_code == 200, detail.text
+
+    listing = await client.get(
+        "/api/v1/customers", params={"territory_id": territory_id}, headers=admin_headers
+    )
+    assert listing.status_code == 200
+    assert customer_id in [c["id"] for c in listing.json()]
+
+
+async def test_geo_verify_location_is_scoped_to_visited_outlet(
+    client: AsyncClient, admin_headers, employee_headers, seeded_world, created_visits, created_customers
+):
+    """P0-1 (secondary surface): the standalone pre-check endpoint shares the
+    same customer-ownership scoping as the base profile endpoints."""
+    await create_visit(
+        client, admin_headers, seeded_world["customer_id"],
+        seeded_world["employee_id"], created_visits,
+    )
+    allowed = await client.post(
+        "/api/v1/geo/verify-location",
+        json={
+            "customer_id": seeded_world["customer_id"],
+            "latitude": seeded_world["customer_lat"],
+            "longitude": seeded_world["customer_lng"],
+        },
+        headers=employee_headers,
+    )
+    assert allowed.status_code == 200, allowed.text
+
+    other_customer_id = await _create_customer(
+        client, admin_headers, "__itest__Geo Not Assigned", created_customers
+    )
+    denied = await client.post(
+        "/api/v1/geo/verify-location",
+        json={"customer_id": other_customer_id, "latitude": 12.9716, "longitude": 77.5946},
+        headers=employee_headers,
+    )
+    assert denied.status_code == 403, (
+        "P0-1: an employee must not be able to probe an outlet's geofence without a visit assigned to it"
+    )
+
+
 # --- Scenario 9: unauthenticated access -------------------------------------
 
 @pytest.mark.parametrize(

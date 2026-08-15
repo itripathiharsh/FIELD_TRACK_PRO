@@ -19,8 +19,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.fieldtrackpro.android.ui.theme.AmberWarning
-import com.fieldtrackpro.android.ui.theme.Slate900
+import com.fieldtrackpro.android.ui.theme.FieldTrackAmber
+import com.fieldtrackpro.android.ui.theme.TextPrimary
 
 @Composable
 fun OfflineSyncBanner(pendingCount: Int, onSyncClick: () -> Unit, modifier: Modifier = Modifier) {
@@ -30,7 +30,7 @@ fun OfflineSyncBanner(pendingCount: Int, onSyncClick: () -> Unit, modifier: Modi
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
-            .background(AmberWarning.copy(alpha = 0.2f))
+            .background(FieldTrackAmber.copy(alpha = 0.2f))
             .clickable { onSyncClick() }
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -38,14 +38,14 @@ fun OfflineSyncBanner(pendingCount: Int, onSyncClick: () -> Unit, modifier: Modi
         Icon(
             imageVector = Icons.Default.Sync,
             contentDescription = "Sync",
-            tint = AmberWarning
+            tint = FieldTrackAmber
         )
         Spacer(modifier = Modifier.width(8.dp))
         Text(
             text = "$pendingCount offline actions pending sync. Tap to sync now.",
             fontSize = 13.sp,
             fontWeight = FontWeight.Bold,
-            color = Slate900,
+            color = TextPrimary,
             modifier = Modifier.weight(1f)
         )
     }

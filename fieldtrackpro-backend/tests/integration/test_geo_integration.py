@@ -12,6 +12,8 @@ the pure Haversine function, bypassing the one function that is broken.
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 from httpx import AsyncClient
 
@@ -19,6 +21,10 @@ from app.services.geo_verification_service import GeoVerificationService
 from tests.integration.conftest import create_visit, requires_db
 
 pytestmark = [requires_db, pytest.mark.integration, pytest.mark.asyncio]
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 # --- Scenario 13: WKB -> coordinates (the actual root cause) ----------------
@@ -70,9 +76,13 @@ async def test_unparseable_location_must_not_silently_become_origin():
 # --- Scenario 10 & 11: distance decisions via the real API ------------------
 
 async def test_verify_location_at_exact_customer_coordinates_is_valid(
-    client: AsyncClient, employee_headers, seeded_world
+    client: AsyncClient, admin_headers, employee_headers, seeded_world, created_visits
 ):
     """Scenario 10: standing exactly on the customer pin must verify as valid."""
+    await create_visit(
+        client, admin_headers, seeded_world["customer_id"],
+        seeded_world["employee_id"], created_visits,
+    )
     resp = await client.post(
         "/api/v1/geo/verify-location",
         json={
@@ -92,9 +102,13 @@ async def test_verify_location_at_exact_customer_coordinates_is_valid(
 
 
 async def test_verify_location_far_away_is_invalid(
-    client: AsyncClient, employee_headers, seeded_world
+    client: AsyncClient, admin_headers, employee_headers, seeded_world, created_visits
 ):
     """Scenario 11: a genuinely distant location must be rejected."""
+    await create_visit(
+        client, admin_headers, seeded_world["customer_id"],
+        seeded_world["employee_id"], created_visits,
+    )
     resp = await client.post(
         "/api/v1/geo/verify-location",
         json={
@@ -112,12 +126,16 @@ async def test_verify_location_far_away_is_invalid(
 
 
 async def test_null_island_is_not_treated_as_the_customer_site(
-    client: AsyncClient, employee_headers, seeded_world
+    client: AsyncClient, admin_headers, employee_headers, seeded_world, created_visits
 ):
     """
     FT-004, stated as an attack: (0,0) is ~8,663 km from the customer and must
     be rejected. Today it is ACCEPTED because the target degrades to (0,0).
     """
+    await create_visit(
+        client, admin_headers, seeded_world["customer_id"],
+        seeded_world["employee_id"], created_visits,
+    )
     resp = await client.post(
         "/api/v1/geo/verify-location",
         json={
@@ -136,9 +154,13 @@ async def test_null_island_is_not_treated_as_the_customer_site(
 
 
 async def test_just_inside_and_just_outside_radius(
-    client: AsyncClient, employee_headers, seeded_world
+    client: AsyncClient, admin_headers, employee_headers, seeded_world, created_visits
 ):
     """Boundary behaviour around the 100 m geofence (~0.00045 deg lat = ~50 m)."""
+    await create_visit(
+        client, admin_headers, seeded_world["customer_id"],
+        seeded_world["employee_id"], created_visits,
+    )
     inside = await client.post(
         "/api/v1/geo/verify-location",
         json={
@@ -181,6 +203,7 @@ async def test_check_in_at_correct_location_succeeds(
             "longitude": seeded_world["customer_lng"],
             "accuracy_m": 8.0,
             "is_mock_location": False,
+            "captured_at": _now_iso(),
         },
         headers=employee_headers,
     )
@@ -190,6 +213,135 @@ async def test_check_in_at_correct_location_succeeds(
     row = db.fetch_one("SELECT status, check_in_at FROM visits WHERE id = %s", (visit_id,))
     assert row["status"] == "IN_PROGRESS", "check-in must be persisted"
     assert row["check_in_at"] is not None
+
+
+async def test_check_in_with_stale_gps_fix_is_rejected(
+    client: AsyncClient, admin_headers, employee_headers, seeded_world, created_visits
+):
+    """A GPS fix captured more than 24h ago is rejected, even at the right location with good accuracy."""
+    from datetime import timedelta
+
+    visit_id = await create_visit(
+        client, admin_headers, seeded_world["customer_id"],
+        seeded_world["employee_id"], created_visits,
+    )
+    stale_captured_at = (datetime.now(timezone.utc) - timedelta(hours=25)).isoformat()
+    resp = await client.post(
+        f"/api/v1/visits/{visit_id}/check-in",
+        json={
+            "latitude": seeded_world["customer_lat"],
+            "longitude": seeded_world["customer_lng"],
+            "accuracy_m": 8.0,
+            "is_mock_location": False,
+            "captured_at": stale_captured_at,
+        },
+        headers=employee_headers,
+    )
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["error"]["code"] == "GEO_VERIFICATION_FAILED"
+    assert "too old" in resp.json()["error"]["message"]
+
+
+async def test_check_in_with_gps_fix_just_under_24h_old_succeeds(
+    client: AsyncClient, admin_headers, employee_headers, seeded_world, created_visits
+):
+    """The offline-sync scenario: a fix captured hours ago (device was offline) must still be accepted."""
+    from datetime import timedelta
+
+    visit_id = await create_visit(
+        client, admin_headers, seeded_world["customer_id"],
+        seeded_world["employee_id"], created_visits,
+    )
+    almost_stale_captured_at = (datetime.now(timezone.utc) - timedelta(hours=23, minutes=59)).isoformat()
+    resp = await client.post(
+        f"/api/v1/visits/{visit_id}/check-in",
+        json={
+            "latitude": seeded_world["customer_lat"],
+            "longitude": seeded_world["customer_lng"],
+            "accuracy_m": 8.0,
+            "is_mock_location": False,
+            "captured_at": almost_stale_captured_at,
+        },
+        headers=employee_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["status"] == "IN_PROGRESS"
+
+
+async def test_check_in_without_captured_at_is_rejected(
+    client: AsyncClient, admin_headers, employee_headers, seeded_world, created_visits
+):
+    """captured_at is required, not optional - an omitted value must not silently skip the freshness check."""
+    visit_id = await create_visit(
+        client, admin_headers, seeded_world["customer_id"],
+        seeded_world["employee_id"], created_visits,
+    )
+    resp = await client.post(
+        f"/api/v1/visits/{visit_id}/check-in",
+        json={
+            "latitude": seeded_world["customer_lat"],
+            "longitude": seeded_world["customer_lng"],
+            "accuracy_m": 8.0,
+            "is_mock_location": False,
+        },
+        headers=employee_headers,
+    )
+    assert resp.status_code == 422
+
+
+async def test_check_in_without_accuracy_m_is_rejected(
+    client: AsyncClient, admin_headers, employee_headers, seeded_world, created_visits
+):
+    """
+    P0-4: `accuracy_m` was previously optional, and GeoVerificationService's
+    accuracy-threshold check only fires when a value is present - an omitted
+    accuracy silently skipped that check entirely rather than failing it.
+    Making the field required closes that bypass at the schema level.
+    """
+    visit_id = await create_visit(
+        client, admin_headers, seeded_world["customer_id"],
+        seeded_world["employee_id"], created_visits,
+    )
+    resp = await client.post(
+        f"/api/v1/visits/{visit_id}/check-in",
+        json={
+            "latitude": seeded_world["customer_lat"],
+            "longitude": seeded_world["customer_lng"],
+            "captured_at": _now_iso(),
+        },
+        headers=employee_headers,
+    )
+    assert resp.status_code == 422, "P0-4: check-in with no accuracy_m must be rejected, not silently accepted"
+
+
+async def test_check_out_without_accuracy_m_is_rejected(
+    client: AsyncClient, admin_headers, employee_headers, seeded_world, created_visits
+):
+    visit_id = await create_visit(
+        client, admin_headers, seeded_world["customer_id"],
+        seeded_world["employee_id"], created_visits,
+    )
+    checkin = await client.post(
+        f"/api/v1/visits/{visit_id}/check-in",
+        json={
+            "latitude": seeded_world["customer_lat"], "longitude": seeded_world["customer_lng"],
+            "accuracy_m": 8.0,
+            "captured_at": _now_iso(),
+        },
+        headers=employee_headers,
+    )
+    assert checkin.status_code == 200, checkin.text
+
+    resp = await client.post(
+        f"/api/v1/visits/{visit_id}/check-out",
+        json={
+            "latitude": seeded_world["customer_lat"],
+            "longitude": seeded_world["customer_lng"],
+            "captured_at": _now_iso(),
+        },
+        headers=employee_headers,
+    )
+    assert resp.status_code == 422, "P0-4: check-out with no accuracy_m must be rejected, not silently accepted"
 
 
 async def test_check_in_far_from_site_is_rejected_and_state_unchanged(
@@ -202,7 +354,7 @@ async def test_check_in_far_from_site_is_rejected_and_state_unchanged(
     )
     resp = await client.post(
         f"/api/v1/visits/{visit_id}/check-in",
-        json={"latitude": 13.0827, "longitude": 80.2707, "accuracy_m": 8.0},
+        json={"latitude": 13.0827, "longitude": 80.2707, "accuracy_m": 8.0, "captured_at": _now_iso()},
         headers=employee_headers,
     )
     assert resp.status_code == 422
@@ -222,7 +374,7 @@ async def test_check_in_at_null_island_is_rejected(
     )
     resp = await client.post(
         f"/api/v1/visits/{visit_id}/check-in",
-        json={"latitude": 0.0, "longitude": 0.0, "accuracy_m": 5.0},
+        json={"latitude": 0.0, "longitude": 0.0, "accuracy_m": 5.0, "captured_at": _now_iso()},
         headers=employee_headers,
     )
     assert resp.status_code == 422, "FT-004: check-in from (0,0) was accepted"
@@ -246,6 +398,7 @@ async def test_mock_location_is_rejected_at_check_in(
             "longitude": seeded_world["customer_lng"],
             "accuracy_m": 5.0,
             "is_mock_location": True,
+            "captured_at": _now_iso(),
         },
         headers=employee_headers,
     )
@@ -266,6 +419,7 @@ async def test_poor_gps_accuracy_is_rejected(
             "latitude": seeded_world["customer_lat"],
             "longitude": seeded_world["customer_lng"],
             "accuracy_m": 500.0,
+            "captured_at": _now_iso(),
         },
         headers=employee_headers,
     )
@@ -286,6 +440,7 @@ async def test_check_out_uses_same_geofence_rules(
         "latitude": seeded_world["customer_lat"],
         "longitude": seeded_world["customer_lng"],
         "accuracy_m": 8.0,
+        "captured_at": _now_iso(),
     }
     assert (await client.post(
         f"/api/v1/visits/{visit_id}/check-in", json=good, headers=employee_headers
@@ -293,7 +448,7 @@ async def test_check_out_uses_same_geofence_rules(
 
     far = await client.post(
         f"/api/v1/visits/{visit_id}/check-out",
-        json={"latitude": 13.0827, "longitude": 80.2707, "accuracy_m": 8.0},
+        json={"latitude": 13.0827, "longitude": 80.2707, "accuracy_m": 8.0, "captured_at": _now_iso()},
         headers=employee_headers,
     )
     assert far.status_code == 422, "check-out must enforce the geofence too"

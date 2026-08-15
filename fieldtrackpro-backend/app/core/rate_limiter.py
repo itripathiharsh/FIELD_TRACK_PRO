@@ -14,9 +14,16 @@ Design notes carried over verbatim from the specification:
   The stated goal is to stop credential brute force against a specific account
   without letting one bad actor on a shared NAT lock out an entire office.
 * A **successful** login clears the counter for that identifier.
-* State is in-process. The specification calls this out explicitly as an
-  accepted MVP limitation: it resets on restart and does not span multiple
-  workers. Moving it to Redis is a scaling concern, not a Phase 3 concern.
+
+P1-3: state is now backed by the shared Postgres database (the `login_attempts`
+table) rather than in-process memory. The original design explicitly accepted
+in-process state as an "MVP limitation" that "resets on restart and does not
+span multiple workers" - the real-world consequence is that an attacker is
+trivially routed to a different worker to reset their own budget. Postgres is
+infrastructure every worker already depends on, so this closes the gap without
+introducing a new dependency (e.g. Redis) the project doesn't otherwise use.
+The policy itself (5 attempts / 15 minutes / cleared on success) is unchanged -
+only the storage/coordination mechanism moved.
 
 Security note (repair rule 7): the limiter fails **closed**. It only ever
 *adds* a rejection; it can never cause a login to succeed. `check_allowed` is
@@ -25,10 +32,13 @@ the authentication path.
 """
 from __future__ import annotations
 
-import threading
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import delete, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.exceptions.custom import BaseAPIException
+from app.models.login_attempt import LoginAttempt
 
 MAX_ATTEMPTS = 5
 WINDOW = timedelta(minutes=15)
@@ -48,62 +58,65 @@ class RateLimitExceededException(BaseAPIException):
 
 
 class LoginRateLimiter:
-    """Sliding-window counter of failed login attempts, keyed by identifier."""
+    """Sliding-window counter of failed login attempts, keyed by identifier - shared across all workers via the database."""
 
     def __init__(
         self, max_attempts: int = MAX_ATTEMPTS, window: timedelta = WINDOW
     ) -> None:
-        self._attempts: dict[str, list[datetime]] = {}
         self._max_attempts = max_attempts
         self._window = window
-        # Uvicorn runs the event loop in one thread, but FastAPI may execute
-        # sync dependencies in a threadpool. A lock keeps the counter honest.
-        self._lock = threading.Lock()
 
     @staticmethod
     def _normalise(identifier: str) -> str:
         """Case-insensitive key so 'User@x.com' and 'user@x.com' share a budget."""
         return identifier.strip().lower()
 
-    def check_allowed(self, identifier: str) -> None:
+    async def check_allowed(self, identifier: str, session: AsyncSession) -> None:
         """Raise :class:`RateLimitExceededException` if the budget is exhausted."""
         key = self._normalise(identifier)
         now = datetime.now(tz=timezone.utc)
-        with self._lock:
-            recent = [t for t in self._attempts.get(key, []) if now - t < self._window]
-            if recent:
-                self._attempts[key] = recent
-            else:
-                self._attempts.pop(key, None)
+        cutoff = now - self._window
+        result = await session.execute(
+            select(LoginAttempt.attempted_at)
+            .where(LoginAttempt.identifier == key, LoginAttempt.attempted_at > cutoff)
+            .order_by(LoginAttempt.attempted_at.asc())
+        )
+        recent = [row[0] for row in result.all()]
+        if len(recent) >= self._max_attempts:
+            oldest = recent[0]
+            retry_after = int((oldest + self._window - now).total_seconds())
+            raise RateLimitExceededException(max(retry_after, 1))
 
-            if len(recent) >= self._max_attempts:
-                oldest = min(recent)
-                retry_after = int((oldest + self._window - now).total_seconds())
-                raise RateLimitExceededException(max(retry_after, 1))
-
-    def record_failure(self, identifier: str) -> None:
+    async def record_failure(self, identifier: str, session: AsyncSession) -> None:
         key = self._normalise(identifier)
-        now = datetime.now(tz=timezone.utc)
-        with self._lock:
-            self._attempts.setdefault(key, []).append(now)
+        session.add(LoginAttempt(identifier=key))
+        await session.commit()
 
-    def record_success(self, identifier: str) -> None:
+    async def record_success(self, identifier: str, session: AsyncSession) -> None:
         """Clear the counter - a correct password proves this is the real user."""
-        with self._lock:
-            self._attempts.pop(self._normalise(identifier), None)
+        key = self._normalise(identifier)
+        await session.execute(delete(LoginAttempt).where(LoginAttempt.identifier == key))
+        await session.commit()
 
-    def reset(self) -> None:
+    async def reset(self, session: AsyncSession) -> None:
         """Clear all counters. Used by tests to guarantee isolation."""
-        with self._lock:
-            self._attempts.clear()
+        await session.execute(delete(LoginAttempt))
+        await session.commit()
 
-    def failures_for(self, identifier: str) -> int:
+    async def failures_for(self, identifier: str, session: AsyncSession) -> int:
         """Current failure count inside the window (diagnostics and tests)."""
         key = self._normalise(identifier)
         now = datetime.now(tz=timezone.utc)
-        with self._lock:
-            return len([t for t in self._attempts.get(key, []) if now - t < self._window])
+        cutoff = now - self._window
+        count = await session.scalar(
+            select(func.count())
+            .select_from(LoginAttempt)
+            .where(LoginAttempt.identifier == key, LoginAttempt.attempted_at > cutoff)
+        )
+        return count or 0
 
 
-# Single process-wide instance, matching the locked design.
+# Single shared instance. Holds no per-process state itself now - every method
+# reads/writes through the database session passed in, so this is safe to
+# share across any number of worker processes.
 login_rate_limiter = LoginRateLimiter()

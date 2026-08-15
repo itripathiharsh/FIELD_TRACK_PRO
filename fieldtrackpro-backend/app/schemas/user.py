@@ -35,6 +35,7 @@ class UserSummary(BaseModel):
     email: str | None
     mobile_number: str | None
     role: Role
+    is_active: bool
 
     model_config = {"from_attributes": True}
 

@@ -19,8 +19,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.fieldtrackpro.android.ui.theme.Slate500
-import com.fieldtrackpro.android.ui.theme.Slate900
+import com.fieldtrackpro.android.ui.theme.TextMuted
+import com.fieldtrackpro.android.ui.theme.TextPrimary
 
 @Composable
 fun EmptyState(
@@ -40,21 +40,21 @@ fun EmptyState(
                 imageVector = icon,
                 contentDescription = null,
                 modifier = Modifier.size(56.dp),
-                tint = Slate500
+                tint = TextMuted
             )
             Spacer(modifier = Modifier.height(16.dp))
             Text(
                 text = title,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
-                color = Slate900,
+                color = TextPrimary,
                 textAlign = TextAlign.Center
             )
             Spacer(modifier = Modifier.height(6.dp))
             Text(
                 text = subtitle,
                 fontSize = 14.sp,
-                color = Slate500,
+                color = TextMuted,
                 textAlign = TextAlign.Center
             )
         }

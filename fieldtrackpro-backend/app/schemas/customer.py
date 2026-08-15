@@ -51,9 +51,23 @@ class CustomerCreate(BaseModel):
     )
     contact_person: str | None = Field(default=None, max_length=150)
     address: str = Field(min_length=1)
-    location: LocationIn
+    location: LocationIn | None = None
+    auto_geocode: bool = Field(default=False)
     geofence_radius_m: int = Field(default=75, gt=0, le=100_000)
     territory_id: uuid.UUID | None = None
+    # External-system cross-reference (Tally ledger code, Excel/MIS import
+    # key) - never the outlet name, to avoid similar-name mismatches.
+    outlet_code: str | None = Field(default=None, max_length=50)
+
+    @model_validator(mode="after")
+    def validate_location_or_geocode(self) -> "CustomerCreate":
+        """Ensure either location is provided or auto_geocode is enabled with an address."""
+        if self.location is None and not self.auto_geocode:
+            raise ValueError(
+                "Either 'location' must be provided or 'auto_geocode' must be True "
+                "to derive coordinates from the address"
+            )
+        return self
 
 
 class CustomerUpdate(BaseModel):
@@ -67,8 +81,10 @@ class CustomerUpdate(BaseModel):
     contact_person: str | None = Field(default=None, max_length=150)
     address: str | None = Field(default=None, min_length=1)
     location: LocationIn | None = None
+    auto_geocode: bool = Field(default=False)
     geofence_radius_m: int | None = Field(default=None, gt=0, le=100_000)
     territory_id: uuid.UUID | None = None
+    outlet_code: str | None = Field(default=None, max_length=50)
 
 
 class CustomerRead(BaseModel):
@@ -88,6 +104,7 @@ class CustomerRead(BaseModel):
     location: LocationOut
     geofence_radius_m: int
     territory_id: uuid.UUID | None
+    outlet_code: str | None = None
     created_by: uuid.UUID
     created_at: datetime
 
@@ -106,6 +123,7 @@ class CustomerRead(BaseModel):
             location=LocationOut(latitude=latitude, longitude=longitude),
             geofence_radius_m=customer.geofence_radius_m,
             territory_id=customer.territory_id,
+            outlet_code=customer.outlet_code,
             created_by=customer.created_by,
             created_at=customer.created_at,
         )

@@ -4,23 +4,41 @@ sweep (FT-021).
 """
 from __future__ import annotations
 
+import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
+import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 from app.core.rate_limiter import MAX_ATTEMPTS, login_rate_limiter
+from app.database import AsyncSessionLocal
 from tests.integration.conftest import db_cursor, login, requires_db
 
 pytestmark = [requires_db, pytest.mark.integration, pytest.mark.asyncio]
 
 
-@pytest.fixture(autouse=True)
-def _clear_rate_limiter():
-    """Each test starts with an empty attempt budget."""
-    login_rate_limiter.reset()
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+async def _failures_for(identifier: str) -> int:
+    async with AsyncSessionLocal() as session:
+        return await login_rate_limiter.failures_for(identifier, session)
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _clear_rate_limiter():
+    """
+    Each test starts with an empty attempt budget. P1-3: the limiter is now
+    backed by the shared `login_attempts` table rather than in-process
+    memory, so isolation between tests means clearing that table.
+    """
+    async with AsyncSessionLocal() as session:
+        await login_rate_limiter.reset(session)
     yield
-    login_rate_limiter.reset()
+    async with AsyncSessionLocal() as session:
+        await login_rate_limiter.reset(session)
 
 
 # ---------------------------------------------------------------------------
@@ -75,11 +93,11 @@ async def test_successful_login_resets_the_counter(client: AsyncClient, seeded_w
 
     for _ in range(MAX_ATTEMPTS - 1):
         await login(client, email, "wrong-password")
-    assert login_rate_limiter.failures_for(email) == MAX_ATTEMPTS - 1
+    assert await _failures_for(email) == MAX_ATTEMPTS - 1
 
     ok = await login(client, email, seeded_world["password"])
     assert ok.status_code == 200
-    assert login_rate_limiter.failures_for(email) == 0, "a correct password must clear the budget"
+    assert await _failures_for(email) == 0, "a correct password must clear the budget"
 
     # ...and the account is immediately usable again.
     again = await login(client, email, seeded_world["password"])
@@ -109,10 +127,21 @@ async def test_window_expiry_releases_the_lock(client: AsyncClient, seeded_world
         await login(client, email, "wrong-password")
     assert (await login(client, email, "wrong-password")).status_code == 429
 
-    # Age every recorded attempt beyond the window.
+    # Age every recorded attempt beyond the window. P1-3: the budget now
+    # lives in the `login_attempts` table, so "time travel" means backdating
+    # those rows directly - a separate, real sync connection, exactly the
+    # existing db_cursor pattern used for every other insert-only audit
+    # table in this test suite (see e.g. created_visits' geo_verification_logs
+    # cleanup in conftest.py).
     stale = datetime.now(tz=timezone.utc) - timedelta(minutes=16)
-    with login_rate_limiter._lock:  # noqa: SLF001 - deliberate time travel in test
-        login_rate_limiter._attempts[email.strip().lower()] = [stale] * MAX_ATTEMPTS
+    key = email.strip().lower()
+    with db_cursor(privileged=True) as cur:
+        cur.execute("DELETE FROM login_attempts WHERE identifier = %s", (key,))
+        for _ in range(MAX_ATTEMPTS):
+            cur.execute(
+                "INSERT INTO login_attempts (id, identifier, attempted_at) VALUES (%s, %s, %s)",
+                (str(uuid.uuid4()), key, stale),
+            )
 
     resp = await login(client, email, seeded_world["password"])
     assert resp.status_code == 200, "attempts older than the window must not count"
@@ -129,6 +158,67 @@ async def test_unknown_account_is_rate_limited_identically(client: AsyncClient):
         assert resp.status_code == 401
 
     assert (await login(client, ghost, "whatever")).status_code == 429
+
+
+async def test_attempts_recorded_by_one_session_are_visible_to_another(client: AsyncClient, seeded_world):
+    """
+    P1-3: the whole point of moving off in-process memory - a failure
+    recorded through one AsyncSession (standing in for "worker A") must be
+    visible to a completely independent AsyncSession ("worker B"), since
+    in-process memory could never share state this way across processes.
+    """
+    email = seeded_world["admin_email"]
+
+    async with AsyncSessionLocal() as worker_a_session:
+        for _ in range(MAX_ATTEMPTS - 1):
+            await login_rate_limiter.check_allowed(email, worker_a_session)
+            await login_rate_limiter.record_failure(email, worker_a_session)
+
+    # A brand new session/connection - nothing shared in-process with the one above.
+    async with AsyncSessionLocal() as worker_b_session:
+        assert await login_rate_limiter.failures_for(email, worker_b_session) == MAX_ATTEMPTS - 1
+        await login_rate_limiter.check_allowed(email, worker_b_session)  # one more is still allowed
+        await login_rate_limiter.record_failure(email, worker_b_session)
+        with pytest.raises(Exception):
+            await login_rate_limiter.check_allowed(email, worker_b_session)
+
+    # And the real HTTP path (client -> app -> its own session) sees the same budget.
+    resp = await login(client, email, seeded_world["password"])
+    assert resp.status_code == 429, "the budget exhausted via direct session calls must still block the real login endpoint"
+
+
+async def test_concurrent_failed_attempts_are_all_recorded_and_then_enforced(client: AsyncClient, seeded_world):
+    """
+    `check_allowed` runs before credentials are verified (documented design,
+    see its docstring) - a genuinely simultaneous burst for the same
+    identifier can therefore all be evaluated against the same starting
+    count before any of their failures are recorded, and no storage
+    mechanism changes that without changing the check-before-credentials
+    contract itself (out of scope for P1-3). What P1-3 does guarantee: every
+    one of those concurrent failures is durably recorded exactly once - none
+    lost, none double-counted - so a request immediately AFTER the burst is
+    correctly blocked, and the count is shared no matter which worker/session
+    recorded each one.
+    """
+    import asyncio
+
+    email = seeded_world["admin_email"]
+    burst_size = MAX_ATTEMPTS + 5
+    responses = await asyncio.gather(
+        *[login(client, email, "wrong-password") for _ in range(burst_size)]
+    )
+    assert all(r.status_code in (401, 429) for r in responses), "a burst of failed attempts must never return 200"
+
+    recorded = await _failures_for(email)
+    assert recorded >= MAX_ATTEMPTS, (
+        f"every concurrently-issued failure must be durably counted (got {recorded}, expected >= {MAX_ATTEMPTS})"
+    )
+
+    blocked = await login(client, email, "wrong-password")
+    assert blocked.status_code == 429, "a request following the burst must be blocked"
+
+    final = await login(client, email, seeded_world["password"])
+    assert final.status_code == 429, "the budget stays exhausted even for the correct password"
 
 
 # ---------------------------------------------------------------------------
@@ -166,7 +256,8 @@ async def test_change_password_succeeds_and_new_password_works(
             json={"old_password": updated, "new_password": original},
             headers=restore_headers,
         )
-        login_rate_limiter.reset()
+        async with AsyncSessionLocal() as session:
+            await login_rate_limiter.reset(session)
 
 
 async def test_change_password_rejects_wrong_old_password(client: AsyncClient, employee_headers):
@@ -248,7 +339,8 @@ async def test_change_password_revokes_other_sessions(client: AsyncClient, seede
             json={"old_password": updated, "new_password": original},
             headers={"Authorization": f"Bearer {restore['access_token']}"},
         )
-        login_rate_limiter.reset()
+        async with AsyncSessionLocal() as session:
+            await login_rate_limiter.reset(session)
 
 
 async def test_deactivation_revokes_refresh_tokens(client: AsyncClient, seeded_world, admin_headers):
@@ -413,6 +505,7 @@ async def test_sweep_does_not_touch_completed_visits(
         "latitude": seeded_world["customer_lat"],
         "longitude": seeded_world["customer_lng"],
         "accuracy_m": 8.0,
+        "captured_at": _now_iso(),
     }
     assert (
         await client.post(

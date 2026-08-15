@@ -13,8 +13,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.fieldtrackpro.android.ui.theme.ElectricBlue
-import com.fieldtrackpro.android.ui.theme.Slate500
+import com.fieldtrackpro.android.ui.theme.FieldTrackNavy
+import com.fieldtrackpro.android.ui.theme.TextMuted
 
 @Composable
 fun LoadingScreen(message: String = "Loading...", modifier: Modifier = Modifier) {
@@ -23,12 +23,12 @@ fun LoadingScreen(message: String = "Loading...", modifier: Modifier = Modifier)
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            CircularProgressIndicator(color = ElectricBlue)
+            CircularProgressIndicator(color = FieldTrackNavy)
             Spacer(modifier = Modifier.height(12.dp))
             Text(
                 text = message,
                 fontSize = 14.sp,
-                color = Slate500
+                color = TextMuted
             )
         }
     }

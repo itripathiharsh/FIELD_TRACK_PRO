@@ -1,25 +1,26 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Building2, Phone, MapPin, Navigation } from 'lucide-react';
+import { ArrowLeft, Building2, Phone, MapPin, Navigation, Calendar, PackagePlus } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardSubtitle } from '../components/ui/Card';
 import { PageHeader } from '../components/ui/PageHeader';
 import { ErrorBanner } from '../components/ui/ErrorBanner';
 import { EmptyState } from '../components/ui/EmptyState';
+import { StatusBadge } from '../components/ui/StatusBadge';
 
-import { apiClient } from '../api/client';
-import { Customer, Visit } from '../types';
-
-interface CustomerDetailData extends Customer {
-    visit_history?: Visit[];
-}
+import { apiClient, CustomerHistoryRow } from '../api/client';
+import { AccountSummary, Customer, OrderRead } from '../types';
+import { AccountSummaryCard } from '../components/ui/AccountSummaryCard';
 
 /**
- * Customer Detail page — shows customer profile and visit history.
+ * Customer Detail page — shows customer profile, account/collections, and visit history.
  */
 export const CustomerDetailPage: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
-    const [customer, setCustomer] = useState<CustomerDetailData | null>(null);
+    const [customer, setCustomer] = useState<Customer | null>(null);
+    const [visitHistory, setVisitHistory] = useState<CustomerHistoryRow[]>([]);
+    const [account, setAccount] = useState<AccountSummary | null>(null);
+    const [orders, setOrders] = useState<OrderRead[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
@@ -27,8 +28,16 @@ export const CustomerDetailPage: React.FC = () => {
         if (!id) return;
         try {
             setIsLoading(true);
-            const cust = await apiClient.getCustomerById(id);
+            const [cust, history, acct, orderHistory] = await Promise.all([
+                apiClient.getCustomerById(id),
+                apiClient.getCustomerVisitHistory(id).catch(() => [] as CustomerHistoryRow[]),
+                apiClient.getCustomerAccount(id).catch(() => null),
+                apiClient.getCustomerOrders(id).catch(() => [] as OrderRead[]),
+            ]);
             setCustomer(cust);
+            setVisitHistory(history);
+            setAccount(acct);
+            setOrders(orderHistory);
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to load customer');
         } finally {
@@ -41,7 +50,7 @@ export const CustomerDetailPage: React.FC = () => {
     }, [load]);
 
     if (isLoading) return (
-        <div className="flex items-center justify-center h-64">
+        <div className="flex items-center justify-center h-64" role="status">
             <div className="w-10 h-10 border-4 border-primary-container border-t-secondary-container rounded-full animate-spin" />
         </div>
     );
@@ -92,7 +101,103 @@ export const CustomerDetailPage: React.FC = () => {
                         <span className="text-sm font-semibold text-primary">Geofence:</span>
                         <span className="text-sm">{customer.geofence_radius_m}m</span>
                     </div>
+                    {customer.outlet_code && (
+                        <div className="flex items-center gap-space-2">
+                            <span className="text-sm font-semibold text-primary">Outlet Code:</span>
+                            <span className="text-sm font-mono">{customer.outlet_code}</span>
+                        </div>
+                    )}
                 </div>
+            </Card>
+
+            {account && <AccountSummaryCard account={account} />}
+
+            <Card>
+                <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                        <PackagePlus className="w-5 h-5" />
+                        Order History
+                    </CardTitle>
+                    <CardSubtitle>{orders.length} order{orders.length !== 1 ? 's' : ''} captured across this outlet's visits</CardSubtitle>
+                </CardHeader>
+                {orders.length === 0 ? (
+                    <div className="p-space-5">
+                        <EmptyState icon={PackagePlus} title="No orders captured" subtitle="Orders captured during field visits to this outlet will appear here." />
+                    </div>
+                ) : (
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left">
+                            <thead className="bg-surface-container-low text-on-surface-variant text-xs uppercase tracking-wider border-b border-surface-container-highest">
+                                <tr>
+                                    <th className="px-space-4 py-space-3 font-bold text-primary">Date</th>
+                                    <th className="px-space-4 py-space-3 font-bold text-primary">Employee</th>
+                                    <th className="px-space-4 py-space-3 font-bold text-primary">Note</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-surface-container-highest">
+                                {orders.map((order) => (
+                                    <tr key={order.id} className="hover:bg-surface-container-low/80">
+                                        <td className="px-space-4 py-space-3 text-sm text-on-surface-variant">
+                                            {new Date(order.uploaded_at).toLocaleString()}
+                                        </td>
+                                        <td className="px-space-4 py-space-3 text-sm">{order.employee_name || '—'}</td>
+                                        <td className="px-space-4 py-space-3 text-sm max-w-md truncate" title={order.note || ''}>
+                                            {order.note || '—'}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </Card>
+
+            <Card>
+                <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                        <Calendar className="w-5 h-5" />
+                        Visit History
+                    </CardTitle>
+                    <CardSubtitle>{visitHistory.length} visit{visitHistory.length !== 1 ? 's' : ''} recorded</CardSubtitle>
+                </CardHeader>
+                {visitHistory.length === 0 ? (
+                    <div className="p-space-5">
+                        <EmptyState title="No visits recorded" subtitle="No visits have been scheduled or completed for this customer yet." />
+                    </div>
+                ) : (
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left">
+                            <thead className="bg-surface-container-low text-on-surface-variant text-xs uppercase tracking-wider border-b border-surface-container-highest">
+                                <tr>
+                                    <th className="px-space-4 py-space-3 font-bold text-primary">Visit ID</th>
+                                    <th className="px-space-4 py-space-3 font-bold text-primary">Scheduled</th>
+                                    <th className="px-space-4 py-space-3 font-bold text-primary">Status</th>
+                                    <th className="px-space-4 py-space-3 font-bold text-primary">Employee</th>
+                                    <th className="px-space-4 py-space-3 font-bold text-primary">Check-In</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-surface-container-highest">
+                                {visitHistory.map((row) => (
+                                    <tr key={row.visit_id} className="hover:bg-surface-container-low/80">
+                                        <td className="px-space-4 py-space-3 font-mono text-xs text-on-surface-variant">
+                                            {row.visit_id.substring(0, 8)}...
+                                        </td>
+                                        <td className="px-space-4 py-space-3 text-sm">
+                                            {new Date(row.scheduled_at).toLocaleString()}
+                                        </td>
+                                        <td className="px-space-4 py-space-3">
+                                            <StatusBadge status={row.status} size="sm" />
+                                        </td>
+                                        <td className="px-space-4 py-space-3 text-sm">{row.employee_name}</td>
+                                        <td className="px-space-4 py-space-3 text-sm text-on-surface-variant">
+                                            {row.check_in_at ? new Date(row.check_in_at).toLocaleString() : '—'}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
             </Card>
         </div>
     );

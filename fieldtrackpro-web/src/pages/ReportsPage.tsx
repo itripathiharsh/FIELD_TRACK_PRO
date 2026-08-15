@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, ShieldAlert, TrendingUp, Users, Download } from 'lucide-react';
+import { CheckCircle2, ShieldAlert, TrendingUp, Users, Download, FileText, Calendar } from 'lucide-react';
 import { MetricCard } from '../components/ui/MetricCard';
 import { PageHeader } from '../components/ui/PageHeader';
 import { Card, CardHeader, CardTitle, CardSubtitle } from '../components/ui/Card';
@@ -7,6 +7,7 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { ErrorBanner } from '../components/ui/ErrorBanner';
 import { Button } from '../components/ui/Button';
 import { apiClient } from '../api/client';
+import { generatePDFContent as buildPDF } from '../utils/pdf-report';
 
 interface EmployeeReportRow {
     employee_id: string;
@@ -41,25 +42,67 @@ interface GeoReportRow {
     failure_reason: string | null;
 }
 
+interface DateRange {
+    startDate: string;
+    endDate: string;
+}
+
 /**
- * Reports page — displays real report data from backend APIs.
+ * Reports page — displays real report data from backend APIs with date filtering and export.
  */
 export const ReportsPage: React.FC = () => {
     const [employeeReport, setEmployeeReport] = useState<EmployeeReportRow[]>([]);
     const [productivity, setProductivity] = useState<ProductivityDashboard | null>(null);
     const [geoReport, setGeoReport] = useState<GeoReportRow[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [isExporting, setIsExporting] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<'overview' | 'employees' | 'geo'>('overview');
+    // P1-13: `dateRange` is the DRAFT filter, bound directly to the date
+    // inputs - it changes on every keystroke/date-pick and must never by
+    // itself trigger a report reload. `appliedDateRange` is what the last
+    // "Apply Filter" (or "Clear") click actually committed, and is the only
+    // thing `load` depends on. Previously there was only one date-range
+    // state, and `load`'s useCallback depended on it directly, so changing
+    // either input alone refetched the report immediately - "Apply Filter"
+    // was decorative, not gating anything.
+    const [dateRange, setDateRange] = useState<DateRange>({
+        startDate: '',
+        endDate: '',
+    });
+    const [appliedDateRange, setAppliedDateRange] = useState<DateRange>({
+        startDate: '',
+        endDate: '',
+    });
+    const [dateError, setDateError] = useState<string | null>(null);
+
+    const validateDateRange = useCallback((): boolean => {
+        if (dateRange.startDate && dateRange.endDate) {
+            const start = new Date(dateRange.startDate);
+            const end = new Date(dateRange.endDate);
+            if (end < start) {
+                setDateError('End date must be after start date');
+                return false;
+            }
+        }
+        setDateError(null);
+        return true;
+    }, [dateRange]);
 
     const load = useCallback(async () => {
         setIsLoading(true);
         setError(null);
         try {
             const [empData, prodData, geoData] = await Promise.all([
-                apiClient.getEmployeeReport().catch(() => [] as EmployeeReportRow[]),
+                apiClient.getEmployeeReport(
+                    appliedDateRange.startDate || undefined,
+                    appliedDateRange.endDate || undefined
+                ).catch(() => [] as EmployeeReportRow[]),
                 apiClient.getProductivityDashboard().catch(() => null),
-                apiClient.getGeoVerificationReport().catch(() => [] as GeoReportRow[]),
+                apiClient.getGeoVerificationReport(
+                    appliedDateRange.startDate || undefined,
+                    appliedDateRange.endDate || undefined
+                ).catch(() => [] as GeoReportRow[]),
             ]);
             setEmployeeReport(empData);
             setProductivity(prodData);
@@ -69,27 +112,92 @@ export const ReportsPage: React.FC = () => {
         } finally {
             setIsLoading(false);
         }
-    }, []);
+    }, [appliedDateRange]);
 
+    // Fires on mount, and whenever "Apply Filter"/"Clear" actually commits a
+    // new appliedDateRange - never on a raw draft-input change.
     useEffect(() => {
         load();
     }, [load]);
 
-    const exportCSV = useCallback((data: Record<string, unknown>[], filename: string) => {
-        if (data.length === 0) return;
-        const headers = Object.keys(data[0]);
-        const csv = [
-            headers.join(','),
-            ...data.map(row => headers.map(h => `"${row[h] ?? ''}"`).join(','))
-        ].join('\n');
-        const blob = new Blob([csv], { type: 'text/csv' });
+    const handleDateChange = useCallback((field: 'startDate' | 'endDate', value: string) => {
+        setDateRange(prev => ({ ...prev, [field]: value }));
+    }, []);
+
+    const applyDateFilter = useCallback(() => {
+        if (validateDateRange()) {
+            setAppliedDateRange(dateRange);
+        }
+    }, [validateDateRange, dateRange]);
+
+    const clearDateFilter = useCallback(() => {
+        const empty = { startDate: '', endDate: '' };
+        setDateRange(empty);
+        setAppliedDateRange(empty);
+        setDateError(null);
+    }, []);
+
+    const downloadBlob = useCallback((blob: Blob, filename: string) => {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `${filename}.csv`;
+        a.download = filename;
+        document.body.appendChild(a);
         a.click();
-        URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        // Chrome race: if the blob URL is revoked before the download task
+        // snapshots the filename, Chrome falls back to the blob URL's internal
+        // UUID as the file name. Defer the revoke so the download always reads
+        // the URL (and its download attribute) first.
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
     }, []);
+
+    const todayStamp = new Date().toISOString().split('T')[0];
+
+    const exportCSV = useCallback((data: Record<string, unknown>[], baseName: string) => {
+        if (data.length === 0) return;
+        const headers = Object.keys(data[0]);
+        const csvContent = [
+            headers.join(','),
+            ...data.map(row => headers.map(h => {
+                const val = row[h];
+                if (val === null || val === undefined) return '""';
+                const str = String(val).replace(/"/g, '""');
+                return `"${str}"`;
+            }).join(','))
+        ].join('\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        downloadBlob(blob, `${baseName}-${todayStamp}.csv`);
+    }, [downloadBlob, todayStamp]);
+
+    const exportPDF = useCallback(async (data: Record<string, unknown>[], baseName: string, title: string) => {
+        if (data.length === 0) return;
+        setIsExporting(true);
+        try {
+            const headers = Object.keys(data[0]);
+            const rows = data.map(row => headers.map(h => String(row[h] ?? '')));
+
+            // Exported data reflects whatever is currently on screen, which is
+            // driven by the applied filter - the PDF's date-range annotation
+            // must match that, not an unapplied draft still sitting in the inputs.
+            const pdfContent = generatePDFContent(title, headers, rows, appliedDateRange);
+            const blob = new Blob([pdfContent], { type: 'application/pdf' });
+            downloadBlob(blob, `${baseName}-${todayStamp}.pdf`);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to export PDF');
+        } finally {
+            setIsExporting(false);
+        }
+    }, [appliedDateRange, downloadBlob, todayStamp]);
+
+    const generatePDFContent = (title: string, headers: string[], rows: string[][], range: DateRange): Uint8Array => {
+        return buildPDF({
+            title,
+            headers,
+            rows,
+            dateRange: range,
+        });
+    };
 
     const stats = useMemo(() => {
         const total = employeeReport.reduce((sum, r) => sum + r.total_visits, 0);
@@ -107,6 +215,74 @@ export const ReportsPage: React.FC = () => {
             />
 
             {error && <ErrorBanner message={error} onRetry={load} onDismiss={() => setError(null)} />}
+
+            {/* Date Range Filter */}
+            <Card variant="default">
+                <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                        <Calendar className="w-5 h-5" />
+                        Date Range Filter
+                    </CardTitle>
+                    <CardSubtitle>Filter report data by date range</CardSubtitle>
+                </CardHeader>
+                <div className="flex flex-wrap items-end gap-4">
+                    <div className="flex flex-col gap-1">
+                        <label htmlFor="start-date" className="text-sm font-medium text-on-surface-variant">
+                            Start Date
+                        </label>
+                        <input
+                            id="start-date"
+                            type="date"
+                            value={dateRange.startDate}
+                            onChange={(e) => handleDateChange('startDate', e.target.value)}
+                            className="px-3 py-2 border border-outline-variant rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                        />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                        <label htmlFor="end-date" className="text-sm font-medium text-on-surface-variant">
+                            End Date
+                        </label>
+                        <input
+                            id="end-date"
+                            type="date"
+                            value={dateRange.endDate}
+                            onChange={(e) => handleDateChange('endDate', e.target.value)}
+                            className="px-3 py-2 border border-outline-variant rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                        />
+                    </div>
+                    <div className="flex gap-2">
+                        <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={applyDateFilter}
+                            disabled={isLoading}
+                        >
+                            Apply Filter
+                        </Button>
+                        <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={clearDateFilter}
+                            disabled={isLoading || (!dateRange.startDate && !dateRange.endDate)}
+                        >
+                            Clear
+                        </Button>
+                    </div>
+                    {dateError && (
+                        <p className="text-sm text-red-600 w-full">{dateError}</p>
+                    )}
+                    {(appliedDateRange.startDate || appliedDateRange.endDate) && !dateError && (
+                        <p className="text-sm text-emerald-600 w-full">
+                            Active filter: {appliedDateRange.startDate || 'Start'} to {appliedDateRange.endDate || 'End'}
+                        </p>
+                    )}
+                    {!dateError && (dateRange.startDate !== appliedDateRange.startDate || dateRange.endDate !== appliedDateRange.endDate) && (
+                        <p className="text-sm text-on-surface-variant w-full">
+                            Filter changed - click "Apply Filter" to update the results below.
+                        </p>
+                    )}
+                </div>
+            </Card>
 
             {isLoading ? (
                 <div className="flex items-center justify-center h-64">
@@ -205,17 +381,33 @@ export const ReportsPage: React.FC = () => {
                             <CardHeader className="flex-row items-center justify-between">
                                 <div>
                                     <CardTitle>Employee Visit Report</CardTitle>
-                                    <CardSubtitle>Visits per employee</CardSubtitle>
+                                    <CardSubtitle>
+                                        Visits per employee
+                                        {appliedDateRange.startDate && ` from ${appliedDateRange.startDate}`}
+                                        {appliedDateRange.endDate && ` to ${appliedDateRange.endDate}`}
+                                    </CardSubtitle>
                                 </div>
-                                <Button
-                                    size="sm"
-                                    variant="secondary"
-                                    icon={Download}
-                                    onClick={() => exportCSV(employeeReport as unknown as Record<string, unknown>[], 'employee_report')}
-                                    disabled={employeeReport.length === 0}
-                                >
-                                    Export CSV
-                                </Button>
+                                <div className="flex gap-2">
+                                    <Button
+                                        size="sm"
+                                        variant="secondary"
+                                        icon={Download}
+                                        onClick={() => exportCSV(employeeReport as unknown as Record<string, unknown>[], 'employee-report')}
+                                        disabled={employeeReport.length === 0 || isExporting}
+                                    >
+                                        CSV
+                                    </Button>
+                                    <Button
+                                        size="sm"
+                                        variant="secondary"
+                                        icon={FileText}
+                                        onClick={() => exportPDF(employeeReport as unknown as Record<string, unknown>[], 'employee-report', 'Employee Visit Report')}
+                                        disabled={employeeReport.length === 0 || isExporting}
+                                        isLoading={isExporting}
+                                    >
+                                        PDF
+                                    </Button>
+                                </div>
                             </CardHeader>
                             {employeeReport.length === 0 ? (
                                 <EmptyState title="No employee data" subtitle="No visits recorded yet." />
@@ -258,17 +450,33 @@ export const ReportsPage: React.FC = () => {
                             <CardHeader className="flex-row items-center justify-between">
                                 <div>
                                     <CardTitle>Geo-Verification Report</CardTitle>
-                                    <CardSubtitle>Flagged/failed check-ins with reason codes</CardSubtitle>
+                                    <CardSubtitle>
+                                        Flagged/failed check-ins with reason codes
+                                        {appliedDateRange.startDate && ` from ${appliedDateRange.startDate}`}
+                                        {appliedDateRange.endDate && ` to ${appliedDateRange.endDate}`}
+                                    </CardSubtitle>
                                 </div>
-                                <Button
-                                    size="sm"
-                                    variant="secondary"
-                                    icon={Download}
-                                    onClick={() => exportCSV(geoReport as unknown as Record<string, unknown>[], 'geo_verification_report')}
-                                    disabled={geoReport.length === 0}
-                                >
-                                    Export CSV
-                                </Button>
+                                <div className="flex gap-2">
+                                    <Button
+                                        size="sm"
+                                        variant="secondary"
+                                        icon={Download}
+                                        onClick={() => exportCSV(geoReport as unknown as Record<string, unknown>[], 'geo-verification-report')}
+                                        disabled={geoReport.length === 0 || isExporting}
+                                    >
+                                        CSV
+                                    </Button>
+                                    <Button
+                                        size="sm"
+                                        variant="secondary"
+                                        icon={FileText}
+                                        onClick={() => exportPDF(geoReport as unknown as Record<string, unknown>[], 'geo-verification-report', 'Geo-Verification Report')}
+                                        disabled={geoReport.length === 0 || isExporting}
+                                        isLoading={isExporting}
+                                    >
+                                        PDF
+                                    </Button>
+                                </div>
                             </CardHeader>
                             {geoReport.length === 0 ? (
                                 <EmptyState title="No geo-verification data" subtitle="No verification attempts recorded yet." />

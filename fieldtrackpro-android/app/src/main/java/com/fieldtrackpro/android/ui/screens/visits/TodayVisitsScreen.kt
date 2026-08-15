@@ -1,4 +1,4 @@
-﻿package com.fieldtrackpro.android.ui.screens.visits
+package com.fieldtrackpro.android.ui.screens.visits
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -14,6 +14,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.ExperimentalMaterialApi
+import androidx.compose.material.pullrefresh.PullRefreshIndicator
+import androidx.compose.material.pullrefresh.pullRefresh
+import androidx.compose.material.pullrefresh.rememberPullRefreshState
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
@@ -35,13 +39,15 @@ import com.fieldtrackpro.android.ui.components.EmptyState
 import com.fieldtrackpro.android.ui.components.FieldTrackTopAppBar
 import com.fieldtrackpro.android.ui.components.LoadingScreen
 import com.fieldtrackpro.android.ui.components.StatusBadge
-import com.fieldtrackpro.android.ui.theme.Slate50
-import com.fieldtrackpro.android.ui.theme.Slate500
-import com.fieldtrackpro.android.ui.theme.Slate900
+import com.fieldtrackpro.android.ui.theme.FieldTrackNavy
+import com.fieldtrackpro.android.ui.theme.SurfaceOffWhite
 import com.fieldtrackpro.android.ui.theme.SurfaceWhite
+import com.fieldtrackpro.android.ui.theme.TextMuted
+import com.fieldtrackpro.android.ui.theme.TextPrimary
 import com.fieldtrackpro.android.ui.viewmodel.VisitsState
 import com.fieldtrackpro.android.ui.viewmodel.VisitsViewModel
 
+@OptIn(ExperimentalMaterialApi::class)
 @Composable
 fun TodayVisitsScreen(
     viewModel: VisitsViewModel,
@@ -50,11 +56,26 @@ fun TodayVisitsScreen(
 ) {
     val state by viewModel.visitsState.collectAsState()
     var selectedFilter by remember { mutableStateOf<String?>(null) }
+    var isRefreshing by remember { mutableStateOf(false) }
 
     val filterOptions = listOf("ALL", "PENDING", "IN_PROGRESS", "COMPLETED", "FLAGGED")
 
     LaunchedEffect(selectedFilter) {
         viewModel.loadVisits(if (selectedFilter == "ALL") null else selectedFilter)
+    }
+
+    val pullRefreshState = rememberPullRefreshState(
+        refreshing = isRefreshing,
+        onRefresh = {
+            isRefreshing = true
+            viewModel.loadVisits(if (selectedFilter == "ALL") null else selectedFilter)
+        }
+    )
+
+    LaunchedEffect(state) {
+        if (state !is VisitsState.Loading) {
+            isRefreshing = false
+        }
     }
 
     Scaffold(
@@ -68,7 +89,7 @@ fun TodayVisitsScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Slate50)
+                .background(SurfaceOffWhite)
                 .padding(innerPadding)
                 .padding(16.dp)
         ) {
@@ -96,40 +117,56 @@ fun TodayVisitsScreen(
                             subtitle = "No assigned visits match the selected filter criteria."
                         )
                     } else {
-                        LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            items(visits) { visit ->
-                                Card(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable { onNavigateToVisitDetails(visit.id) },
-                                    shape = RoundedCornerShape(12.dp),
-                                    colors = CardDefaults.cardColors(containerColor = SurfaceWhite)
-                                ) {
-                                    Column(modifier = Modifier.padding(16.dp)) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .pullRefresh(pullRefreshState)
+                        ) {
+                            LazyColumn(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                items(visits) { visit ->
+                                    Card(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable { onNavigateToVisitDetails(visit.id) },
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = CardDefaults.cardColors(containerColor = SurfaceWhite)
+                                    ) {
+                                        Column(modifier = Modifier.padding(16.dp)) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = "Customer #${visit.customerId.take(8)}",
+                                                    fontSize = 16.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = TextPrimary
+                                                )
+                                                StatusBadge(status = visit.status)
+                                            }
+
+                                            Spacer(modifier = Modifier.height(6.dp))
+
                                             Text(
-                                                text = "Customer #${visit.customerId.take(8)}",
-                                                fontSize = 16.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = Slate900
+                                                text = "Scheduled: ${visit.scheduledAt}",
+                                                fontSize = 13.sp,
+                                                color = TextMuted
                                             )
-                                            StatusBadge(status = visit.status)
                                         }
-
-                                        Spacer(modifier = Modifier.height(6.dp))
-
-                                        Text(
-                                            text = "Scheduled: ${visit.scheduledAt}",
-                                            fontSize = 13.sp,
-                                            color = Slate500
-                                        )
                                     }
                                 }
                             }
+
+                            PullRefreshIndicator(
+                                refreshing = isRefreshing,
+                                state = pullRefreshState,
+                                modifier = Modifier.align(Alignment.CenterHorizontally),
+                                contentColor = FieldTrackNavy
+                            )
                         }
                     }
                 }
@@ -137,4 +174,3 @@ fun TodayVisitsScreen(
         }
     }
 }
-

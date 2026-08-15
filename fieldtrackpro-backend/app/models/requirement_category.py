@@ -13,3 +13,4 @@ class RequirementCategory(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     requirement_forms: Mapped[list["RequirementForm"]] = relationship(back_populates="category")
+    form_templates: Mapped[list["FormTemplate"]] = relationship(back_populates="category")

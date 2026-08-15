@@ -45,6 +45,20 @@ class GeoLogRepository(BaseRepository[GeoVerificationLog]):
             GeoVerificationLog.is_valid.is_(False),
         )
 
+    async def count_failed_by_visit_ids(self, visit_ids: list[uuid.UUID]) -> dict[uuid.UUID, int]:
+        """Batched form of count_failed_for_visit - one query for an employee's
+        whole activity feed instead of one query per visit."""
+        if not visit_ids:
+            return {}
+        from sqlalchemy import func
+
+        result = await self.session.execute(
+            select(GeoVerificationLog.visit_id, func.count())
+            .where(GeoVerificationLog.visit_id.in_(visit_ids), GeoVerificationLog.is_valid.is_(False))
+            .group_by(GeoVerificationLog.visit_id)
+        )
+        return {vid: cnt for vid, cnt in result.all()}
+
     async def idempotency_key_exists(self, visit_id: uuid.UUID, key: str) -> bool:
         result = await self.session.execute(
             select(GeoVerificationLog).where(

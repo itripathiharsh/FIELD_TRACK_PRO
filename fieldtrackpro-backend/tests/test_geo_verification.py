@@ -11,6 +11,8 @@ Covers:
 """
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 from httpx import AsyncClient
 
@@ -96,6 +98,67 @@ def test_verify_location_low_accuracy_gps():
     assert "accuracy (150.0m) exceeds maximum threshold" in res.failure_reason
 
 
+def test_verify_location_no_captured_at_skips_freshness_check():
+    """Omitting captured_at entirely does not trigger the freshness check (callers that don't track capture time, e.g. the standalone pre-check endpoint, are unaffected)."""
+    res = GeoVerificationService.verify_location(
+        device_lat=12.9716,
+        device_lon=77.5946,
+        target_lat=12.9716,
+        target_lon=77.5946,
+        geofence_radius_m=100.0,
+    )
+    assert res.is_valid is True
+
+
+def test_verify_location_fresh_fix_within_24h_passes():
+    """A GPS fix captured minutes ago is well within the 24h freshness window."""
+    now = datetime(2026, 8, 15, 12, 0, 0, tzinfo=timezone.utc)
+    captured_at = now - timedelta(minutes=5)
+    res = GeoVerificationService.verify_location(
+        device_lat=12.9716,
+        device_lon=77.5946,
+        target_lat=12.9716,
+        target_lon=77.5946,
+        geofence_radius_m=100.0,
+        captured_at=captured_at,
+        now=now,
+    )
+    assert res.is_valid is True
+
+
+def test_verify_location_fix_just_under_24h_passes():
+    """Boundary: a fix captured just under 24 hours ago still passes (offline-sync case)."""
+    now = datetime(2026, 8, 15, 12, 0, 0, tzinfo=timezone.utc)
+    captured_at = now - timedelta(hours=23, minutes=59)
+    res = GeoVerificationService.verify_location(
+        device_lat=12.9716,
+        device_lon=77.5946,
+        target_lat=12.9716,
+        target_lon=77.5946,
+        geofence_radius_m=100.0,
+        captured_at=captured_at,
+        now=now,
+    )
+    assert res.is_valid is True
+
+
+def test_verify_location_stale_fix_over_24h_rejected():
+    """A GPS fix older than 24 hours is rejected, even though accuracy/geofence are fine."""
+    now = datetime(2026, 8, 15, 12, 0, 0, tzinfo=timezone.utc)
+    captured_at = now - timedelta(hours=25)
+    res = GeoVerificationService.verify_location(
+        device_lat=12.9716,
+        device_lon=77.5946,
+        target_lat=12.9716,
+        target_lon=77.5946,
+        geofence_radius_m=100.0,
+        captured_at=captured_at,
+        now=now,
+    )
+    assert res.is_valid is False
+    assert "too old" in res.failure_reason
+
+
 def test_verify_location_invalid_coords():
     """Coordinates outside valid decimal degree bounds [-90, 90] / [-180, 180] fail."""
     res = GeoVerificationService.verify_location(
@@ -130,7 +193,14 @@ async def test_geo_verify_endpoint_unauthorized(client: AsyncClient):
 @requires_db
 @pytest.mark.asyncio
 async def test_geo_verify_endpoint_valid_request(client: AsyncClient):
-    """Authenticated request returns LocationVerifyResponse object."""
+    """
+    Authenticated request against a nonexistent customer_id. P0-1: an
+    EMPLOYEE's ownership (has this employee got a visit to this outlet?) is
+    now checked before the outlet's existence - matching the precedent
+    already established by account_service.assert_employee_can_view_account
+    - so a customer_id this employee has no visit for is correctly rejected
+    with 403 rather than reaching the not-found check at all.
+    """
     resp = await client.post(
         "/api/v1/geo/verify-location",
         json={
@@ -140,7 +210,7 @@ async def test_geo_verify_endpoint_valid_request(client: AsyncClient):
         },
         headers=employee_headers(),
     )
-    assert resp.status_code in (200, 404)
+    assert resp.status_code in (200, 403, 404)
 
 
 # ---------------------------------------------------------------------------

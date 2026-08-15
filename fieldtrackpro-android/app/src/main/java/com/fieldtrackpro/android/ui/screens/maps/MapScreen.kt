@@ -14,9 +14,11 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -28,7 +30,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import android.util.Log
 import com.fieldtrackpro.android.BuildConfig
 import com.fieldtrackpro.android.data.local.TokenManager
 import com.fieldtrackpro.android.data.model.CustomerDto
@@ -38,29 +39,20 @@ import com.fieldtrackpro.android.data.repository.Resource
 import com.fieldtrackpro.android.services.LocationCaptureService
 import com.fieldtrackpro.android.ui.components.ErrorBanner
 import com.fieldtrackpro.android.ui.components.FieldTrackTopAppBar
-import com.fieldtrackpro.android.ui.theme.ElectricBlue
-import com.fieldtrackpro.android.ui.theme.Slate50
-import com.fieldtrackpro.android.ui.theme.Slate500
-import com.fieldtrackpro.android.ui.theme.Slate900
+import com.fieldtrackpro.android.ui.theme.FieldTrackNavy
+import com.fieldtrackpro.android.ui.theme.SurfaceOffWhite
 import com.fieldtrackpro.android.ui.theme.SurfaceWhite
+import com.fieldtrackpro.android.ui.theme.TextMuted
+import com.fieldtrackpro.android.ui.theme.TextPrimary
 import com.fieldtrackpro.android.utils.NavigationHelper
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
+import org.maplibre.android.style.layers.CircleLayer
+import org.maplibre.android.style.layers.PropertyFactory
+import org.maplibre.android.style.sources.GeoJsonSource
 
-/**
- * Map screen showing customer/visit location using MapLibre.
- *
- * Phase 4 Section 1 (MapLibre decision):
- * - Shows customer location marker
- * - Shows device location when permission available
- * - Handles permission denied, GPS unavailable, loading, error states
- * - Rejects invalid coordinates and Null Island
- *
- * @param customerId The customer ID to display on the map
- * @param onNavigateBack Callback to navigate back
- */
 @Composable
 fun MapScreen(
     customerId: String,
@@ -76,11 +68,10 @@ fun MapScreen(
     var hasPermission by remember { mutableStateOf(locationService.hasLocationPermission()) }
     var isLocationEnabled by remember { mutableStateOf(locationService.isLocationEnabled()) }
 
-    // Fetch customer data from API
     LaunchedEffect(customerId) {
         try {
             val tokenManager = TokenManager(context)
-            val customerRepository = com.fieldtrackpro.android.data.repository.CustomerRepository(
+            val customerRepository = CustomerRepository(
                 customerApi = ApiClient.createCustomerApi(tokenManager)
             )
             when (val result = customerRepository.getCustomerById(customerId)) {
@@ -121,7 +112,7 @@ fun MapScreen(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
                     ) {
-                        CircularProgressIndicator(color = ElectricBlue)
+                        CircularProgressIndicator(color = FieldTrackNavy)
                     }
                 }
 
@@ -151,15 +142,14 @@ fun MapScreen(
                             Column(modifier = Modifier.padding(20.dp)) {
                                 Text(
                                     text = "Customer Not Found",
-                                    fontSize = 18.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Slate900
+                                    style = MaterialTheme.typography.titleLarge,
+                                    color = FieldTrackNavy
                                 )
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text(
                                     text = "The requested customer could not be found.",
-                                    fontSize = 14.sp,
-                                    color = Slate500
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = TextMuted
                                 )
                             }
                         }
@@ -170,8 +160,7 @@ fun MapScreen(
                     val cust = customer!!
                     val lat = cust.latitude
                     val lng = cust.longitude
-                    val coordinatesValid = lat != null && lng != null &&
-                        NavigationHelper.isValidCoordinate(lat, lng)
+                    val coordinatesValid = NavigationHelper.isValidCoordinate(lat, lng)
 
                     if (!coordinatesValid) {
                         Box(
@@ -188,25 +177,25 @@ fun MapScreen(
                                 Column(modifier = Modifier.padding(20.dp)) {
                                     Text(
                                         text = "Invalid Location",
-                                        fontSize = 18.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Slate900
+                                        style = MaterialTheme.typography.titleLarge,
+                                        color = FieldTrackNavy
                                     )
                                     Spacer(modifier = Modifier.height(8.dp))
                                     Text(
                                         text = "This customer does not have valid coordinates. Please update the customer record.",
-                                        fontSize = 14.sp,
-                                        color = Slate500
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = TextMuted
                                     )
                                 }
                             }
                         }
                     } else {
-                        // Map is valid - render MapLibre view
                         MapLibreMapView(
-                            customerLat = lat!!,
-                            customerLng = lng!!,
+                            customerLat = lat,
+                            customerLng = lng,
                             customerName = cust.name,
+                            customerId = cust.id,
+                            geofenceRadiusM = cust.geofenceRadiusM,
                             deviceLocation = deviceLocation,
                             hasPermission = hasPermission,
                             isLocationEnabled = isLocationEnabled,
@@ -214,10 +203,9 @@ fun MapScreen(
                         )
                     }
 
-                    // Navigation button at bottom
                     Button(
                         onClick = {
-                            NavigationHelper.navigateToCustomer(context, lat!!, lng!!, cust.name)
+                            NavigationHelper.navigateToCustomer(context, lat, lng, cust.name)
                         },
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
@@ -225,9 +213,12 @@ fun MapScreen(
                             .fillMaxWidth()
                             .height(50.dp),
                         shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = ElectricBlue)
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = FieldTrackNavy,
+                            contentColor = SurfaceWhite
+                        )
                     ) {
-                        Text("NAVIGATE TO CUSTOMER", fontWeight = FontWeight.Bold)
+                        Text("NAVIGATE TO CUSTOMER", fontWeight = FontWeight.Bold, color = SurfaceWhite)
                     }
                 }
             }
@@ -235,14 +226,13 @@ fun MapScreen(
     }
 }
 
-/**
- * MapLibre map view composable.
- */
 @Composable
 private fun MapLibreMapView(
     customerLat: Double,
     customerLng: Double,
     customerName: String,
+    customerId: String,
+    geofenceRadiusM: Int,
     deviceLocation: com.fieldtrackpro.android.services.LocationResult?,
     hasPermission: Boolean,
     isLocationEnabled: Boolean,
@@ -254,49 +244,115 @@ private fun MapLibreMapView(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Slate50)
+            .background(SurfaceOffWhite)
     ) {
-        // MapLibre MapView
-        androidx.compose.foundation.layout.Box(
+        Box(
             modifier = Modifier.fillMaxSize()
         ) {
             val mapView = remember {
                 MapView(context).also { mv ->
                     mv.getMapAsync { mapLibre ->
-                        mapLibre.setStyle(Style.Builder().fromUri(styleUrl)) { style ->
-                            // Move camera to customer location
-                            mapLibre.cameraPosition = CameraPosition.Builder()
-                                .target(LatLng(customerLat, customerLng))
-                                .zoom(14.0)
-                                .build()
+                        try {
+                            mapLibre.setStyle(Style.Builder().fromUri(styleUrl)) { style ->
+                                mapLibre.cameraPosition = CameraPosition.Builder()
+                                    .target(LatLng(customerLat, customerLng))
+                                    .zoom(14.0)
+                                    .build()
 
-                            // Customer location is centered on the map
-                            // Marker can be added here if needed
+                                val geoJsonData = buildString {
+                                    append("""{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[$customerLng,$customerLat]},"properties":{"name":""")
+                                    append(customerName.replace("\"", "\\\""))
+                                    append(""","id":"$customerId","radius":$geofenceRadiusM}}]}""")
+                                }
+
+                                val source = GeoJsonSource("customer-source", geoJsonData)
+                                style.addSource(source)
+
+                                val circleLayer = CircleLayer("customer-circle", "customer-source")
+                                circleLayer.setProperties(
+                                    PropertyFactory.circleColor("#FCA311"),
+                                    PropertyFactory.circleRadius(12f),
+                                    PropertyFactory.circleStrokeWidth(2f),
+                                    PropertyFactory.circleStrokeColor("#FFFFFF")
+                                )
+                                style.addLayer(circleLayer)
+
+                                val geofenceLayer = CircleLayer("customer-geofence", "customer-source")
+                                geofenceLayer.setProperties(
+                                    PropertyFactory.circleColor("#FCA31122"),
+                                    PropertyFactory.circleRadius(geofenceRadiusM.toFloat()),
+                                    PropertyFactory.circleStrokeWidth(1f),
+                                    PropertyFactory.circleStrokeColor("#FCA311")
+                                )
+                                style.addLayerBelow(geofenceLayer, "customer-circle")
+
+                                mapLibre.addOnMapClickListener { point ->
+                                    val clicked = LatLng(customerLat, customerLng)
+                                    val distance = point.distanceTo(clicked)
+                                    if (distance < 500.0) {
+                                        true
+                                    } else {
+                                        false
+                                    }
+                                }
+                            }
+                        } catch (e: Exception) {
+                            onError("Map error: ${e.localizedMessage}")
                         }
                     }
                 }
             }
 
-            // Lifecycle management
             LaunchedEffect(Unit) {
                 mapView.onStart()
             }
 
-            androidx.compose.runtime.DisposableEffect(mapView) {
+            DisposableEffect(mapView) {
                 onDispose {
                     mapView.onStop()
                     mapView.onDestroy()
                 }
             }
 
-            // AndroidView wrapper for MapView
             androidx.compose.ui.viewinterop.AndroidView(
                 factory = { mapView },
                 modifier = Modifier.fillMaxSize()
             )
         }
 
-        // Device location indicator (if available)
+        // Customer info card overlay
+        Card(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(16.dp),
+            colors = CardDefaults.cardColors(containerColor = SurfaceWhite),
+            shape = RoundedCornerShape(8.dp)
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text(
+                    text = customerName,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary
+                )
+                Text(
+                    text = "ID: ${customerId.take(8)}",
+                    fontSize = 11.sp,
+                    color = TextMuted
+                )
+                Text(
+                    text = "Geofence: ${geofenceRadiusM}m",
+                    fontSize = 11.sp,
+                    color = TextMuted
+                )
+                Text(
+                    text = NavigationHelper.formatCoordinates(customerLat, customerLng),
+                    fontSize = 10.sp,
+                    color = TextMuted
+                )
+            }
+        }
+
         if (hasPermission && isLocationEnabled && deviceLocation != null) {
             Card(
                 modifier = Modifier
@@ -310,22 +366,21 @@ private fun MapLibreMapView(
                         text = "Your Location",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Slate900
+                        color = TextPrimary
                     )
                     Text(
                         text = NavigationHelper.formatCoordinates(deviceLocation.latitude, deviceLocation.longitude),
                         fontSize = 10.sp,
-                        color = Slate500
+                        color = TextMuted
                     )
                 }
             }
         }
 
-        // Permission/location status indicators
         if (!hasPermission) {
             Card(
                 modifier = Modifier
-                    .align(Alignment.TopStart)
+                    .align(Alignment.TopEnd)
                     .padding(16.dp),
                 colors = CardDefaults.cardColors(containerColor = SurfaceWhite),
                 shape = RoundedCornerShape(8.dp)
@@ -333,7 +388,7 @@ private fun MapLibreMapView(
                 Text(
                     text = "Location permission required",
                     fontSize = 12.sp,
-                    color = Slate500,
+                    color = TextMuted,
                     modifier = Modifier.padding(12.dp)
                 )
             }
@@ -342,7 +397,7 @@ private fun MapLibreMapView(
         if (!isLocationEnabled) {
             Card(
                 modifier = Modifier
-                    .align(Alignment.TopStart)
+                    .align(Alignment.TopEnd)
                     .padding(16.dp),
                 colors = CardDefaults.cardColors(containerColor = SurfaceWhite),
                 shape = RoundedCornerShape(8.dp)
@@ -350,7 +405,7 @@ private fun MapLibreMapView(
                 Text(
                     text = "GPS is disabled",
                     fontSize = 12.sp,
-                    color = Slate500,
+                    color = TextMuted,
                     modifier = Modifier.padding(12.dp)
                 )
             }

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Eye, Plus, Calendar, CalendarCheck } from 'lucide-react';
+import { Eye, Plus, Calendar, CalendarCheck, Users } from 'lucide-react';
 import { DataTable, Column } from '../components/ui/DataTable';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { Modal } from '../components/ui/Modal';
@@ -12,7 +12,7 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { ErrorBanner } from '../components/ui/ErrorBanner';
 import { useAuth } from '../context/AuthContext';
 import { apiClient } from '../api/client';
-import { Customer, Employee, Visit, VisitStatus } from '../types';
+import { Customer, Employee, FormTemplateSummary, Visit, VisitStatus } from '../types';
 
 const FILTERS: Array<'ALL' | VisitStatus> = [
   'ALL',
@@ -31,6 +31,7 @@ export const VisitsPage: React.FC = () => {
   const [visits, setVisits] = useState<Visit[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [publishedForms, setPublishedForms] = useState<FormTemplateSummary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedFilter, setSelectedFilter] = useState<'ALL' | VisitStatus>('ALL');
@@ -38,11 +39,23 @@ export const VisitsPage: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
+  const [selectedFormId, setSelectedFormId] = useState('');
   const [scheduledAt, setScheduledAt] = useState(
     new Date(Date.now() + 86400000).toISOString().slice(0, 16),
   );
   const [formError, setFormError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+
+  // Bulk scheduling state
+  const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
+  const [bulkSelectedCustomers, setBulkSelectedCustomers] = useState<string[]>([]);
+  const [bulkEmployeeId, setBulkEmployeeId] = useState('');
+  const [bulkRequiredFormId, setBulkRequiredFormId] = useState('');
+  const [bulkScheduledAt, setBulkScheduledAt] = useState(
+    new Date(Date.now() + 86400000).toISOString().slice(0, 16),
+  );
+  const [bulkFormError, setBulkFormError] = useState<string | null>(null);
+  const [bulkIsSaving, setBulkIsSaving] = useState(false);
 
   const fetchVisits = useCallback((status?: VisitStatus) => {
     setIsLoading(true);
@@ -72,6 +85,9 @@ export const VisitsPage: React.FC = () => {
     // is what visits.employee_id references. The previous getUsers() call hit
     // a non-existent endpoint (405), leaving this dropdown permanently empty.
     apiClient.getEmployees().then(setEmployees).catch(() => setEmployees([]));
+    // Only PUBLISHED templates are offered - a draft isn't ready for an
+    // employee to see, and an archived one is no longer meant for new work.
+    apiClient.getFormTemplates({ status: 'PUBLISHED' }).then(setPublishedForms).catch(() => setPublishedForms([]));
   }, [isAdmin]);
 
   const customerNameById = useMemo(() => {
@@ -93,15 +109,44 @@ export const VisitsPage: React.FC = () => {
         customer_id: selectedCustomerId,
         employee_id: selectedEmployeeId,
         scheduled_at: new Date(scheduledAt).toISOString(),
+        required_form_id: selectedFormId || null,
       });
       setIsModalOpen(false);
       setSelectedCustomerId('');
       setSelectedEmployeeId('');
+      setSelectedFormId('');
       fetchVisits(selectedFilter === 'ALL' ? undefined : selectedFilter);
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'Failed to schedule visit');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleBulkSchedule = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBulkFormError(null);
+    if (bulkSelectedCustomers.length === 0 || !bulkEmployeeId) {
+      setBulkFormError('Please select at least one customer and an employee.');
+      return;
+    }
+    setBulkIsSaving(true);
+    try {
+      await apiClient.bulkCreateVisits({
+        customer_ids: bulkSelectedCustomers,
+        employee_id: bulkEmployeeId,
+        scheduled_at: new Date(bulkScheduledAt).toISOString(),
+        required_form_id: bulkRequiredFormId || null,
+      });
+      setIsBulkModalOpen(false);
+      setBulkSelectedCustomers([]);
+      setBulkEmployeeId('');
+      setBulkRequiredFormId('');
+      fetchVisits(selectedFilter === 'ALL' ? undefined : selectedFilter);
+    } catch (err) {
+      setBulkFormError(err instanceof Error ? err.message : 'Failed to bulk schedule visits');
+    } finally {
+      setBulkIsSaving(false);
     }
   };
 
@@ -169,9 +214,14 @@ export const VisitsPage: React.FC = () => {
           /* FT-044: scheduling is an admin capability; the control is not shown
              to field staff, whose requests the API rejects with 403. */
           isAdmin ? (
-            <Button variant="secondary" size="sm" icon={Plus} onClick={() => setIsModalOpen(true)}>
-              Schedule Visit
-            </Button>
+            <div className="flex gap-space-2">
+              <Button variant="secondary" size="sm" icon={Users} onClick={() => setIsBulkModalOpen(true)}>
+                Bulk Schedule
+              </Button>
+              <Button variant="secondary" size="sm" icon={Plus} onClick={() => setIsModalOpen(true)}>
+                Schedule Visit
+              </Button>
+            </div>
           ) : undefined
         }
       />
@@ -290,12 +340,111 @@ export const VisitsPage: React.FC = () => {
             onChange={(e) => setScheduledAt(e.target.value)}
           />
 
+          <Select
+            id="visit-required-form"
+            label="Required Form"
+            value={selectedFormId}
+            onChange={(e) => setSelectedFormId(e.target.value)}
+            helperText="The form the employee must fill during this visit - leave unset if none is required."
+          >
+            <option value="">No form required</option>
+            {publishedForms.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.name}
+              </option>
+            ))}
+          </Select>
+
           <div className="pt-space-4 flex justify-end gap-space-3 border-t border-surface-container-highest mt-space-6">
             <Button type="button" variant="ghost" size="sm" onClick={() => setIsModalOpen(false)}>
               Cancel
             </Button>
             <Button type="submit" variant="secondary" size="sm" isLoading={isSaving}>
               Dispatch Visit
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        isOpen={isBulkModalOpen}
+        onClose={() => setIsBulkModalOpen(false)}
+        title="Bulk Schedule Visits"
+        subtitle="Schedule visits for multiple customers with the same employee."
+      >
+        <form onSubmit={handleBulkSchedule} className="space-y-space-4">
+          {bulkFormError && <ErrorBanner message={bulkFormError} onDismiss={() => setBulkFormError(null)} />}
+
+          <div>
+            <label className="block font-label-md text-sm text-on-surface-variant mb-space-2">
+              Select Customers
+            </label>
+            <div className="max-h-48 overflow-y-auto border border-outline-variant rounded-lg p-space-2 space-y-space-1">
+              {customers.map((customer) => (
+                <label key={customer.id} className="flex items-center gap-space-2 cursor-pointer p-space-1 rounded hover:bg-surface-container-low">
+                  <input
+                    type="checkbox"
+                    checked={bulkSelectedCustomers.includes(customer.id)}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setBulkSelectedCustomers([...bulkSelectedCustomers, customer.id])
+                      } else {
+                        setBulkSelectedCustomers(bulkSelectedCustomers.filter((id) => id !== customer.id))
+                      }
+                    }}
+                    className="rounded border-outline-variant"
+                  />
+                  <span className="font-body-md text-sm">{customer.name}</span>
+                </label>
+              ))}
+              {customers.length === 0 && (
+                <p className="font-body-md text-sm text-on-surface-variant p-space-2">No customers available.</p>
+              )}
+            </div>
+          </div>
+
+          <Select
+            id="bulk-employee"
+            label="Assign Employee"
+            value={bulkEmployeeId}
+            onChange={(e) => setBulkEmployeeId(e.target.value)}
+          >
+            <option value="">-- Select Employee --</option>
+            {employees.map((emp) => (
+              <option key={emp.id} value={emp.id}>
+                {emp.full_name}
+              </option>
+            ))}
+          </Select>
+
+          <Input
+            label="Scheduled Date & Time"
+            type="datetime-local"
+            value={bulkScheduledAt}
+            onChange={(e) => setBulkScheduledAt(e.target.value)}
+          />
+
+          <Select
+            id="bulk-required-form"
+            label="Required Form"
+            value={bulkRequiredFormId}
+            onChange={(e) => setBulkRequiredFormId(e.target.value)}
+            helperText="Applied to every visit created in this batch - leave unset if none is required."
+          >
+            <option value="">No form required</option>
+            {publishedForms.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.name}
+              </option>
+            ))}
+          </Select>
+
+          <div className="pt-space-4 flex justify-end gap-space-3 border-t border-surface-container-highest mt-space-6">
+            <Button type="button" variant="ghost" size="sm" onClick={() => setIsBulkModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="secondary" size="sm" isLoading={bulkIsSaving}>
+              Bulk Schedule
             </Button>
           </div>
         </form>

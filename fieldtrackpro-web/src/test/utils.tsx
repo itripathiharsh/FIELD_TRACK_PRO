@@ -54,6 +54,7 @@ export const EMPLOYEE: Employee = {
     email: EMPLOYEE_USER.email,
     mobile_number: null,
     role: 'EMPLOYEE',
+    is_active: true,
   },
 };
 
@@ -65,6 +66,7 @@ export const CUSTOMER: Customer = {
   address: '100 Tech Park Blvd',
   location: { latitude: 12.9716, longitude: 77.5946 },
   geofence_radius_m: 75,
+  outlet_code: 'OUT-001',
   territory_id: TERRITORY.id,
   created_by: ADMIN_USER.id,
   created_at: '2026-01-01T00:00:00Z',
@@ -82,6 +84,9 @@ export const VISIT: Visit = {
   created_by: ADMIN_USER.id,
   created_at: '2026-08-08T10:00:00Z',
   updated_at: '2026-08-08T10:00:00Z',
+  required_form_id: null,
+  required_form_name: null,
+  required_form_status: null,
 };
 
 export const MEDIA: VisitMedia = {

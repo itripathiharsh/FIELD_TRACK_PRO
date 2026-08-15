@@ -7,9 +7,11 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime, timedelta, timezone
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions.custom import BaseAPIException
+from app.models.form_template import FormStatus, FormTemplate
 from app.models.geo_verification_log import GeoVerificationLog, GeoVerificationType
 from app.models.user import Role
 from app.models.visit import Visit, VisitStatus
@@ -20,6 +22,27 @@ from app.services.customer_service import get_customer, verify_geo_proximity
 from app.services.employee_service import get_employee_by_user_id
 from app.services.visit_state_machine import assert_valid_transition, is_terminal
 from app.models.user import User
+
+
+async def _validate_required_form(required_form_id: uuid.UUID | None, session: AsyncSession) -> None:
+    """
+    A visit may only require a PUBLISHED template - a DRAFT isn't ready for
+    an employee to see, and an ARCHIVED one is no longer meant for new work
+    (existing visits/submissions against an archived form are unaffected;
+    this only gates assigning one to a visit going forward).
+    """
+    if required_form_id is None:
+        return
+    result = await session.execute(select(FormTemplate).where(FormTemplate.id == required_form_id))
+    template = result.scalar_one_or_none()
+    if template is None:
+        raise BaseAPIException(status_code=404, detail="Form template not found", error_code="FORM_NOT_FOUND")
+    if template.status != FormStatus.PUBLISHED:
+        raise BaseAPIException(
+            status_code=400,
+            detail="Only a published form template can be required for a visit",
+            error_code="FORM_NOT_PUBLISHED",
+        )
 
 # Number of geo-verification failures before auto-flagging
 GEO_FAILURE_THRESHOLD = 3
@@ -73,6 +96,7 @@ async def create_visit(data: VisitCreate, created_by: uuid.UUID, session: AsyncS
 
     await get_customer(data.customer_id, session)
     await get_employee(data.employee_id, session)
+    await _validate_required_form(data.required_form_id, session)
 
     repo = VisitRepository(session)
     visit = Visit(
@@ -81,6 +105,7 @@ async def create_visit(data: VisitCreate, created_by: uuid.UUID, session: AsyncS
         scheduled_at=data.scheduled_at,
         created_by=created_by,
         status=VisitStatus.PENDING,
+        required_form_id=data.required_form_id,
     )
     await repo.add(visit)
     await repo.commit()
@@ -165,6 +190,7 @@ async def check_in(
         device_lng=data.longitude,
         accuracy_m=data.accuracy_m,
         is_mock_location=data.is_mock_location,
+        captured_at=data.captured_at,
     )
 
     # Log the verification attempt (success or failure) - insert-only audit.
@@ -224,6 +250,7 @@ async def check_out(
         device_lng=data.longitude,
         accuracy_m=data.accuracy_m,
         is_mock_location=data.is_mock_location,
+        captured_at=data.captured_at,
     )
 
     geo_repo = GeoLogRepository(session)
@@ -314,6 +341,96 @@ async def admin_force_status(
         )
 
     visit.status = target_status
+    session.add(visit)
+    await session.commit()
+    await session.refresh(visit)
+    return visit
+
+
+async def bulk_create_visits(
+    data: "BulkVisitCreate",
+    created_by: uuid.UUID,
+    session: AsyncSession,
+) -> list[Visit]:
+    """
+    Admin: bulk schedule visits for multiple customers.
+
+    Creates one visit per customer with the same employee and scheduled time.
+    Validates all customers exist and are unique.
+    """
+    from app.schemas.visit import BulkVisitCreate
+
+    if not data.customer_ids:
+        raise BaseAPIException(
+            status_code=400,
+            detail="At least one customer is required",
+            error_code="BULK_NO_CUSTOMERS",
+        )
+
+    # Check for duplicates
+    if len(data.customer_ids) != len(set(data.customer_ids)):
+        raise BaseAPIException(
+            status_code=400,
+            detail="Duplicate customer IDs are not allowed",
+            error_code="BULK_DUPLICATE_CUSTOMERS",
+        )
+
+    # Validate employee exists
+    from app.models.employee import Employee
+    from sqlalchemy import select
+
+    employee = await session.execute(
+        select(Employee).where(Employee.id == data.employee_id)
+    )
+    if employee.scalar_one_or_none() is None:
+        raise BaseAPIException(
+            status_code=404,
+            detail=f"Employee {data.employee_id} not found",
+            error_code="EMPLOYEE_NOT_FOUND",
+        )
+    await _validate_required_form(data.required_form_id, session)
+
+    visits = []
+    for customer_id in data.customer_ids:
+        # Validate customer exists
+        from app.models.customer import Customer
+        customer = await session.execute(
+            select(Customer).where(Customer.id == customer_id)
+        )
+        if customer.scalar_one_or_none() is None:
+            raise BaseAPIException(
+                status_code=404,
+                detail=f"Customer {customer_id} not found",
+                error_code="CUSTOMER_NOT_FOUND",
+            )
+
+        visit = Visit(
+            customer_id=customer_id,
+            employee_id=data.employee_id,
+            scheduled_at=data.scheduled_at,
+            status=VisitStatus.PENDING,
+            created_by=created_by,
+            required_form_id=data.required_form_id,
+        )
+        session.add(visit)
+        await session.flush()
+        visits.append(visit)
+
+    await session.commit()
+    for visit in visits:
+        await session.refresh(visit)
+    return visits
+
+
+async def update_visit_required_form(
+    visit_id: uuid.UUID,
+    required_form_id: uuid.UUID | None,
+    session: AsyncSession,
+) -> Visit:
+    """Admin: assign, change, or clear ("no form required") the form a visit requires."""
+    visit = await get_visit(visit_id, session)
+    await _validate_required_form(required_form_id, session)
+    visit.required_form_id = required_form_id
     session.add(visit)
     await session.commit()
     await session.refresh(visit)

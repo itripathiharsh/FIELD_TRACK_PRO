@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 
@@ -25,6 +26,13 @@ class GeoVerificationService:
     """Central GIS service for coordinate validation, geodesic math, and geofencing."""
 
     MAX_ACCURACY_THRESHOLD_M: float = 100.0  # Reject GPS reads with accuracy worse than 100 meters
+    # A GPS fix older than this is rejected. Deliberately generous rather than
+    # tight: the app supports checking in while offline and syncing later
+    # (see OfflineQueueManager on Android), so a fix captured hours ago and
+    # only just transmitted is a legitimate, expected case, not fraud. This
+    # threshold exists to catch clearly-implausible replay (a fix from days/
+    # weeks ago), not to police realistic dead-zone delays.
+    MAX_LOCATION_AGE = timedelta(hours=24)
 
     @staticmethod
     def calculate_haversine_distance(
@@ -67,14 +75,17 @@ class GeoVerificationService:
         accuracy_m: float | None = None,
         is_mock_location: bool = False,
         measured_distance_m: float | None = None,
+        captured_at: datetime | None = None,
+        now: datetime | None = None,
     ) -> GeoVerificationResult:
         """
         Execute comprehensive server-side verification:
 
         1. Coordinate range validation
         2. Mock provider detection
-        3. GPS accuracy threshold validation
-        4. Geofence radius check
+        3. GPS fix freshness (age) validation
+        4. GPS accuracy threshold validation
+        5. Geofence radius check
 
         ``measured_distance_m`` lets the caller supply an authoritative distance
         computed by PostGIS (``ST_Distance`` on ``geography``). When omitted the
@@ -82,6 +93,12 @@ class GeoVerificationService:
         testable. Callers that touch the database must pass the PostGIS value so
         the decision is made on the same figure that is written to the audit log
         (FT-004).
+
+        ``captured_at`` is when the device's GPS sensor actually took the
+        reading (not when the request reached the server - those can differ
+        by hours if the device was offline and queued the attempt). ``now``
+        defaults to the current time and exists as a parameter purely so this
+        check is deterministically testable.
         """
 
         def distance_to_target() -> float:
@@ -113,7 +130,28 @@ class GeoVerificationService:
                 failure_reason="Mock location provider detected on device",
             )
 
-        # 3. GPS accuracy threshold validation
+        # 3. GPS fix freshness validation. A missing captured_at is treated as
+        # "now" (nothing to compare) rather than rejected here - the request
+        # schema is what makes the field mandatory for the endpoints that
+        # need it (check-in/check-out); this service stays usable by callers
+        # that don't track capture time at all.
+        if captured_at is not None:
+            reference_now = now if now is not None else datetime.now(timezone.utc)
+            age = reference_now - captured_at
+            if age > cls.MAX_LOCATION_AGE:
+                return GeoVerificationResult(
+                    is_valid=False,
+                    distance_m=distance_to_target(),
+                    geofence_radius_m=geofence_radius_m,
+                    is_mock=False,
+                    accuracy_m=accuracy_m,
+                    failure_reason=(
+                        f"GPS fix is too old ({age.total_seconds() / 3600:.1f}h) - "
+                        f"maximum age is {cls.MAX_LOCATION_AGE.total_seconds() / 3600:.0f}h"
+                    ),
+                )
+
+        # 4. GPS accuracy threshold validation
         if accuracy_m is not None and accuracy_m > cls.MAX_ACCURACY_THRESHOLD_M:
             return GeoVerificationResult(
                 is_valid=False,
@@ -127,7 +165,7 @@ class GeoVerificationService:
                 ),
             )
 
-        # 4. Geofence radius check
+        # 5. Geofence radius check
         distance = distance_to_target()
         if distance > geofence_radius_m:
             return GeoVerificationResult(

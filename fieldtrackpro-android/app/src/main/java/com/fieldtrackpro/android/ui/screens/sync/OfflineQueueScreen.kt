@@ -16,6 +16,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -29,19 +30,30 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.fieldtrackpro.android.data.local.ConflictType
 import com.fieldtrackpro.android.data.local.OfflineQueueManager
 import com.fieldtrackpro.android.ui.components.EmptyState
 import com.fieldtrackpro.android.ui.components.FieldTrackTopAppBar
 import com.fieldtrackpro.android.ui.components.StatusBadge
-import com.fieldtrackpro.android.ui.theme.ElectricBlue
-import com.fieldtrackpro.android.ui.theme.Slate50
-import com.fieldtrackpro.android.ui.theme.Slate500
-import com.fieldtrackpro.android.ui.theme.Slate900
+import com.fieldtrackpro.android.ui.theme.FieldTrackAmber
+import com.fieldtrackpro.android.ui.theme.FieldTrackNavy
+import com.fieldtrackpro.android.ui.theme.SurfaceOffWhite
 import com.fieldtrackpro.android.ui.theme.SurfaceWhite
+import com.fieldtrackpro.android.ui.theme.TextMuted
+import com.fieldtrackpro.android.ui.theme.TextPrimary
 import com.fieldtrackpro.android.ui.viewmodel.VisitsViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+/** A short, rep-facing label for a conflict type - the raw enum name is developer-facing only. */
+private fun ConflictType.displayLabel(): String = when (this) {
+    ConflictType.STATUS_CHANGED -> "Visit status changed on server"
+    ConflictType.VISIT_UNAVAILABLE -> "Visit no longer available"
+    ConflictType.GEO_VALIDATION_FAILED -> "Location check failed"
+    ConflictType.SERVER_REJECTED -> "Rejected by server"
+    ConflictType.NETWORK_ERROR -> "Server error during sync"
+}
 
 @Composable
 fun OfflineQueueScreen(
@@ -50,6 +62,7 @@ fun OfflineQueueScreen(
     onNavigateBack: () -> Unit
 ) {
     var queueItems by remember { mutableStateOf(offlineQueueManager.getQueue()) }
+    var conflicts by remember { mutableStateOf(offlineQueueManager.getConflicts()) }
     var syncNotice by remember { mutableStateOf("") }
 
     val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
@@ -65,7 +78,7 @@ fun OfflineQueueScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Slate50)
+                .background(SurfaceOffWhite)
                 .padding(innerPadding)
                 .padding(20.dp)
         ) {
@@ -77,20 +90,19 @@ fun OfflineQueueScreen(
                 Column(modifier = Modifier.padding(20.dp)) {
                     Text(
                         text = "Pending Offline Queue (${queueItems.size})",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Slate900
+                        style = MaterialTheme.typography.titleLarge,
+                        color = FieldTrackNavy
                     )
                     Text(
                         text = "Actions captured while offline are stored locally and synced once network connectivity is restored.",
-                        fontSize = 13.sp,
-                        color = Slate500
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextMuted
                     )
 
                     Spacer(modifier = Modifier.height(16.dp))
 
                     if (syncNotice.isNotBlank()) {
-                        Text(text = syncNotice, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = ElectricBlue)
+                        Text(text = syncNotice, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = FieldTrackNavy)
                         Spacer(modifier = Modifier.height(12.dp))
                     }
 
@@ -103,13 +115,17 @@ fun OfflineQueueScreen(
                                 visitsViewModel.syncOfflineQueue { count ->
                                     syncNotice = "Synced $count pending action(s) to backend!"
                                     queueItems = offlineQueueManager.getQueue()
+                                    conflicts = offlineQueueManager.getConflicts()
                                 }
                             },
                             enabled = queueItems.isNotEmpty(),
                             modifier = Modifier.weight(1f),
-                            colors = ButtonDefaults.buttonColors(containerColor = ElectricBlue)
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = FieldTrackNavy,
+                                contentColor = SurfaceWhite
+                            )
                         ) {
-                            Text("SYNC ALL NOW")
+                            Text("SYNC ALL NOW", color = SurfaceWhite)
                         }
 
                         OutlinedButton(
@@ -121,7 +137,7 @@ fun OfflineQueueScreen(
                             enabled = queueItems.isNotEmpty(),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text("CLEAR QUEUE")
+                            Text("CLEAR QUEUE", color = FieldTrackNavy)
                         }
                     }
                 }
@@ -154,20 +170,74 @@ fun OfflineQueueScreen(
                                         text = "Visit ID: ${action.visitId.take(8)}...",
                                         fontSize = 14.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = Slate900
+                                        color = TextPrimary
                                     )
                                     Text(
                                         text = "Captured: ${dateFormat.format(Date(action.timestamp))}",
                                         fontSize = 12.sp,
-                                        color = Slate500
+                                        color = TextMuted
                                     )
                                     Text(
                                         text = "Coords: ${action.latitude}, ${action.longitude}",
                                         fontSize = 12.sp,
-                                        color = Slate500
+                                        color = TextMuted
                                     )
                                 }
                                 StatusBadge(status = action.actionType)
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (conflicts.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(24.dp))
+                Text(
+                    text = "Needs Your Attention (${conflicts.size})",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = FieldTrackAmber
+                )
+                Text(
+                    text = "These queued actions could not be synced automatically and need a look before they're discarded.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextMuted
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    items(conflicts, key = { it.id }) { conflict ->
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = SurfaceWhite)
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Text(
+                                    text = conflict.conflictType.displayLabel(),
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = FieldTrackAmber
+                                )
+                                Text(
+                                    text = "Visit ID: ${conflict.pendingAction.visitId.take(8)}... (${conflict.pendingAction.actionType})",
+                                    fontSize = 12.sp,
+                                    color = TextMuted
+                                )
+                                Text(
+                                    text = conflict.message,
+                                    fontSize = 12.sp,
+                                    color = TextPrimary
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                OutlinedButton(
+                                    onClick = {
+                                        offlineQueueManager.removeAction(conflict.pendingAction.id)
+                                        offlineQueueManager.removeConflict(conflict.id)
+                                        queueItems = offlineQueueManager.getQueue()
+                                        conflicts = offlineQueueManager.getConflicts()
+                                    }
+                                ) {
+                                    Text("DISCARD THIS ACTION", color = FieldTrackNavy)
+                                }
                             }
                         }
                     }

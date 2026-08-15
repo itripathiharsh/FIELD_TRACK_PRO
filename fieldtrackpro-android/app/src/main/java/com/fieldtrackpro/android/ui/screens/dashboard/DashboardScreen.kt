@@ -1,4 +1,4 @@
-﻿package com.fieldtrackpro.android.ui.screens.dashboard
+package com.fieldtrackpro.android.ui.screens.dashboard
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -17,9 +17,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Sync
@@ -47,15 +46,14 @@ import com.fieldtrackpro.android.ui.components.FieldTrackTopAppBar
 import com.fieldtrackpro.android.ui.components.LoadingScreen
 import com.fieldtrackpro.android.ui.components.OfflineSyncBanner
 import com.fieldtrackpro.android.ui.components.StatusBadge
-import com.fieldtrackpro.android.ui.theme.AmberWarning
-import com.fieldtrackpro.android.ui.theme.CoralRed
-import com.fieldtrackpro.android.ui.theme.ElectricBlue
-import com.fieldtrackpro.android.ui.theme.EmeraldGreen
-import com.fieldtrackpro.android.ui.theme.Slate50
-import com.fieldtrackpro.android.ui.theme.Slate500
-import com.fieldtrackpro.android.ui.theme.Slate700
-import com.fieldtrackpro.android.ui.theme.Slate900
+import com.fieldtrackpro.android.ui.theme.ErrorRed
+import com.fieldtrackpro.android.ui.theme.FieldTrackAmber
+import com.fieldtrackpro.android.ui.theme.FieldTrackNavy
+import com.fieldtrackpro.android.ui.theme.SuccessGreen
+import com.fieldtrackpro.android.ui.theme.SurfaceOffWhite
 import com.fieldtrackpro.android.ui.theme.SurfaceWhite
+import com.fieldtrackpro.android.ui.theme.TextMuted
+import com.fieldtrackpro.android.ui.theme.TextPrimary
 import com.fieldtrackpro.android.ui.viewmodel.VisitsState
 import com.fieldtrackpro.android.ui.viewmodel.VisitsViewModel
 
@@ -66,7 +64,8 @@ fun DashboardScreen(
     onNavigateToVisits: () -> Unit,
     onNavigateToVisitDetails: (String) -> Unit,
     onNavigateToProfile: () -> Unit,
-    onNavigateToSync: () -> Unit
+    onNavigateToSync: () -> Unit,
+    onNavigateToNotifications: () -> Unit
 ) {
     val visitsState by visitsViewModel.visitsState.collectAsState()
     val pendingOfflineCount by visitsViewModel.pendingOfflineCount.collectAsState()
@@ -93,7 +92,7 @@ fun DashboardScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Slate50)
+                .background(SurfaceOffWhite)
                 .padding(innerPadding)
                 .padding(16.dp)
                 .verticalScroll(rememberScrollState())
@@ -101,14 +100,13 @@ fun DashboardScreen(
             // Welcome Header
             Text(
                 text = "Welcome back, ${tokenManager.getUserName()}",
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                color = Slate900
+                style = MaterialTheme.typography.titleLarge,
+                color = FieldTrackNavy
             )
             Text(
                 text = "Role: ${tokenManager.getUserRole()}",
-                fontSize = 13.sp,
-                color = Slate500
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextMuted
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -126,7 +124,7 @@ fun DashboardScreen(
                 is VisitsState.Error -> {
                     Text(
                         text = "Dashboard notice: ${state.message}",
-                        color = CoralRed,
+                        color = ErrorRed,
                         fontSize = 13.sp
                     )
                 }
@@ -145,13 +143,13 @@ fun DashboardScreen(
                         MetricCard(
                             title = "Pending",
                             value = pendingCount.toString(),
-                            color = ElectricBlue,
+                            color = FieldTrackNavy,
                             modifier = Modifier.weight(1f)
                         )
                         MetricCard(
                             title = "In Progress",
                             value = inProgressCount.toString(),
-                            color = EmeraldGreen,
+                            color = SuccessGreen,
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -165,13 +163,13 @@ fun DashboardScreen(
                         MetricCard(
                             title = "Completed",
                             value = completedCount.toString(),
-                            color = EmeraldGreen,
+                            color = SuccessGreen,
                             modifier = Modifier.weight(1f)
                         )
                         MetricCard(
                             title = "Flagged",
                             value = flaggedCount.toString(),
-                            color = AmberWarning,
+                            color = FieldTrackAmber,
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -181,9 +179,8 @@ fun DashboardScreen(
                     // Quick Actions
                     Text(
                         text = "Quick Actions",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Slate900
+                        style = MaterialTheme.typography.titleMedium,
+                        color = FieldTrackNavy
                     )
                     Spacer(modifier = Modifier.height(12.dp))
 
@@ -197,6 +194,20 @@ fun DashboardScreen(
                             onClick = onNavigateToVisits,
                             modifier = Modifier.weight(1f)
                         )
+                        QuickActionButton(
+                            title = "Notifications",
+                            icon = Icons.Default.Notifications,
+                            onClick = onNavigateToNotifications,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
                         QuickActionButton(
                             title = "Offline Queue",
                             icon = Icons.Default.Sync,
@@ -215,15 +226,14 @@ fun DashboardScreen(
                     ) {
                         Text(
                             text = "Assigned Visits (${visits.size})",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Slate900
+                            style = MaterialTheme.typography.titleMedium,
+                            color = FieldTrackNavy
                         )
                         Text(
                             text = "View All",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
-                            color = ElectricBlue,
+                            color = FieldTrackNavy,
                             modifier = Modifier.clickable { onNavigateToVisits() }
                         )
                     }
@@ -251,12 +261,12 @@ fun DashboardScreen(
                                         text = "Customer #${visit.customerId.take(8)}",
                                         fontSize = 15.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = Slate900
+                                        color = TextPrimary
                                     )
                                     Text(
                                         text = visit.scheduledAt,
                                         fontSize = 13.sp,
-                                        color = Slate500
+                                        color = TextMuted
                                     )
                                 }
                                 StatusBadge(status = visit.status)
@@ -277,7 +287,7 @@ fun MetricCard(title: String, value: String, color: Color, modifier: Modifier = 
         colors = CardDefaults.cardColors(containerColor = SurfaceWhite)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text(text = title, fontSize = 12.sp, color = Slate500)
+            Text(text = title, fontSize = 12.sp, color = TextMuted)
             Spacer(modifier = Modifier.height(4.dp))
             Text(text = value, fontSize = 24.sp, fontWeight = FontWeight.Bold, color = color)
         }
@@ -299,14 +309,13 @@ fun QuickActionButton(title: String, icon: ImageVector, onClick: () -> Unit, mod
                 modifier = Modifier
                     .size(36.dp)
                     .clip(RoundedCornerShape(8.dp))
-                    .background(ElectricBlue.copy(alpha = 0.15f)),
+                    .background(FieldTrackNavy.copy(alpha = 0.1f)),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(imageVector = icon, contentDescription = null, tint = ElectricBlue)
+                Icon(imageVector = icon, contentDescription = null, tint = FieldTrackNavy)
             }
             Spacer(modifier = Modifier.width(10.dp))
-            Text(text = title, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Slate900)
+            Text(text = title, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
         }
     }
 }
-

@@ -1,4 +1,4 @@
-﻿import { describe, expect, it, beforeEach } from 'vitest';
+﻿import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
@@ -52,6 +52,38 @@ describe('Routing - unauthenticated', () => {
       expect(screen.getByRole('button', { name: /sign in to command center/i })).toBeInTheDocument(),
     );
     expect(screen.queryByText('Media Vault')).not.toBeInTheDocument();
+  });
+
+  it('shows a loading screen while a saved session is being restored', async () => {
+    localStorage.setItem('fieldtrack_refresh_token', 'test-refresh-token');
+
+    let resolveAuthMe!: (value: Response) => void;
+    const pendingAuthMe = new Promise<Response>((resolve) => {
+      resolveAuthMe = resolve;
+    });
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = String(input);
+      if (url.includes('/api/v1/auth/refresh')) {
+        return Promise.resolve(new Response(JSON.stringify({
+          access_token: 'test-access-token',
+          refresh_token: 'test-refresh-token',
+          token_type: 'bearer',
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+      }
+      if (url.includes('/api/v1/auth/me')) {
+        return pendingAuthMe;
+      }
+      return Promise.resolve(new Response(JSON.stringify({ status: 'UP' }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    });
+
+    renderApp('/');
+
+    expect(screen.getByText(/initializing fieldtrack pro subsystem/i)).toBeInTheDocument();
+
+    resolveAuthMe(new Response(JSON.stringify(ADMIN_USER), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    await waitFor(() => expect(screen.getByText('Dashboard')).toBeInTheDocument());
+    fetchSpy.mockRestore();
   });
 
   it('offers no demo role presets on the login screen (FT-060)', async () => {
@@ -131,11 +163,14 @@ describe('Routing - employee (RBAC guards)', () => {
     expect(screen.queryByText('Territories')).not.toBeInTheDocument();
     expect(screen.queryByText('Geo Logs')).not.toBeInTheDocument();
     expect(screen.queryByText('Media Vault')).not.toBeInTheDocument();
+    // Requirement Forms is the template-management area - employees work
+    // with forms through their assigned visit, not this nav item.
+    expect(screen.queryByText('Requirement Forms')).not.toBeInTheDocument();
     // ...but the routes they DO own remain available.
     expect(screen.getByText('Visits')).toBeInTheDocument();
   });
 
-  it.each(['/customers', '/employees', '/territories', '/geo-logs', '/media', '/settings'])(
+  it.each(['/customers', '/employees', '/territories', '/geo-logs', '/media', '/settings', '/forms'])(
     'redirects away from admin-only route %s',
     async (route) => {
       mockApi({

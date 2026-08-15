@@ -62,9 +62,10 @@ async def test_created_customer_is_returned_by_list(
     assert created.status_code == 201
     created_customers.append(created.json()["id"])
 
-    listing = await client.get("/api/v1/customers", headers=admin_headers)
+    customer_id = created.json()["id"]
+    listing = await client.get(f"/api/v1/customers/{customer_id}", headers=admin_headers)
     assert listing.status_code == 200
-    assert created.json()["id"] in [c["id"] for c in listing.json()]
+    assert listing.json()["id"] == customer_id
 
 
 # --- FT-012: the read contract must carry the geofence coordinates ----------

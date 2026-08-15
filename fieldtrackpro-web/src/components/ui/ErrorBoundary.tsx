@@ -4,6 +4,8 @@ import { Button } from './Button';
 
 interface ErrorBoundaryState {
   hasError: boolean;
+  error: Error | null;
+  errorInfo: React.ErrorInfo | null;
 }
 
 /**
@@ -15,10 +17,15 @@ interface ErrorBoundaryState {
  * already exist elsewhere in the app.
  */
 export class ErrorBoundary extends React.Component<{ children: React.ReactNode }, ErrorBoundaryState> {
-  state: ErrorBoundaryState = { hasError: false };
+  state: ErrorBoundaryState = { hasError: false, error: null, errorInfo: null };
 
-  static getDerivedStateFromError(): ErrorBoundaryState {
-    return { hasError: true };
+  static getDerivedStateFromError(error: Error): Partial<ErrorBoundaryState> {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('ErrorBoundary caught an unexpected exception:', error, errorInfo);
+    this.setState({ errorInfo });
   }
 
   render() {

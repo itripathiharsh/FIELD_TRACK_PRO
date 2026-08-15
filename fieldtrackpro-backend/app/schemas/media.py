@@ -27,7 +27,20 @@ class MediaRead(BaseModel):
     file_size_bytes: int
     checksum_sha256: str | None = None
     original_filename: str | None = None
+    note: str | None = None
     uploaded_by: uuid.UUID | None = None
     uploaded_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class OrderRead(MediaRead):
+    """
+    A MediaRead of media_type=ORDER, enriched with display-only visit/employee
+    context - mirrors payment_service.to_payment_read_for_queue's pattern of
+    leaving these null on the base read and filling them only for the
+    cross-visit outlet history view that actually renders them.
+    """
+
+    visit_scheduled_at: datetime | None = None
+    employee_name: str | None = None

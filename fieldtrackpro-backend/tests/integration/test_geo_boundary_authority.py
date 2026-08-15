@@ -29,6 +29,7 @@ PostGIS. This is the missing detection.
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 
 import pytest
 
@@ -36,6 +37,10 @@ from app.services.geo_verification_service import GeoVerificationService
 from tests.integration.conftest import requires_db
 
 pytestmark = [requires_db, pytest.mark.integration, pytest.mark.asyncio]
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 # Chosen so that PostGIS and Haversine straddle a 100 m radius.
 BOUNDARY_LAT = 12.97250
@@ -142,6 +147,7 @@ async def test_check_in_persists_the_postgis_distance(
             "latitude": BOUNDARY_LAT,
             "longitude": BOUNDARY_LNG,
             "accuracy_m": 5.0,
+            "captured_at": _now_iso(),
         },
         headers=employee_headers,
     )

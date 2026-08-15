@@ -7,12 +7,13 @@ import {
   Building2,
   CalendarCheck,
   MapPin,
-  Image,
   FileText,
   BarChart3,
   Settings,
   LogOut,
-  ShieldCheck
+  ShieldCheck,
+  Wallet,
+  UploadCloud
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
@@ -33,8 +34,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => 
     { name: 'Visits', path: '/visits', icon: CalendarCheck, roles: ['ADMIN', 'MANAGER', 'EMPLOYEE'] },
     { name: 'Map', path: '/map', icon: MapPin, roles: ['ADMIN', 'MANAGER'] },
     { name: 'Geo Logs', path: '/geo-logs', icon: MapPin, roles: ['ADMIN', 'MANAGER'] },
-    { name: 'Media Vault', path: '/media', icon: Image, roles: ['ADMIN', 'MANAGER'] },
-    { name: 'Requirement Forms', path: '/forms', icon: FileText, roles: ['ADMIN', 'MANAGER', 'EMPLOYEE'] },
+    { name: 'Requirement Forms', path: '/forms', icon: FileText, roles: ['ADMIN', 'MANAGER'] },
+    { name: 'Payment Collections', path: '/payments', icon: Wallet, roles: ['ADMIN', 'MANAGER'] },
+    { name: 'Excel / MIS Import', path: '/imports', icon: UploadCloud, roles: ['ADMIN', 'MANAGER'] },
     { name: 'Reports', path: '/reports', icon: BarChart3, roles: ['ADMIN', 'MANAGER'] },
   ];
 

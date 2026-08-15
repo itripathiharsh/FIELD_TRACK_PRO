@@ -29,14 +29,15 @@ class SignatureRepository(BaseRepository[VisitSignature]):
         )
         return result.scalars().all()
 
-    async def find_by_visit_and_type(
+    async def find_current_by_visit_and_type(
         self, visit_id: uuid.UUID, signature_type: str
     ) -> VisitSignature | None:
-        """Return an existing signature of this type for this visit."""
+        """Return the CURRENT (not superseded/replaced) signature of this type for this visit, if any."""
         result = await self.session.execute(
             select(VisitSignature).where(
                 VisitSignature.visit_id == visit_id,
                 VisitSignature.signature_type == signature_type,
+                VisitSignature.superseded_at.is_(None),
             )
         )
         return result.scalar_one_or_none()

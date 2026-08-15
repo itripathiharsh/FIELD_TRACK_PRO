@@ -7,12 +7,18 @@ exercises.
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 from httpx import AsyncClient
 
 from tests.integration.conftest import create_visit, iso_in, requires_db
 
 pytestmark = [requires_db, pytest.mark.integration, pytest.mark.asyncio]
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 # --- Scenario 21: admin creates a visit with a real Employee ID -------------
@@ -134,6 +140,7 @@ async def test_check_in_transitions_pending_to_in_progress(
             "latitude": seeded_world["customer_lat"],
             "longitude": seeded_world["customer_lng"],
             "accuracy_m": 8.0,
+            "captured_at": _now_iso(),
         },
         headers=employee_headers,
     )
@@ -152,6 +159,7 @@ async def test_check_out_transitions_in_progress_to_completed(
         "latitude": seeded_world["customer_lat"],
         "longitude": seeded_world["customer_lng"],
         "accuracy_m": 8.0,
+        "captured_at": _now_iso(),
     }
     assert (await client.post(
         f"/api/v1/visits/{visit_id}/check-in", json=at_site, headers=employee_headers
@@ -182,6 +190,7 @@ async def test_cannot_check_in_to_another_employees_visit(
             "latitude": seeded_world["customer_lat"],
             "longitude": seeded_world["customer_lng"],
             "accuracy_m": 8.0,
+            "captured_at": _now_iso(),
         },
         headers=other_employee_headers,
     )
@@ -200,6 +209,7 @@ async def test_completed_visit_cannot_be_checked_in_again(
         "latitude": seeded_world["customer_lat"],
         "longitude": seeded_world["customer_lng"],
         "accuracy_m": 8.0,
+        "captured_at": _now_iso(),
     }
     assert (await client.post(
         f"/api/v1/visits/{visit_id}/check-in", json=at_site, headers=employee_headers
@@ -235,6 +245,7 @@ async def test_full_visit_workflow_reaches_completed(
         "latitude": seeded_world["customer_lat"],
         "longitude": seeded_world["customer_lng"],
         "accuracy_m": 8.0,
+        "captured_at": _now_iso(),
     }
 
     ci = await client.post(

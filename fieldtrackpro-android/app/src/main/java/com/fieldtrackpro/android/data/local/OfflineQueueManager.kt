@@ -23,6 +23,7 @@ class OfflineQueueManager(context: Context) {
 
     companion object {
         private const val KEY_PENDING_QUEUE = "pending_queue"
+        private const val KEY_CONFLICTS = "sync_conflicts"
     }
 
     fun enqueueAction(action: PendingAction) {
@@ -54,5 +55,38 @@ class OfflineQueueManager(context: Context) {
     private fun saveQueue(queue: List<PendingAction>) {
         val json = gson.toJson(queue)
         prefs.edit().putString(KEY_PENDING_QUEUE, json).apply()
+    }
+
+    // -- conflict management ---------------------------------------------------
+
+    fun addConflict(conflict: SyncConflict) {
+        val conflicts = getConflicts().toMutableList()
+        conflicts.add(conflict)
+        saveConflicts(conflicts)
+    }
+
+    fun getConflicts(): List<SyncConflict> {
+        val json = prefs.getString(KEY_CONFLICTS, "[]") ?: "[]"
+        val type = object : TypeToken<List<SyncConflict>>() {}.type
+        return try {
+            gson.fromJson(json, type) ?: emptyList()
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    fun removeConflict(conflictId: String) {
+        val conflicts = getConflicts().toMutableList()
+        conflicts.removeAll { it.id == conflictId }
+        saveConflicts(conflicts)
+    }
+
+    fun clearConflicts() {
+        prefs.edit().remove(KEY_CONFLICTS).apply()
+    }
+
+    private fun saveConflicts(conflicts: List<SyncConflict>) {
+        val json = gson.toJson(conflicts)
+        prefs.edit().putString(KEY_CONFLICTS, json).apply()
     }
 }

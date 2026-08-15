@@ -13,7 +13,9 @@ from app.core.deps.auth import CurrentUser, require_role
 from app.database import get_async_session
 from app.models.user import Role
 from app.schemas.employee import EmployeeCreate, EmployeeRead, EmployeeReadWithUser, EmployeeUpdate
-from app.services import employee_service
+from app.schemas.employee_activity import EmployeeActivity
+from app.schemas.territory_assignment import TerritoryAssignmentCreate, TerritoryAssignmentHistory, TerritoryAssignmentRead
+from app.services import employee_activity_service, employee_service, territory_assignment_service
 
 router = APIRouter(prefix="/employees", tags=["employees"])
 
@@ -53,8 +55,9 @@ async def list_employees(
     return await employee_service.list_employees(session, territory_id, skip, limit)
 
 
-@router.get("/{employee_id}", response_model=EmployeeReadWithUser, dependencies=[AnyAuth])
+@router.get("/{employee_id}", response_model=EmployeeReadWithUser, dependencies=[AdminOnly])
 async def get_employee(employee_id: uuid.UUID, session: DbSession):
+    """Admin: view any employee profile. Employees use GET /employees/me for their own."""
     return await employee_service.get_employee(employee_id, session)
 
 
@@ -63,3 +66,34 @@ async def update_employee(
     employee_id: uuid.UUID, data: EmployeeUpdate, session: DbSession
 ):
     return await employee_service.update_employee(employee_id, data, session)
+
+
+@router.get("/{employee_id}/activity", response_model=EmployeeActivity, dependencies=[AdminOnly])
+async def get_employee_activity(employee_id: uuid.UUID, session: DbSession):
+    """Admin: consolidated visits/collections/orders view for one employee (P2-C)."""
+    return await employee_activity_service.get_employee_activity(employee_id, session)
+
+
+@router.get(
+    "/{employee_id}/territory-assignments",
+    response_model=TerritoryAssignmentHistory,
+    dependencies=[AdminOnly],
+)
+async def get_territory_assignment_history(employee_id: uuid.UUID, session: DbSession):
+    """Admin: current effective territory + full reassignment history (P2-D)."""
+    return await territory_assignment_service.get_assignment_history(employee_id, session)
+
+
+@router.post(
+    "/{employee_id}/territory-assignments",
+    response_model=TerritoryAssignmentRead,
+    status_code=201,
+    dependencies=[AdminOnly],
+)
+async def create_territory_assignment(
+    employee_id: uuid.UUID, data: TerritoryAssignmentCreate, current_user: CurrentUser, session: DbSession
+):
+    """Admin: create a permanent or temporary territory reassignment (P2-D)."""
+    assignment = await territory_assignment_service.create_assignment(employee_id, data, current_user, session)
+    history = await territory_assignment_service.get_assignment_history(employee_id, session)
+    return next(a for a in history.assignments if a.id == assignment.id)

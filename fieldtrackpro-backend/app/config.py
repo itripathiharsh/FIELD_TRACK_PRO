@@ -1,4 +1,6 @@
 from typing import List
+
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -31,6 +33,13 @@ class Settings(BaseSettings):
     jwt_access_token_expiry_minutes: int = 15
     jwt_refresh_token_expiry_days: int = 7
 
+    # P1-2: dedicated secret for signing media presigned-URL tokens
+    # (app/services/storage/local_provider.py), independent of jwt_secret.
+    # Previously reused jwt_secret directly, so rotating either secret
+    # unintentionally invalidated the other's trust boundary. No insecure
+    # default is used in production - see _require_media_signing_secret below.
+    media_signing_secret: str | None = None
+
     # Storage Provider ("LOCAL" or "MINIO")
     storage_provider: str = "LOCAL"
     media_storage_path: str = "media_storage"
@@ -56,6 +65,31 @@ class Settings(BaseSettings):
 
     # Firebase
     firebase_credentials_path: str = ""
+
+    # Geocoding
+    # Provider: "nominatim" (free, no API key) or "google" (requires API key)
+    geocoding_provider: str = "nominatim"
+    geocoding_base_url: str | None = None
+    geocoding_user_agent: str = "FieldTrackPro/1.0"
+    google_geocoding_api_key: str | None = None
+
+    @model_validator(mode="after")
+    def _require_media_signing_secret_in_production(self) -> "Settings":
+        """
+        P1-2: production must fail to start rather than silently sign media
+        URLs with an insecure default (or, as before, with jwt_secret).
+        Dev/test may fall back to a fixed, non-production placeholder that is
+        never derived from jwt_secret, so the two secrets are independent
+        even when a developer hasn't bothered to set one explicitly.
+        """
+        if self.environment == "production" and not self.media_signing_secret:
+            raise ValueError(
+                "MEDIA_SIGNING_SECRET must be set when ENVIRONMENT=production - "
+                "refusing to start rather than fall back to an insecure default."
+            )
+        if not self.media_signing_secret:
+            self.media_signing_secret = "dev-only-media-signing-secret-do-not-use-in-production"
+        return self
 
 
 settings = Settings()

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Download, FileText, Trash2 } from 'lucide-react';
+import { Download, Eye, FileText, Trash2 } from 'lucide-react';
 import { Button } from './Button';
 import { apiClient } from '../../api/client';
 import { VisitMedia } from '../../types';
@@ -27,10 +27,14 @@ export const MediaThumbnail: React.FC<MediaThumbnailProps> = ({
   canDelete = false,
   onDeleted,
 }) => {
-  const isPhoto = media.media_type === 'PHOTO';
+  // An order capture is always a photograph too (see media_service.upload_visit_media),
+  // just tagged ORDER instead of PHOTO - it should get the same thumbnail preview.
+  const isPhoto = media.media_type === 'PHOTO' || media.media_type === 'ORDER';
+  const isPdf = (media.original_filename || media.storage_key || '').toLowerCase().endsWith('.pdf');
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isOpeningPreview, setIsOpeningPreview] = useState(false);
 
   useEffect(() => {
     if (!isPhoto) return;
@@ -56,6 +60,19 @@ export const MediaThumbnail: React.FC<MediaThumbnailProps> = ({
       if (revoked) URL.revokeObjectURL(revoked);
     };
   }, [media.id, isPhoto]);
+
+  /** PDF preview: opens the signed URL in a new tab rather than forcing a download. */
+  const handleView = async () => {
+    setIsOpeningPreview(true);
+    try {
+      const url = objectUrl ?? (await apiClient.getMediaObjectUrl(media.id));
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'Preview failed');
+    } finally {
+      setIsOpeningPreview(false);
+    }
+  };
 
   const handleDownload = async () => {
     try {
@@ -104,10 +121,20 @@ export const MediaThumbnail: React.FC<MediaThumbnailProps> = ({
         <p className="font-caption text-on-surface-variant">
           {sizeKb} KB · {media.media_type} · {new Date(media.uploaded_at).toLocaleString()}
         </p>
+        {media.note && (
+          <p className="font-body-md text-on-surface mt-0.5 truncate" title={media.note}>
+            {media.note}
+          </p>
+        )}
         {loadError && <p className="text-error font-semibold mt-0.5">{loadError}</p>}
       </div>
 
       <div className="flex items-center gap-space-2 shrink-0">
+        {isPdf && (
+          <Button variant="outline" size="sm" icon={Eye} isLoading={isOpeningPreview} onClick={() => void handleView()}>
+            View
+          </Button>
+        )}
         <Button variant="outline" size="sm" icon={Download} onClick={() => void handleDownload()}>
           Download
         </Button>

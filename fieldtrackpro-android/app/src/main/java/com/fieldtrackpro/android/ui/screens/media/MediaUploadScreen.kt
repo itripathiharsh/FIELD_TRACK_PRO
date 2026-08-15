@@ -3,10 +3,10 @@ package com.fieldtrackpro.android.ui.screens.media
 import android.Manifest
 import android.content.pm.PackageManager
 import android.net.Uri
-import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -23,7 +23,9 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -33,7 +35,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -46,38 +47,42 @@ import com.fieldtrackpro.android.ui.components.EmptyState
 import com.fieldtrackpro.android.ui.components.ErrorBanner
 import com.fieldtrackpro.android.ui.components.FieldTrackTopAppBar
 import com.fieldtrackpro.android.ui.components.StatusBadge
-import com.fieldtrackpro.android.ui.theme.ElectricBlue
-import com.fieldtrackpro.android.ui.theme.Slate50
-import com.fieldtrackpro.android.ui.theme.Slate500
-import com.fieldtrackpro.android.ui.theme.Slate900
+import com.fieldtrackpro.android.ui.theme.FieldTrackAmber
+import com.fieldtrackpro.android.ui.theme.FieldTrackNavy
+import com.fieldtrackpro.android.ui.theme.SurfaceOffWhite
 import com.fieldtrackpro.android.ui.theme.SurfaceWhite
+import com.fieldtrackpro.android.ui.theme.TextMuted
+import com.fieldtrackpro.android.ui.theme.TextPrimary
 import com.fieldtrackpro.android.ui.viewmodel.MediaState
 import com.fieldtrackpro.android.ui.viewmodel.MediaViewModel
+import com.fieldtrackpro.android.utils.ImageDownsampler
 import java.io.File
 
-/**
- * Media Upload Screen with camera capture, preview, and upload.
- *
- * Features:
- * - Camera capture with system camera app
- * - Image preview before upload
- * - Retake/cancel options
- * - Photo gallery picker
- * - Document picker
- * - Upload with loading/success/error states
- * - Existing attachments display
- */
 @Composable
 fun MediaUploadScreen(
     visitId: String,
     viewModel: MediaViewModel,
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    onPreviewMedia: (mediaId: String, fileName: String, isPhoto: Boolean) -> Unit = { _, _, _ -> },
+    // P2-B: order capture reuses this exact screen/upload pipeline - the
+    // caller (VisitDetailsScreen's "Capture Order" entry point) is the only
+    // thing that differs, per "don't create a second camera implementation".
+    isOrderMode: Boolean = false
 ) {
     val context = LocalContext.current
     val state by viewModel.mediaState.collectAsState()
 
     var cameraUri by remember { mutableStateOf<Uri?>(null) }
     var capturedPreviewUri by remember { mutableStateOf<Uri?>(null) }
+    var orderNote by remember { mutableStateOf("") }
+
+    fun dispatchUpload(uri: Uri, mimeType: String) {
+        if (isOrderMode) {
+            uploadOrder(context, viewModel, visitId, uri, mimeType, orderNote.ifBlank { null })
+        } else {
+            uploadFile(context, viewModel, visitId, uri, mimeType)
+        }
+    }
     var hasCameraPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
@@ -112,7 +117,7 @@ fun MediaUploadScreen(
     ) { uri ->
         if (uri != null) {
             val mimeType = context.contentResolver.getType(uri) ?: "image/*"
-            uploadFile(context, viewModel, visitId, uri, mimeType)
+            dispatchUpload(uri, mimeType)
         }
     }
 
@@ -132,7 +137,7 @@ fun MediaUploadScreen(
     Scaffold(
         topBar = {
             FieldTrackTopAppBar(
-                title = "Visit Media & Attachments",
+                title = if (isOrderMode) "Capture Order" else "Visit Media & Attachments",
                 onBackClick = onNavigateBack
             )
         }
@@ -140,11 +145,11 @@ fun MediaUploadScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Slate50)
+                .background(SurfaceOffWhite)
                 .padding(innerPadding)
                 .padding(20.dp)
         ) {
-            // Camera Preview Section (shown after capture)
+            // Camera Preview Section
             if (capturedPreviewUri != null) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -154,14 +159,13 @@ fun MediaUploadScreen(
                     Column(modifier = Modifier.padding(20.dp)) {
                         Text(
                             text = "Photo Preview",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Slate900
+                            style = MaterialTheme.typography.titleLarge,
+                            color = FieldTrackNavy
                         )
                         Text(
                             text = "Review your photo before uploading.",
-                            fontSize = 13.sp,
-                            color = Slate500
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TextMuted
                         )
 
                         Spacer(modifier = Modifier.height(12.dp))
@@ -170,7 +174,7 @@ fun MediaUploadScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(200.dp),
-                            colors = CardDefaults.cardColors(containerColor = Slate50)
+                            colors = CardDefaults.cardColors(containerColor = SurfaceOffWhite)
                         ) {
                             Column(
                                 modifier = Modifier.fillMaxSize(),
@@ -180,13 +184,13 @@ fun MediaUploadScreen(
                                 Text(
                                     text = "Photo captured successfully",
                                     fontSize = 14.sp,
-                                    color = Slate900,
+                                    color = TextPrimary,
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
                                     text = "Tap Upload to attach to visit",
                                     fontSize = 12.sp,
-                                    color = Slate500
+                                    color = TextMuted
                                 )
                             }
                         }
@@ -205,23 +209,26 @@ fun MediaUploadScreen(
                                 modifier = Modifier.weight(1f),
                                 enabled = (state !is MediaState.Loading)
                             ) {
-                                Text("Retake", fontSize = 12.sp)
+                                Text("Retake", fontSize = 12.sp, color = FieldTrackNavy)
                             }
 
                             Button(
                                 onClick = {
                                     val uri = capturedPreviewUri
                                     if (uri != null) {
-                                        uploadFile(context, viewModel, visitId, uri, "image/jpeg")
+                                        dispatchUpload(uri, "image/jpeg")
                                         capturedPreviewUri = null
                                         cameraUri = null
                                     }
                                 },
                                 modifier = Modifier.weight(1f),
-                                colors = ButtonDefaults.buttonColors(containerColor = ElectricBlue),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = FieldTrackNavy,
+                                    contentColor = SurfaceWhite
+                                ),
                                 enabled = (state !is MediaState.Loading)
                             ) {
-                                Text("Upload", fontSize = 12.sp)
+                                Text("Upload", fontSize = 12.sp, color = SurfaceWhite)
                             }
                         }
                     }
@@ -238,21 +245,47 @@ fun MediaUploadScreen(
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
                     Text(
-                        text = "Upload Attachment",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Slate900
+                        text = if (isOrderMode) "Capture Order" else "Upload Attachment",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = FieldTrackNavy
                     )
                     Text(
-                        text = "Upload site photos or documents (JPEG, PNG, PDF supported up to 10MB).",
-                        fontSize = 13.sp,
-                        color = Slate500
+                        text = if (isOrderMode)
+                            "Photograph the order and add a short diary note."
+                        else
+                            "Upload site photos or documents (JPEG, PNG, PDF supported up to 10MB).",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextMuted
                     )
 
                     Spacer(modifier = Modifier.height(16.dp))
 
+                    if (isOrderMode) {
+                        OutlinedTextField(
+                            value = orderNote,
+                            onValueChange = { orderNote = it },
+                            label = { Text("Order note (e.g. 5x Usha fans, 2x Singer mixers)") },
+                            modifier = Modifier.fillMaxWidth(),
+                            minLines = 2
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
+
                     if (state is MediaState.Error) {
                         ErrorBanner(message = (state as MediaState.Error).message)
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
+
+                    // P1-6: a transient failure was queued for automatic
+                    // background retry - tell the rep their photo is not
+                    // lost, distinct from a permanent Error.
+                    if (state is MediaState.QueuedForRetry) {
+                        Text(
+                            text = "Queued for automatic retry - will upload once connection improves.",
+                            fontSize = 13.sp,
+                            color = FieldTrackAmber,
+                            fontWeight = FontWeight.Bold
+                        )
                         Spacer(modifier = Modifier.height(12.dp))
                     }
 
@@ -260,7 +293,7 @@ fun MediaUploadScreen(
                         Text(
                             text = "Upload successful!",
                             fontSize = 13.sp,
-                            color = ElectricBlue,
+                            color = FieldTrackNavy,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(12.dp))
@@ -284,11 +317,12 @@ fun MediaUploadScreen(
                             },
                             modifier = Modifier.weight(1f),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = if (hasCameraFeature) ElectricBlue else Slate500
+                                containerColor = if (hasCameraFeature) FieldTrackNavy else TextMuted,
+                                contentColor = SurfaceWhite
                             ),
                             enabled = ((state !is MediaState.Loading)) && hasCameraFeature
                         ) {
-                            Text("Camera", fontSize = 12.sp)
+                            Text("Camera", fontSize = 12.sp, color = SurfaceWhite)
                         }
 
                         OutlinedButton(
@@ -296,22 +330,27 @@ fun MediaUploadScreen(
                             modifier = Modifier.weight(1f),
                             enabled = (state !is MediaState.Loading)
                         ) {
-                            Text("Photo", fontSize = 12.sp)
+                            Text("Photo", fontSize = 12.sp, color = FieldTrackNavy)
                         }
 
-                        OutlinedButton(
-                            onClick = { documentPickerLauncher.launch("application/pdf") },
-                            modifier = Modifier.weight(1f),
-                            enabled = (state !is MediaState.Loading)
-                        ) {
-                            Text("PDF", fontSize = 12.sp)
+                        // Orders are always a photographed diary note - no
+                        // document upload path in this mode.
+                        if (!isOrderMode) {
+                            OutlinedButton(
+                                onClick = { documentPickerLauncher.launch("application/pdf") },
+                                modifier = Modifier.weight(1f),
+                                enabled = (state !is MediaState.Loading)
+                            ) {
+                                Text("PDF", fontSize = 12.sp, color = FieldTrackNavy)
+                            }
                         }
                     }
 
                     if (state is MediaState.Loading) {
                         Spacer(modifier = Modifier.height(12.dp))
                         CircularProgressIndicator(
-                            modifier = Modifier.align(Alignment.CenterHorizontally)
+                            modifier = Modifier.align(Alignment.CenterHorizontally),
+                            color = FieldTrackNavy
                         )
                     }
 
@@ -320,7 +359,7 @@ fun MediaUploadScreen(
                         Text(
                             text = "Camera not available on this device",
                             fontSize = 11.sp,
-                            color = Slate500
+                            color = TextMuted
                         )
                     }
                 }
@@ -331,23 +370,36 @@ fun MediaUploadScreen(
             // Existing Attachments Section
             Text(
                 text = "Existing Attachments",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-                color = Slate900
+                style = MaterialTheme.typography.titleMedium,
+                color = FieldTrackNavy
             )
 
             Spacer(modifier = Modifier.height(12.dp))
 
             when (val s = state) {
                 is MediaState.ListSuccess -> {
-                    val items = s.items
+                    // Orders and generic attachments are shown in their own
+                    // screen instance (matches web's split between "Attached
+                    // Media" and "Orders" sections on the same visit).
+                    val items = s.items.filter { it.isOrder == isOrderMode }
                     if (items.isEmpty()) {
-                        EmptyState(title = "No Attachments", subtitle = "No files uploaded for this visit yet.")
+                        EmptyState(
+                            title = if (isOrderMode) "No Orders" else "No Attachments",
+                            subtitle = if (isOrderMode) "No orders captured for this visit yet." else "No files uploaded for this visit yet."
+                        )
                     } else {
                         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             items(items) { media ->
                                 Card(
-                                    modifier = Modifier.fillMaxWidth(),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            onPreviewMedia(
+                                                media.id,
+                                                media.displayName,
+                                                media.isPhoto
+                                            )
+                                        },
                                     shape = RoundedCornerShape(12.dp),
                                     colors = CardDefaults.cardColors(containerColor = SurfaceWhite)
                                 ) {
@@ -363,13 +415,20 @@ fun MediaUploadScreen(
                                                 text = media.originalFilename ?: media.storageKey.split("/").lastOrNull() ?: media.id,
                                                 fontSize = 14.sp,
                                                 fontWeight = FontWeight.Bold,
-                                                color = Slate900
+                                                color = TextPrimary
                                             )
                                             Text(
                                                 text = "Size: ${media.fileSizeBytes} bytes | Type: ${media.mediaType}",
                                                 fontSize = 12.sp,
-                                                color = Slate500
+                                                color = TextMuted
                                             )
+                                            if (!media.note.isNullOrBlank()) {
+                                                Text(
+                                                    text = media.note,
+                                                    fontSize = 12.sp,
+                                                    color = TextPrimary
+                                                )
+                                            }
                                         }
                                         StatusBadge(status = media.mediaType)
                                     }
@@ -397,6 +456,24 @@ private fun createTempImageUri(context: android.content.Context): Uri {
     )
 }
 
+/**
+ * P1-10: for an image, downsample/compress before upload rather than reading
+ * the picker/camera Uri's full-resolution bytes as-is - see ImageDownsampler
+ * for the chosen limits and why. A document (e.g. PDF) is passed through
+ * unchanged; it isn't an image and can't be downsampled this way.
+ */
+private fun readBytesForUpload(context: android.content.Context, uri: Uri, mimeType: String): Pair<ByteArray, String>? {
+    if (mimeType.startsWith("image/")) {
+        ImageDownsampler.downsample(context, uri)?.let { return it to "image/jpeg" }
+        // Decoding as an image failed - fall through to the raw-bytes path
+        // below rather than blocking the upload outright.
+    }
+    val inputStream = context.contentResolver.openInputStream(uri)
+    val bytes = inputStream?.readBytes()
+    inputStream?.close()
+    return bytes?.takeIf { it.isNotEmpty() }?.let { it to mimeType }
+}
+
 private fun uploadFile(
     context: android.content.Context,
     viewModel: MediaViewModel,
@@ -405,16 +482,30 @@ private fun uploadFile(
     mimeType: String
 ) {
     try {
-        val inputStream = context.contentResolver.openInputStream(uri)
-        val bytes = inputStream?.readBytes()
-        inputStream?.close()
-
-        if (bytes != null && bytes.isNotEmpty()) {
-            val fileName = uri.lastPathSegment ?: "attachment_${System.currentTimeMillis()}"
-            viewModel.uploadMedia(visitId, fileName, mimeType, bytes)
-        }
+        val (bytes, resolvedMimeType) = readBytesForUpload(context, uri, mimeType)
+            ?: return viewModel.reportError("Could not read the selected file.")
+        val fileName = uri.lastPathSegment ?: "attachment_${System.currentTimeMillis()}"
+        viewModel.uploadMedia(visitId, fileName, resolvedMimeType, bytes)
     } catch (e: Exception) {
-        // Error will be handled by the ViewModel state
+        viewModel.reportError(e.localizedMessage ?: "Could not read the selected file.")
     }
 }
 
+/** P2-B: order capture - identical to uploadFile, routed through captureOrder instead. */
+private fun uploadOrder(
+    context: android.content.Context,
+    viewModel: MediaViewModel,
+    visitId: String,
+    uri: Uri,
+    mimeType: String,
+    note: String?
+) {
+    try {
+        val (bytes, resolvedMimeType) = readBytesForUpload(context, uri, mimeType)
+            ?: return viewModel.reportError("Could not read the selected file.")
+        val fileName = uri.lastPathSegment ?: "order_${System.currentTimeMillis()}"
+        viewModel.captureOrder(visitId, fileName, resolvedMimeType, bytes, note)
+    } catch (e: Exception) {
+        viewModel.reportError(e.localizedMessage ?: "Could not read the selected file.")
+    }
+}

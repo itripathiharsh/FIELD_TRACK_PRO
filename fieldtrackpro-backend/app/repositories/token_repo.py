@@ -18,7 +18,13 @@ class TokenRepository(BaseRepository[RefreshToken]):
         super().__init__(RefreshToken, session)
 
     async def get_active_by_hash(self, token_hash: str) -> RefreshToken | None:
-        now = datetime.utcnow()
+        # P1-5: every other timestamp comparison in this codebase uses an
+        # explicit tz-aware UTC value; this was the one place still using a
+        # naive datetime.utcnow(), which happened to compare correctly
+        # against `expires_at` (DateTime(timezone=True)) only because the
+        # asyncpg driver and the DB server both operate in UTC - a latent bug
+        # waiting for either of those assumptions to change.
+        now = datetime.now(timezone.utc)
         result = await self.session.execute(
             select(RefreshToken)
             .where(RefreshToken.token_hash == token_hash)

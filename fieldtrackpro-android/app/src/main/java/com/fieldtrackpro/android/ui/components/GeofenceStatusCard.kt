@@ -21,28 +21,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.fieldtrackpro.android.ui.theme.EmeraldGreen
-import com.fieldtrackpro.android.ui.theme.CoralRed
-import androidx.compose.ui.graphics.vector.ImageVector
-import com.fieldtrackpro.android.ui.theme.AmberWarning
-import com.fieldtrackpro.android.ui.theme.Slate50
-import com.fieldtrackpro.android.ui.theme.Slate500
-import com.fieldtrackpro.android.ui.theme.Slate900
+import com.fieldtrackpro.android.ui.theme.ErrorRed
+import com.fieldtrackpro.android.ui.theme.FieldTrackAmber
+import com.fieldtrackpro.android.ui.theme.SuccessGreen
 import com.fieldtrackpro.android.ui.theme.SurfaceWhite
+import com.fieldtrackpro.android.ui.theme.TextMuted
+import com.fieldtrackpro.android.ui.theme.TextPrimary
 
-/**
- * Displays the current geofence status for a visit.
- *
- * Shows:
- * - Inside geofence (green)
- * - Outside geofence (red)
- * - Permission missing (amber)
- * - Location disabled (amber)
- * - Unknown/loading state
- */
 @Composable
 fun GeofenceStatusCard(
     isInside: Boolean,
@@ -50,9 +39,10 @@ fun GeofenceStatusCard(
     hasPermission: Boolean,
     isLocationEnabled: Boolean,
     isMonitoring: Boolean,
+    errorMessage: String? = null,
     modifier: Modifier = Modifier,
 ) {
-    val status = getGeofenceStatus(isInside, isOutside, hasPermission, isLocationEnabled, isMonitoring)
+    val status = getGeofenceStatus(isInside, isOutside, hasPermission, isLocationEnabled, isMonitoring, errorMessage)
 
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -75,12 +65,12 @@ fun GeofenceStatusCard(
                     text = status.title,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Slate900
+                    color = TextPrimary
                 )
                 Text(
                     text = status.subtitle,
                     fontSize = 12.sp,
-                    color = Slate500
+                    color = TextMuted
                 )
             }
         }
@@ -100,41 +90,48 @@ private fun getGeofenceStatus(
     hasPermission: Boolean,
     isLocationEnabled: Boolean,
     isMonitoring: Boolean,
+    errorMessage: String? = null,
 ): GeofenceStatus {
     return when {
+        errorMessage != null -> GeofenceStatus(
+            icon = Icons.Default.Error,
+            iconColor = ErrorRed,
+            title = "Geofence monitoring error",
+            subtitle = errorMessage
+        )
         !hasPermission -> GeofenceStatus(
             icon = Icons.Default.Warning,
-            iconColor = AmberWarning,
+            iconColor = FieldTrackAmber,
             title = "Location permission required",
             subtitle = "Allow location access to verify that you're at the customer site."
         )
         !isLocationEnabled -> GeofenceStatus(
             icon = Icons.Default.LocationOff,
-            iconColor = AmberWarning,
+            iconColor = FieldTrackAmber,
             title = "Location services disabled",
             subtitle = "Enable location services to continue."
         )
         isInside -> GeofenceStatus(
             icon = Icons.Default.CheckCircle,
-            iconColor = EmeraldGreen,
+            iconColor = SuccessGreen,
             title = "You're within the visit area",
             subtitle = "Ready to check in."
         )
         isOutside -> GeofenceStatus(
             icon = Icons.Default.Error,
-            iconColor = CoralRed,
+            iconColor = ErrorRed,
             title = "You're outside the visit area",
             subtitle = "Move closer to the customer location to check in."
         )
         isMonitoring -> GeofenceStatus(
             icon = Icons.Default.LocationOn,
-            iconColor = Slate500,
+            iconColor = TextMuted,
             title = "Determining location...",
             subtitle = "Please wait while we verify your location."
         )
         else -> GeofenceStatus(
             icon = Icons.Default.Warning,
-            iconColor = Slate500,
+            iconColor = TextMuted,
             title = "Location status unknown",
             subtitle = "Please try again."
         )

@@ -64,7 +64,7 @@ async def update_employee(employee_id: uuid.UUID, data: EmployeeUpdate, session:
     emp = await get_employee(employee_id, session)
     if data.full_name is not None:
         emp.full_name = data.full_name
-    if data.territory_id is not None:
+    if "territory_id" in data.model_fields_set:
         emp.territory_id = data.territory_id
     if data.employee_code is not None:
         emp.employee_code = data.employee_code

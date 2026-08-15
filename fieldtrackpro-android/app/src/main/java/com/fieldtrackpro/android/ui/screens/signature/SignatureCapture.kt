@@ -4,7 +4,6 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
-import android.util.Base64
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -57,9 +56,11 @@ class SignatureCaptureState {
     val isEmpty: Boolean get() = paths.isEmpty()
 
     /**
-     * Convert the signature to a base64-encoded PNG string.
+     * Render the signature to raw PNG bytes. Callers that need a durable
+     * on-disk copy (offline safety net) or a raw upload body should use this
+     * directly rather than round-tripping through base64 first.
      */
-    fun toBase64Png(width: Int, height: Int): String {
+    fun toPngBytes(width: Int, height: Int): ByteArray {
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         canvas.drawColor(android.graphics.Color.WHITE)
@@ -91,7 +92,7 @@ class SignatureCaptureState {
         val bytes = outputStream.toByteArray()
         bitmap.recycle()
 
-        return Base64.encodeToString(bytes, Base64.NO_WRAP)
+        return bytes
     }
 }
 

@@ -21,9 +21,20 @@ class Customer(Base):
     address: Mapped[str] = mapped_column(Text)
     location: Mapped[Any] = mapped_column(Geography(geometry_type="POINT", srid=4326))
     geofence_radius_m: Mapped[int] = mapped_column(Integer, default=75)
+    # Stable, human-readable identity for cross-referencing this outlet against
+    # external systems (Tally ledger code, Excel/MIS imports). Similarly named
+    # retailers (e.g. "Balaji Enterprises" vs "Balaji Electrical") must never be
+    # disambiguated by name alone when mapping financial records - this is the
+    # anchor for that mapping. The internal `id` remains the canonical FK used
+    # by every in-app relationship; this is only for external identity.
+    outlet_code: Mapped[Optional[str]] = mapped_column(String(50), unique=True, nullable=True)
     created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
     territory_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("territories.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
     territory: Mapped[Optional["Territory"]] = relationship(back_populates="customers")
     visits: Mapped[list["Visit"]] = relationship(back_populates="customer")
+    invoices: Mapped[list["Invoice"]] = relationship(back_populates="customer")

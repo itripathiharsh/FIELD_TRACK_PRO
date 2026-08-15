@@ -10,13 +10,17 @@ from typing import Any
 from geoalchemy2.elements import WKBElement, WKTElement
 from geoalchemy2.shape import to_shape
 from shapely.wkb import loads as wkb_loads
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions.custom import BaseAPIException
 from app.models.customer import Customer
+from app.models.user import Role, User
+from app.models.visit import Visit
 from app.repositories.customer_repo import CustomerRepository
 from app.schemas.customer import CustomerCreate, CustomerUpdate
+from app.services.employee_service import get_employee_by_user_id
+from app.services.geocoding_service import GeocodingError, geocode_address
 
 # Matches "POINT(lng lat)" and "SRID=4326;POINT(lng lat)".
 _WKT_POINT_RE = re.compile(
@@ -27,14 +31,38 @@ _WKT_POINT_RE = re.compile(
 
 async def create_customer(data: CustomerCreate, created_by: uuid.UUID, session: AsyncSession) -> Customer:
     repo = CustomerRepository(session)
+
+    # Determine location: use provided coordinates or geocode from address
+    location_wkt = None
+    if data.location is not None:
+        location_wkt = data.location.to_wkt()
+    elif data.auto_geocode and data.address:
+        try:
+            lat, lng = await geocode_address(data.address)
+            location_wkt = f"POINT({lng} {lat})"
+        except GeocodingError as e:
+            raise BaseAPIException(
+                status_code=422,
+                detail=e.message,
+                error_code=e.reason,
+            )
+
+    if location_wkt is None:
+        raise BaseAPIException(
+            status_code=422,
+            detail="No location provided and auto_geocode is disabled",
+            error_code="LOCATION_REQUIRED",
+        )
+
     customer = Customer(
         name=data.name,
         contact_number=data.contact_number,
         contact_person=data.contact_person,
         address=data.address,
-        location=data.location.to_wkt(),
+        location=location_wkt,
         geofence_radius_m=data.geofence_radius_m,
         territory_id=data.territory_id,
+        outlet_code=data.outlet_code,
         created_by=created_by,
     )
     await repo.add(customer)
@@ -52,12 +80,54 @@ async def get_customer(customer_id: uuid.UUID, session: AsyncSession) -> Custome
 
 async def list_customers(
     session: AsyncSession,
+    current_user: User,
     territory_id: uuid.UUID | None = None,
     skip: int = 0,
     limit: int = 50,
 ) -> list[Customer]:
+    """
+    P0-1: ADMIN sees the full outlet directory (optionally filtered by
+    territory_id, as before). An EMPLOYEE is confined server-side to outlets
+    they have at least one visit assigned to - the client-supplied
+    territory_id is honoured only as an additional filter on top of that,
+    never as a way to widen visibility beyond it.
+    """
     repo = CustomerRepository(session)
-    return await repo.list_by_territory(territory_id, skip, limit)
+    if current_user.role == Role.ADMIN:
+        return await repo.list_by_territory(territory_id, skip, limit)
+
+    from app.services.employee_service import get_employee_by_user_id
+
+    employee = await get_employee_by_user_id(current_user.id, session)
+    return await repo.list_visited_by_employee(employee.id, territory_id, skip, limit)
+
+
+async def assert_employee_can_view_customer(
+    customer_id: uuid.UUID, current_user: User, session: AsyncSession
+) -> None:
+    """
+    P0-1 / P2-1: an EMPLOYEE may view a customer/outlet only if they have at
+    least one visit assigned to it. ADMIN is unrestricted. This is the
+    single authoritative implementation of the "visited outlet" rule -
+    account_service.assert_employee_can_view_account (financial
+    account/invoice/order data) delegates to this instead of reimplementing
+    the same check.
+    """
+    if current_user.role == Role.ADMIN:
+        return
+
+    employee = await get_employee_by_user_id(current_user.id, session)
+    count = await session.scalar(
+        select(func.count())
+        .select_from(Visit)
+        .where(Visit.customer_id == customer_id, Visit.employee_id == employee.id)
+    )
+    if not count:
+        raise BaseAPIException(
+            status_code=403,
+            detail="You have no visit assigned to this outlet",
+            error_code="OUTLET_NOT_ASSIGNED",
+        )
 
 
 async def update_customer(customer_id: uuid.UUID, data: CustomerUpdate, session: AsyncSession) -> Customer:
@@ -72,10 +142,23 @@ async def update_customer(customer_id: uuid.UUID, data: CustomerUpdate, session:
         customer.address = data.address
     if data.location is not None:
         customer.location = data.location.to_wkt()
+    elif data.auto_geocode and data.address:
+        # Geocode from updated address only if location not explicitly provided
+        try:
+            lat, lng = await geocode_address(data.address)
+            customer.location = f"POINT({lng} {lat})"
+        except GeocodingError as e:
+            raise BaseAPIException(
+                status_code=422,
+                detail=e.message,
+                error_code=e.reason,
+            )
     if data.geofence_radius_m is not None:
         customer.geofence_radius_m = data.geofence_radius_m
     if data.territory_id is not None:
         customer.territory_id = data.territory_id
+    if data.outlet_code is not None:
+        customer.outlet_code = data.outlet_code
     session.add(customer)
     await session.commit()
     await session.refresh(customer)
@@ -208,6 +291,7 @@ async def verify_device_against_customer(
     device_lng: float,
     accuracy_m: float | None = None,
     is_mock_location: bool = False,
+    captured_at=None,
 ):
     """
     Single entry point for "is this device at this customer's site?".
@@ -243,4 +327,5 @@ async def verify_device_against_customer(
         accuracy_m=accuracy_m,
         is_mock_location=is_mock_location,
         measured_distance_m=measured,
+        captured_at=captured_at,
     )

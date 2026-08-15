@@ -1,7 +1,6 @@
 package com.fieldtrackpro.android.ui.navigation
 
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -10,10 +9,13 @@ import androidx.navigation.navArgument
 import com.fieldtrackpro.android.data.local.OfflineQueueManager
 import com.fieldtrackpro.android.data.local.TokenManager
 import com.fieldtrackpro.android.ui.screens.auth.LoginScreen
+import com.fieldtrackpro.android.ui.screens.collections.CollectPaymentScreen
+import com.fieldtrackpro.android.ui.screens.collections.OutletAccountScreen
 import com.fieldtrackpro.android.ui.screens.dashboard.DashboardScreen
 import com.fieldtrackpro.android.ui.screens.media.AttachmentPreviewScreen
 import com.fieldtrackpro.android.ui.screens.media.MediaUploadScreen
 import com.fieldtrackpro.android.ui.screens.profile.ProfileSettingsScreen
+import com.fieldtrackpro.android.ui.screens.signature.SignatureScreen
 import com.fieldtrackpro.android.ui.screens.visits.SubmissionSuccessScreen
 import com.fieldtrackpro.android.ui.screens.visits.VisitSummaryScreen
 import com.fieldtrackpro.android.ui.screens.splash.SplashScreen
@@ -22,13 +24,19 @@ import com.fieldtrackpro.android.ui.screens.visits.CheckInScreen
 import com.fieldtrackpro.android.ui.screens.visits.CheckOutScreen
 import com.fieldtrackpro.android.ui.screens.visits.TodayVisitsScreen
 import com.fieldtrackpro.android.ui.screens.maps.MapScreen
+import com.fieldtrackpro.android.ui.screens.notifications.NotificationsListScreen
 import com.fieldtrackpro.android.ui.screens.requirements.RequirementFormScreen
+import com.fieldtrackpro.android.ui.screens.requirements.FormFillScreen
 import com.fieldtrackpro.android.ui.screens.visits.VisitDetailsScreen
 import com.fieldtrackpro.android.ui.viewmodel.AuthViewModel
 import com.fieldtrackpro.android.ui.viewmodel.CheckInViewModel
+import com.fieldtrackpro.android.ui.viewmodel.CollectionViewModel
+import com.fieldtrackpro.android.ui.viewmodel.FormFillViewModel
 import com.fieldtrackpro.android.ui.viewmodel.MediaViewModel
 import com.fieldtrackpro.android.ui.viewmodel.RequirementViewModel
+import com.fieldtrackpro.android.ui.viewmodel.SignatureViewModel
 import com.fieldtrackpro.android.ui.viewmodel.VisitDetailsViewModel
+import com.fieldtrackpro.android.ui.viewmodel.VisitSummaryViewModel
 import com.fieldtrackpro.android.ui.viewmodel.VisitsViewModel
 
 @Composable
@@ -41,9 +49,23 @@ fun NavGraph(
     visitDetailsViewModel: VisitDetailsViewModel,
     checkInViewModel: CheckInViewModel,
     mediaViewModel: MediaViewModel,
-    requirementViewModel: RequirementViewModel = RequirementViewModel(TokenManager(LocalContext.current)),
-    geofenceViewModel: com.fieldtrackpro.android.ui.viewmodel.GeofenceViewModel = com.fieldtrackpro.android.ui.viewmodel.GeofenceViewModel(android.app.Application())
+    requirementViewModel: RequirementViewModel,
+    formFillViewModel: FormFillViewModel,
+    geofenceViewModel: com.fieldtrackpro.android.ui.viewmodel.GeofenceViewModel,
+    notificationViewModel: com.fieldtrackpro.android.ui.viewmodel.NotificationViewModel,
+    signatureViewModel: SignatureViewModel,
+    visitSummaryViewModel: VisitSummaryViewModel,
+    collectionViewModel: CollectionViewModel
 ) {
+    // P1-7: every ViewModel above is now a required parameter, owned by
+    // MainActivity's ViewModelStore-backed properties. None of them may be
+    // constructed here with a default-expression value again - Kotlin
+    // re-evaluates a default *expression* (unlike a required argument) on
+    // every recomposition of this call site, which is exactly the bug this
+    // fixes (formFillViewModel/signatureViewModel/visitSummaryViewModel/
+    // collectionViewModel previously had no home in MainActivity at all and
+    // were silently rebuilt - discarding in-progress form/signature state -
+    // on effectively any recomposition, not just a rotation).
     NavHost(
         navController = navController,
         startDestination = Screen.Splash.route
@@ -82,7 +104,8 @@ fun NavGraph(
                 onNavigateToVisits = { navController.navigate(Screen.TodayVisits.route) },
                 onNavigateToVisitDetails = { vId -> navController.navigate(Screen.VisitDetails.createRoute(vId)) },
                 onNavigateToProfile = { navController.navigate(Screen.ProfileSettings.route) },
-                onNavigateToSync = { navController.navigate(Screen.OfflineQueue.route) }
+                onNavigateToSync = { navController.navigate(Screen.OfflineQueue.route) },
+                onNavigateToNotifications = { navController.navigate(Screen.Notifications.route) }
             )
         }
 
@@ -106,8 +129,71 @@ fun NavGraph(
                 onNavigateToCheckIn = { vId, cId -> navController.navigate(Screen.CheckIn.createRoute(vId, cId)) },
                 onNavigateToCheckOut = { vId, cId -> navController.navigate(Screen.CheckOut.createRoute(vId, cId)) },
                 onNavigateToMedia = { vId -> navController.navigate(Screen.MediaUpload.createRoute(vId)) },
+                onNavigateToOrderCapture = { vId -> navController.navigate(Screen.OrderCapture.createRoute(vId)) },
+                onNavigateToSignature = { vId -> navController.navigate(Screen.Signature.createRoute(vId)) },
+                onNavigateToPreview = { mediaId, fileName, isPhoto ->
+                    navController.navigate(Screen.AttachmentPreview.createRoute(mediaId, fileName, isPhoto))
+                },
+                onNavigateToFormFill = { vId, formId -> navController.navigate(Screen.FormFill.createRoute(vId, formId)) },
                 geofenceViewModel = geofenceViewModel,
-                onNavigateToMap = { cId -> navController.navigate(Screen.Map.createRoute(cId)) }
+                onNavigateToMap = { cId -> navController.navigate(Screen.Map.createRoute(cId)) },
+                onNavigateToAccount = { vId, cId -> navController.navigate(Screen.OutletAccount.createRoute(vId, cId)) }
+            )
+        }
+
+        composable(
+            route = Screen.OutletAccount.route,
+            arguments = listOf(
+                navArgument("visitId") { type = NavType.StringType },
+                navArgument("customerId") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val visitId = backStackEntry.arguments?.getString("visitId") ?: ""
+            val customerId = backStackEntry.arguments?.getString("customerId") ?: ""
+            OutletAccountScreen(
+                visitId = visitId,
+                customerId = customerId,
+                viewModel = collectionViewModel,
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToCollectPayment = { vId, cId -> navController.navigate(Screen.CollectPayment.createRoute(vId, cId)) }
+            )
+        }
+
+        composable(
+            route = Screen.CollectPayment.route,
+            arguments = listOf(
+                navArgument("visitId") { type = NavType.StringType },
+                navArgument("customerId") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val visitId = backStackEntry.arguments?.getString("visitId") ?: ""
+            val customerId = backStackEntry.arguments?.getString("customerId") ?: ""
+            CollectPaymentScreen(
+                visitId = visitId,
+                customerId = customerId,
+                viewModel = collectionViewModel,
+                onNavigateBack = { navController.popBackStack() },
+                onSuccess = {
+                    collectionViewModel.resetCollectionState()
+                    navController.popBackStack()
+                }
+            )
+        }
+
+        composable(
+            route = Screen.FormFill.route,
+            arguments = listOf(
+                navArgument("visitId") { type = NavType.StringType },
+                navArgument("formId") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val visitId = backStackEntry.arguments?.getString("visitId") ?: ""
+            val formId = backStackEntry.arguments?.getString("formId") ?: ""
+            FormFillScreen(
+                visitId = visitId,
+                formId = formId,
+                viewModel = formFillViewModel,
+                onNavigateBack = { navController.popBackStack() }
             )
         }
 
@@ -155,7 +241,31 @@ fun NavGraph(
             MediaUploadScreen(
                 visitId = visitId,
                 viewModel = mediaViewModel,
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.popBackStack() },
+                onPreviewMedia = { mediaId, fileName, isPhoto ->
+                    navController.navigate(
+                        Screen.AttachmentPreview.createRoute(mediaId, fileName, isPhoto)
+                    )
+                }
+            )
+        }
+
+        // P2-B: order capture - same screen/pipeline as MediaUpload, in order mode.
+        composable(
+            route = Screen.OrderCapture.route,
+            arguments = listOf(navArgument("visitId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val visitId = backStackEntry.arguments?.getString("visitId") ?: ""
+            MediaUploadScreen(
+                visitId = visitId,
+                viewModel = mediaViewModel,
+                onNavigateBack = { navController.popBackStack() },
+                onPreviewMedia = { mediaId, fileName, isPhoto ->
+                    navController.navigate(
+                        Screen.AttachmentPreview.createRoute(mediaId, fileName, isPhoto)
+                    )
+                },
+                isOrderMode = true
             )
         }
 
@@ -165,6 +275,9 @@ fun NavGraph(
                 authViewModel = authViewModel,
                 onNavigateBack = { navController.popBackStack() },
                 onLogout = {
+                    // P1-8: a geofence registered for the session that's
+                    // ending must not keep running in the background.
+                    geofenceViewModel.stopMonitoring()
                     navController.navigate(Screen.Login.route) {
                         popUpTo(0) { inclusive = true }
                     }
@@ -176,6 +289,13 @@ fun NavGraph(
             OfflineQueueScreen(
                 offlineQueueManager = offlineQueueManager,
                 visitsViewModel = visitsViewModel,
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.Notifications.route) {
+            NotificationsListScreen(
+                viewModel = notificationViewModel,
                 onNavigateBack = { navController.popBackStack() }
             )
         }
@@ -217,6 +337,7 @@ fun NavGraph(
             val visitId = backStackEntry.arguments?.getString("visitId") ?: ""
             VisitSummaryScreen(
                 visitId = visitId,
+                viewModel = visitSummaryViewModel,
                 onNavigateBack = { navController.popBackStack() },
                 onSubmit = { navController.navigate(Screen.SubmissionSuccess.createRoute(visitId)) },
                 onCancel = { navController.popBackStack() }
@@ -248,6 +369,21 @@ fun NavGraph(
                 viewModel = requirementViewModel,
                 onNavigateBack = { navController.popBackStack() },
                 onSubmitSuccess = {
+                    navController.navigate(Screen.SubmissionSuccess.createRoute(visitId))
+                }
+            )
+        }
+
+        composable(
+            route = Screen.Signature.route,
+            arguments = listOf(navArgument("visitId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val visitId = backStackEntry.arguments?.getString("visitId") ?: ""
+            SignatureScreen(
+                visitId = visitId,
+                viewModel = signatureViewModel,
+                onNavigateBack = { navController.popBackStack() },
+                onComplete = {
                     navController.navigate(Screen.SubmissionSuccess.createRoute(visitId))
                 }
             )

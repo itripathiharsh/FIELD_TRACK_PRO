@@ -22,7 +22,19 @@ data class LocationResult(
     val accuracy: Float,
     val isMockLocation: Boolean,
     val timestamp: Long
-)
+) {
+    /**
+     * P1-9: age of this fix, so a caller can judge freshness. No hard
+     * staleness cutoff is enforced anywhere in this codebase yet - see
+     * LocationCaptureService.MAX_ACCURACY_THRESHOLD_M's doc comment for why
+     * a freshness threshold specifically was deliberately NOT invented here.
+     */
+    fun ageMillis(nowMillis: Long = System.currentTimeMillis()): Long = nowMillis - timestamp
+
+    /** True when [accuracy] exceeds LocationCaptureService.MAX_ACCURACY_THRESHOLD_M. */
+    val isAccuracyAcceptable: Boolean
+        get() = accuracy <= LocationCaptureService.MAX_ACCURACY_THRESHOLD_M
+}
 
 /**
  * Service for capturing device location using Android's standard LocationManager.
@@ -34,6 +46,24 @@ data class LocationResult(
  * making it compatible with MapLibre and devices without Google Play.
  */
 class LocationCaptureService(private val context: Context) {
+
+    companion object {
+        /**
+         * P1-9: mirrors GeoVerificationService.MAX_ACCURACY_THRESHOLD_M on
+         * the backend exactly (app/services/geo_verification_service.py),
+         * so the client warns about a fix the server will reject anyway,
+         * instead of only finding out after a round trip. Reused, not
+         * invented - the server remains authoritative regardless.
+         *
+         * A *freshness* (staleness) threshold is deliberately NOT defined
+         * here: no product-approved value exists anywhere in this codebase
+         * for "how old is too old for a cached location fix", and inventing
+         * one would be a business-rule decision, not an engineering fix.
+         * LocationResult.ageMillis() exposes the fix's age so this can be
+         * added once that threshold is actually decided.
+         */
+        const val MAX_ACCURACY_THRESHOLD_M = 100.0f
+    }
 
     private val locationManager: LocationManager =
         context.getSystemService(Context.LOCATION_SERVICE) as LocationManager

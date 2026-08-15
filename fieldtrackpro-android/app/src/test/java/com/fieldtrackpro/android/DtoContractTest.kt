@@ -155,6 +155,43 @@ class DtoContractTest {
     }
 
     @Test
+    fun visitDto_requiredFormFields_deserializeFromVisitRead() {
+        val json = """
+            {
+                "id": "v123",
+                "customer_id": "c456",
+                "employee_id": "e789",
+                "scheduled_at": "2026-01-01T09:00:00",
+                "status": "PENDING",
+                "required_form_id": "f001",
+                "required_form_name": "Sales Visit Form",
+                "required_form_status": "PUBLISHED"
+            }
+        """.trimIndent()
+        val visit = gson.fromJson(json, VisitDto::class.java)
+        assertEquals("f001", visit.requiredFormId)
+        assertEquals("Sales Visit Form", visit.requiredFormName)
+        assertEquals("PUBLISHED", visit.requiredFormStatus)
+    }
+
+    @Test
+    fun visitDto_requiredFormFields_defaultNullWhenAbsent() {
+        val json = """
+            {
+                "id": "v123",
+                "customer_id": "c456",
+                "employee_id": "e789",
+                "scheduled_at": "2026-01-01T09:00:00",
+                "status": "PENDING"
+            }
+        """.trimIndent()
+        val visit = gson.fromJson(json, VisitDto::class.java)
+        assertNull("requiredFormId should be null when the visit has no required form", visit.requiredFormId)
+        assertNull(visit.requiredFormName)
+        assertNull(visit.requiredFormStatus)
+    }
+
+    @Test
     fun visitDto_clientOnlyFields_notSerialized() {
         val visit = VisitDto(
             id = "v123",
@@ -176,13 +213,15 @@ class DtoContractTest {
             latitude = 12.9716,
             longitude = 77.5946,
             accuracyM = 10.0,
-            isMockLocation = false
+            isMockLocation = false,
+            capturedAt = "2026-08-15T09:30:00Z"
         )
         val json = gson.toJson(request)
         assertTrue("Should contain latitude", json.contains("\"latitude\""))
         assertTrue("Should contain longitude", json.contains("\"longitude\""))
         assertTrue("Should contain accuracy_m", json.contains("\"accuracy_m\""))
         assertTrue("Should contain is_mock_location", json.contains("\"is_mock_location\""))
+        assertTrue("Should contain captured_at", json.contains("\"captured_at\""))
     }
 
     @Test
@@ -191,7 +230,8 @@ class DtoContractTest {
             latitude = 12.9716,
             longitude = 77.5946,
             accuracyM = 10.0,
-            isMockLocation = false
+            isMockLocation = false,
+            capturedAt = "2026-08-15T09:30:00Z"
         )
         val json = gson.toJson(request)
         assertTrue("Should NOT contain notes field", !json.contains("notes"))

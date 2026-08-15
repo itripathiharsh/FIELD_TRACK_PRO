@@ -267,3 +267,45 @@ describe('ApiClient - base URL normalisation (FT-055)', () => {
   });
 });
 
+describe('ApiClient - media download (P0 fix)', () => {
+  it('fetches the pre-signed download_url for the file bytes instead of blob-ifying the JSON pointer', async () => {
+    const client = new ApiClient();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({ download_url: 'http://localhost:8000/api/v1/media/local-file?key=x&expires=1&sig=y', expires_in_minutes: 15 }),
+    );
+    const fileBlob = new Blob(['fake-jpeg-bytes'], { type: 'image/jpeg' });
+    fetchSpy.mockResolvedValueOnce(
+      new Response(fileBlob, { status: 200, headers: { 'Content-Type': 'image/jpeg' } }),
+    );
+
+    // jsdom does not implement URL.createObjectURL, so it must be assigned
+    // directly rather than spied on (vi.spyOn requires the property to
+    // already exist) - same pattern used in MediaThumbnail.test.tsx.
+    const createObjectURLMock = vi.fn().mockReturnValue('blob:test-url');
+    URL.createObjectURL = createObjectURLMock;
+
+    const result = await client.getMediaObjectUrl('media-1');
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    const [secondUrl] = fetchSpy.mock.calls[1]!;
+    expect(secondUrl).toBe('http://localhost:8000/api/v1/media/local-file?key=x&expires=1&sig=y');
+    // The object URL must be built from the actual file bytes (second
+    // response), not the first response's JSON pointer.
+    const blobPassedToCreateObjectURL = createObjectURLMock.mock.calls[0]![0] as Blob;
+    expect(blobPassedToCreateObjectURL.type).toBe('image/jpeg');
+    expect(result).toBe('blob:test-url');
+  });
+
+  it('surfaces an error if the second fetch (the actual file) fails', async () => {
+    const client = new ApiClient();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ download_url: 'http://x/local-file?expired', expires_in_minutes: 15 }));
+    fetchSpy.mockResolvedValueOnce(new Response(null, { status: 403 }));
+
+    await expect(client.getMediaObjectUrl('media-1')).rejects.toThrow(/403/);
+  });
+});
+

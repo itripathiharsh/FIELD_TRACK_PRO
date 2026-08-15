@@ -39,7 +39,16 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
+from app.config import settings
+
 logger = logging.getLogger("fieldtrackpro")
+
+# Swagger UI / ReDoc (dev/test only - unavailable in production, see main.py)
+# load their JS/CSS from a CDN, so a strict CSP on those two responses would
+# break the interactive docs. Every other response never serves HTML/CSS/JS
+# at all (this is a JSON API), so a default-deny CSP there is safe and pure
+# defense-in-depth, not something the app actually relies on to be secure.
+_DOC_PATHS = {"/docs", "/redoc", "/openapi.json"}
 
 
 class CatchUnhandledExceptionsMiddleware(BaseHTTPMiddleware):
@@ -72,3 +81,40 @@ class CatchUnhandledExceptionsMiddleware(BaseHTTPMiddleware):
                     }
                 },
             )
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """
+    P1-4: baseline security response headers.
+
+    Applied to every response (added on the way out, after call_next - never
+    changes what a handler returns, only decorates it):
+
+    * X-Content-Type-Options: nosniff - stops a browser from ignoring the
+      declared Content-Type and sniffing a JSON/file response as HTML/JS.
+    * X-Frame-Options: DENY - this API is never meant to be framed.
+    * Referrer-Policy: strict-origin-when-cross-origin - a conservative,
+      widely-compatible default that doesn't affect this app's own behaviour.
+    * Content-Security-Policy - default-deny, skipped on /docs, /redoc and
+      /openapi.json (see _DOC_PATHS) so the interactive API docs keep working
+      wherever they're still enabled (dev/test only - see main.py).
+    * Strict-Transport-Security - only added when ENVIRONMENT=production,
+      where the deployment is assumed to be served over HTTPS. Never added
+      otherwise: HSTS on a plain-HTTP deployment would make browsers refuse
+      to connect over HTTP again, which would break local/dev access rather
+      than protect anything.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        super().__init__(app)
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        if request.url.path not in _DOC_PATHS:
+            response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'"
+        if settings.environment == "production":
+            response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
+        return response

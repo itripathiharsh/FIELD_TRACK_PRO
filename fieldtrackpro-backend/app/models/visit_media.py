@@ -9,6 +9,7 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     String,
+    Text,
     UniqueConstraint,
     func,
 )
@@ -19,6 +20,10 @@ from app.database import Base
 class MediaType(str, enum.Enum):
     PHOTO = "PHOTO"
     DOCUMENT = "DOCUMENT"
+    # P1: a photographed handwritten/diary order, per the client's explicit
+    # "keep this extremely simple" order-capture request - reuses this table
+    # rather than a separate media system (see `note` below).
+    ORDER = "ORDER"
 
 
 class VisitMedia(Base):
@@ -38,6 +43,9 @@ class VisitMedia(Base):
     checksum_sha256: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
     # Preserved for display/download; never used to build the storage key.
     original_filename: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    # Optional short note/summary - only meaningful for ORDER media, but kept
+    # nullable and generic rather than a separate order_captures table.
+    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     uploaded_by: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

@@ -9,8 +9,26 @@ from app.models.geo_verification_log import GeoVerificationLog
 from app.models.notification import Notification, NotificationType
 from app.models.requirement_category import RequirementCategory
 from app.models.requirement_form import RequirementForm, Priority
+from app.models.form_template import (
+    FormTemplate,
+    FormStatus,
+    FormSection,
+    FormQuestion,
+    QuestionType,
+    FormQuestionOption,
+    FormSubmission,
+    SubmissionStatus,
+    FormAnswer,
+    FormTemplateVersion,
+)
 from app.models.visit_media import VisitMedia, MediaType
 from app.models.visit_signature import VisitSignature, SignatureType
+from app.models.invoice import Invoice, InvoiceSource
+from app.models.payment import Payment, PaymentMethod, PaymentSource, PaymentStatus
+from app.models.payment_proof import PaymentProof
+from app.models.import_batch import ImportBatch, ImportStatus
+from app.models.employee_territory_assignment import EmployeeTerritoryAssignment, AssignmentType
+from app.models.login_attempt import LoginAttempt
 
 __all__ = [
     "Base",
@@ -28,8 +46,30 @@ __all__ = [
     "RequirementCategory",
     "RequirementForm",
     "Priority",
+    "FormTemplate",
+    "FormStatus",
+    "FormSection",
+    "FormQuestion",
+    "QuestionType",
+    "FormQuestionOption",
+    "FormSubmission",
+    "SubmissionStatus",
+    "FormAnswer",
+    "FormTemplateVersion",
     "VisitMedia",
     "MediaType",
     "VisitSignature",
     "SignatureType",
+    "Invoice",
+    "InvoiceSource",
+    "Payment",
+    "PaymentMethod",
+    "PaymentSource",
+    "PaymentStatus",
+    "PaymentProof",
+    "ImportBatch",
+    "ImportStatus",
+    "EmployeeTerritoryAssignment",
+    "AssignmentType",
+    "LoginAttempt",
 ]

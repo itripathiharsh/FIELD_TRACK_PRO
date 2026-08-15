@@ -17,6 +17,11 @@ sealed class Screen(val route: String) {
     object MediaUpload : Screen("media_upload/{visitId}") {
         fun createRoute(visitId: String) = "media_upload/$visitId"
     }
+    // P2-B: order capture - a distinct nav destination (Visit -> Order),
+    // reusing MediaUploadScreen in isOrderMode rather than a second camera flow.
+    object OrderCapture : Screen("order_capture/{visitId}") {
+        fun createRoute(visitId: String) = "order_capture/$visitId"
+    }
     object ProfileSettings : Screen("profile_settings")
     object OfflineQueue : Screen("offline_queue")
     object Map : Screen("map/{customerId}") {
@@ -34,5 +39,18 @@ sealed class Screen(val route: String) {
     }
     object RequirementForm : Screen("requirement_form/{visitId}") {
         fun createRoute(visitId: String) = "requirement_form/$visitId"
+    }
+    object FormFill : Screen("form_fill/{visitId}/{formId}") {
+        fun createRoute(visitId: String, formId: String) = "form_fill/$visitId/$formId"
+    }
+    object Notifications : Screen("notifications")
+    object Signature : Screen("signature/{visitId}") {
+        fun createRoute(visitId: String) = "signature/$visitId"
+    }
+    object OutletAccount : Screen("outlet_account/{visitId}/{customerId}") {
+        fun createRoute(visitId: String, customerId: String) = "outlet_account/$visitId/$customerId"
+    }
+    object CollectPayment : Screen("collect_payment/{visitId}/{customerId}") {
+        fun createRoute(visitId: String, customerId: String) = "collect_payment/$visitId/$customerId"
     }
 }

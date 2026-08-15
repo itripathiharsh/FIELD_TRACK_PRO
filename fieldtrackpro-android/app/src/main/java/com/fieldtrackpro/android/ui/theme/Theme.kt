@@ -1,7 +1,6 @@
 package com.fieldtrackpro.android.ui.theme
 
 import android.app.Activity
-import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
@@ -13,38 +12,46 @@ import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
 private val LightColorScheme = lightColorScheme(
-    primary = ElectricBlue,
+    primary = FieldTrackNavy,
     onPrimary = SurfaceWhite,
-    primaryContainer = Slate100,
-    onPrimaryContainer = Slate900,
-    secondary = EmeraldGreen,
-    onSecondary = SurfaceWhite,
-    tertiary = AmberWarning,
-    background = Slate50,
-    onBackground = Slate900,
+    primaryContainer = FieldTrackNavyLight,
+    onPrimaryContainer = SurfaceWhite,
+    secondary = FieldTrackAmber,
+    onSecondary = FieldTrackNavy,
+    secondaryContainer = FieldTrackAmberLight,
+    onSecondaryContainer = FieldTrackAmberDark,
+    tertiary = FieldTrackAmber,
+    onTertiary = FieldTrackNavy,
+    background = SurfaceOffWhite,
+    onBackground = TextPrimary,
     surface = SurfaceWhite,
-    onSurface = Slate900,
-    surfaceVariant = Slate100,
-    onSurfaceVariant = Slate700,
-    error = CoralRed,
+    onSurface = TextPrimary,
+    surfaceVariant = SurfaceContainer,
+    onSurfaceVariant = TextMuted,
+    outline = BorderMuted,
+    error = ErrorRed,
     onError = SurfaceWhite
 )
 
 private val DarkColorScheme = darkColorScheme(
-    primary = ElectricBlueLight,
-    onPrimary = Slate900,
-    primaryContainer = Slate800,
-    onPrimaryContainer = Slate100,
-    secondary = EmeraldGreenLight,
-    onSecondary = Slate900,
-    tertiary = AmberWarning,
-    background = Slate900,
-    onBackground = Slate50,
-    surface = Slate800,
-    onSurface = Slate50,
-    surfaceVariant = Slate700,
-    onSurfaceVariant = Slate300,
-    error = CoralRed,
+    primary = FieldTrackAmber,
+    onPrimary = FieldTrackNavyDark,
+    primaryContainer = FieldTrackNavyLight,
+    onPrimaryContainer = SurfaceWhite,
+    secondary = FieldTrackAmber,
+    onSecondary = FieldTrackNavyDark,
+    secondaryContainer = FieldTrackNavyLight,
+    onSecondaryContainer = FieldTrackAmberLight,
+    tertiary = FieldTrackAmber,
+    onTertiary = FieldTrackNavyDark,
+    background = FieldTrackNavyDark,
+    onBackground = SurfaceWhite,
+    surface = FieldTrackNavy,
+    onSurface = SurfaceWhite,
+    surfaceVariant = FieldTrackNavyLight,
+    onSurfaceVariant = TextSubtle,
+    outline = FieldTrackNavyLight,
+    error = ErrorRed,
     onError = SurfaceWhite
 )
 

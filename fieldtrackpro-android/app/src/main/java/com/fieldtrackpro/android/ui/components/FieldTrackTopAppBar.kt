@@ -13,8 +13,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
-import com.fieldtrackpro.android.ui.theme.Slate900
-import com.fieldtrackpro.android.ui.theme.SurfaceWhite
+import com.fieldtrackpro.android.ui.theme.FieldTrackNavy
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -29,7 +28,7 @@ fun FieldTrackTopAppBar(
                 text = title,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
-                color = Slate900
+                color = MaterialTheme.colorScheme.onSurface
             )
         },
         navigationIcon = {
@@ -38,14 +37,14 @@ fun FieldTrackTopAppBar(
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "Back",
-                        tint = Slate900
+                        tint = MaterialTheme.colorScheme.onSurface
                     )
                 }
             }
         },
         actions = actions,
         colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = SurfaceWhite
+            containerColor = MaterialTheme.colorScheme.surface
         )
     )
 }

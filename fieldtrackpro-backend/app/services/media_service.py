@@ -13,6 +13,7 @@ import uuid
 from typing import Sequence
 
 from PIL import Image
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger("fieldtrackpro")
@@ -78,16 +79,25 @@ async def upload_visit_media(
     current_user: User,
     session: AsyncSession,
     is_document: bool = False,
+    is_order: bool = False,
+    note: str | None = None,
 ) -> VisitMedia:
     """
     Validate, optionally compress, store the binary object, and persist metadata.
 
     Order matters: ownership, then content validation, then duplicate
     detection, then compression (for images), then storage.
+
+    `is_order`/`note` support the P1 order-capture requirement (a photographed
+    diary order + optional short note) by reusing this exact upload path
+    rather than a separate media table - only the stored `media_type` and the
+    optional `note` differ; validation/compression/storage are identical to a
+    normal photo upload.
     """
     await _assert_visit_access(visit_id, current_user, session)
 
     # 1. Inspect & validate file safety (magic bytes, size, sanitised name).
+    # ORDER captures are photos content-wise; validate them exactly like one.
     expected_type = MediaType.DOCUMENT if is_document else MediaType.PHOTO
     detected_mime, media_type, sanitized_name, checksum = FileValidationService.validate_and_inspect(
         file_bytes=file_bytes,
@@ -119,6 +129,11 @@ async def upload_visit_media(
         except Exception as e:
             logger.warning("Image compression failed, storing original: %s", e)
 
+    # 3b. Reclassify after compression so the compression check above still
+    # ran on the PHOTO path - only the stored label changes.
+    if is_order:
+        media_type = MediaType.ORDER
+
     # 4. Generate identity & storage path key.
     media_id = uuid.uuid4()
     storage_key = FileValidationService.generate_storage_key(
@@ -144,6 +159,7 @@ async def upload_visit_media(
             file_size_bytes=len(file_bytes),
             checksum_sha256=checksum,
             original_filename=sanitized_name,
+            note=note,
             uploaded_by=current_user.id,
         )
         await repo.add(media_record)
@@ -169,6 +185,48 @@ async def list_visit_media(
     await _assert_visit_access(visit_id, current_user, session)
     repo = MediaRepository(session)
     return await repo.list_by_visit(visit_id)
+
+
+async def list_customer_orders(
+    customer_id: uuid.UUID,
+    current_user: User,
+    session: AsyncSession,
+) -> list["OrderRead"]:
+    """
+    Every order captured across an outlet's visit history - the "Admin should
+    be able to see order information through the relevant outlet/visit
+    history" requirement. Same sensitivity tier as the outlet's account/
+    invoices, so it reuses that exact ownership rule rather than a new one:
+    an employee may only view this for an outlet they have a visit assigned
+    to; an admin may view any outlet's.
+    """
+    from app.models.employee import Employee
+    from app.models.visit import Visit
+    from app.schemas.media import OrderRead
+    from app.services.account_service import assert_employee_can_view_account
+
+    await assert_employee_can_view_account(customer_id, current_user, session)
+    repo = MediaRepository(session)
+    orders = await repo.list_orders_by_customer(customer_id)
+
+    visit_ids = {o.visit_id for o in orders}
+    context_by_visit: dict[uuid.UUID, tuple] = {}
+    if visit_ids:
+        rows = await session.execute(
+            select(Visit.id, Visit.scheduled_at, Employee.full_name)
+            .outerjoin(Employee, Employee.id == Visit.employee_id)
+            .where(Visit.id.in_(visit_ids))
+        )
+        context_by_visit = {vid: (scheduled_at, employee_name) for vid, scheduled_at, employee_name in rows.all()}
+
+    result: list[OrderRead] = []
+    for o in orders:
+        scheduled_at, employee_name = context_by_visit.get(o.visit_id, (None, None))
+        order_read = OrderRead.model_validate(o, from_attributes=True)
+        order_read.visit_scheduled_at = scheduled_at
+        order_read.employee_name = employee_name
+        result.append(order_read)
+    return result
 
 
 async def get_media_metadata(

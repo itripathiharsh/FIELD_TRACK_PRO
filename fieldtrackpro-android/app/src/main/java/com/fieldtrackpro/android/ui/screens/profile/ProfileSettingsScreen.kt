@@ -12,6 +12,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -24,16 +25,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.fieldtrackpro.android.BuildConfig
 import com.fieldtrackpro.android.data.local.TokenManager
 import com.fieldtrackpro.android.data.remote.ApiClient
 import com.fieldtrackpro.android.ui.components.FieldTrackTopAppBar
 import com.fieldtrackpro.android.ui.screens.visits.DetailItem
 import com.fieldtrackpro.android.ui.theme.CoralRed
-import com.fieldtrackpro.android.ui.theme.ElectricBlue
-import com.fieldtrackpro.android.ui.theme.Slate50
-import com.fieldtrackpro.android.ui.theme.Slate500
-import com.fieldtrackpro.android.ui.theme.Slate900
+import com.fieldtrackpro.android.ui.theme.FieldTrackNavy
+import com.fieldtrackpro.android.ui.theme.SurfaceOffWhite
 import com.fieldtrackpro.android.ui.theme.SurfaceWhite
+import com.fieldtrackpro.android.ui.theme.TextMuted
 import com.fieldtrackpro.android.ui.viewmodel.AuthViewModel
 
 @Composable
@@ -56,7 +57,7 @@ fun ProfileSettingsScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Slate50)
+                .background(SurfaceOffWhite)
                 .padding(innerPadding)
                 .padding(20.dp)
         ) {
@@ -68,9 +69,8 @@ fun ProfileSettingsScreen(
                 Column(modifier = Modifier.padding(20.dp)) {
                     Text(
                         text = "User Profile",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Slate900
+                        style = MaterialTheme.typography.titleLarge,
+                        color = FieldTrackNavy
                     )
                     Spacer(modifier = Modifier.height(12.dp))
 
@@ -80,43 +80,50 @@ fun ProfileSettingsScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            // P0-3: this card must never reach a production build. Field
+            // reps must not be able to redirect API traffic (including their
+            // auth token) to an arbitrary endpoint - debug/QA builds only.
+            if (BuildConfig.DEBUG) {
+                Spacer(modifier = Modifier.height(20.dp))
 
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = SurfaceWhite)
-            ) {
-                Column(modifier = Modifier.padding(20.dp)) {
-                    Text(
-                        text = "Backend Server Configuration",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Slate900
-                    )
-                    Text(
-                        text = "Configure API base endpoint for host emulator or physical device testing.",
-                        fontSize = 12.sp,
-                        color = Slate500
-                    )
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = SurfaceWhite)
+                ) {
+                    Column(modifier = Modifier.padding(20.dp)) {
+                        Text(
+                            text = "Backend Server Configuration (Debug Only)",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = FieldTrackNavy
+                        )
+                        Text(
+                            text = "Configure API base endpoint for host emulator or physical device testing.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TextMuted
+                        )
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
 
-                    OutlinedTextField(
-                        value = customUrl,
-                        onValueChange = { customUrl = it },
-                        label = { Text("API Base URL") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                        OutlinedTextField(
+                            value = customUrl,
+                            onValueChange = { customUrl = it },
+                            label = { Text("API Base URL") },
+                            modifier = Modifier.fillMaxWidth()
+                        )
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
 
-                    Button(
-                        onClick = { ApiClient.setCustomBaseUrl(customUrl) },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = ElectricBlue)
-                    ) {
-                        Text("UPDATE BACKEND URL")
+                        Button(
+                            onClick = { ApiClient.setCustomBaseUrl(customUrl) },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = FieldTrackNavy,
+                                contentColor = SurfaceWhite
+                            )
+                        ) {
+                            Text("UPDATE BACKEND URL", color = SurfaceWhite)
+                        }
                     }
                 }
             }
@@ -132,9 +139,12 @@ fun ProfileSettingsScreen(
                     .fillMaxWidth()
                     .height(50.dp),
                 shape = RoundedCornerShape(8.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = CoralRed)
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = CoralRed,
+                    contentColor = SurfaceWhite
+                )
             ) {
-                Text("LOGOUT SESSION", fontWeight = FontWeight.Bold)
+                Text("LOGOUT SESSION", fontWeight = FontWeight.Bold, color = SurfaceWhite)
             }
         }
     }

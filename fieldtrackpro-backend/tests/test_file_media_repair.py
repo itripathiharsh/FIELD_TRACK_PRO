@@ -19,7 +19,7 @@ from PIL import Image
 from app.exceptions.custom import BaseAPIException
 from app.services.file_validation_service import FileValidationService
 from app.services.media_service import _compress_image
-from app.services.storage.local_provider import LocalStorageProvider
+from app.services.storage.local_provider import LocalStorageProvider, verify_local_media_signature
 
 
 # Test data
@@ -147,14 +147,29 @@ class TestPresignedUrlGeneration:
 
     @pytest.mark.asyncio
     async def test_local_storage_presigned_url(self):
-        """Local storage should return a file:// URL."""
+        """
+        P0 fix: local storage previously returned a bare file://<server-disk-
+        path>, unusable by any remote client and carrying no signature or
+        expiry. It must now return a signed, time-boxed URL pointing at the
+        local-file-serving endpoint, with a signature that verifies.
+        """
         with tempfile.TemporaryDirectory() as tmp_dir:
             provider = LocalStorageProvider(base_dir=tmp_dir)
             key = "visits/test/media_1.jpg"
             await provider.upload(JPEG_HEADER, key, "image/jpeg")
 
             url = await provider.generate_presigned_url(key, expiry_minutes=15)
-            assert url.startswith("file://")
+            assert not url.startswith("file://")
+            assert url.startswith("/api/v1/media/local-file?")
+            assert f"key={key}" in url
+
+            from urllib.parse import parse_qs, urlparse
+            query = parse_qs(urlparse(url).query)
+            expires_at = int(query["expires"][0])
+            sig = query["sig"][0]
+            assert verify_local_media_signature(key, expires_at, sig)
+            assert not verify_local_media_signature(key, expires_at, "tampered")
+            assert not verify_local_media_signature(key, expires_at - 20 * 60, sig)
 
     @pytest.mark.asyncio
     async def test_presigned_url_for_missing_object_raises_error(self):

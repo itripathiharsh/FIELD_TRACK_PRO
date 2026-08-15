@@ -16,7 +16,7 @@ from app.schemas.reports import (
     ProductivityDashboard,
     GeoVerificationReportRow,
 )
-from app.services import report_service
+from app.services.report_service import report_service
 
 router = APIRouter(tags=["Reports"], dependencies=[Depends(require_role(Role.ADMIN))])
 

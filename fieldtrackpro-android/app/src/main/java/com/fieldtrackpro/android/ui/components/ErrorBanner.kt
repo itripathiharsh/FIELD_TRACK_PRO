@@ -17,7 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.fieldtrackpro.android.ui.theme.CoralRed
+import com.fieldtrackpro.android.ui.theme.ErrorRed
 import com.fieldtrackpro.android.ui.theme.SurfaceWhite
 
 @Composable
@@ -26,7 +26,7 @@ fun ErrorBanner(message: String, modifier: Modifier = Modifier) {
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
-            .background(CoralRed)
+            .background(ErrorRed)
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

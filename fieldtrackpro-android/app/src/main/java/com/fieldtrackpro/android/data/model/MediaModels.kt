@@ -16,10 +16,15 @@ data class MediaDto(
     @SerializedName("file_size_bytes") val fileSizeBytes: Long,
     @SerializedName("checksum_sha256") val checksumSha256: String? = null,
     @SerializedName("original_filename") val originalFilename: String? = null,
+    // P2-B: order-capture diary note - only meaningful when mediaType == "ORDER".
+    val note: String? = null,
     @SerializedName("uploaded_by") val uploadedBy: String? = null,
     @SerializedName("uploaded_at") val uploadedAt: String
 ) {
-    val isPhoto: Boolean get() = mediaType == "PHOTO"
+    val isOrder: Boolean get() = mediaType == "ORDER"
+    // An order capture is always a photograph too (see media_service.upload_visit_media) -
+    // it should get the same thumbnail/preview treatment as a plain PHOTO.
+    val isPhoto: Boolean get() = mediaType == "PHOTO" || isOrder
     val isDocument: Boolean get() = mediaType == "DOCUMENT"
 
     /** Name to show in the UI; falls back to the storage key's last segment. */
