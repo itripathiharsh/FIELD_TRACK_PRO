@@ -9,6 +9,8 @@ services:
     buildCommand: pip install poetry && poetry install --no-root
     startCommand: poetry run alembic upgrade head && poetry run python scripts/seed_demo_data.py && poetry run uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
       - key: ENVIRONMENT
         value: production
       - key: DEBUG
