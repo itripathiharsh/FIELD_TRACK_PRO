@@ -122,90 +122,102 @@ def run() -> None:
                 pass
 
         # -------------------------------------------------------------
-        # PART 2 - upgrade the rows that had to survive to realistic values.
+        # PART 2 - baseline territories (UPSERT).
         # -------------------------------------------------------------
-        conn.execute(
-            text("UPDATE territories SET name = 'Bengaluru Central' WHERE id = :id"),
-            {"id": "4584c82c-8e00-4488-b706-42126ec10ba1"},
-        )
-        conn.execute(
-            text("UPDATE territories SET name = 'Lucknow Metro' WHERE id = :id"),
-            {"id": "d9fd4de0-1855-4657-9bd6-4440c00c5e3b"},
-        )
-        conn.execute(
-            text(
-                "UPDATE territories SET name = 'North Delhi Corridor', radius_km = 30, "
-                "center_latitude = 28.6139, center_longitude = 77.2090 WHERE id = :id"
-            ),
-            {"id": "2f4f3054-37f9-4842-ba77-8ea0fafca001"},
-        )
-        report["renamed"].append("Territory 'BNG' -> 'Bengaluru Central'")
-        report["renamed"].append("Territory 'Lucknow Operational Zone' -> 'Lucknow Metro'")
-        report["renamed"].append("Territory 'North Region QA' -> 'North Delhi Corridor' (added real center/radius)")
-
-        conn.execute(
-            text("UPDATE employees SET full_name = 'Vikram Nair' WHERE id = :id"),
-            {"id": VIKRAM_EMPLOYEE_ID},
-        )
-        report["renamed"].append("Employee 'Test Field Rep' -> 'Vikram Nair' (rep@fieldtrack.test)")
-
-        customer_renames = [
-            (
-                "0f68a82d-45e7-4c21-b6bd-ac585d41e32b",
-                "Ganesh Electricals", "Suresh Kumar", "+919845123456",
-                "45 Hazratganj Market, Lucknow, UP", "POINT(80.9462 26.8467)",
-            ),
-            (
-                "d40006dc-cd30-4d56-878a-f0860dd1bb0e",
-                "Sunrise General Store", "Meena Iyer", "+919886234567",
-                "12 MG Road, Bengaluru, KA", "POINT(77.5946 12.9716)",
-            ),
-            (
-                "81e3ca3a-6ba8-4cdf-ba44-df474b19378f",
-                "Highline Retail Solutions", "Rohit Malhotra", "+919871234567",
-                "B-14 Connaught Place, New Delhi", "POINT(77.2090 28.6139)",
-            ),
-            (
-                "2ee14e5c-ea2c-4a10-93bd-25f4e1ec1a5b",
-                "Vertex Industrial Supplies", "Anjali Deshmukh", "+919876543210",
-                "100 Industrial Estate, Lucknow, UP", "POINT(80.9462 26.8467)",
-            ),
-        ]
-        for cid, name, contact_person, contact_number, address, point in customer_renames:
-            conn.execute(
-                text(
-                    "UPDATE customers SET name = :name, contact_person = :contact_person, "
-                    "contact_number = :contact_number, address = :address, "
-                    "location = ST_GeogFromText(:point) WHERE id = :id"
-                ),
-                {
-                    "name": name, "contact_person": contact_person,
-                    "contact_number": contact_number, "address": address,
-                    "point": point, "id": cid,
-                },
-            )
-            report["renamed"].append(f"Customer -> '{name}'")
-
-        # -------------------------------------------------------------
-        # PART 3 - new territories.
-        # -------------------------------------------------------------
-        new_territories = [
+        all_territories = [
+            ("4584c82c-8e00-4488-b706-42126ec10ba1", "Bengaluru Central", 12.9716, 77.5946, 25),
+            ("d9fd4de0-1855-4657-9bd6-4440c00c5e3b", "Lucknow Metro", 26.8467, 80.9462, 30),
+            ("2f4f3054-37f9-4842-ba77-8ea0fafca001", "North Delhi Corridor", 28.6139, 77.2090, 30),
             ("11111111-aaaa-4000-8000-000000000001", "Mumbai Western Suburbs", 19.1197, 72.8468, 35),
             ("11111111-aaaa-4000-8000-000000000002", "Pune IT Corridor", 18.5679, 73.9143, 20),
         ]
-        for tid, name, lat, lon, radius in new_territories:
+        for tid, name, lat, lon, radius in all_territories:
             conn.execute(
                 text(
                     "INSERT INTO territories (id, name, center_latitude, center_longitude, radius_km, status, created_at, updated_at) "
                     "VALUES (:id, :name, :lat, :lon, :radius, 'ACTIVE', now(), now()) "
-                    "ON CONFLICT (id) DO NOTHING"
+                    "ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, center_latitude = EXCLUDED.center_latitude, "
+                    "center_longitude = EXCLUDED.center_longitude, radius_km = EXCLUDED.radius_km, updated_at = now()"
                 ),
                 {"id": tid, "name": name, "lat": lat, "lon": lon, "radius": radius},
             )
-        MUMBAI_TID, PUNE_TID = new_territories[0][0], new_territories[1][0]
         BENGALURU_TID = "4584c82c-8e00-4488-b706-42126ec10ba1"
         LUCKNOW_TID = "d9fd4de0-1855-4657-9bd6-4440c00c5e3b"
         DELHI_TID = "2f4f3054-37f9-4842-ba77-8ea0fafca001"
+        MUMBAI_TID = "11111111-aaaa-4000-8000-000000000001"
+        PUNE_TID = "11111111-aaaa-4000-8000-000000000002"
+
+        # Baseline users (admin, rep, QA fixtures)
+        pw_hash = hash_password(DEMO_PASSWORD)
+        baseline_users = [
+            ("d97a16ca-ebd7-4f83-a0a0-8649a872e8a2", "admin@fieldtrack.test", "ADMIN"),
+            ("a00671df-9f9a-4c5e-acc7-d41d42019da3", "rep@fieldtrack.test", "EMPLOYEE"),
+            ("0f8eb7d1-bf0d-4c52-a022-491b61d2bdb3", "admin_qa@fieldtrack.com", "ADMIN"),
+            ("328140a1-d592-42a1-a287-69871f287ed2", "emp_qa@fieldtrack.com", "EMPLOYEE"),
+        ]
+        for uid, email, role in baseline_users:
+            conn.execute(
+                text(
+                    "INSERT INTO users (id, email, password_hash, role, is_active, created_at, updated_at) "
+                    "VALUES (:id, :email, :pw, :role, true, now(), now()) "
+                    "ON CONFLICT (id) DO UPDATE SET password_hash = EXCLUDED.password_hash, is_active = true, updated_at = now()"
+                ),
+                {"id": uid, "email": email, "pw": pw_hash, "role": role},
+            )
+
+        # Baseline employees
+        baseline_employees = [
+            (VIKRAM_EMPLOYEE_ID, "a00671df-9f9a-4c5e-acc7-d41d42019da3", "Vikram Nair", LUCKNOW_TID, "EMP-001"),
+            (JANE_SALES_REP_ID, "328140a1-d592-42a1-a287-69871f287ed2", "Jane Doe", DELHI_TID, "EMP-QA-01"),
+        ]
+        for eid, uid, full_name, territory_id, code in baseline_employees:
+            conn.execute(
+                text(
+                    "INSERT INTO employees (id, user_id, full_name, territory_id, employee_code, created_at, updated_at) "
+                    "VALUES (:id, :uid, :name, :tid, :code, now(), now()) "
+                    "ON CONFLICT (id) DO UPDATE SET full_name = EXCLUDED.full_name, territory_id = EXCLUDED.territory_id, updated_at = now()"
+                ),
+                {"id": eid, "uid": uid, "name": full_name, "tid": territory_id, "code": code},
+            )
+
+        baseline_customers = [
+            (
+                "0f68a82d-45e7-4c21-b6bd-ac585d41e32b",
+                "Ganesh Electricals", "Suresh Kumar", "+919845123456",
+                "45 Hazratganj Market, Lucknow, UP", "POINT(80.9462 26.8467)", LUCKNOW_TID,
+            ),
+            (
+                "d40006dc-cd30-4d56-878a-f0860dd1bb0e",
+                "Sunrise General Store", "Meena Iyer", "+919886234567",
+                "12 MG Road, Bengaluru, KA", "POINT(77.5946 12.9716)", BENGALURU_TID,
+            ),
+            (
+                "81e3ca3a-6ba8-4cdf-ba44-df474b19378f",
+                "Highline Retail Solutions", "Rohit Malhotra", "+919871234567",
+                "B-14 Connaught Place, New Delhi", "POINT(77.2090 28.6139)", DELHI_TID,
+            ),
+            (
+                "2ee14e5c-ea2c-4a10-93bd-25f4e1ec1a5b",
+                "Vertex Industrial Supplies", "Anjali Deshmukh", "+919876543210",
+                "100 Industrial Estate, Lucknow, UP", "POINT(80.9462 26.8467)", LUCKNOW_TID,
+            ),
+        ]
+        admin_id = "d97a16ca-ebd7-4f83-a0a0-8649a872e8a2"
+        for cid, name, contact_person, contact_number, address, point, tid in baseline_customers:
+            conn.execute(
+                text(
+                    "INSERT INTO customers (id, name, contact_person, contact_number, address, location, geofence_radius_m, territory_id, created_by, created_at, updated_at) "
+                    "VALUES (:id, :name, :contact_person, :contact_number, :address, ST_GeogFromText(:point), 75, :tid, :admin_id, now(), now()) "
+                    "ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, contact_person = EXCLUDED.contact_person, "
+                    "contact_number = EXCLUDED.contact_number, address = EXCLUDED.address, location = EXCLUDED.location, "
+                    "geofence_radius_m = EXCLUDED.geofence_radius_m, territory_id = EXCLUDED.territory_id, updated_at = now()"
+                ),
+                {
+                    "id": cid, "name": name, "contact_person": contact_person,
+                    "contact_number": contact_number, "address": address,
+                    "point": point, "tid": tid, "admin_id": admin_id,
+                },
+            )
 
         # -------------------------------------------------------------
         # PART 4 - new employees (user + employee row each).
@@ -312,7 +324,7 @@ def run() -> None:
                 },
             )
         report["seeded"] = {
-            "territories": len(new_territories),
+            "territories": len(all_territories),
             "employees": len(new_employees),
             "customers": len(new_customers),
             "visits": len(new_visits),
