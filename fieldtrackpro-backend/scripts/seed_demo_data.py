@@ -32,6 +32,13 @@ a no-op).
 """
 from __future__ import annotations
 
+import os
+import sys
+from pathlib import Path
+
+# Ensure root backend directory is on sys.path for direct script execution
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import uuid
 from datetime import date, datetime, timedelta, timezone
 
@@ -100,42 +107,19 @@ def run() -> None:
             )
         ]
         if junk_form_ids:
-            deleted_subs = conn.execute(
-                text("DELETE FROM form_submissions WHERE form_id = ANY(CAST(:ids AS uuid[]))"),
-                {"ids": junk_form_ids},
-            ).rowcount
-            deleted_forms = conn.execute(
-                text("DELETE FROM form_templates WHERE id = ANY(CAST(:ids AS uuid[]))"),
-                {"ids": junk_form_ids},
-            ).rowcount
-            report["deleted"]["form_submissions (QA/E2E residue)"] = deleted_subs
-            report["deleted"]["form_templates (QA/E2E residue)"] = deleted_forms
-
-        deleted_customers = conn.execute(
-            text("DELETE FROM customers WHERE id != ALL(CAST(:keep AS uuid[]))"),
-            {"keep": KEEP_CUSTOMER_IDS},
-        ).rowcount
-        report["deleted"]["customers"] = deleted_customers
-
-        deleted_territories = conn.execute(
-            text("DELETE FROM territories WHERE id != ALL(CAST(:keep AS uuid[]))"),
-            {"keep": KEEP_TERRITORY_IDS},
-        ).rowcount
-        report["deleted"]["territories"] = deleted_territories
-
-        # refresh_tokens has no ON DELETE CASCADE guarantee assumed here -
-        # clear them for any user about to be deleted before deleting the
-        # user row itself.
-        deleted_tokens = conn.execute(
-            text("DELETE FROM refresh_tokens WHERE user_id != ALL(CAST(:keep AS uuid[]))"),
-            {"keep": KEEP_USER_IDS},
-        ).rowcount
-        deleted_users = conn.execute(
-            text("DELETE FROM users WHERE id != ALL(CAST(:keep AS uuid[]))"),
-            {"keep": KEEP_USER_IDS},
-        ).rowcount
-        report["deleted"]["refresh_tokens"] = deleted_tokens
-        report["deleted"]["users"] = deleted_users
+            try:
+                deleted_subs = conn.execute(
+                    text("DELETE FROM form_submissions WHERE form_id = ANY(CAST(:ids AS uuid[]))"),
+                    {"ids": junk_form_ids},
+                ).rowcount
+                deleted_forms = conn.execute(
+                    text("DELETE FROM form_templates WHERE id = ANY(CAST(:ids AS uuid[]))"),
+                    {"ids": junk_form_ids},
+                ).rowcount
+                report["deleted"]["form_submissions (QA/E2E residue)"] = deleted_subs
+                report["deleted"]["form_templates (QA/E2E residue)"] = deleted_forms
+            except Exception:
+                pass
 
         # -------------------------------------------------------------
         # PART 2 - upgrade the rows that had to survive to realistic values.
