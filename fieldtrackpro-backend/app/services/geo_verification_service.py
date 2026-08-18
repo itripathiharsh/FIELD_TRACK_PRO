@@ -25,7 +25,7 @@ class GeoVerificationResult:
 class GeoVerificationService:
     """Central GIS service for coordinate validation, geodesic math, and geofencing."""
 
-    MAX_ACCURACY_THRESHOLD_M: float = 100.0  # Reject GPS reads with accuracy worse than 100 meters
+    MAX_ACCURACY_THRESHOLD_M: float = 100.0
     # A GPS fix older than this is rejected. Deliberately generous rather than
     # tight: the app supports checking in while offline and syncing later
     # (see OfflineQueueManager on Android), so a fix captured hours ago and
@@ -137,7 +137,20 @@ class GeoVerificationService:
         # that don't track capture time at all.
         if captured_at is not None:
             reference_now = now if now is not None else datetime.now(timezone.utc)
+            if captured_at.tzinfo is None:
+                captured_at = captured_at.replace(tzinfo=timezone.utc)
+            if reference_now.tzinfo is None:
+                reference_now = reference_now.replace(tzinfo=timezone.utc)
             age = reference_now - captured_at
+            if age < timedelta(minutes=-5):
+                return GeoVerificationResult(
+                    is_valid=False,
+                    distance_m=distance_to_target(),
+                    geofence_radius_m=geofence_radius_m,
+                    is_mock=False,
+                    accuracy_m=accuracy_m,
+                    failure_reason="GPS capture timestamp is in the future",
+                )
             if age > cls.MAX_LOCATION_AGE:
                 return GeoVerificationResult(
                     is_valid=False,

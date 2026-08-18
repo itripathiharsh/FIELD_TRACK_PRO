@@ -158,7 +158,7 @@ export const VisitDetailsPage: React.FC = () => {
         await apiClient.checkIn(id, { ...payload, idempotency_key: crypto.randomUUID() });
         setGeoStatus({ ok: true, text: 'Check-in verified successfully.' });
       } else {
-        await apiClient.checkOut(id, payload);
+        await apiClient.checkOut(id, { ...payload, idempotency_key: crypto.randomUUID() });
         setGeoStatus({ ok: true, text: 'Check-out verified. Visit completed.' });
       }
       setHasRealCapture(false);
@@ -258,10 +258,22 @@ export const VisitDetailsPage: React.FC = () => {
               VISIT RECORD #{visit.id.substring(0, 8)}
             </span>
             <h1 className="font-headline-lg text-2xl font-bold text-primary">
-              {customer?.name || `Customer #${visit.customer_id.substring(0, 8)}`}
+              {visit.customer_name || customer?.name || `Customer #${visit.customer_id.substring(0, 8)}`}
             </h1>
-            {customer?.address && (
-              <p className="font-caption text-xs text-on-surface-variant mt-1">{customer.address}</p>
+            {(visit.customer_address || customer?.address) && (
+              <p className="font-caption text-xs text-on-surface-variant mt-1">
+                {visit.customer_address || customer?.address}
+              </p>
+            )}
+            {visit.employee_name && (
+              <p className="font-caption text-xs text-on-surface-variant mt-1">
+                <span className="font-semibold">Assignee:</span> {visit.employee_name}
+              </p>
+            )}
+            {(visit.territory_name || visit.area_name) && (
+              <p className="font-caption text-xs text-on-surface-variant mt-0.5">
+                <span className="font-semibold">Zone/Area:</span> {[visit.territory_name, visit.area_name].filter(Boolean).join(' / ')}
+              </p>
             )}
           </div>
           <StatusBadge status={visit.status} />
@@ -283,6 +295,11 @@ export const VisitDetailsPage: React.FC = () => {
             <p className="font-body-md text-sm text-on-surface font-medium">
               {visit.check_in_at ? new Date(visit.check_in_at).toLocaleString() : 'Not checked in'}
             </p>
+            {visit.check_in_received_at && visit.check_in_at && visit.check_in_received_at !== visit.check_in_at && (
+              <p className="font-caption text-[11px] text-on-surface-variant mt-0.5">
+                Synced: {new Date(visit.check_in_received_at).toLocaleTimeString()}
+              </p>
+            )}
           </div>
           <div>
             <p className="font-label-md text-xs text-on-surface-variant uppercase font-semibold mb-space-1">
@@ -291,6 +308,11 @@ export const VisitDetailsPage: React.FC = () => {
             <p className="font-body-md text-sm text-on-surface font-medium">
               {visit.check_out_at ? new Date(visit.check_out_at).toLocaleString() : 'Not checked out'}
             </p>
+            {visit.check_out_received_at && visit.check_out_at && visit.check_out_received_at !== visit.check_out_at && (
+              <p className="font-caption text-[11px] text-on-surface-variant mt-0.5">
+                Synced: {new Date(visit.check_out_received_at).toLocaleTimeString()}
+              </p>
+            )}
           </div>
           <div>
             <p className="font-label-md text-xs text-on-surface-variant uppercase font-semibold mb-space-1">

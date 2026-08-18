@@ -489,3 +489,135 @@ async def test_postgis_and_haversine_agree(seeded_world):
         f"distance implementations disagree: PostGIS={postgis_distance} Haversine={haversine}"
     )
     assert is_valid is True
+
+
+async def test_check_in_with_future_captured_at_is_rejected(
+    client: AsyncClient, admin_headers, employee_headers, seeded_world, created_visits
+):
+    """A GPS fix captured more than 5 minutes in the future is rejected."""
+    from datetime import timedelta
+
+    visit_id = await create_visit(
+        client, admin_headers, seeded_world["customer_id"],
+        seeded_world["employee_id"], created_visits,
+    )
+    future_captured_at = (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat()
+    resp = await client.post(
+        f"/api/v1/visits/{visit_id}/check-in",
+        json={
+            "latitude": seeded_world["customer_lat"],
+            "longitude": seeded_world["customer_lng"],
+            "accuracy_m": 8.0,
+            "is_mock_location": False,
+            "captured_at": future_captured_at,
+        },
+        headers=employee_headers,
+    )
+    assert resp.status_code == 422
+    assert "future" in resp.json()["error"]["message"]
+
+
+async def test_check_in_and_check_out_preserves_event_vs_received_timestamps(
+    client: AsyncClient, admin_headers, employee_headers, seeded_world, created_visits, db
+):
+    """Check-in and check-out persist the device capture time and the server received time distinctly."""
+    from datetime import timedelta
+
+    visit_id = await create_visit(
+        client, admin_headers, seeded_world["customer_id"],
+        seeded_world["employee_id"], created_visits,
+    )
+    # Simulate delayed offline check-in (captured 2 hours ago)
+    captured_in = datetime.now(timezone.utc) - timedelta(hours=2)
+    resp_in = await client.post(
+        f"/api/v1/visits/{visit_id}/check-in",
+        json={
+            "latitude": seeded_world["customer_lat"],
+            "longitude": seeded_world["customer_lng"],
+            "accuracy_m": 10.0,
+            "is_mock_location": False,
+            "captured_at": captured_in.isoformat(),
+            "idempotency_key": "in-key-123",
+        },
+        headers=employee_headers,
+    )
+    assert resp_in.status_code == 200
+
+    row = db.fetch_one(
+        "SELECT check_in_at, check_in_received_at FROM visits WHERE id = %s",
+        (visit_id,),
+    )
+    assert row["check_in_at"] is not None
+    assert row["check_in_received_at"] is not None
+    # check_in_at reflects the historical capture time (2 hours ago)
+    diff = abs((row["check_in_received_at"] - row["check_in_at"]).total_seconds())
+    assert diff >= 7100, f"Expected ~7200s difference between capture and sync, got {diff}s"
+
+    # Now simulate check-out captured 1 hour ago
+    captured_out = datetime.now(timezone.utc) - timedelta(hours=1)
+    resp_out = await client.post(
+        f"/api/v1/visits/{visit_id}/check-out",
+        json={
+            "latitude": seeded_world["customer_lat"],
+            "longitude": seeded_world["customer_lng"],
+            "accuracy_m": 12.0,
+            "is_mock_location": False,
+            "captured_at": captured_out.isoformat(),
+            "idempotency_key": "out-key-456",
+        },
+        headers=employee_headers,
+    )
+    assert resp_out.status_code == 200
+
+    row_out = db.fetch_one(
+        "SELECT check_out_at, check_out_received_at FROM visits WHERE id = %s",
+        (visit_id,),
+    )
+    assert row_out["check_out_at"] is not None
+    assert row_out["check_out_received_at"] is not None
+
+    # Test idempotency retry for check-out
+    retry_out = await client.post(
+        f"/api/v1/visits/{visit_id}/check-out",
+        json={
+            "latitude": seeded_world["customer_lat"],
+            "longitude": seeded_world["customer_lng"],
+            "accuracy_m": 12.0,
+            "is_mock_location": False,
+            "captured_at": captured_out.isoformat(),
+            "idempotency_key": "out-key-456",
+        },
+        headers=employee_headers,
+    )
+    assert retry_out.status_code == 200, "Idempotent checkout retry must succeed safely"
+
+
+async def test_offline_check_in_against_missed_visit_returns_conflict(
+    client: AsyncClient, admin_headers, employee_headers, seeded_world, created_visits
+):
+    """If a visit changed to MISSED while offline, check-in returns a clean 409 conflict."""
+    visit_id = await create_visit(
+        client, admin_headers, seeded_world["customer_id"],
+        seeded_world["employee_id"], created_visits,
+    )
+    # Admin / Scheduler forces status to MISSED
+    await client.patch(
+        f"/api/v1/visits/{visit_id}/status",
+        json={"status": "MISSED", "reason": "Overdue window passed"},
+        headers=admin_headers,
+    )
+    # Delayed offline check-in lands
+    resp = await client.post(
+        f"/api/v1/visits/{visit_id}/check-in",
+        json={
+            "latitude": seeded_world["customer_lat"],
+            "longitude": seeded_world["customer_lng"],
+            "accuracy_m": 10.0,
+            "is_mock_location": False,
+            "captured_at": _now_iso(),
+        },
+        headers=employee_headers,
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "INVALID_STATE_TRANSITION"
+

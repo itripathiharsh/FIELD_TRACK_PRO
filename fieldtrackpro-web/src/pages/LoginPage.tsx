@@ -1,45 +1,82 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ShieldCheck, ArrowRight, Lock, Mail, ShieldAlert } from 'lucide-react';
+import { ShieldCheck, ArrowRight, Lock, Mail, ShieldAlert, KeyRound, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
+import { apiClient } from '../api/client';
 
-/**
- * Sign-in screen.
- *
- * FT-060 / FT-038: the demo role selector has been removed. It offered ADMIN /
- * MANAGER / FIELD REP presets with a pre-filled password; MANAGER is not a role
- * the backend recognises, and the selector only changed which credentials were
- * typed in - it granted nothing by itself. Combined with FT-001 it created the
- * impression that picking a role logged you in as that role.
- *
- * The role now comes from the server after authentication, and nothing else.
- * The approved visual design (navy hero panel, amber primary action, League
- * Spartan / Libre Baskerville type) is unchanged.
- */
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate();
   const { login } = useAuth();
 
+  const [mode, setMode] = useState<'login' | 'forgot' | 'reset'>('login');
+  
   const [identity, setIdentity] = useState('');
   const [password, setPassword] = useState('');
+  const [otp, setOtp] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  
   const [error, setError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setSuccessMsg(null);
     setIsSubmitting(true);
     try {
       const user = await login(identity.trim(), password);
-      // Destination follows the role the SERVER reported.
       navigate(user.role === 'ADMIN' ? '/' : '/visits', { replace: true });
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
           : 'Authentication failed. Please check your credentials.',
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleForgotSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSuccessMsg(null);
+    setIsSubmitting(true);
+    try {
+      await apiClient.forgotPassword(identity.trim());
+      setSuccessMsg('If that email is registered, you will receive a reset code shortly.');
+      setMode('reset');
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Failed to request password reset.',
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleResetSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSuccessMsg(null);
+    setIsSubmitting(true);
+    try {
+      await apiClient.resetPassword(identity.trim(), otp.trim(), newPassword);
+      setSuccessMsg('Password updated successfully. You can now sign in.');
+      setMode('login');
+      setPassword('');
+      setOtp('');
+      setNewPassword('');
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Failed to reset password.',
       );
     } finally {
       setIsSubmitting(false);
@@ -88,10 +125,14 @@ export const LoginPage: React.FC = () => {
         <div className="p-space-8 md:p-space-10 flex flex-col justify-center bg-surface-container-lowest">
           <div className="mb-space-6">
             <h1 className="font-headline-md text-2xl font-bold text-primary mb-space-1">
-              Command Portal
+              {mode === 'login' && 'Command Portal'}
+              {mode === 'forgot' && 'Reset Password'}
+              {mode === 'reset' && 'Verify Code'}
             </h1>
             <p className="font-caption text-xs text-on-surface-variant">
-              Sign in to access your operational telemetry dashboard.
+              {mode === 'login' && 'Sign in to access your operational telemetry dashboard.'}
+              {mode === 'forgot' && 'Enter your registered email to receive a reset code.'}
+              {mode === 'reset' && 'Enter the code sent to your email to create a new password.'}
             </p>
           </div>
 
@@ -104,49 +145,176 @@ export const LoginPage: React.FC = () => {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-space-4">
-            <Input
-              label="WORK EMAIL OR MOBILE"
-              type="text"
-              required
-              autoComplete="username"
-              icon={Mail}
-              value={identity}
-              onChange={(e) => setIdentity(e.target.value)}
-              placeholder="you@company.com"
-            />
+          {successMsg && (
+            <div
+              role="status"
+              className="mb-space-4 p-space-3 bg-primary-container border border-primary text-on-primary-container rounded-xl font-body-md text-xs flex items-center animate-in fade-in-0 duration-200"
+            >
+              <CheckCircle2 className="w-4 h-4 mr-2 shrink-0" />
+              <span>{successMsg}</span>
+            </div>
+          )}
 
-            <div>
-              <div className="flex items-center justify-between mb-space-1">
-                <label
-                  htmlFor="login-password"
-                  className="font-label-md text-xs text-on-surface uppercase tracking-wider block font-semibold"
-                >
-                  PASSWORD
-                </label>
-              </div>
+          {mode === 'login' && (
+            <form onSubmit={handleLoginSubmit} className="space-y-space-4">
               <Input
-                id="login-password"
+                label="WORK EMAIL OR MOBILE"
+                type="text"
+                required
+                autoComplete="username"
+                icon={Mail}
+                value={identity}
+                onChange={(e) => setIdentity(e.target.value)}
+                placeholder="you@company.com"
+              />
+
+              <div>
+                <div className="flex items-center justify-between mb-space-1">
+                  <label
+                    htmlFor="login-password"
+                    className="font-label-md text-xs text-on-surface uppercase tracking-wider block font-semibold"
+                  >
+                    PASSWORD
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode('forgot');
+                      setError(null);
+                      setSuccessMsg(null);
+                    }}
+                    className="text-primary hover:text-primary/80 font-body-sm text-xs focus:outline-none focus:underline"
+                  >
+                    Forgot Password?
+                  </button>
+                </div>
+                <Input
+                  id="login-password"
+                  type="password"
+                  required
+                  autoComplete="current-password"
+                  icon={Lock}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </div>
+
+              <Button
+                type="submit"
+                variant="secondary"
+                size="lg"
+                className="w-full mt-space-2"
+                isLoading={isSubmitting}
+              >
+                <span>{isSubmitting ? 'Authenticating...' : 'Sign In To Command Center'}</span>
+                <ArrowRight className="w-4 h-4 ml-1" />
+              </Button>
+            </form>
+          )}
+
+          {mode === 'forgot' && (
+            <form onSubmit={handleForgotSubmit} className="space-y-space-4">
+              <Input
+                label="REGISTERED EMAIL"
+                type="email"
+                required
+                autoComplete="email"
+                icon={Mail}
+                value={identity}
+                onChange={(e) => setIdentity(e.target.value)}
+                placeholder="you@company.com"
+              />
+
+              <Button
+                type="submit"
+                variant="secondary"
+                size="lg"
+                className="w-full mt-space-2"
+                isLoading={isSubmitting}
+              >
+                <span>{isSubmitting ? 'Sending...' : 'Send Reset Code'}</span>
+                <ArrowRight className="w-4 h-4 ml-1" />
+              </Button>
+
+              <div className="mt-space-6 flex flex-col space-y-space-3 items-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode('login');
+                    setError(null);
+                    setSuccessMsg(null);
+                  }}
+                  className="text-on-surface-variant hover:text-on-surface text-sm font-semibold focus:outline-none focus:underline"
+                >
+                  Return to Sign In
+                </button>
+                <div className="text-center text-xs text-on-surface-variant">
+                  <p>I don't have access to this email</p>
+                  <p className="font-semibold text-primary mt-1">Please contact your Admin to update your account email.</p>
+                </div>
+              </div>
+            </form>
+          )}
+
+          {mode === 'reset' && (
+            <form onSubmit={handleResetSubmit} className="space-y-space-4">
+              <Input
+                label="EMAIL"
+                type="email"
+                required
+                readOnly
+                className="bg-surface-container"
+                icon={Mail}
+                value={identity}
+              />
+              
+              <Input
+                label="RESET CODE (OTP)"
+                type="text"
+                required
+                icon={KeyRound}
+                value={otp}
+                onChange={(e) => setOtp(e.target.value)}
+                placeholder="Enter 6-digit code"
+              />
+
+              <Input
+                label="NEW PASSWORD"
                 type="password"
                 required
-                autoComplete="current-password"
                 icon={Lock}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="Must be at least 8 characters"
+                minLength={8}
               />
-            </div>
 
-            <Button
-              type="submit"
-              variant="secondary"
-              size="lg"
-              className="w-full mt-space-2"
-              isLoading={isSubmitting}
-            >
-              <span>{isSubmitting ? 'Authenticating...' : 'Sign In To Command Center'}</span>
-              <ArrowRight className="w-4 h-4 ml-1" />
-            </Button>
-          </form>
+              <Button
+                type="submit"
+                variant="secondary"
+                size="lg"
+                className="w-full mt-space-2"
+                isLoading={isSubmitting}
+              >
+                <span>{isSubmitting ? 'Updating...' : 'Set New Password'}</span>
+                <ArrowRight className="w-4 h-4 ml-1" />
+              </Button>
+
+              <div className="mt-space-6 flex justify-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode('login');
+                    setError(null);
+                    setSuccessMsg(null);
+                  }}
+                  className="text-on-surface-variant hover:text-on-surface text-sm font-semibold focus:outline-none focus:underline"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          )}
         </div>
       </div>
     </div>

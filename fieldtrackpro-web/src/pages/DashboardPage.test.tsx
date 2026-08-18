@@ -1,4 +1,4 @@
-﻿import { describe, expect, it, beforeEach } from 'vitest';
+import { describe, expect, it, beforeEach } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 
 import { DashboardPage } from './DashboardPage';
@@ -126,9 +126,11 @@ describe('DashboardPage - employee', () => {
 
     renderWithProviders(<DashboardPage />);
     await waitFor(() => expect(screen.getByText('My Day')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(fetchSpy.mock.calls.some(([u]) => String(u).includes('/visits/me/today'))).toBe(true),
+    );
 
     const urls = fetchSpy.mock.calls.map(([u]) => String(u));
-    expect(urls.some((u) => u.includes('/visits/me/today'))).toBe(true);
     expect(urls.some((u) => u.includes('/api/v1/employees'))).toBe(false);
   });
 

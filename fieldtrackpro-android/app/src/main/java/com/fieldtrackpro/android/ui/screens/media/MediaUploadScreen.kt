@@ -6,6 +6,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -17,7 +18,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -26,6 +29,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -75,6 +79,7 @@ fun MediaUploadScreen(
     var cameraUri by remember { mutableStateOf<Uri?>(null) }
     var capturedPreviewUri by remember { mutableStateOf<Uri?>(null) }
     var orderNote by remember { mutableStateOf("") }
+    var fieldError by remember { mutableStateOf<String?>(null) }
 
     fun dispatchUpload(uri: Uri, mimeType: String) {
         if (isOrderMode) {
@@ -145,27 +150,35 @@ fun MediaUploadScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(SurfaceOffWhite)
+                .background(com.fieldtrackpro.android.ui.theme.SurfaceSecondary)
                 .padding(innerPadding)
-                .padding(20.dp)
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState())
         ) {
             // Camera Preview Section
             if (capturedPreviewUri != null) {
                 Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = SurfaceWhite)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, com.fieldtrackpro.android.ui.theme.BrandLightGray, RoundedCornerShape(14.dp)),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = com.fieldtrackpro.android.ui.theme.BrandWhite),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                 ) {
-                    Column(modifier = Modifier.padding(20.dp)) {
+                    Column(modifier = Modifier.padding(18.dp)) {
                         Text(
                             text = "Photo Preview",
-                            style = MaterialTheme.typography.titleLarge,
-                            color = FieldTrackNavy
+                            fontFamily = com.fieldtrackpro.android.ui.theme.LeagueSpartanFamily,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = com.fieldtrackpro.android.ui.theme.BrandNavy
                         )
                         Text(
                             text = "Review your photo before uploading.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = TextMuted
+                            fontFamily = com.fieldtrackpro.android.ui.theme.LibreBaskervilleFamily,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = com.fieldtrackpro.android.ui.theme.TextSecondary
                         )
 
                         Spacer(modifier = Modifier.height(12.dp))
@@ -173,8 +186,9 @@ fun MediaUploadScreen(
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(200.dp),
-                            colors = CardDefaults.cardColors(containerColor = SurfaceOffWhite)
+                                .height(180.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = CardDefaults.cardColors(containerColor = com.fieldtrackpro.android.ui.theme.SurfaceSecondary)
                         ) {
                             Column(
                                 modifier = Modifier.fillMaxSize(),
@@ -182,15 +196,19 @@ fun MediaUploadScreen(
                                 verticalArrangement = Arrangement.Center
                             ) {
                                 Text(
-                                    text = "Photo captured successfully",
-                                    fontSize = 14.sp,
-                                    color = TextPrimary,
+                                    text = "Photo captured successfully ✓",
+                                    fontFamily = com.fieldtrackpro.android.ui.theme.LeagueSpartanFamily,
+                                    fontSize = 15.sp,
+                                    color = com.fieldtrackpro.android.ui.theme.BrandNavy,
                                     fontWeight = FontWeight.Bold
                                 )
+                                Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = "Tap Upload to attach to visit",
-                                    fontSize = 12.sp,
-                                    color = TextMuted
+                                    text = "Tap Save / Upload to attach to visit",
+                                    fontFamily = com.fieldtrackpro.android.ui.theme.LibreBaskervilleFamily,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Normal,
+                                    color = com.fieldtrackpro.android.ui.theme.TextSecondary
                                 )
                             }
                         }
@@ -207,9 +225,10 @@ fun MediaUploadScreen(
                                     cameraUri = null
                                 },
                                 modifier = Modifier.weight(1f),
-                                enabled = (state !is MediaState.Loading)
+                                enabled = (state !is MediaState.Loading),
+                                shape = RoundedCornerShape(8.dp)
                             ) {
-                                Text("Retake", fontSize = 12.sp, color = FieldTrackNavy)
+                                Text("Retake", fontFamily = com.fieldtrackpro.android.ui.theme.LeagueSpartanFamily, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = com.fieldtrackpro.android.ui.theme.BrandNavy)
                             }
 
                             Button(
@@ -223,39 +242,47 @@ fun MediaUploadScreen(
                                 },
                                 modifier = Modifier.weight(1f),
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = FieldTrackNavy,
-                                    contentColor = SurfaceWhite
+                                    containerColor = com.fieldtrackpro.android.ui.theme.BrandNavy,
+                                    contentColor = com.fieldtrackpro.android.ui.theme.BrandWhite
                                 ),
-                                enabled = (state !is MediaState.Loading)
+                                enabled = (state !is MediaState.Loading),
+                                shape = RoundedCornerShape(8.dp)
                             ) {
-                                Text("Upload", fontSize = 12.sp, color = SurfaceWhite)
+                                Text("Upload", fontFamily = com.fieldtrackpro.android.ui.theme.LeagueSpartanFamily, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = com.fieldtrackpro.android.ui.theme.BrandWhite)
                             }
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(16.dp))
             }
 
             // Upload Controls
             Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = SurfaceWhite)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, com.fieldtrackpro.android.ui.theme.BrandLightGray, RoundedCornerShape(14.dp)),
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = com.fieldtrackpro.android.ui.theme.BrandWhite),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
             ) {
-                Column(modifier = Modifier.padding(20.dp)) {
+                Column(modifier = Modifier.padding(18.dp)) {
                     Text(
                         text = if (isOrderMode) "Capture Order" else "Upload Attachment",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = FieldTrackNavy
+                        fontFamily = com.fieldtrackpro.android.ui.theme.LeagueSpartanFamily,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = com.fieldtrackpro.android.ui.theme.BrandNavy
                     )
                     Text(
                         text = if (isOrderMode)
                             "Photograph the order and add a short diary note."
                         else
                             "Upload site photos or documents (JPEG, PNG, PDF supported up to 10MB).",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = TextMuted
+                        fontFamily = com.fieldtrackpro.android.ui.theme.LibreBaskervilleFamily,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Normal,
+                        color = com.fieldtrackpro.android.ui.theme.TextSecondary
                     )
 
                     Spacer(modifier = Modifier.height(16.dp))
@@ -263,12 +290,77 @@ fun MediaUploadScreen(
                     if (isOrderMode) {
                         OutlinedTextField(
                             value = orderNote,
-                            onValueChange = { orderNote = it },
-                            label = { Text("Order note (e.g. 5x Usha fans, 2x Singer mixers)") },
+                            onValueChange = { 
+                                orderNote = it
+                                fieldError = null
+                            },
+                            placeholder = { 
+                                Text(
+                                    "Order note (e.g. 5x Usha fans, 2x Singer mixers)",
+                                    fontFamily = com.fieldtrackpro.android.ui.theme.LeagueSpartanFamily,
+                                    fontSize = 14.sp,
+                                    color = com.fieldtrackpro.android.ui.theme.TextSubtle
+                                ) 
+                            },
                             modifier = Modifier.fillMaxWidth(),
-                            minLines = 2
+                            minLines = 3,
+                            enabled = state !is MediaState.Loading,
+                            shape = RoundedCornerShape(10.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = com.fieldtrackpro.android.ui.theme.TextPrimary,
+                                unfocusedTextColor = com.fieldtrackpro.android.ui.theme.TextPrimary,
+                                focusedBorderColor = com.fieldtrackpro.android.ui.theme.BrandGold,
+                                unfocusedBorderColor = com.fieldtrackpro.android.ui.theme.BrandLightGray,
+                                focusedContainerColor = com.fieldtrackpro.android.ui.theme.BrandWhite,
+                                unfocusedContainerColor = com.fieldtrackpro.android.ui.theme.BrandWhite
+                            )
                         )
-                        Spacer(modifier = Modifier.height(16.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Text(
+                            text = "ORDER PHOTO / INVOICE (OPTIONAL)",
+                            fontFamily = com.fieldtrackpro.android.ui.theme.LeagueSpartanFamily,
+                            fontSize = 11.sp,
+                            color = com.fieldtrackpro.android.ui.theme.TextSecondary,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.8.sp
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        if (capturedPreviewUri != null) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(com.fieldtrackpro.android.ui.theme.SurfaceSecondary, RoundedCornerShape(8.dp))
+                                    .padding(8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "Photo attached ✓",
+                                    fontFamily = com.fieldtrackpro.android.ui.theme.LeagueSpartanFamily,
+                                    fontSize = 13.sp,
+                                    color = com.fieldtrackpro.android.ui.theme.BrandNavy,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                OutlinedButton(
+                                    onClick = { 
+                                        capturedPreviewUri = null
+                                        cameraUri = null
+                                    },
+                                    enabled = state !is MediaState.Loading,
+                                    shape = RoundedCornerShape(6.dp)
+                                ) {
+                                    Text("Remove Photo", fontFamily = com.fieldtrackpro.android.ui.theme.LeagueSpartanFamily, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = com.fieldtrackpro.android.ui.theme.BrandNavy)
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
+                    }
+
+                    if (fieldError != null) {
+                        ErrorBanner(message = fieldError!!)
+                        Spacer(modifier = Modifier.height(12.dp))
                     }
 
                     if (state is MediaState.Error) {
@@ -276,14 +368,12 @@ fun MediaUploadScreen(
                         Spacer(modifier = Modifier.height(12.dp))
                     }
 
-                    // P1-6: a transient failure was queued for automatic
-                    // background retry - tell the rep their photo is not
-                    // lost, distinct from a permanent Error.
                     if (state is MediaState.QueuedForRetry) {
                         Text(
                             text = "Queued for automatic retry - will upload once connection improves.",
+                            fontFamily = com.fieldtrackpro.android.ui.theme.LeagueSpartanFamily,
                             fontSize = 13.sp,
-                            color = FieldTrackAmber,
+                            color = com.fieldtrackpro.android.ui.theme.BrandGoldDark,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(12.dp))
@@ -291,9 +381,10 @@ fun MediaUploadScreen(
 
                     if (state is MediaState.UploadSuccess) {
                         Text(
-                            text = "Upload successful!",
-                            fontSize = 13.sp,
-                            color = FieldTrackNavy,
+                            text = if (isOrderMode) "Order saved successfully!" else "Upload successful!",
+                            fontFamily = com.fieldtrackpro.android.ui.theme.LeagueSpartanFamily,
+                            fontSize = 14.sp,
+                            color = com.fieldtrackpro.android.ui.theme.BrandNavy,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(12.dp))
@@ -316,33 +407,90 @@ fun MediaUploadScreen(
                                 }
                             },
                             modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = if (hasCameraFeature) FieldTrackNavy else TextMuted,
-                                contentColor = SurfaceWhite
+                                containerColor = com.fieldtrackpro.android.ui.theme.BrandNavy,
+                                contentColor = com.fieldtrackpro.android.ui.theme.BrandWhite
                             ),
-                            enabled = ((state !is MediaState.Loading)) && hasCameraFeature
+                            enabled = state !is MediaState.Loading
                         ) {
-                            Text("Camera", fontSize = 12.sp, color = SurfaceWhite)
+                            Text(
+                                if (isOrderMode) "Attach Photo" else "Camera",
+                                fontFamily = com.fieldtrackpro.android.ui.theme.LeagueSpartanFamily,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = com.fieldtrackpro.android.ui.theme.BrandWhite
+                            )
                         }
 
                         OutlinedButton(
                             onClick = { imagePickerLauncher.launch("image/*") },
                             modifier = Modifier.weight(1f),
-                            enabled = (state !is MediaState.Loading)
+                            shape = RoundedCornerShape(8.dp),
+                            enabled = state !is MediaState.Loading
                         ) {
-                            Text("Photo", fontSize = 12.sp, color = FieldTrackNavy)
+                            Text(
+                                if (isOrderMode) "From Gallery" else "Photo",
+                                fontFamily = com.fieldtrackpro.android.ui.theme.LeagueSpartanFamily,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = com.fieldtrackpro.android.ui.theme.BrandNavy
+                            )
                         }
 
-                        // Orders are always a photographed diary note - no
-                        // document upload path in this mode.
                         if (!isOrderMode) {
                             OutlinedButton(
                                 onClick = { documentPickerLauncher.launch("application/pdf") },
                                 modifier = Modifier.weight(1f),
-                                enabled = (state !is MediaState.Loading)
+                                shape = RoundedCornerShape(8.dp),
+                                enabled = state !is MediaState.Loading
                             ) {
-                                Text("PDF", fontSize = 12.sp, color = FieldTrackNavy)
+                                Text(
+                                    "PDF",
+                                    fontFamily = com.fieldtrackpro.android.ui.theme.LeagueSpartanFamily,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = com.fieldtrackpro.android.ui.theme.BrandNavy
+                                )
                             }
+                        }
+                    }
+
+                    if (isOrderMode) {
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Button(
+                            onClick = {
+                                if (orderNote.isBlank() && capturedPreviewUri == null) {
+                                    fieldError = "Please enter an order note or attach a photo."
+                                } else {
+                                    val uri = capturedPreviewUri
+                                    if (uri != null) {
+                                        dispatchUpload(uri, "image/jpeg")
+                                        capturedPreviewUri = null
+                                        cameraUri = null
+                                    } else {
+                                        uploadOrder(context, viewModel, visitId, Uri.EMPTY, "text/plain", orderNote)
+                                    }
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp),
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = com.fieldtrackpro.android.ui.theme.BrandNavy,
+                                contentColor = com.fieldtrackpro.android.ui.theme.BrandWhite
+                            ),
+                            enabled = state !is MediaState.Loading
+                        ) {
+                            Text(
+                                "SAVE ORDER",
+                                fontFamily = com.fieldtrackpro.android.ui.theme.LeagueSpartanFamily,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                letterSpacing = 0.5.sp,
+                                color = com.fieldtrackpro.android.ui.theme.BrandWhite
+                            )
                         }
                     }
 
@@ -350,37 +498,28 @@ fun MediaUploadScreen(
                         Spacer(modifier = Modifier.height(12.dp))
                         CircularProgressIndicator(
                             modifier = Modifier.align(Alignment.CenterHorizontally),
-                            color = FieldTrackNavy
-                        )
-                    }
-
-                    if (hasCameraFeature.not()) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "Camera not available on this device",
-                            fontSize = 11.sp,
-                            color = TextMuted
+                            color = com.fieldtrackpro.android.ui.theme.BrandGold
                         )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(20.dp))
 
-            // Existing Attachments Section
+            // Existing Attachments / Orders Section
             Text(
-                text = "Existing Attachments",
-                style = MaterialTheme.typography.titleMedium,
-                color = FieldTrackNavy
+                text = (if (isOrderMode) "Existing Orders" else "Existing Attachments").uppercase(),
+                fontFamily = com.fieldtrackpro.android.ui.theme.LeagueSpartanFamily,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.8.sp,
+                color = com.fieldtrackpro.android.ui.theme.BrandNavy
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
             when (val s = state) {
                 is MediaState.ListSuccess -> {
-                    // Orders and generic attachments are shown in their own
-                    // screen instance (matches web's split between "Attached
-                    // Media" and "Orders" sections on the same visit).
                     val items = s.items.filter { it.isOrder == isOrderMode }
                     if (items.isEmpty()) {
                         EmptyState(
@@ -388,12 +527,13 @@ fun MediaUploadScreen(
                             subtitle = if (isOrderMode) "No orders captured for this visit yet." else "No files uploaded for this visit yet."
                         )
                     } else {
-                        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            items(items) { media ->
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items.forEach { media ->
                                 Card(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clickable {
+                                        .border(1.dp, com.fieldtrackpro.android.ui.theme.BrandLightGray, RoundedCornerShape(12.dp))
+                                        .clickable(enabled = !isOrderMode || media.hasPhotoAttachment) {
                                             onPreviewMedia(
                                                 media.id,
                                                 media.displayName,
@@ -401,7 +541,8 @@ fun MediaUploadScreen(
                                             )
                                         },
                                     shape = RoundedCornerShape(12.dp),
-                                    colors = CardDefaults.cardColors(containerColor = SurfaceWhite)
+                                    colors = CardDefaults.cardColors(containerColor = com.fieldtrackpro.android.ui.theme.BrandWhite),
+                                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                                 ) {
                                     Row(
                                         modifier = Modifier
@@ -410,27 +551,24 @@ fun MediaUploadScreen(
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Column {
+                                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                                             Text(
-                                                text = media.originalFilename ?: media.storageKey.split("/").lastOrNull() ?: media.id,
-                                                fontSize = 14.sp,
+                                                text = if (isOrderMode) media.orderText else media.displayName,
+                                                fontFamily = com.fieldtrackpro.android.ui.theme.LeagueSpartanFamily,
+                                                fontSize = 15.sp,
                                                 fontWeight = FontWeight.Bold,
-                                                color = TextPrimary
+                                                color = com.fieldtrackpro.android.ui.theme.BrandNavy
                                             )
+                                            Spacer(modifier = Modifier.height(3.dp))
                                             Text(
-                                                text = "Size: ${media.fileSizeBytes} bytes | Type: ${media.mediaType}",
-                                                fontSize = 12.sp,
-                                                color = TextMuted
+                                                text = "Captured: ${media.uploadedAt.take(19).replace('T', ' ')}",
+                                                fontFamily = com.fieldtrackpro.android.ui.theme.LibreBaskervilleFamily,
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.Normal,
+                                                color = com.fieldtrackpro.android.ui.theme.TextSecondary
                                             )
-                                            if (!media.note.isNullOrBlank()) {
-                                                Text(
-                                                    text = media.note,
-                                                    fontSize = 12.sp,
-                                                    color = TextPrimary
-                                                )
-                                            }
                                         }
-                                        StatusBadge(status = media.mediaType)
+                                        StatusBadge(status = if (isOrderMode) (if (media.hasPhotoAttachment) "PHOTO ATTACHED" else "ORDER") else media.mediaType)
                                     }
                                 }
                             }
@@ -465,8 +603,6 @@ private fun createTempImageUri(context: android.content.Context): Uri {
 private fun readBytesForUpload(context: android.content.Context, uri: Uri, mimeType: String): Pair<ByteArray, String>? {
     if (mimeType.startsWith("image/")) {
         ImageDownsampler.downsample(context, uri)?.let { return it to "image/jpeg" }
-        // Decoding as an image failed - fall through to the raw-bytes path
-        // below rather than blocking the upload outright.
     }
     val inputStream = context.contentResolver.openInputStream(uri)
     val bytes = inputStream?.readBytes()
@@ -491,7 +627,7 @@ private fun uploadFile(
     }
 }
 
-/** P2-B: order capture - identical to uploadFile, routed through captureOrder instead. */
+/** P2-B: order capture - routes through captureOrder with note. */
 private fun uploadOrder(
     context: android.content.Context,
     viewModel: MediaViewModel,

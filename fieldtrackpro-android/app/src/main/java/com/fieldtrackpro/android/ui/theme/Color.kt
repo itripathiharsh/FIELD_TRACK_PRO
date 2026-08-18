@@ -3,65 +3,97 @@ package com.fieldtrackpro.android.ui.theme
 import androidx.compose.ui.graphics.Color
 
 /**
- * FieldTrack Pro Centralized Brand Palette
+ * FieldTrack Pro Centralized Brand Design System Tokens
  *
- * Source of Truth: Web Application Brand Architecture
- * - Primary Navy: #14213D
- * - Primary Amber: #FCA311
- * - Supporting Neutrals: Off-white surfaces, dark navy text, muted slate text, borders
+ * Official Palette Specification:
+ * - Black:             #000000
+ * - Primary Navy:      #14213D
+ * - Accent Gold:       #FCA311
+ * - Light Gray:        #E5E5E5
+ * - White:             #FFFFFF
+ *
+ * Semantic Mappings:
+ * - Success:           #10B981 (Green for verified/completed check-ins)
+ * - Error:             #EF4444 (Red for violations/cancellations)
+ * - Warning:           #FCA311 (Gold brand color)
  */
 
-// Core Brand Colors
-val FieldTrackNavy = Color(0xFF14213D)
-val FieldTrackNavyDark = Color(0xFF0D1627)
-val FieldTrackNavyLight = Color(0xFF1E2E52)
+// 1. Official Core Palette
+val BrandBlack = Color(0xFF000000)
+val BrandNavy = Color(0xFF14213D)
+val BrandNavyDark = Color(0xFF0A1120)
+val BrandNavyLight = Color(0xFF1E2F54)
 
-val FieldTrackAmber = Color(0xFFFCA311)
-val FieldTrackAmberDark = Color(0xFFE5920A)
-val FieldTrackAmberLight = Color(0xFFFFF3D6)
+val BrandGold = Color(0xFFFCA311)
+val BrandGoldDark = Color(0xFFE5920A)
+val BrandGoldLight = Color(0xFFFFF4DE)
 
-// Neutrals & Surfaces
-val SurfaceWhite = Color(0xFFFFFFFF)
-val SurfaceOffWhite = Color(0xFFF8FAFC)
-val SurfaceContainer = Color(0xFFF1F5F9)
-val SurfaceCard = Color(0xFFFFFFFF)
+val BrandLightGray = Color(0xFFE5E5E5)
+val BrandWhite = Color(0xFFFFFFFF)
 
-// Text & Content Tokens
-val TextPrimary = Color(0xFF14213D)
-val TextMuted = Color(0xFF64748B)
-val TextSubtle = Color(0xFF94A3B8)
-val BorderMuted = Color(0xFFE2E8F0)
+// 2. Semantic Surface & Background Tokens
+val SurfacePrimary = BrandWhite
+val SurfaceSecondary = Color(0xFFF8F9FA) // Clean off-white surface
+val SurfaceTertiary = BrandLightGray
+val SurfaceCard = BrandWhite
 
-// Semantic State Colors
+// 3. Typography Content Tokens
+val TextPrimary = BrandNavy // #14213D (Bold & Primary UI)
+val TextSecondary = Color(0xFF2B3A4A) // Dark Muted Navy-Gray (High readability normal body/descriptions)
+val TextSubtle = Color(0xFF4B5563) // Accessible Slate Gray (Metadata, timestamps, subheadings)
+val TextMuted = TextSubtle
+val TextOnDark = BrandWhite
+val TextOnGold = BrandBlack
+
+// 4. Border Tokens
+val BorderSubtle = BrandLightGray
+val BorderFocused = BrandGold
+val BorderActive = BrandNavy
+
+// 5. Semantic Feedback Tokens
 val SuccessGreen = Color(0xFF10B981)
-val SuccessGreenLight = Color(0xFFD1FAE5)
-val WarningAmber = Color(0xFFFCA311)
-val WarningAmberLight = Color(0xFFFEF3C7)
+val SuccessGreenBg = Color(0xFFD1FAE5)
+val SuccessGreenText = Color(0xFF065F46)
+
 val ErrorRed = Color(0xFFEF4444)
-val ErrorRedLight = Color(0xFFFEE2E2)
+val ErrorRedBg = Color(0xFFFEE2E2)
+val ErrorRedText = Color(0xFF991B1B)
 
-// Legacy Palette Bridges (Re-mapped to Brand Palette to prevent broken references)
-val Navy900 = FieldTrackNavyDark
-val Navy800 = FieldTrackNavy
-val Navy700 = FieldTrackNavyLight
+val WarningGold = BrandGold
+val WarningGoldBg = BrandGoldLight
+val WarningGoldText = Color(0xFF78350F)
 
-val Slate900 = FieldTrackNavy
-val Slate800 = FieldTrackNavyLight
-val Slate700 = Color(0xFF334155)
-val Slate500 = TextMuted
+// 6. Compatibility & Legacy Bridges
+val FieldTrackNavy = BrandNavy
+val FieldTrackNavyDark = BrandNavyDark
+val FieldTrackNavyLight = BrandNavyLight
+val FieldTrackAmber = BrandGold
+val FieldTrackAmberDark = BrandGoldDark
+val FieldTrackAmberLight = BrandGoldLight
+val SurfaceWhite = BrandWhite
+val SurfaceOffWhite = SurfaceSecondary
+val SurfaceContainer = Color(0xFFF0F1F3)
+val BorderMuted = BrandLightGray
+val SuccessGreenLight = SuccessGreenBg
+val WarningAmber = BrandGold
+val WarningAmberLight = BrandGoldLight
+val ErrorRedLight = ErrorRedBg
+val Navy900 = BrandNavyDark
+val Navy800 = BrandNavy
+val Navy700 = BrandNavyLight
+val Slate900 = BrandNavy
+val Slate800 = BrandNavyLight
+val Slate700 = TextSecondary
+val Slate500 = TextSecondary
 val Slate300 = TextSubtle
-val Slate100 = SurfaceContainer
-val Slate50 = SurfaceOffWhite
-
-val ElectricBlue = FieldTrackNavy
-val ElectricBlueLight = FieldTrackNavyLight
-val ElectricBlueDark = FieldTrackNavyDark
-
+val Slate100 = BrandLightGray
+val Slate50 = SurfaceSecondary
+val ElectricBlue = BrandNavy
+val ElectricBlueLight = BrandNavyLight
+val ElectricBlueDark = BrandNavyDark
 val EmeraldGreen = SuccessGreen
-val EmeraldGreenLight = SuccessGreenLight
-
-val AmberWarning = FieldTrackAmber
+val EmeraldGreenLight = SuccessGreenBg
+val AmberWarning = BrandGold
 val CoralRed = ErrorRed
-
-val PrimaryButton = FieldTrackNavy
-val AccentButton = FieldTrackAmber
+val PrimaryButton = BrandNavy
+val AccentButton = BrandGold

@@ -296,7 +296,8 @@ fun NavGraph(
         composable(Screen.Notifications.route) {
             NotificationsListScreen(
                 viewModel = notificationViewModel,
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToVisitDetails = { vId -> navController.navigate(Screen.VisitDetails.createRoute(vId)) }
             )
         }
 

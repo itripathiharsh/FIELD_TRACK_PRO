@@ -66,6 +66,7 @@ class CheckOutRequest(BaseModel):
     accuracy_m: float = Field(..., ge=0.0, description="GPS horizontal accuracy in meters")
     is_mock_location: bool = Field(default=False, description="Flag indicating if location source is fake/mock provider")
     captured_at: datetime = Field(..., description="When the device captured this GPS fix")
+    idempotency_key: str | None = None
 
 
 class VisitRead(BaseModel):
@@ -75,7 +76,9 @@ class VisitRead(BaseModel):
     scheduled_at: datetime
     status: VisitStatus
     check_in_at: datetime | None
+    check_in_received_at: datetime | None = None
     check_out_at: datetime | None
+    check_out_received_at: datetime | None = None
     synced: bool
     created_by: uuid.UUID
     created_at: datetime
@@ -85,6 +88,11 @@ class VisitRead(BaseModel):
     # trip just to show which form is required and whether it's still usable.
     required_form_name: str | None = None
     required_form_status: FormStatus | None = None
+    customer_name: str
+    customer_address: str
+    employee_name: str
+    area_name: str | None = None
+    territory_name: str | None = None
 
     model_config = {"from_attributes": True}
 

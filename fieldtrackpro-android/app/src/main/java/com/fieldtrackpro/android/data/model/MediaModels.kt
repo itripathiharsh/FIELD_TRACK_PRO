@@ -22,12 +22,19 @@ data class MediaDto(
     @SerializedName("uploaded_at") val uploadedAt: String
 ) {
     val isOrder: Boolean get() = mediaType == "ORDER"
-    // An order capture is always a photograph too (see media_service.upload_visit_media) -
-    // it should get the same thumbnail/preview treatment as a plain PHOTO.
-    val isPhoto: Boolean get() = mediaType == "PHOTO" || isOrder
+    val hasPhotoAttachment: Boolean
+        get() = isOrder && (storageKey.endsWith(".jpg", ignoreCase = true) ||
+                storageKey.endsWith(".jpeg", ignoreCase = true) ||
+                storageKey.endsWith(".png", ignoreCase = true) ||
+                storageKey.endsWith(".webp", ignoreCase = true) ||
+                (originalFilename != null && (originalFilename.endsWith(".jpg", ignoreCase = true) || originalFilename.endsWith(".png", ignoreCase = true))))
+    val isPhoto: Boolean get() = mediaType == "PHOTO" || (isOrder && hasPhotoAttachment)
     val isDocument: Boolean get() = mediaType == "DOCUMENT"
+
+    val orderText: String
+        get() = note?.takeIf { it.isNotBlank() } ?: (originalFilename ?: "Order")
 
     /** Name to show in the UI; falls back to the storage key's last segment. */
     val displayName: String
-        get() = originalFilename ?: storageKey.substringAfterLast('/')
+        get() = if (isOrder && !note.isNullOrBlank()) note else (originalFilename ?: storageKey.substringAfterLast('/'))
 }

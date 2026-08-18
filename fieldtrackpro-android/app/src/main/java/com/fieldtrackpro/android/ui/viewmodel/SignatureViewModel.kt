@@ -35,6 +35,10 @@ class SignatureViewModel(application: Application, tokenManager: TokenManager) :
     private val _signatureState = MutableStateFlow<SignatureState>(SignatureState.Idle)
     val signatureState: StateFlow<SignatureState> = _signatureState.asStateFlow()
 
+    // Hold capture states across recompositions and screen rotations
+    val employeeSignatureState = com.fieldtrackpro.android.ui.screens.signature.SignatureCaptureState()
+    val customerSignatureState = com.fieldtrackpro.android.ui.screens.signature.SignatureCaptureState()
+
     fun loadVisitSignatures(visitId: String) {
         viewModelScope.launch {
             _signatureState.value = SignatureState.Loading

@@ -151,6 +151,16 @@ class FileValidationService:
         if expected_type == MediaType.DOCUMENT:
             return cls.validate_document(file_bytes, original_filename)
 
+        if expected_type == MediaType.ORDER:
+            detected_mime = cls.detect_mime_type(file_bytes)
+            if detected_mime in cls.ALLOWED_IMAGE_TYPES:
+                _, _, sanitized_name, checksum = cls.validate_image(file_bytes, original_filename)
+                return detected_mime, MediaType.ORDER, sanitized_name, checksum
+            # Text-only structured order note
+            sanitized_name = cls.sanitize_filename(original_filename)
+            checksum = cls.compute_sha256(file_bytes)
+            return "text/plain", MediaType.ORDER, sanitized_name, checksum
+
         # Auto-detect: try image first, then document
         detected_mime = cls.detect_mime_type(file_bytes)
         if detected_mime in cls.ALLOWED_IMAGE_TYPES:

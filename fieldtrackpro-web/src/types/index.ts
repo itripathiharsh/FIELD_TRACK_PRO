@@ -63,7 +63,11 @@ export interface Customer {
   /** FT-012: the geofence centre, required by the customers table. */
   location: GeoPoint;
   geofence_radius_m: number;
+  /** Zone. */
   territory_id: string | null;
+  /** Zone -> Area -> Outlet. Once set, Area is the source of truth for the Zone (territory_id is kept in sync server-side, never independently editable once an Area is assigned). */
+  area_id: string | null;
+  area_name: string | null;
   /** External-system cross-reference (Tally ledger code, Excel/MIS import key). */
   outlet_code: string | null;
   created_by: string;
@@ -72,7 +76,7 @@ export interface Customer {
 
 export type TerritoryStatus = 'ACTIVE' | 'INACTIVE';
 
-/** Response of `GET /api/v1/territories`. */
+/** Response of `GET /api/v1/territories` - the Zone level of the Zone -> Area -> Outlet hierarchy. */
 export interface Territory {
   id: string;
   name: string;
@@ -82,6 +86,32 @@ export interface Territory {
   status?: TerritoryStatus;
   created_at: string;
   updated_at?: string | null;
+}
+
+/** Response of `GET /api/v1/areas` - the geographic layer between a Zone (Territory) and an Outlet (Customer). */
+export interface Area {
+  id: string;
+  name: string;
+  territory_id: string;
+  territory_name: string | null;
+  created_at: string;
+  updated_at?: string | null;
+}
+
+/**
+ * An employee's coverage of one Area - many-to-many, brand-agnostic. One
+ * employee can cover several Areas across several Zones; this is additive
+ * to (not a replacement for) the older single-Zone
+ * Employee.territory_id/TerritoryAssignmentHistory model.
+ */
+export interface EmployeeAreaAssignment {
+  id: string;
+  employee_id: string;
+  area_id: string;
+  area_name: string;
+  territory_id: string;
+  territory_name: string;
+  created_at: string;
 }
 
 export type VisitStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'FLAGGED' | 'MISSED';
@@ -94,14 +124,19 @@ export interface Visit {
   scheduled_at: string;
   status: VisitStatus;
   check_in_at: string | null;
+  check_in_received_at?: string | null;
   check_out_at: string | null;
+  check_out_received_at?: string | null;
   synced: boolean;
   created_by: string;
   created_at: string;
   updated_at: string;
   /** Denormalised labels supplied by the API for list rendering. */
   customer_name?: string | null;
+  customer_address?: string | null;
   employee_name?: string | null;
+  area_name?: string | null;
+  territory_name?: string | null;
   geo_failure_count?: number;
   /** The form template an employee must fill for this visit, if any. */
   required_form_id: string | null;
@@ -231,9 +266,68 @@ export interface AccountSummary {
   max_days_outstanding: number;
   collection_status: AgingStatus;
   most_recent_payment: Payment | null;
+  /** The most recent visit that actually happened (has a check-in) - null if this outlet has never had one. */
+  most_recent_visit_date: string | null;
+  most_recent_visit_employee_name: string | null;
   recent_invoices: Invoice[];
   recent_payments: Payment[];
   brand_summary: BrandSummary[];
+}
+
+/** One row of `GET /api/v1/collections/overview` - the outlet-list financial overview (Meeting 2). */
+export interface OutletCollectionRow {
+  customer_id: string;
+  outlet_code: string | null;
+  customer_name: string;
+  territory_id: string | null;
+  territory_name: string | null;
+  area_id: string | null;
+  area_name: string | null;
+  /**
+   * Every employee currently assigned to cover this outlet's Area
+   * (brand-agnostic many-to-many - genuinely zero, one, or several, never
+   * assumed to be exactly one). Falls back to the legacy single-Zone
+   * derivation only for an outlet with no Area assigned yet.
+   */
+  assigned_employees: { id: string; name: string }[];
+
+  total_invoiced: string;
+  total_paid: string;
+  total_outstanding: string;
+  overdue_amount: string;
+  max_days_outstanding: number;
+  collection_status: AgingStatus;
+
+  relevant_mis_bucket: MisBucket | null;
+  relevant_bucket_amount: string;
+
+  most_recent_payment_date: string | null;
+  most_recent_payment_amount: string | null;
+  most_recent_payment_employee_name: string | null;
+  most_recent_visit_date: string | null;
+  most_recent_visit_employee_name: string | null;
+}
+
+export interface CollectionsOverviewTotals {
+  total_outlets: number;
+  total_invoiced: string;
+  total_paid: string;
+  total_outstanding: string;
+  current_amount: string;
+  bucket_0_15: string;
+  bucket_16_30: string;
+  bucket_31_60: string;
+  bucket_61_90: string;
+  bucket_90_plus: string;
+}
+
+/** Response of `GET /api/v1/collections/overview`. */
+export interface CollectionsOverviewResponse {
+  totals: CollectionsOverviewTotals;
+  outlets: OutletCollectionRow[];
+  total_count: number;
+  skip: number;
+  limit: number;
 }
 
 export interface LoginResponse {

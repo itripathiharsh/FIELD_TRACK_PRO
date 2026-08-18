@@ -97,8 +97,7 @@ async def upload_visit_media(
     await _assert_visit_access(visit_id, current_user, session)
 
     # 1. Inspect & validate file safety (magic bytes, size, sanitised name).
-    # ORDER captures are photos content-wise; validate them exactly like one.
-    expected_type = MediaType.DOCUMENT if is_document else MediaType.PHOTO
+    expected_type = MediaType.ORDER if is_order else (MediaType.DOCUMENT if is_document else MediaType.PHOTO)
     detected_mime, media_type, sanitized_name, checksum = FileValidationService.validate_and_inspect(
         file_bytes=file_bytes,
         original_filename=original_filename,
@@ -118,8 +117,8 @@ async def upload_visit_media(
             error_code="MEDIA_DUPLICATE_CONTENT",
         )
 
-    # 3. Compress images (mandatory per Phase 5 Section 2). Documents are not compressed.
-    if media_type == MediaType.PHOTO:
+    # 3. Compress images (mandatory per Phase 5 Section 2). Documents and text orders are not compressed.
+    if detected_mime in FileValidationService.ALLOWED_IMAGE_TYPES:
         try:
             file_bytes = _compress_image(file_bytes)
             # Recompute checksum after compression
@@ -129,8 +128,6 @@ async def upload_visit_media(
         except Exception as e:
             logger.warning("Image compression failed, storing original: %s", e)
 
-    # 3b. Reclassify after compression so the compression check above still
-    # ran on the PHOTO path - only the stored label changes.
     if is_order:
         media_type = MediaType.ORDER
 

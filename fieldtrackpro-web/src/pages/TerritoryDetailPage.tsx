@@ -14,6 +14,7 @@ import {
   AlertTriangle,
   HelpCircle,
   AlertCircle,
+  Layers,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardSubtitle } from '../components/ui/Card';
 import { PageHeader } from '../components/ui/PageHeader';
@@ -24,7 +25,7 @@ import { ErrorBanner } from '../components/ui/ErrorBanner';
 import { EmptyState } from '../components/ui/EmptyState';
 import { FieldTrackMap, MapMarker, TerritoryCircle } from '../components/maps/FieldTrackMap';
 import { apiClient } from '../api/client';
-import { Territory, Employee, Customer } from '../types';
+import { Territory, Employee, Customer, Area } from '../types';
 
 /**
  * Haversine formula to calculate distance in kilometers between two lat/lng points.
@@ -57,9 +58,16 @@ export const TerritoryDetailPage: React.FC = () => {
   const [allEmployees, setAllEmployees] = useState<Employee[]>([]);
   const [assignedCustomers, setAssignedCustomers] = useState<Customer[]>([]);
   const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
+  const [areas, setAreas] = useState<Area[]>([]);
 
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Area Modal State
+  const [isAreaModalOpen, setIsAreaModalOpen] = useState(false);
+  const [newAreaName, setNewAreaName] = useState('');
+  const [areaFormError, setAreaFormError] = useState<string | null>(null);
+  const [isSavingArea, setIsSavingArea] = useState(false);
 
   // Edit Modal State
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -84,9 +92,10 @@ export const TerritoryDetailPage: React.FC = () => {
       const terr = await apiClient.getTerritoryById(id);
       setTerritory(terr);
 
-      const [emps, custs] = await Promise.all([
+      const [emps, custs, zoneAreas] = await Promise.all([
         apiClient.getEmployees().catch(() => [] as Employee[]),
         apiClient.getCustomers().catch(() => [] as Customer[]),
+        apiClient.getAreas(id).catch(() => [] as Area[]),
       ]);
 
       setAllEmployees(emps);
@@ -94,6 +103,7 @@ export const TerritoryDetailPage: React.FC = () => {
 
       setAllCustomers(custs);
       setAssignedCustomers(custs.filter((c) => c.territory_id === id));
+      setAreas(zoneAreas);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load territory');
@@ -239,6 +249,43 @@ export const TerritoryDetailPage: React.FC = () => {
       load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to unassign representative');
+    }
+  };
+
+  const openAreaModal = () => {
+    setNewAreaName('');
+    setAreaFormError(null);
+    setIsAreaModalOpen(true);
+  };
+
+  const handleCreateArea = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!id) return;
+    const name = newAreaName.trim();
+    if (!name) {
+      setAreaFormError('Area name cannot be empty.');
+      return;
+    }
+    setAreaFormError(null);
+    setIsSavingArea(true);
+    try {
+      await apiClient.createArea({ name, territory_id: id });
+      setIsAreaModalOpen(false);
+      load();
+    } catch (err) {
+      setAreaFormError(err instanceof Error ? err.message : 'Failed to create area');
+    } finally {
+      setIsSavingArea(false);
+    }
+  };
+
+  const handleDeleteArea = async (areaId: string, name: string) => {
+    if (!window.confirm(`Delete area "${name}"? This only works if no outlet is currently assigned to it.`)) return;
+    try {
+      await apiClient.deleteArea(areaId);
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete area');
     }
   };
 
@@ -538,6 +585,50 @@ export const TerritoryDetailPage: React.FC = () => {
         </div>
       </Card>
 
+      {/* Areas Section: Zone -> Area -> Outlet */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle>Areas</CardTitle>
+            <CardSubtitle>The Area layer between this Zone and its Outlets.</CardSubtitle>
+          </div>
+          <Button variant="outline" size="sm" icon={Plus} onClick={openAreaModal}>
+            Add Area
+          </Button>
+        </CardHeader>
+
+        <div className="p-space-5 pt-0">
+          {areas.length === 0 ? (
+            <p className="text-xs text-on-surface-variant italic bg-surface-container-low p-space-4 rounded-lg text-center border border-surface-container-highest">
+              No areas defined yet for this zone.
+            </p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-space-3">
+              {areas.map((a) => (
+                <div
+                  key={a.id}
+                  className="flex items-center justify-between p-space-3 rounded-lg border border-surface-container-highest hover:bg-surface-container-low transition-colors"
+                >
+                  <div className="flex items-center gap-space-2">
+                    <Layers className="w-4 h-4 text-secondary shrink-0" />
+                    <span className="text-sm font-semibold text-primary">{a.name}</span>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    icon={X}
+                    className="text-error hover:bg-error-container/30"
+                    onClick={() => handleDeleteArea(a.id, a.name)}
+                  >
+                    Delete
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </Card>
+
       {/* Field Representatives Section */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
@@ -821,6 +912,39 @@ export const TerritoryDetailPage: React.FC = () => {
               isLoading={isSaving}
             >
               Save Changes
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal: Add Area */}
+      <Modal
+        isOpen={isAreaModalOpen}
+        onClose={() => setIsAreaModalOpen(false)}
+        title="Add Area"
+        subtitle={`Create a new area under ${territory.name}.`}
+      >
+        {areaFormError && (
+          <div className="mb-space-4 font-body-md text-xs text-on-error-container bg-error-container p-space-3 rounded-lg border border-error flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-error shrink-0" />
+            <span>{areaFormError}</span>
+          </div>
+        )}
+        <form onSubmit={handleCreateArea} className="space-y-space-4">
+          <Input
+            label="Area Name"
+            type="text"
+            required
+            value={newAreaName}
+            onChange={(e) => setNewAreaName(e.target.value)}
+            placeholder="e.g. Govind Nagar"
+          />
+          <div className="pt-space-4 flex justify-end gap-space-3 border-t border-surface-container-highest mt-space-6">
+            <Button type="button" variant="ghost" size="sm" onClick={() => setIsAreaModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="secondary" size="sm" isLoading={isSavingArea}>
+              Save Area
             </Button>
           </div>
         </form>

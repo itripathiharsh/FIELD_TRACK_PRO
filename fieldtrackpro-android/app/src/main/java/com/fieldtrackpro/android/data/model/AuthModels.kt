@@ -46,7 +46,9 @@ data class UserDto(
     val role: String,
     @SerializedName("is_active") val isActive: Boolean,
     @SerializedName("territory_id") val territoryId: String? = null,
-    @SerializedName("employee_id") val employeeId: String? = null
+    @SerializedName("territory_name") val territoryName: String? = null,
+    @SerializedName("employee_id") val employeeId: String? = null,
+    @SerializedName("employee_code") val employeeCode: String? = null
 ) {
     /** Display label, tolerant of an account with no employee profile. */
     val displayName: String
@@ -57,4 +59,18 @@ data class UserDto(
 data class ChangePasswordRequest(
     @SerializedName("old_password") val oldPassword: String,
     @SerializedName("new_password") val newPassword: String
+)
+
+data class ForgotPasswordRequest(
+    val email: String
+)
+
+data class ResetPasswordRequest(
+    val email: String,
+    val otp: String,
+    @SerializedName("new_password") val newPassword: String
+)
+
+data class MessageResponse(
+    val message: String
 )

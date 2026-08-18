@@ -2,39 +2,39 @@ package com.fieldtrackpro.android.ui.theme
 
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.googlefonts.Font
-import androidx.compose.ui.text.googlefonts.GoogleFont
 import androidx.compose.ui.unit.sp
 import com.fieldtrackpro.android.R
+
+import androidx.compose.ui.text.ExperimentalTextApi
+import androidx.compose.ui.text.font.FontVariation
 
 /**
  * FieldTrack Pro Centralized Brand Typography
  *
- * Primary Display/UI Font: League Spartan
- * Secondary/Readable Serif Font: Libre Baskerville
+ * Primary UI / Headings / Buttons / Navigation / Numbers: League Spartan
+ * Secondary / Editorial / Long-form / Supporting text: Libre Baskerville
  */
 
-val provider = GoogleFont.Provider(
-    providerAuthority = "com.google.android.gms.fonts",
-    providerPackage = "com.google.android.gms",
-    certificates = R.array.com_google_android_gms_fonts_certs
-)
-
-val LeagueSpartanFont = GoogleFont("League Spartan")
-val LibreBaskervilleFont = GoogleFont("Libre Baskerville")
-
+// Local bundled font families (guaranteed to render immediately without network dependency)
+@OptIn(ExperimentalTextApi::class)
 val LeagueSpartanFamily = FontFamily(
-    Font(googleFont = LeagueSpartanFont, fontProvider = provider, weight = FontWeight.Normal),
-    Font(googleFont = LeagueSpartanFont, fontProvider = provider, weight = FontWeight.Medium),
-    Font(googleFont = LeagueSpartanFont, fontProvider = provider, weight = FontWeight.SemiBold),
-    Font(googleFont = LeagueSpartanFont, fontProvider = provider, weight = FontWeight.Bold)
+    Font(R.font.league_spartan, weight = FontWeight.Normal, variationSettings = FontVariation.Settings(FontVariation.weight(400))),
+    Font(R.font.league_spartan, weight = FontWeight.Medium, variationSettings = FontVariation.Settings(FontVariation.weight(500))),
+    Font(R.font.league_spartan, weight = FontWeight.SemiBold, variationSettings = FontVariation.Settings(FontVariation.weight(600))),
+    Font(R.font.league_spartan, weight = FontWeight.Bold, variationSettings = FontVariation.Settings(FontVariation.weight(700))),
+    Font(R.font.league_spartan, weight = FontWeight.ExtraBold, variationSettings = FontVariation.Settings(FontVariation.weight(800)))
 )
 
+@OptIn(ExperimentalTextApi::class)
 val LibreBaskervilleFamily = FontFamily(
-    Font(googleFont = LibreBaskervilleFont, fontProvider = provider, weight = FontWeight.Normal),
-    Font(googleFont = LibreBaskervilleFont, fontProvider = provider, weight = FontWeight.Bold)
+    Font(R.font.libre_baskerville, weight = FontWeight.Normal, variationSettings = FontVariation.Settings(FontVariation.weight(400))),
+    Font(R.font.libre_baskerville, weight = FontWeight.Medium, variationSettings = FontVariation.Settings(FontVariation.weight(500))),
+    Font(R.font.libre_baskerville, weight = FontWeight.Bold, variationSettings = FontVariation.Settings(FontVariation.weight(700))),
+    Font(R.font.libre_baskerville_italic, weight = FontWeight.Normal, style = FontStyle.Italic)
 )
 
 // Brand Typography Specification
@@ -50,11 +50,12 @@ val Typography = Typography(
         fontFamily = LeagueSpartanFamily,
         fontWeight = FontWeight.Bold,
         fontSize = 28.sp,
-        lineHeight = 34.sp
+        lineHeight = 34.sp,
+        letterSpacing = (-0.3).sp
     ),
     displaySmall = TextStyle(
         fontFamily = LeagueSpartanFamily,
-        fontWeight = FontWeight.SemiBold,
+        fontWeight = FontWeight.Bold,
         fontSize = 24.sp,
         lineHeight = 30.sp
     ),
@@ -62,7 +63,8 @@ val Typography = Typography(
         fontFamily = LeagueSpartanFamily,
         fontWeight = FontWeight.Bold,
         fontSize = 22.sp,
-        lineHeight = 28.sp
+        lineHeight = 28.sp,
+        letterSpacing = (-0.2).sp
     ),
     headlineMedium = TextStyle(
         fontFamily = LeagueSpartanFamily,
@@ -72,7 +74,7 @@ val Typography = Typography(
     ),
     headlineSmall = TextStyle(
         fontFamily = LeagueSpartanFamily,
-        fontWeight = FontWeight.Medium,
+        fontWeight = FontWeight.SemiBold,
         fontSize = 16.sp,
         lineHeight = 22.sp
     ),
@@ -90,7 +92,7 @@ val Typography = Typography(
     ),
     titleSmall = TextStyle(
         fontFamily = LeagueSpartanFamily,
-        fontWeight = FontWeight.Medium,
+        fontWeight = FontWeight.SemiBold,
         fontSize = 13.sp,
         lineHeight = 18.sp
     ),
@@ -106,42 +108,58 @@ val Typography = Typography(
         fontWeight = FontWeight.Normal,
         fontSize = 14.sp,
         lineHeight = 20.sp,
-        letterSpacing = 0.25.sp
+        letterSpacing = 0.2.sp
     ),
     bodySmall = TextStyle(
         fontFamily = LeagueSpartanFamily,
         fontWeight = FontWeight.Normal,
         fontSize = 12.sp,
         lineHeight = 16.sp,
-        letterSpacing = 0.4.sp
+        letterSpacing = 0.3.sp
     ),
     labelLarge = TextStyle(
         fontFamily = LeagueSpartanFamily,
-        fontWeight = FontWeight.SemiBold,
+        fontWeight = FontWeight.Bold,
         fontSize = 14.sp,
         lineHeight = 20.sp,
-        letterSpacing = 0.1.sp
+        letterSpacing = 0.3.sp
     ),
     labelMedium = TextStyle(
         fontFamily = LeagueSpartanFamily,
-        fontWeight = FontWeight.Medium,
+        fontWeight = FontWeight.SemiBold,
         fontSize = 12.sp,
         lineHeight = 16.sp,
-        letterSpacing = 0.5.sp
+        letterSpacing = 0.4.sp
     ),
     labelSmall = TextStyle(
         fontFamily = LeagueSpartanFamily,
-        fontWeight = FontWeight.Medium,
+        fontWeight = FontWeight.SemiBold,
         fontSize = 10.sp,
         lineHeight = 14.sp,
         letterSpacing = 0.5.sp
     )
 )
 
-// Readable Serif Typography Style for documents/notes
-val SerifBodyStyle = TextStyle(
+// Secondary/Serif Style for descriptive/supporting text (matching web Libre Baskerville)
+val SerifBodyLarge = TextStyle(
+    fontFamily = LibreBaskervilleFamily,
+    fontWeight = FontWeight.Normal,
+    fontSize = 16.sp,
+    lineHeight = 24.sp
+)
+
+val SerifBodyMedium = TextStyle(
     fontFamily = LibreBaskervilleFamily,
     fontWeight = FontWeight.Normal,
     fontSize = 14.sp,
     lineHeight = 22.sp
 )
+
+val SerifBodySmall = TextStyle(
+    fontFamily = LibreBaskervilleFamily,
+    fontWeight = FontWeight.Normal,
+    fontSize = 12.sp,
+    lineHeight = 18.sp
+)
+
+val SerifBodyStyle = SerifBodyMedium

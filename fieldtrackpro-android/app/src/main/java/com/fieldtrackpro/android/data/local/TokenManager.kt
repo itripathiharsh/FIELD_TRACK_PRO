@@ -34,6 +34,9 @@ class TokenManager(context: Context) {
         private const val KEY_USER_NAME = "user_name"
         private const val KEY_USER_EMAIL = "user_email"
         private const val KEY_USER_ROLE = "user_role"
+        private const val KEY_USER_PHONE = "user_phone"
+        private const val KEY_EMPLOYEE_CODE = "employee_code"
+        private const val KEY_TERRITORY_NAME = "territory_name"
 
         private fun createPreferences(context: Context): SharedPreferences {
             val masterKey = MasterKey.Builder(context)
@@ -72,17 +75,33 @@ class TokenManager(context: Context) {
 
     fun getRefreshToken(): String? = prefs.getString(KEY_REFRESH_TOKEN, null)?.ifBlank { null }
 
-    fun saveUserProfile(name: String, email: String?, role: String) {
+    fun saveUserProfile(
+        name: String,
+        email: String?,
+        role: String,
+        phone: String? = null,
+        employeeCode: String? = null,
+        territoryName: String? = null
+    ) {
         prefs.edit()
             .putString(KEY_USER_NAME, name)
             .putString(KEY_USER_EMAIL, email ?: "")
             .putString(KEY_USER_ROLE, role)
+            .putString(KEY_USER_PHONE, phone ?: "")
+            .putString(KEY_EMPLOYEE_CODE, employeeCode ?: "")
+            .putString(KEY_TERRITORY_NAME, territoryName ?: "")
             .apply()
     }
 
     fun getUserName(): String? = prefs.getString(KEY_USER_NAME, null)?.ifBlank { null }
 
     fun getUserEmail(): String? = prefs.getString(KEY_USER_EMAIL, null)?.ifBlank { null }
+
+    fun getUserPhone(): String? = prefs.getString(KEY_USER_PHONE, null)?.ifBlank { null }
+
+    fun getEmployeeCode(): String? = prefs.getString(KEY_EMPLOYEE_CODE, null)?.ifBlank { null }
+
+    fun getTerritoryName(): String? = prefs.getString(KEY_TERRITORY_NAME, null)?.ifBlank { null }
 
     /**
      * The signed-in user's role, or null when unknown.

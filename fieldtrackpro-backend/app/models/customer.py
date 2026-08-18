@@ -29,12 +29,30 @@ class Customer(Base):
     # by every in-app relationship; this is only for external identity.
     outlet_code: Mapped[Optional[str]] = mapped_column(String(50), unique=True, nullable=True)
     created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+    # Zone. Kept exactly as-is for backward compatibility (existing
+    # filtering/import/reporting all key off this) even after `area_id` is
+    # set - see app/models/area.py's docstring and customer_service.py for
+    # how the two are kept consistent going forward without a customer ever
+    # holding a Zone that disagrees with its own Area.
     territory_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("territories.id", ondelete="SET NULL"), nullable=True)
+    # Area (Zone -> Area -> Outlet). Nullable: existing outlets have no Area
+    # assigned yet - the client's real Zone/Area/Outlet export could not be
+    # safely matched to existing Customer rows (see the Meeting 3 audit:
+    # outlet identity across brand files is ambiguous), so no historical row
+    # was ever auto-assigned an Area. New/updated outlets should be given one
+    # going forward.
+    area_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("areas.id", ondelete="SET NULL"), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
     territory: Mapped[Optional["Territory"]] = relationship(back_populates="customers")
+    # lazy="joined": CustomerRead.from_model reads area.name directly (not
+    # just area_id) on every fetch path - this must never hit the
+    # MissingGreenlet trap an un-eager-loaded relationship access would
+    # trigger in this codebase's async setup (see Visit.employee/customer's
+    # identical fix for the same reason).
+    area: Mapped[Optional["Area"]] = relationship(back_populates="customers", lazy="joined")
     visits: Mapped[list["Visit"]] = relationship(back_populates="customer")
     invoices: Mapped[list["Invoice"]] = relationship(back_populates="customer")

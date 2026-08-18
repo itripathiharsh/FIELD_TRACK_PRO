@@ -1,9 +1,8 @@
 # =============================================================================
-# FieldTrack Pro - repository-wide ignore rules
-# Sub-projects keep their own .gitignore; these are the global guarantees.
+# FieldTrack Pro - Repository-Wide Git Ignore
 # =============================================================================
 
-# --- Secrets: never commit, under any name -----------------------------------
+# --- Secrets & Environment: never commit -------------------------------------
 .env
 .env.*
 !.env.example
@@ -14,17 +13,28 @@
 *.keystore
 secrets.*
 **/local.properties
-docs/**/*secret*.txt
+local.properties
+
+# --- Internal Documentation, Audits & Design Workspace -----------------------
+docs/
+Sentio Mind application/
+*.docx
+*.zip
+scratch/
+.system_generated/
 
 # --- Database dumps / backups ------------------------------------------------
 *.dump
 *.sql.gz
 *.bak
 *.backup
+*.sqlite
+*.sqlite3
+*.db
 backups/
 FieldTrackPro_Backups/
 
-# --- Python ------------------------------------------------------------------
+# --- Python / Backend --------------------------------------------------------
 __pycache__/
 *.py[cod]
 *$py.class
@@ -42,8 +52,9 @@ env/
 .coverage
 coverage.xml
 htmlcov/
+temp_*.py
 
-# --- Node / frontend ---------------------------------------------------------
+# --- Node / Frontend ---------------------------------------------------------
 node_modules/
 dist/
 dist-ssr/
@@ -62,14 +73,18 @@ captures/
 *.apk
 *.aab
 *.aar
+app/build/
+build/
 
-# --- Logs / temp -------------------------------------------------------------
+# --- Logs / Temp Outputs -----------------------------------------------------
 *.log
 logs/
 npm-debug.log*
 yarn-debug.log*
 pnpm-debug.log*
+pytest_output.txt
 pytest_full_output.txt
+server_log.txt
 
 # --- Editors / OS ------------------------------------------------------------
 .idea/
@@ -79,10 +94,8 @@ pytest_full_output.txt
 *.swo
 .DS_Store
 Thumbs.db
+.gemini/
 
-# --- Large redundant archives (content is committed in extracted form) -------
-*.zip
-
-# --- Local media storage (runtime artefact, not source) ----------------------
+# --- Local Media Storage (runtime artifact) ----------------------------------
 fieldtrackpro-backend/media_storage/**
 !fieldtrackpro-backend/media_storage/.gitkeep

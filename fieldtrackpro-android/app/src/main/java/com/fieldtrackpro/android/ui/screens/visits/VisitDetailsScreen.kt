@@ -3,7 +3,10 @@ package com.fieldtrackpro.android.ui.screens.visits
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -16,11 +19,21 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
+import androidx.compose.material.icons.filled.AccountBalanceWallet
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Draw
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Map
+import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -34,13 +47,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material3.Icon
 import com.fieldtrackpro.android.data.local.TokenManager
 import com.fieldtrackpro.android.data.model.FormSubmissionDto
 import com.fieldtrackpro.android.data.remote.ApiClient
@@ -51,13 +64,17 @@ import com.fieldtrackpro.android.ui.components.FieldTrackTopAppBar
 import com.fieldtrackpro.android.ui.components.GeofenceStatusCard
 import com.fieldtrackpro.android.ui.components.LoadingScreen
 import com.fieldtrackpro.android.ui.components.StatusBadge
-import com.fieldtrackpro.android.ui.theme.FieldTrackAmber
-import com.fieldtrackpro.android.ui.theme.FieldTrackNavy
+import com.fieldtrackpro.android.ui.theme.BrandBlack
+import com.fieldtrackpro.android.ui.theme.BrandGold
+import com.fieldtrackpro.android.ui.theme.BrandLightGray
+import com.fieldtrackpro.android.ui.theme.BrandNavy
+import com.fieldtrackpro.android.ui.theme.BrandWhite
+import com.fieldtrackpro.android.ui.theme.LeagueSpartanFamily
+import com.fieldtrackpro.android.ui.theme.LibreBaskervilleFamily
 import com.fieldtrackpro.android.ui.theme.SuccessGreen
-import com.fieldtrackpro.android.ui.theme.SurfaceOffWhite
-import com.fieldtrackpro.android.ui.theme.SurfaceWhite
-import com.fieldtrackpro.android.ui.theme.TextMuted
+import com.fieldtrackpro.android.ui.theme.SurfaceSecondary
 import com.fieldtrackpro.android.ui.theme.TextPrimary
+import com.fieldtrackpro.android.ui.theme.TextSecondary
 import com.fieldtrackpro.android.ui.viewmodel.VisitDetailState
 import com.fieldtrackpro.android.ui.viewmodel.VisitDetailsViewModel
 
@@ -98,7 +115,7 @@ fun VisitDetailsScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(SurfaceOffWhite)
+                .background(SurfaceSecondary)
                 .padding(innerPadding)
                 .padding(16.dp)
                 .verticalScroll(rememberScrollState())
@@ -122,29 +139,44 @@ fun VisitDetailsScreen(
                         }
                     }
 
+                    // Main Customer Card
                     Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = SurfaceWhite)
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(1.dp, BrandLightGray, RoundedCornerShape(14.dp)),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(containerColor = BrandWhite),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                     ) {
-                        Column(modifier = Modifier.padding(20.dp)) {
+                        Column(modifier = Modifier.padding(18.dp)) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = "Customer #${visit.customerId.take(8)}",
-                                    style = MaterialTheme.typography.titleLarge,
-                                    color = FieldTrackNavy
+                                    text = visit.customerName ?: "Outlet #${visit.customerId.take(8)}",
+                                    fontFamily = LeagueSpartanFamily,
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = BrandNavy,
+                                    modifier = Modifier.weight(1f)
                                 )
                                 StatusBadge(status = visit.status)
                             }
 
-                            Spacer(modifier = Modifier.height(12.dp))
+                            Spacer(modifier = Modifier.height(14.dp))
 
+                            val areaContext = listOfNotNull(visit.areaName, visit.territoryName).joinToString(", ")
+                            if (areaContext.isNotEmpty()) {
+                                DetailItem(label = "Area / Territory", value = areaContext)
+                            }
+                            if (!visit.customerAddress.isNullOrEmpty()) {
+                                DetailItem(label = "Customer Address", value = visit.customerAddress)
+                            }
+                            
                             DetailItem(label = "Customer ID", value = visit.customerId)
-                            DetailItem(label = "Scheduled", value = visit.scheduledAt)
+                            DetailItem(label = "Scheduled For", value = visit.scheduledAt)
 
                             visit.checkInAt?.let {
                                 DetailItem(label = "Checked In", value = it)
@@ -155,7 +187,7 @@ fun VisitDetailsScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(20.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
                     val geofenceUiState by geofenceViewModel.uiState.collectAsState()
 
@@ -177,284 +209,231 @@ fun VisitDetailsScreen(
                                 radiusMeters = s.customer.geofenceRadiusM.toFloat()
                             )
                         } else {
-                            // P1-8: the visit checked in/out (or otherwise
-                            // left PENDING/FLAGGED) while this screen stayed
-                            // open - monitoring is no longer relevant, so
-                            // stop it now rather than leaving it registered
-                            // until the screen happens to be left.
                             geofenceViewModel.stopMonitoring()
                         }
                     }
 
-                    // P1-8: leaving this visit's details (back navigation,
-                    // switching to another visit, or the screen otherwise
-                    // leaving composition) must not leave its geofence
-                    // registered. onDispose runs exactly once when this
-                    // composable leaves composition.
                     DisposableEffect(visit.id) {
                         onDispose {
                             geofenceViewModel.stopMonitoring()
                         }
                     }
 
-                    // Action Buttons based on status
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        if (visit.status == "PENDING" || visit.status == "FLAGGED") {
-                            val canCheckIn = !geofenceUiState.isMonitoring || geofenceUiState.isInside
-                            Button(
-                                onClick = { onNavigateToCheckIn(visit.id, visit.customerId) },
-                                modifier = Modifier.weight(1f),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (canCheckIn) FieldTrackNavy else TextMuted,
-                                    contentColor = SurfaceWhite
-                                ),
-                                enabled = canCheckIn
-                            ) {
-                                Text(if (canCheckIn) "CHECK-IN GPS" else "OUTSIDE AREA", color = SurfaceWhite)
-                            }
-                        }
-
-                        if (visit.status == "IN_PROGRESS" || visit.status == "FLAGGED") {
-                            Button(
-                                onClick = { onNavigateToCheckOut(visit.id, visit.customerId) },
-                                modifier = Modifier.weight(1f),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = SuccessGreen,
-                                    contentColor = SurfaceWhite
-                                )
-                            ) {
-                                Text("CHECK-OUT GPS", color = SurfaceWhite)
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    OutlinedButton(
-                        onClick = { onNavigateToMedia(visit.id) },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("ATTACHMENTS & MEDIA", color = FieldTrackNavy)
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // P2-B: order capture - a photographed order diary note tied to this visit/outlet.
-                    OutlinedButton(
-                        onClick = { onNavigateToOrderCapture(visit.id) },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("CAPTURE ORDER", color = FieldTrackNavy)
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    OutlinedButton(
-                        onClick = { onNavigateToSignature(visit.id) },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("DIGITAL SIGNATURE", color = FieldTrackNavy)
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // P1: Outlet Account - outstanding/aging/history + Collect Payment.
-                    OutlinedButton(
-                        onClick = { onNavigateToAccount(visit.id, visit.customerId) },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("OUTLET ACCOUNT", color = FieldTrackNavy)
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = CardDefaults.cardColors(containerColor = SurfaceWhite)
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Text(
-                                text = "REQUIRED FORM",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = FieldTrackNavy
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-
-                            val requiredFormId = visit.requiredFormId
-                            if (requiredFormId == null) {
-                                Text("No form required for this visit.", fontSize = 13.sp, color = TextMuted)
-                            } else {
-                                val submission = requiredFormSubmission
-                                val isSubmitted = submission?.status == "SUBMITTED"
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Column {
-                                        Text(
-                                            text = visit.requiredFormName ?: "Form",
-                                            fontSize = 14.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = FieldTrackNavy
-                                        )
-                                        if (isSubmitted) {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Icon(
-                                                    imageVector = Icons.Filled.CheckCircle,
-                                                    contentDescription = null,
-                                                    tint = SuccessGreen,
-                                                    modifier = Modifier.size(14.dp)
-                                                )
-                                                Spacer(modifier = Modifier.width(4.dp))
-                                                Text(
-                                                    text = "Submitted: ${submission?.submittedAt ?: ""}",
-                                                    fontSize = 11.sp,
-                                                    color = TextMuted
-                                                )
-                                            }
-                                        } else {
-                                            val statusLabel = if (submission != null) "Draft saved" else "Not Started"
-                                            Text("Status: $statusLabel", fontSize = 11.sp, color = TextMuted)
-                                        }
-                                        if (visit.requiredFormStatus == "ARCHIVED") {
-                                            Text("This form has since been archived.", fontSize = 11.sp, color = FieldTrackAmber)
-                                        }
-                                    }
-                                    if (!isSubmitted) {
-                                        Button(
-                                            onClick = { onNavigateToFormFill(visit.id, requiredFormId) },
-                                            colors = ButtonDefaults.buttonColors(
-                                                containerColor = FieldTrackAmber,
-                                                contentColor = FieldTrackNavy
-                                            )
-                                        ) {
-                                            Text(
-                                                if (submission != null) "CONTINUE" else "START FORM",
-                                                color = FieldTrackNavy,
-                                                fontSize = 12.sp
-                                            )
-                                        }
-                                    } else {
-                                        OutlinedButton(onClick = { onNavigateToFormFill(visit.id, requiredFormId) }) {
-                                            Text("VIEW", color = FieldTrackNavy, fontSize = 12.sp)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Geofence Status Section
+                    // Geofence status card
                     GeofenceStatusCard(
                         isInside = geofenceUiState.isInside,
                         isOutside = geofenceUiState.isOutside,
                         hasPermission = geofenceUiState.hasPermission,
                         isLocationEnabled = geofenceUiState.isLocationEnabled,
                         isMonitoring = geofenceUiState.isMonitoring,
-                        errorMessage = geofenceUiState.errorMessage
+                        errorMessage = geofenceUiState.errorMessage,
+                        distanceM = geofenceUiState.distanceM,
+                        geofenceRadiusM = s.customer?.geofenceRadiusM?.toDouble(),
+                        isLoadingLocation = geofenceUiState.isLoadingLocation
                     )
 
-                    if (!geofenceUiState.hasPermission) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        OutlinedButton(
-                            onClick = {
-                                locationPermissionLauncher.launch(
-                                    arrayOf(
-                                        android.Manifest.permission.ACCESS_FINE_LOCATION,
-                                        android.Manifest.permission.ACCESS_COARSE_LOCATION,
-                                    )
-                                )
-                            },
-                            modifier = Modifier.fillMaxWidth()
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Primary Action Button (Check-In or Check-Out)
+                    if (visit.status == "PENDING" || visit.status == "FLAGGED") {
+                        val canCheckIn = !geofenceUiState.isMonitoring || geofenceUiState.isInside
+                        Button(
+                            onClick = { onNavigateToCheckIn(visit.id, visit.customerId) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(52.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (canCheckIn) BrandNavy else BrandLightGray,
+                                contentColor = if (canCheckIn) BrandWhite else TextSecondary
+                            ),
+                            enabled = canCheckIn
                         ) {
-                            Text("GRANT LOCATION PERMISSION", color = FieldTrackNavy)
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Map Preview Section
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = CardDefaults.cardColors(containerColor = SurfaceWhite)
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Text(
-                                text = "Customer Location",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = FieldTrackNavy
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "View customer location on map and get directions.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = TextMuted
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            OutlinedButton(
-                                onClick = { onNavigateToMap(visit.customerId) },
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text("VIEW ON MAP", color = FieldTrackNavy)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.LocationOn,
+                                    contentDescription = null,
+                                    tint = if (canCheckIn) BrandGold else TextSecondary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    if (canCheckIn) "CHECK-IN GPS VERIFICATION" else "OUTSIDE CUSTOMER RADIUS",
+                                    fontFamily = LeagueSpartanFamily,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    letterSpacing = 0.5.sp,
+                                    color = if (canCheckIn) BrandWhite else TextSecondary
+                                )
                             }
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(24.dp))
+                    if (visit.status == "IN_PROGRESS") {
+                        Button(
+                            onClick = { onNavigateToCheckOut(visit.id, visit.customerId) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(52.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = SuccessGreen,
+                                contentColor = BrandWhite
+                            )
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    tint = BrandWhite,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    "COMPLETE & CHECK-OUT GPS",
+                                    fontFamily = LeagueSpartanFamily,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    letterSpacing = 0.5.sp,
+                                    color = BrandWhite
+                                )
+                            }
+                        }
+                    }
 
-                    // Geo Logs Section
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    // Action Tiles Section Header
                     Text(
-                        text = "Geo Verification Logs (${logs.size})",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = FieldTrackNavy
+                        text = "VISIT OPERATIONS & WORKFLOW",
+                        fontFamily = LeagueSpartanFamily,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp,
+                        color = BrandNavy
                     )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Map Navigation Tile
+                    ActionTile(
+                        title = "Live Map & Routing",
+                        subtitle = "View customer location, radius & live navigation",
+                        icon = Icons.Default.Map,
+                        onClick = { onNavigateToMap(visit.id) }
+                    )
+
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    if (logs.isEmpty()) {
-                        Text("No geo-location check attempts recorded yet.", fontSize = 13.sp, color = TextMuted)
-                    } else {
-                        logs.forEach { log ->
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp),
-                                shape = RoundedCornerShape(8.dp),
-                                colors = CardDefaults.cardColors(containerColor = SurfaceWhite)
+                    // Media & Attachments Tile
+                    ActionTile(
+                        title = "Attachments & Media",
+                        subtitle = "Upload outlet photos, invoices & site proofs",
+                        icon = Icons.Default.Image,
+                        onClick = { onNavigateToMedia(visit.id) }
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Order Capture Tile
+                    ActionTile(
+                        title = "Capture Order / MIS",
+                        subtitle = "Record stock requirement, diary notes & order info",
+                        icon = Icons.Default.ReceiptLong,
+                        onClick = { onNavigateToOrderCapture(visit.id) }
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Digital Signature Tile
+                    ActionTile(
+                        title = "Digital Customer Signature",
+                        subtitle = "Capture signatory name, phone & authorization",
+                        icon = Icons.Default.Draw,
+                        onClick = { onNavigateToSignature(visit.id) }
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Outlet Account Tile
+                    ActionTile(
+                        title = "Outlet Account & Payments",
+                        subtitle = "Collections overview, aging & payment receipt",
+                        icon = Icons.Default.AccountBalanceWallet,
+                        onClick = { onNavigateToAccount(visit.id, visit.customerId) }
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Required Form Card
+                    val requiredFormId = visit.requiredFormId
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(1.dp, BrandLightGray, RoundedCornerShape(12.dp)),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = BrandWhite)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Row(
-                                    modifier = Modifier
-                                        .padding(12.dp)
-                                        .fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Column {
+                                Text(
+                                    text = "REQUIRED FORM",
+                                    fontFamily = LeagueSpartanFamily,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.8.sp,
+                                    color = BrandNavy
+                                )
+                                if (requiredFormId != null) {
+                                    val isSubmitted = requiredFormSubmission?.status == "SUBMITTED"
+                                    StatusBadge(status = if (isSubmitted) "COMPLETED" else "PENDING")
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            if (requiredFormId == null) {
+                                Text(
+                                    "No mandatory audit form attached to this visit.",
+                                    fontFamily = LibreBaskervilleFamily,
+                                    fontSize = 13.sp,
+                                    color = TextSecondary
+                                )
+                            } else {
+                                val submission = requiredFormSubmission
+                                val isSubmitted = submission?.status == "SUBMITTED"
+
+                                if (isSubmitted) {
+                                    Text(
+                                        "Form responses captured and verified.",
+                                        fontFamily = LibreBaskervilleFamily,
+                                        fontSize = 13.sp,
+                                        color = TextSecondary
+                                    )
+                                } else {
+                                    Text(
+                                        "Complete the mandatory customer audit checklist.",
+                                        fontFamily = LibreBaskervilleFamily,
+                                        fontSize = 13.sp,
+                                        color = TextSecondary
+                                    )
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    Button(
+                                        onClick = { onNavigateToFormFill(visit.id, requiredFormId) },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(8.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = BrandGold)
+                                    ) {
                                         Text(
-                                            text = log.verificationType,
-                                            fontSize = 13.sp,
+                                            "FILL REQUIRED FORM",
+                                            fontFamily = LeagueSpartanFamily,
                                             fontWeight = FontWeight.Bold,
-                                            color = TextPrimary
+                                            color = BrandBlack
                                         )
-                                        Text(
-                                            text = "Coords: ${log.latitude}, ${log.longitude}",
-                                            fontSize = 11.sp,
-                                            color = TextMuted
-                                        )
-                                        if (log.failureReason != null) {
-                                            Text(
-                                                text = "Reason: ${log.failureReason}",
-                                                fontSize = 11.sp,
-                                                color = FieldTrackAmber
-                                            )
-                                        }
                                     }
-                                    StatusBadge(status = if (log.isValid) "VALID" else "INVALID")
                                 }
                             }
                         }
@@ -466,9 +445,89 @@ fun VisitDetailsScreen(
 }
 
 @Composable
+fun ActionTile(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    onClick: () -> Unit
+) {
+    Card(
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, BrandLightGray, RoundedCornerShape(12.dp)),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = BrandWhite),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(BrandNavy)
+                    .border(1.dp, BrandGold, RoundedCornerShape(8.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = BrandGold,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    fontFamily = LeagueSpartanFamily,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = BrandNavy
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = subtitle,
+                    fontFamily = LibreBaskervilleFamily,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Normal,
+                    color = TextSecondary
+                )
+            }
+
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                contentDescription = null,
+                tint = BrandNavy.copy(alpha = 0.4f),
+                modifier = Modifier.size(14.dp)
+            )
+        }
+    }
+}
+
+@Composable
 fun DetailItem(label: String, value: String) {
-    Column(modifier = Modifier.padding(vertical = 4.dp)) {
-        Text(text = label, fontSize = 11.sp, color = TextMuted)
-        Text(text = value, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+    Column(modifier = Modifier.padding(vertical = 3.dp)) {
+        Text(
+            text = label.uppercase(),
+            fontFamily = LeagueSpartanFamily,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 0.8.sp,
+            color = BrandNavy.copy(alpha = 0.75f)
+        )
+        Spacer(modifier = Modifier.height(1.dp))
+        Text(
+            text = value,
+            fontFamily = LibreBaskervilleFamily,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Normal,
+            color = BrandNavy
+        )
     }
 }

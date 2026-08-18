@@ -28,7 +28,9 @@ data class VisitDto(
     @SerializedName("scheduled_at") val scheduledAt: String,
     val status: String,
     @SerializedName("check_in_at") val checkInAt: String? = null,
+    @SerializedName("check_in_received_at") val checkInReceivedAt: String? = null,
     @SerializedName("check_out_at") val checkOutAt: String? = null,
+    @SerializedName("check_out_received_at") val checkOutReceivedAt: String? = null,
     val synced: Boolean = false,
     @SerializedName("created_by") val createdBy: String? = null,
     @SerializedName("created_at") val createdAt: String? = null,
@@ -36,8 +38,11 @@ data class VisitDto(
     @SerializedName("required_form_id") val requiredFormId: String? = null,
     @SerializedName("required_form_name") val requiredFormName: String? = null,
     @SerializedName("required_form_status") val requiredFormStatus: String? = null,
-    @kotlin.jvm.Transient val customerName: String? = null,
-    @kotlin.jvm.Transient val customerAddress: String? = null
+    @SerializedName("customer_name") val customerName: String? = null,
+    @SerializedName("customer_address") val customerAddress: String? = null,
+    @SerializedName("employee_name") val employeeName: String? = null,
+    @SerializedName("area_name") val areaName: String? = null,
+    @SerializedName("territory_name") val territoryName: String? = null
 ) {
     val isPending: Boolean get() = status == "PENDING"
     val isInProgress: Boolean get() = status == "IN_PROGRESS"
@@ -73,7 +78,8 @@ data class CheckOutRequest(
     val longitude: Double,
     @SerializedName("accuracy_m") val accuracyM: Double? = null,
     @SerializedName("is_mock_location") val isMockLocation: Boolean = false,
-    @SerializedName("captured_at") val capturedAt: String
+    @SerializedName("captured_at") val capturedAt: String,
+    @SerializedName("idempotency_key") val idempotencyKey: String? = null
 )
 
 data class LocationVerifyRequest(

@@ -19,8 +19,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.fieldtrackpro.android.ui.theme.TextMuted
-import com.fieldtrackpro.android.ui.theme.TextPrimary
+import com.fieldtrackpro.android.ui.theme.BrandNavy
+import com.fieldtrackpro.android.ui.theme.LeagueSpartanFamily
+import com.fieldtrackpro.android.ui.theme.LibreBaskervilleFamily
+import com.fieldtrackpro.android.ui.theme.TextSecondary
 
 @Composable
 fun EmptyState(
@@ -39,24 +41,29 @@ fun EmptyState(
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                modifier = Modifier.size(56.dp),
-                tint = TextMuted
+                modifier = Modifier.size(52.dp),
+                tint = BrandNavy.copy(alpha = 0.5f)
             )
             Spacer(modifier = Modifier.height(16.dp))
             Text(
                 text = title,
-                fontSize = 18.sp,
+                fontFamily = LeagueSpartanFamily,
+                fontSize = 19.sp,
                 fontWeight = FontWeight.Bold,
-                color = TextPrimary,
+                color = BrandNavy,
                 textAlign = TextAlign.Center
             )
             Spacer(modifier = Modifier.height(6.dp))
             Text(
                 text = subtitle,
-                fontSize = 14.sp,
-                color = TextMuted,
-                textAlign = TextAlign.Center
+                fontFamily = LibreBaskervilleFamily,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Normal,
+                color = TextSecondary,
+                textAlign = TextAlign.Center,
+                lineHeight = 18.sp
             )
         }
     }
 }
+

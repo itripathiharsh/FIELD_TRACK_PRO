@@ -40,6 +40,7 @@ async def list_customers(
     current_user: CurrentUser,
     session: DbSession,
     territory_id: uuid.UUID | None = Query(default=None),
+    area_id: uuid.UUID | None = Query(default=None),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, le=200),
 ):
@@ -47,9 +48,9 @@ async def list_customers(
     P0-1: an ADMIN sees the full outlet directory; an EMPLOYEE is confined
     server-side to outlets they have at least one visit assigned to (see
     customer_service.list_customers) - never the client-supplied
-    territory_id alone.
+    territory_id/area_id alone.
     """
-    customers = await customer_service.list_customers(session, current_user, territory_id, skip, limit)
+    customers = await customer_service.list_customers(session, current_user, territory_id, skip, limit, area_id)
     return [CustomerRead.from_model(c) for c in customers]
 
 

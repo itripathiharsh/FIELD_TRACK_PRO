@@ -10,7 +10,7 @@ import { Select } from '../components/ui/Select';
 import { EmptyState } from '../components/ui/EmptyState';
 import { ErrorBanner } from '../components/ui/ErrorBanner';
 import { apiClient } from '../api/client';
-import { Customer, Territory } from '../types';
+import { Area, Customer, Territory } from '../types';
 import { validatePhoneNumber } from '../utils/phoneValidation';
 
 /** Blank form state for creating a customer. */
@@ -23,11 +23,13 @@ const emptyForm = {
   longitude: '',
   geofenceRadius: '75', // FT-054: matches the backend/database default
   territoryId: '',
+  areaId: '',
 };
 
 export const CustomersPage: React.FC = () => {
     const navigate = useNavigate();
     const [customers, setCustomers] = useState<Customer[]>([]);
+    const [areas, setAreas] = useState<Area[]>([]);
     const [territories, setTerritories] = useState<Territory[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -59,7 +61,12 @@ export const CustomersPage: React.FC = () => {
   useEffect(() => {
     fetchCustomers();
     apiClient.getTerritories().then(setTerritories).catch(() => setTerritories([]));
+    apiClient.getAreas().then(setAreas).catch(() => setAreas([]));
   }, [fetchCustomers]);
+
+  // Area options narrow to the selected Zone - an outlet's Area always
+  // belongs to exactly one Zone.
+  const areaOptions = form.territoryId ? areas.filter((a) => a.territory_id === form.territoryId) : [];
 
   const openCreate = () => {
     setEditingId(null);
@@ -80,6 +87,7 @@ export const CustomersPage: React.FC = () => {
       longitude: String(customer.location.longitude),
       geofenceRadius: String(customer.geofence_radius_m),
       territoryId: customer.territory_id ?? '',
+      areaId: customer.area_id ?? '',
     });
     setFormError(null);
     setIsModalOpen(true);
@@ -124,6 +132,10 @@ export const CustomersPage: React.FC = () => {
         location: { latitude, longitude },
         geofence_radius_m: radius,
         territory_id: form.territoryId || null,
+        // Area is the source of truth once set - the backend derives/keeps
+        // territory_id in sync from it, so an outlet's Zone and Area can
+        // never disagree.
+        area_id: form.areaId || null,
       };
 
       if (editingId) {
@@ -151,6 +163,15 @@ export const CustomersPage: React.FC = () => {
           <p className="font-caption text-xs text-on-surface-variant">
             Contact: {cust.contact_person || '—'}
           </p>
+        </div>
+      ),
+    },
+    {
+      header: 'Zone / Area',
+      accessor: (cust) => (
+        <div className="font-caption text-xs space-y-0.5">
+          <p className="text-on-surface">{territories.find((t) => t.id === cust.territory_id)?.name || '—'}</p>
+          <p className="text-on-surface-variant">{cust.area_name || '—'}</p>
         </div>
       ),
     },
@@ -335,14 +356,34 @@ export const CustomersPage: React.FC = () => {
           />
           <Select
             id="customer-territory"
-            label="Territory"
+            label="Zone"
             value={form.territoryId}
-            onChange={(e) => set('territoryId', e.target.value)}
+            onChange={(e) => {
+              set('territoryId', e.target.value);
+              // Changing the Zone invalidates any previously-selected Area,
+              // since an Area always belongs to exactly one Zone.
+              set('areaId', '');
+            }}
           >
             <option value="">-- Unassigned --</option>
             {territories.map((t) => (
               <option key={t.id} value={t.id}>
                 {t.name}
+              </option>
+            ))}
+          </Select>
+          <Select
+            id="customer-area"
+            label="Area"
+            value={form.areaId}
+            onChange={(e) => set('areaId', e.target.value)}
+            disabled={!form.territoryId}
+            helperText={!form.territoryId ? 'Select a Zone first.' : undefined}
+          >
+            <option value="">-- Unassigned --</option>
+            {areaOptions.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
               </option>
             ))}
           </Select>

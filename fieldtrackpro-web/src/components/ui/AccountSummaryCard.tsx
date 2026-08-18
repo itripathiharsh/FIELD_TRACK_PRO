@@ -1,8 +1,9 @@
-import React from 'react';
-import { Wallet, AlertTriangle, Clock, Landmark } from 'lucide-react';
+import React, { useState } from 'react';
+import { Wallet, AlertTriangle, Clock, Landmark, Receipt, Paperclip } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardSubtitle } from './Card';
 import { Button } from './Button';
 import { StatusBadge } from './StatusBadge';
+import { apiClient } from '../../api/client';
 import { AccountSummary } from '../../types';
 
 interface AccountSummaryCardProps {
@@ -25,6 +26,29 @@ const formatCurrency = (value: string): string => {
  * not two near-duplicate screens.
  */
 export const AccountSummaryCard: React.FC<AccountSummaryCardProps> = ({ account, onCollectPayment }) => {
+  const [viewingProofId, setViewingProofId] = useState<string | null>(null);
+
+  const viewProof = async (proofId: string) => {
+    setViewingProofId(proofId);
+    try {
+      const objectUrl = await apiClient.getPaymentProofObjectUrl(proofId);
+      window.open(objectUrl, '_blank');
+      // One-shot view, not a persistent preview - revoke once the new tab
+      // has had a moment to load it, matching this app's blob-lifecycle
+      // convention of never leaking object URLs (see PaymentReviewPage).
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 30_000);
+    } finally {
+      setViewingProofId(null);
+    }
+  };
+
+  const lastVisitLabel = account.most_recent_visit_date
+    ? `${new Date(account.most_recent_visit_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}${account.most_recent_visit_employee_name ? ` · ${account.most_recent_visit_employee_name}` : ''}`
+    : 'No visits yet';
+  const lastPaymentLabel = account.most_recent_payment
+    ? `${formatCurrency(account.most_recent_payment.amount)} · ${account.most_recent_payment.payment_date}`
+    : 'No payments yet';
+
   return (
     <Card variant="default" className="space-y-space-4">
       <CardHeader>
@@ -37,32 +61,49 @@ export const AccountSummaryCard: React.FC<AccountSummaryCardProps> = ({ account,
         <StatusBadge status={account.collection_status} />
       </CardHeader>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-space-3">
-        <div className="p-space-3 bg-surface-container-low rounded-lg border border-outline-variant">
-          <div className="flex items-center gap-space-1.5 text-on-surface-variant font-caption text-xs uppercase tracking-wider mb-1">
-            <Wallet className="w-3.5 h-3.5" /> Outstanding
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-space-3">
+        <div className="min-w-0 p-space-3 bg-surface-container-low rounded-lg border border-outline-variant">
+          <div className="flex items-start gap-space-1.5 text-on-surface-variant font-caption text-xs uppercase tracking-wide mb-1 break-words">
+            <Receipt className="w-3.5 h-3.5 shrink-0 mt-0.5" /> <span>Total Billed</span>
           </div>
-          <p className="font-headline-sm text-lg font-bold text-primary">{formatCurrency(account.total_outstanding)}</p>
+          <p className="font-headline-sm text-lg font-bold text-primary break-words">{formatCurrency(account.total_invoiced)}</p>
         </div>
-        <div className="p-space-3 bg-surface-container-low rounded-lg border border-outline-variant">
-          <div className="flex items-center gap-space-1.5 text-on-surface-variant font-caption text-xs uppercase tracking-wider mb-1">
-            <Landmark className="w-3.5 h-3.5" /> Paid to Date
+        <div className="min-w-0 p-space-3 bg-surface-container-low rounded-lg border border-outline-variant">
+          <div className="flex items-start gap-space-1.5 text-on-surface-variant font-caption text-xs uppercase tracking-wide mb-1 break-words">
+            <Wallet className="w-3.5 h-3.5 shrink-0 mt-0.5" /> <span>Outstanding</span>
           </div>
-          <p className="font-headline-sm text-lg font-bold text-primary">{formatCurrency(account.total_paid)}</p>
+          <p className="font-headline-sm text-lg font-bold text-primary break-words">{formatCurrency(account.total_outstanding)}</p>
         </div>
-        <div className="p-space-3 bg-surface-container-low rounded-lg border border-outline-variant">
-          <div className="flex items-center gap-space-1.5 text-on-surface-variant font-caption text-xs uppercase tracking-wider mb-1">
-            <AlertTriangle className="w-3.5 h-3.5" /> Overdue
+        <div className="min-w-0 p-space-3 bg-surface-container-low rounded-lg border border-outline-variant">
+          <div className="flex items-start gap-space-1.5 text-on-surface-variant font-caption text-xs uppercase tracking-wide mb-1 break-words">
+            <Landmark className="w-3.5 h-3.5 shrink-0 mt-0.5" /> <span>Paid to Date</span>
           </div>
-          <p className={`font-headline-sm text-lg font-bold ${Number(account.overdue_amount) > 0 ? 'text-error' : 'text-primary'}`}>
+          <p className="font-headline-sm text-lg font-bold text-primary break-words">{formatCurrency(account.total_paid)}</p>
+        </div>
+        <div className="min-w-0 p-space-3 bg-surface-container-low rounded-lg border border-outline-variant">
+          <div className="flex items-start gap-space-1.5 text-on-surface-variant font-caption text-xs uppercase tracking-wide mb-1 break-words">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> <span>Overdue</span>
+          </div>
+          <p className={`font-headline-sm text-lg font-bold break-words ${Number(account.overdue_amount) > 0 ? 'text-error' : 'text-primary'}`}>
             {formatCurrency(account.overdue_amount)}
           </p>
         </div>
-        <div className="p-space-3 bg-surface-container-low rounded-lg border border-outline-variant">
-          <div className="flex items-center gap-space-1.5 text-on-surface-variant font-caption text-xs uppercase tracking-wider mb-1">
-            <Clock className="w-3.5 h-3.5" /> Days Outstanding
+        <div className="min-w-0 p-space-3 bg-surface-container-low rounded-lg border border-outline-variant">
+          <div className="flex items-start gap-space-1.5 text-on-surface-variant font-caption text-xs uppercase tracking-wide mb-1 break-words">
+            <Clock className="w-3.5 h-3.5 shrink-0 mt-0.5" /> <span>Days Outstanding</span>
           </div>
-          <p className="font-headline-sm text-lg font-bold text-primary">{account.max_days_outstanding}</p>
+          <p className="font-headline-sm text-lg font-bold text-primary break-words">{account.max_days_outstanding}</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-space-3 text-sm">
+        <div className="min-w-0 p-space-3 bg-surface-container-low rounded-lg border border-outline-variant">
+          <p className="font-caption text-xs uppercase tracking-wide text-on-surface-variant mb-0.5 break-words">Last Payment</p>
+          <p className="font-medium text-on-surface break-words">{lastPaymentLabel}</p>
+        </div>
+        <div className="min-w-0 p-space-3 bg-surface-container-low rounded-lg border border-outline-variant">
+          <p className="font-caption text-xs uppercase tracking-wide text-on-surface-variant mb-0.5 break-words">Last Visit</p>
+          <p className="font-medium text-on-surface break-words">{lastVisitLabel}</p>
         </div>
       </div>
 
@@ -162,7 +203,18 @@ export const AccountSummaryCard: React.FC<AccountSummaryCardProps> = ({ account,
                     {p.cheque_number ? ` · Chq ${p.cheque_number}` : ''}
                   </span>
                 </div>
-                <StatusBadge status={p.status} size="sm" />
+                <div className="flex items-center gap-space-2 shrink-0">
+                  {p.proofs.length > 0 && (
+                    <Button
+                      variant="outline" size="sm" icon={Paperclip}
+                      isLoading={viewingProofId === p.proofs[0].id}
+                      onClick={() => void viewProof(p.proofs[0].id)}
+                    >
+                      Proof
+                    </Button>
+                  )}
+                  <StatusBadge status={p.status} size="sm" />
+                </div>
               </div>
             ))}
           </div>

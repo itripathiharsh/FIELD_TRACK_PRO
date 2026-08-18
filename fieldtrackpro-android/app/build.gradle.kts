@@ -1,3 +1,6 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -20,9 +23,21 @@ android {
         // MapLibre tile provider URL (environment-configurable)
         // Default: OpenStreetMap raster tiles via a public demo endpoint.
         // For production, set MAPLIBRE_TILE_URL in local.properties or gradle.properties.
-        val maplibreTileUrl: String = project.findProperty("MAPLIBRE_TILE_URL") as? String
+        val localProperties = Properties()
+        val localPropertiesFile = rootProject.file("local.properties")
+        if (localPropertiesFile.exists()) {
+            localProperties.load(FileInputStream(localPropertiesFile))
+        }
+
+        val maplibreTileUrl: String = localProperties.getProperty("MAPLIBRE_TILE_URL")?.toString()?.removeSurrounding("\"")
+            ?: project.findProperty("MAPLIBRE_TILE_URL") as? String
             ?: "https://demotiles.maplibre.org/style.json"
         buildConfigField("String", "MAPLIBRE_TILE_URL", "\"$maplibreTileUrl\"")
+
+        val baseUrl: String = localProperties.getProperty("BASE_URL")?.toString()?.removeSurrounding("\"")
+            ?: project.findProperty("BASE_URL") as? String
+            ?: "http://10.0.2.2:8000/"
+        buildConfigField("String", "BASE_URL", "\"$baseUrl\"")
     }
 
     buildTypes {

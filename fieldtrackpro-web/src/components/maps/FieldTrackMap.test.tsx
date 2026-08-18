@@ -1,52 +1,75 @@
-import { describe, expect, it, beforeEach } from 'vitest';
-import { render } from '@testing-library/react';
-import { FieldTrackMap, MapMarker } from './FieldTrackMap';
+import { describe, expect, it, beforeEach, vi } from 'vitest';
+import { render, waitFor } from '@testing-library/react';
+import { FieldTrackMap, MapMarker, TerritoryCircle, getBoundsForMarkersAndCircles } from './FieldTrackMap';
+
+const { mockFitBounds, mockFlyTo, mockResize } = vi.hoisted(() => ({
+    mockFitBounds: vi.fn(),
+    mockFlyTo: vi.fn(),
+    mockResize: vi.fn(),
+}));
 
 // Mock MapLibre GL JS
 vi.mock('maplibre-gl', () => {
-    const mockMap = {
-        on: vi.fn(),
-        off: vi.fn(),
-        remove: vi.fn(),
-        addControl: vi.fn(),
-        addSource: vi.fn(),
-        addLayer: vi.fn(),
-        removeLayer: vi.fn(),
-        removeSource: vi.fn(),
-        getSource: vi.fn().mockReturnValue(null),
-        getLayer: vi.fn().mockReturnValue(null),
-        queryRenderedFeatures: vi.fn().mockReturnValue([]),
-        easeTo: vi.fn(),
-        getCanvas: vi.fn().mockReturnValue({ style: {} }),
-    };
-    const mockPopup = {
-        setText: vi.fn().mockReturnThis(),
-    };
+    class MockMap {
+        on(event: string, callback: () => void) {
+            if (event === 'load') {
+                setTimeout(() => callback(), 0);
+            }
+        }
+        off() {}
+        remove() {}
+        addControl() {}
+        addSource() {}
+        addLayer() {}
+        removeLayer() {}
+        removeSource() {}
+        getSource() { return null; }
+        getLayer() { return null; }
+        queryRenderedFeatures() { return []; }
+        easeTo() {}
+        flyTo(opts: unknown) { mockFlyTo(opts); }
+        fitBounds(bounds: unknown, opts: unknown) { mockFitBounds(bounds, opts); }
+        resize() { mockResize(); }
+        isStyleLoaded() { return true; }
+        getZoom() { return 12; }
+        getCanvas() { return { style: {} }; }
+        setFilter() {}
+        setPaintProperty() {}
+    }
+
+    class MockMarker {
+        setLngLat() { return this; }
+        setPopup() { return this; }
+        addTo() { return this; }
+    }
+
+    class MockPopup {
+        setText() { return this; }
+        setLngLat() { return this; }
+        setDOMContent() { return this; }
+        addTo() { return this; }
+        remove() { return this; }
+    }
+
+    class MockNavigationControl {}
+
     return {
         default: {
-            Map: vi.fn().mockImplementation(() => mockMap),
-            Marker: vi.fn().mockImplementation(() => ({
-                setLngLat: vi.fn().mockReturnThis(),
-                setPopup: vi.fn().mockReturnThis(),
-                addTo: vi.fn().mockReturnThis(),
-            })),
-            Popup: vi.fn().mockImplementation(() => mockPopup),
-            NavigationControl: vi.fn(),
+            Map: MockMap,
+            Marker: MockMarker,
+            Popup: MockPopup,
+            NavigationControl: MockNavigationControl,
         },
-        Map: vi.fn().mockImplementation(() => mockMap),
-        Marker: vi.fn().mockImplementation(() => ({
-            setLngLat: vi.fn().mockReturnThis(),
-            setPopup: vi.fn().mockReturnThis(),
-            addTo: vi.fn().mockReturnThis(),
-        })),
-        Popup: vi.fn().mockImplementation(() => mockPopup),
-        NavigationControl: vi.fn(),
+        Map: MockMap,
+        Marker: MockMarker,
+        Popup: MockPopup,
+        NavigationControl: MockNavigationControl,
     };
 });
 
 // Mock tile config
 vi.mock('./tileConfig', () => ({
-    getTileProviderConfig: vi.fn().mockReturnValue({
+    getTileProviderConfig: () => ({
         styleObject: { version: 8, sources: {}, layers: [] },
         styleUrl: null,
     }),
@@ -58,6 +81,10 @@ const mockMarkers: MapMarker[] = [
     { id: '3', latitude: 13.0000, longitude: 77.6000, label: 'Customer C', color: '#ffa515' },
 ];
 
+const mockCircles: TerritoryCircle[] = [
+    { id: 't1', centerLat: 26.8467, centerLng: 80.9462, radiusKm: 15, name: 'Lucknow Zone' },
+];
+
 describe('FieldTrackMap', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -65,13 +92,11 @@ describe('FieldTrackMap', () => {
 
     it('renders map container', () => {
         const { container } = render(<FieldTrackMap markers={mockMarkers} />);
-        // Map container div should exist
         expect(container.querySelector('div')).toBeTruthy();
     });
 
-    it('renders without markers', () => {
-        render(<FieldTrackMap markers={[]} />);
-        // Should not throw
+    it('renders without markers or circles', () => {
+        render(<FieldTrackMap markers={[]} territoryCircles={[]} />);
         expect(true).toBe(true);
     });
 
@@ -106,5 +131,64 @@ describe('FieldTrackMap', () => {
         ];
         render(<FieldTrackMap markers={markersWithInvalid} enableClustering={true} />);
         expect(true).toBe(true);
+    });
+
+    it('calls fitBounds when autoFitBounds is true with multiple markers', async () => {
+        render(<FieldTrackMap markers={mockMarkers} autoFitBounds={true} />);
+        await waitFor(() => {
+            expect(mockFitBounds).toHaveBeenCalled();
+        });
+    });
+
+    it('calls fitBounds when autoFitBounds is true with territory circles', async () => {
+        render(<FieldTrackMap territoryCircles={mockCircles} autoFitBounds={true} />);
+        await waitFor(() => {
+            expect(mockFitBounds).toHaveBeenCalled();
+        });
+    });
+
+    it('smoothly centers on selected marker when selectedMarkerId changes without refitting whole map', async () => {
+        const { rerender } = render(
+            <FieldTrackMap markers={mockMarkers} autoFitBounds={true} selectedMarkerId={null} />
+        );
+        await waitFor(() => {
+            expect(mockFitBounds).toHaveBeenCalledTimes(1);
+        });
+
+        // Selecting a marker triggers flyTo on that marker
+        rerender(
+            <FieldTrackMap markers={mockMarkers} autoFitBounds={true} selectedMarkerId="1" />
+        );
+
+        await waitFor(() => {
+            expect(mockFlyTo).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    center: [77.5946, 12.9716],
+                })
+            );
+        });
+
+        // autoFitBounds is NOT called again on selection!
+        expect(mockFitBounds).toHaveBeenCalledTimes(1);
+    });
+
+    it('correctly calculates bounding box with getBoundsForMarkersAndCircles', () => {
+        const bounds = getBoundsForMarkersAndCircles(mockMarkers, mockCircles);
+        expect(bounds).not.toBeNull();
+        if (bounds) {
+            const [[minLng, minLat], [maxLng, maxLat]] = bounds;
+            expect(minLng).toBeLessThanOrEqual(77.5946);
+            expect(maxLng).toBeGreaterThanOrEqual(80.9462);
+            expect(minLat).toBeLessThanOrEqual(12.9716);
+            expect(maxLat).toBeGreaterThanOrEqual(26.8467);
+        }
+    });
+
+    it('returns null bounds when all coordinates are empty or invalid', () => {
+        const bounds = getBoundsForMarkersAndCircles(
+            [{ id: 'invalid', latitude: 0, longitude: 0 }],
+            [{ id: 't_invalid', centerLat: 0, centerLng: 0, radiusKm: 0 }]
+        );
+        expect(bounds).toBeNull();
     });
 });

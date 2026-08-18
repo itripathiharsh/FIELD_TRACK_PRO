@@ -1,4 +1,4 @@
-﻿"""
+"""
 Integration test infrastructure for FieldTrack Pro.
 
 Design goals (Phase 0):
@@ -242,13 +242,50 @@ def _purge_test_artifacts() -> None:
             "  OR created_by IN (SELECT id FROM users WHERE email LIKE %s)",
             (f"{TEST_MARKER}%", f"{TEST_MARKER}%", f"{TEST_MARKER}%"),
         )
+        # Zone/Area/Outlet hierarchy: employee_area_assignments is RESTRICT
+        # against employees/areas, so it must go before both; areas itself is
+        # RESTRICT against territories, so it must go before the territories
+        # delete below. Matched by employee/area/creator OR by belonging to a
+        # test-marker-named zone, so a test that created its own dedicated
+        # zone+area (not just reusing seeded_world's) is still fully swept.
+        cur.execute(
+            "DELETE FROM employee_area_assignments WHERE "
+            "  employee_id IN (SELECT id FROM employees WHERE employee_code LIKE %s)"
+            "  OR area_id IN (SELECT id FROM areas WHERE name LIKE %s OR territory_id IN ("
+            "    SELECT id FROM territories WHERE name LIKE %s))"
+            "  OR created_by IN (SELECT id FROM users WHERE email LIKE %s)",
+            (f"{TEST_MARKER}%", f"{TEST_MARKER}%", f"{TEST_MARKER}%", f"{TEST_MARKER}%"),
+        )
         cur.execute("DELETE FROM employees WHERE employee_code LIKE %s", (f"{TEST_MARKER}%",))
         cur.execute(
             "DELETE FROM refresh_tokens WHERE user_id IN ("
             "  SELECT id FROM users WHERE email LIKE %s)",
             (f"{TEST_MARKER}%",),
         )
+        cur.execute(
+            "DELETE FROM areas WHERE name LIKE %s OR territory_id IN ("
+            "  SELECT id FROM territories WHERE name LIKE %s)",
+            (f"{TEST_MARKER}%", f"{TEST_MARKER}%"),
+        )
         cur.execute("DELETE FROM territories WHERE name LIKE %s", (f"{TEST_MARKER}%",))
+        cur.execute(
+            "DELETE FROM form_answers WHERE submission_id IN ("
+            "  SELECT id FROM form_submissions WHERE form_id IN ("
+            "    SELECT id FROM form_templates WHERE created_by IN ("
+            "      SELECT id FROM users WHERE email LIKE %s)))",
+            (f"{TEST_MARKER}%",),
+        )
+        cur.execute(
+            "DELETE FROM form_submissions WHERE form_id IN ("
+            "  SELECT id FROM form_templates WHERE created_by IN ("
+            "    SELECT id FROM users WHERE email LIKE %s))",
+            (f"{TEST_MARKER}%",),
+        )
+        cur.execute(
+            "DELETE FROM form_templates WHERE created_by IN ("
+            "  SELECT id FROM users WHERE email LIKE %s)",
+            (f"{TEST_MARKER}%",),
+        )
         cur.execute("DELETE FROM users WHERE email LIKE %s", (f"{TEST_MARKER}%",))
 
 
@@ -418,6 +455,16 @@ def created_territories() -> Iterator[list[str]]:
         return
     with db_cursor(privileged=True) as cur:
         cur.execute("DELETE FROM employee_territory_assignments WHERE territory_id = ANY(%s::uuid[])", (ids,))
+        # Zone/Area/Outlet hierarchy: areas.territory_id is RESTRICT, so any
+        # area created under one of these territories (and anyone assigned
+        # to cover it) must go first, or this delete 409s/fails exactly like
+        # the employee/customer guards above.
+        cur.execute(
+            "DELETE FROM employee_area_assignments WHERE area_id IN ("
+            "  SELECT id FROM areas WHERE territory_id = ANY(%s::uuid[]))",
+            (ids,),
+        )
+        cur.execute("DELETE FROM areas WHERE territory_id = ANY(%s::uuid[])", (ids,))
         cur.execute("DELETE FROM territories WHERE id = ANY(%s::uuid[])", (ids,))
 
 

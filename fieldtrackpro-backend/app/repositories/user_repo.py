@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import User
@@ -17,14 +17,16 @@ class UserRepository(BaseRepository[User]):
         super().__init__(User, session)
 
     async def get_by_email(self, email: str) -> User | None:
+        cleaned = email.strip()
         result = await self.session.execute(
-            select(User).where(User.email == email)
+            select(User).where(func.lower(User.email) == func.lower(cleaned))
         )
         return result.scalar_one_or_none()
 
     async def get_by_mobile(self, mobile: str) -> User | None:
+        cleaned = mobile.strip()
         result = await self.session.execute(
-            select(User).where(User.mobile_number == mobile)
+            select(User).where(User.mobile_number == cleaned)
         )
         return result.scalar_one_or_none()
 

@@ -10,6 +10,8 @@ from app.database import Base
 
 class NotificationType(str, enum.Enum):
     NEW_VISIT = "NEW_VISIT"
+    RESCHEDULED = "RESCHEDULED"
+    CANCELLED = "CANCELLED"
     REMINDER = "REMINDER"
     OVERDUE = "OVERDUE"
     COMPLETED = "COMPLETED"

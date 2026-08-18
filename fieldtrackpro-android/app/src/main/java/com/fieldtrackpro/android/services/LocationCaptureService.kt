@@ -36,6 +36,10 @@ data class LocationResult(
         get() = accuracy <= LocationCaptureService.MAX_ACCURACY_THRESHOLD_M
 }
 
+class LocationPermissionDeniedException(message: String = "Location permission not granted. Enable permission in settings.") : SecurityException(message)
+class LocationServicesDisabledException(message: String = "Location services are disabled. Please turn on GPS.") : Exception(message)
+class LocationUnavailableException(message: String = "Unable to determine location. Move to open sky and try again.") : Exception(message)
+
 /**
  * Service for capturing device location using Android's standard LocationManager.
  *
@@ -54,15 +58,25 @@ class LocationCaptureService(private val context: Context) {
          * so the client warns about a fix the server will reject anyway,
          * instead of only finding out after a round trip. Reused, not
          * invented - the server remains authoritative regardless.
-         *
-         * A *freshness* (staleness) threshold is deliberately NOT defined
-         * here: no product-approved value exists anywhere in this codebase
-         * for "how old is too old for a cached location fix", and inventing
-         * one would be a business-rule decision, not an engineering fix.
-         * LocationResult.ageMillis() exposes the fix's age so this can be
-         * added once that threshold is actually decided.
          */
         const val MAX_ACCURACY_THRESHOLD_M = 100.0f
+
+        /**
+         * Calculates geodesic distance between two points in meters using Haversine formula.
+         */
+        fun calculateDistanceM(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+            val r = 6371000.0 // Earth radius in meters
+            val phi1 = Math.toRadians(lat1)
+            val phi2 = Math.toRadians(lat2)
+            val dPhi = Math.toRadians(lat2 - lat1)
+            val dLambda = Math.toRadians(lon2 - lon1)
+
+            val a = Math.sin(dPhi / 2.0) * Math.sin(dPhi / 2.0) +
+                Math.cos(phi1) * Math.cos(phi2) *
+                Math.sin(dLambda / 2.0) * Math.sin(dLambda / 2.0)
+            val c = 2.0 * Math.atan2(Math.sqrt(a), Math.sqrt(1.0 - a))
+            return r * c
+        }
     }
 
     private val locationManager: LocationManager =
@@ -92,17 +106,18 @@ class LocationCaptureService(private val context: Context) {
      * Capture the current device location.
      *
      * @return LocationResult with coordinates and metadata
-     * @throws SecurityException if location permission not granted
-     * @throws Exception if location unavailable
+     * @throws LocationPermissionDeniedException if location permission not granted
+     * @throws LocationServicesDisabledException if location services are disabled
+     * @throws LocationUnavailableException if location unavailable
      */
     suspend fun getCurrentLocation(): LocationResult = suspendCancellableCoroutine { cont ->
         if (!hasLocationPermission()) {
-            cont.resumeWithException(SecurityException("Location permission not granted"))
+            cont.resumeWithException(LocationPermissionDeniedException())
             return@suspendCancellableCoroutine
         }
 
         if (!isLocationEnabled()) {
-            cont.resumeWithException(Exception("Location services are disabled"))
+            cont.resumeWithException(LocationServicesDisabledException())
             return@suspendCancellableCoroutine
         }
 
@@ -112,13 +127,16 @@ class LocationCaptureService(private val context: Context) {
         for (provider in providers) {
             if (!locationManager.isProviderEnabled(provider)) continue
 
-            // Try getting last known location first
+            // Try getting last known location first if it's fresh (< 60 seconds)
             try {
                 val lastLocation = locationManager.getLastKnownLocation(provider)
                 if (lastLocation != null && !locationReceived) {
-                    locationReceived = true
-                    cont.resume(lastLocation.toLocationResult())
-                    return@suspendCancellableCoroutine
+                    val ageMs = System.currentTimeMillis() - lastLocation.time
+                    if (ageMs < 60000L) {
+                        locationReceived = true
+                        cont.resume(lastLocation.toLocationResult())
+                        return@suspendCancellableCoroutine
+                    }
                 }
             } catch (e: SecurityException) {
                 // Permission issue, continue
@@ -151,7 +169,7 @@ class LocationCaptureService(private val context: Context) {
             try {
                 locationManager.requestLocationUpdates(
                     provider,
-                    5000L, // min time between updates (ms)
+                    1000L, // min time between updates (ms)
                     0f,    // min distance between updates (m)
                     listener,
                     Looper.getMainLooper()
@@ -167,9 +185,31 @@ class LocationCaptureService(private val context: Context) {
 
         if (!locationReceived) {
             if (cont.isActive) {
-                cont.resumeWithException(Exception("Unable to determine location. Please ensure GPS is enabled."))
+                // Fallback to last known location if available before throwing
+                val fallback = getLastLocationInternal()
+                if (fallback != null) {
+                    cont.resume(fallback)
+                } else {
+                    cont.resumeWithException(LocationUnavailableException())
+                }
             }
         }
+    }
+
+    private fun getLastLocationInternal(): LocationResult? {
+        if (!hasLocationPermission()) return null
+        val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+        for (provider in providers) {
+            try {
+                if (locationManager.isProviderEnabled(provider)) {
+                    val loc = locationManager.getLastKnownLocation(provider)
+                    if (loc != null) return loc.toLocationResult()
+                }
+            } catch (e: SecurityException) {
+                // ignore
+            }
+        }
+        return null
     }
 
     /**

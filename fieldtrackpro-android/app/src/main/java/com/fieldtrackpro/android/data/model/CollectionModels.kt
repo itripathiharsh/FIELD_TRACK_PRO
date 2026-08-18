@@ -81,6 +81,10 @@ data class AccountSummaryDto(
     @SerializedName("max_days_outstanding") val maxDaysOutstanding: Int,
     @SerializedName("collection_status") val collectionStatus: String,
     @SerializedName("most_recent_payment") val mostRecentPayment: PaymentDto? = null,
+    // The most recent visit that actually happened (has a check-in) - null
+    // if this outlet has never had one. Mirrors the web AccountSummaryCard.
+    @SerializedName("most_recent_visit_date") val mostRecentVisitDate: String? = null,
+    @SerializedName("most_recent_visit_employee_name") val mostRecentVisitEmployeeName: String? = null,
     @SerializedName("recent_invoices") val recentInvoices: List<InvoiceDto> = emptyList(),
     @SerializedName("recent_payments") val recentPayments: List<PaymentDto> = emptyList(),
     @SerializedName("brand_summary") val brandSummary: List<BrandSummaryDto> = emptyList(),

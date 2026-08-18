@@ -11,6 +11,9 @@ import {
   PackagePlus,
   History,
   Plus,
+  Layers,
+  X,
+  Edit2,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardSubtitle } from '../components/ui/Card';
 import { PageHeader } from '../components/ui/PageHeader';
@@ -24,7 +27,7 @@ import { Select } from '../components/ui/Select';
 import { Input } from '../components/ui/Input';
 
 import { apiClient } from '../api/client';
-import { AssignmentType, Employee, EmployeeActivity, Territory, TerritoryAssignmentHistory } from '../types';
+import { Area, AssignmentType, Employee, EmployeeActivity, EmployeeAreaAssignment, Territory, TerritoryAssignmentHistory } from '../types';
 
 const formatCurrency = (value: string): string => `₹${Number(value).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 
@@ -39,6 +42,8 @@ export const EmployeeDetailPage: React.FC = () => {
   const [activity, setActivity] = useState<EmployeeActivity | null>(null);
   const [territoryHistory, setTerritoryHistory] = useState<TerritoryAssignmentHistory | null>(null);
   const [territories, setTerritories] = useState<Territory[]>([]);
+  const [areas, setAreas] = useState<Area[]>([]);
+  const [coverage, setCoverage] = useState<EmployeeAreaAssignment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -50,20 +55,39 @@ export const EmployeeDetailPage: React.FC = () => {
   const [reassignError, setReassignError] = useState<string | null>(null);
   const [isReassigning, setIsReassigning] = useState(false);
 
+  // Area Coverage modal state (brand-agnostic many-to-many: independent of,
+  // and additive to, the single-Zone Territory Assignment section above).
+  const [isCoverageModalOpen, setIsCoverageModalOpen] = useState(false);
+  const [coverageAreaId, setCoverageAreaId] = useState('');
+  const [coverageError, setCoverageError] = useState<string | null>(null);
+  const [isSavingCoverage, setIsSavingCoverage] = useState(false);
+
+  // Edit Profile modal state
+  const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
+  const [editFullName, setEditFullName] = useState('');
+  const [editEmployeeCode, setEditEmployeeCode] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [editProfileError, setEditProfileError] = useState<string | null>(null);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+
   const load = useCallback(async () => {
     if (!id) return;
     try {
       setIsLoading(true);
-      const [emp, act, history, terrs] = await Promise.all([
+      const [emp, act, history, terrs, allAreas, areaCoverage] = await Promise.all([
         apiClient.getEmployeeById(id),
         apiClient.getEmployeeActivity(id).catch(() => null),
         apiClient.getTerritoryAssignmentHistory(id).catch(() => null),
         apiClient.getTerritories().catch(() => [] as Territory[]),
+        apiClient.getAreas().catch(() => [] as Area[]),
+        apiClient.getEmployeeAreaCoverage(id).catch(() => [] as EmployeeAreaAssignment[]),
       ]);
       setEmployee(emp);
       setActivity(act);
       setTerritoryHistory(history);
       setTerritories(terrs);
+      setAreas(allAreas);
+      setCoverage(areaCoverage);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load employee');
     } finally {
@@ -71,9 +95,71 @@ export const EmployeeDetailPage: React.FC = () => {
     }
   }, [id]);
 
+  const openCoverageModal = () => {
+    setCoverageAreaId('');
+    setCoverageError(null);
+    setIsCoverageModalOpen(true);
+  };
+
+  const handleAssignCoverage = async () => {
+    if (!id || !coverageAreaId) return;
+    setCoverageError(null);
+    setIsSavingCoverage(true);
+    try {
+      await apiClient.assignEmployeeArea(id, coverageAreaId);
+      setIsCoverageModalOpen(false);
+      await load();
+    } catch (err) {
+      setCoverageError(err instanceof Error ? err.message : 'Failed to assign area');
+    } finally {
+      setIsSavingCoverage(false);
+    }
+  };
+
+  const handleUnassignCoverage = async (areaId: string, name: string) => {
+    if (!id || !window.confirm(`Remove this employee's coverage of "${name}"?`)) return;
+    try {
+      await apiClient.unassignEmployeeArea(id, areaId);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to remove area coverage');
+    }
+  };
+
+  // Areas not already covered - what the "Assign" modal offers.
+  const uncoveredAreas = areas.filter((a) => !coverage.some((c) => c.area_id === a.id));
+
   useEffect(() => {
     load();
   }, [load]);
+
+  const openEditProfileModal = () => {
+    if (!employee) return;
+    setEditFullName(employee.full_name);
+    setEditEmployeeCode(employee.employee_code || '');
+    setEditEmail(employee.user?.email || '');
+    setEditProfileError(null);
+    setIsEditProfileOpen(true);
+  };
+
+  const handleSaveProfile = async () => {
+    if (!id || !employee) return;
+    setEditProfileError(null);
+    setIsSavingProfile(true);
+    try {
+      await apiClient.updateEmployee(id, {
+        full_name: editFullName.trim() || undefined,
+        employee_code: editEmployeeCode.trim() || null,
+        email: editEmail.trim() || undefined,
+      });
+      setIsEditProfileOpen(false);
+      await load();
+    } catch (err) {
+      setEditProfileError(err instanceof Error ? err.message : 'Failed to update employee profile');
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
 
   const openReassignModal = () => {
     setReassignType('PERMANENT');
@@ -130,8 +216,13 @@ export const EmployeeDetailPage: React.FC = () => {
 
       <Card>
         <CardHeader>
-          <CardTitle>Profile</CardTitle>
-          <CardSubtitle>Employee information</CardSubtitle>
+          <div>
+            <CardTitle>Profile</CardTitle>
+            <CardSubtitle>Employee information</CardSubtitle>
+          </div>
+          <Button variant="outline" size="sm" icon={Edit2} onClick={openEditProfileModal}>
+            Edit Profile
+          </Button>
         </CardHeader>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-space-4 p-space-5">
           <div className="flex items-center gap-space-2">
@@ -335,6 +426,82 @@ export const EmployeeDetailPage: React.FC = () => {
         )}
       </Card>
 
+      {/* Area Coverage: brand-agnostic many-to-many, independent of the
+          single-Zone Territory Assignment above - an employee can cover
+          several Areas across several Zones at once. */}
+      <Card className="space-y-space-4">
+        <CardHeader>
+          <div>
+            <CardTitle>Area Coverage</CardTitle>
+            <CardSubtitle>Every Area this employee covers - can span multiple Zones at once.</CardSubtitle>
+          </div>
+          <Button variant="outline" size="sm" icon={Plus} onClick={openCoverageModal}>
+            Assign Area
+          </Button>
+        </CardHeader>
+
+        {coverage.length === 0 ? (
+          <p className="font-caption text-xs text-on-surface-variant py-space-3 text-center">
+            No areas assigned yet.
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-space-3">
+            {coverage.map((c) => (
+              <div
+                key={c.id}
+                className="flex items-center justify-between p-space-3 rounded-lg border border-surface-container-highest hover:bg-surface-container-low transition-colors"
+              >
+                <div className="flex items-center gap-space-2 min-w-0">
+                  <Layers className="w-4 h-4 text-secondary shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-primary truncate">{c.area_name}</p>
+                    <p className="text-xs text-on-surface-variant truncate">{c.territory_name}</p>
+                  </div>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon={X}
+                  className="text-error hover:bg-error-container/30 shrink-0"
+                  onClick={() => handleUnassignCoverage(c.area_id, c.area_name)}
+                >
+                  Remove
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      <Modal isOpen={isCoverageModalOpen} onClose={() => setIsCoverageModalOpen(false)} title="Assign Area Coverage" size="md">
+        <div className="space-y-space-4">
+          {coverageError && <ErrorBanner message={coverageError} />}
+
+          {uncoveredAreas.length === 0 ? (
+            <p className="text-xs text-on-surface-variant">
+              This employee already covers every existing area, or no areas have been created yet.
+            </p>
+          ) : (
+            <Select label="Area" value={coverageAreaId} onChange={(e) => setCoverageAreaId(e.target.value)}>
+              <option value="">— Select an area —</option>
+              {uncoveredAreas.map((a) => (
+                <option key={a.id} value={a.id}>{a.name} ({a.territory_name})</option>
+              ))}
+            </Select>
+          )}
+
+          <Button
+            variant="primary"
+            className="w-full"
+            disabled={!coverageAreaId}
+            isLoading={isSavingCoverage}
+            onClick={() => void handleAssignCoverage()}
+          >
+            Assign
+          </Button>
+        </div>
+      </Modal>
+
       <Modal isOpen={isReassignOpen} onClose={() => setIsReassignOpen(false)} title="New Territory Reassignment" size="md">
         <div className="space-y-space-4">
           {reassignError && <ErrorBanner message={reassignError} />}
@@ -376,6 +543,42 @@ export const EmployeeDetailPage: React.FC = () => {
             onClick={() => void handleCreateReassignment()}
           >
             Create Reassignment
+          </Button>
+        </div>
+      </Modal>
+
+      <Modal isOpen={isEditProfileOpen} onClose={() => setIsEditProfileOpen(false)} title="Edit Employee Profile" size="md">
+        <div className="space-y-space-4">
+          {editProfileError && <ErrorBanner message={editProfileError} />}
+          
+          <Input
+            label="Full Name"
+            value={editFullName}
+            onChange={(e) => setEditFullName(e.target.value)}
+            required
+          />
+          
+          <Input
+            label="Email"
+            type="email"
+            value={editEmail}
+            onChange={(e) => setEditEmail(e.target.value)}
+            helperText="Changing an email will revoke the user's current session."
+          />
+          
+          <Input
+            label="Employee Code"
+            value={editEmployeeCode}
+            onChange={(e) => setEditEmployeeCode(e.target.value)}
+          />
+
+          <Button
+            variant="primary"
+            className="w-full"
+            isLoading={isSavingProfile}
+            onClick={() => void handleSaveProfile()}
+          >
+            Save Changes
           </Button>
         </div>
       </Modal>

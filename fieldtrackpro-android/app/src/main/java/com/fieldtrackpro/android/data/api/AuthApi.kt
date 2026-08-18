@@ -1,9 +1,12 @@
 package com.fieldtrackpro.android.data.api
 
 import com.fieldtrackpro.android.data.model.ChangePasswordRequest
+import com.fieldtrackpro.android.data.model.ForgotPasswordRequest
 import com.fieldtrackpro.android.data.model.LoginRequest
 import com.fieldtrackpro.android.data.model.LoginResponse
+import com.fieldtrackpro.android.data.model.MessageResponse
 import com.fieldtrackpro.android.data.model.RefreshRequest
+import com.fieldtrackpro.android.data.model.ResetPasswordRequest
 import com.fieldtrackpro.android.data.model.UserDto
 import retrofit2.Response
 import retrofit2.http.Body
@@ -34,4 +37,10 @@ interface AuthApi {
 
     @PATCH("api/v1/users/me/password")
     suspend fun changePassword(@Body request: ChangePasswordRequest): Response<Unit>
+
+    @POST("api/v1/auth/forgot-password")
+    suspend fun forgotPassword(@Body request: ForgotPasswordRequest): Response<MessageResponse>
+
+    @POST("api/v1/auth/reset-password")
+    suspend fun resetPassword(@Body request: ResetPasswordRequest): Response<MessageResponse>
 }

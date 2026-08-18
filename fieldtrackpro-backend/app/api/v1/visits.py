@@ -3,10 +3,11 @@ Visits router — /api/v1/visits
 """
 from __future__ import annotations
 
+from datetime import datetime
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps.auth import CurrentUser, require_role
@@ -44,28 +45,66 @@ async def create_visit(
 
 @router.get("", response_model=list[VisitRead], dependencies=[AnyAuth])
 async def list_visits(
+    response: Response,
     current_user: CurrentUser,
     session: DbSession,
+    search: str | None = Query(default=None, description="Search by customer name, code, ID, employee name, or visit ID"),
+    status: list[VisitStatus] | None = Query(default=None, description="Filter by one or multiple statuses"),
     employee_id: uuid.UUID | None = Query(default=None),
-    status: VisitStatus | None = Query(default=None),
+    territory_id: uuid.UUID | None = Query(default=None, description="Zone / Territory"),
+    area_id: uuid.UUID | None = Query(default=None),
+    from_date: datetime | None = Query(default=None, description="Scheduled on or after"),
+    to_date: datetime | None = Query(default=None, description="Scheduled on or before"),
+    sort_order: str = Query(default="desc", pattern="^(asc|desc|ASC|DESC)$"),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, le=200),
 ):
     """
-    List visits.
+    List visits with real database-level search, filtering, and deterministic sorting.
 
     FT-002: results are scoped to the caller. An EMPLOYEE receives only their
     own visits; an ADMIN receives all and may filter by `employee_id`.
+    Returns X-Total-Count header for scalable server-side pagination.
     """
-    return await visit_service.list_visits(
-        session, current_user, employee_id, status, skip, limit
+    visits, total_count = await visit_service.list_visits(
+        session=session,
+        current_user=current_user,
+        employee_id=employee_id,
+        status=status,
+        territory_id=territory_id,
+        area_id=area_id,
+        from_date=from_date,
+        to_date=to_date,
+        search=search,
+        sort_order=sort_order,
+        skip=skip,
+        limit=limit,
     )
+    response.headers["X-Total-Count"] = str(total_count)
+    return visits
 
 
 @router.get("/me/today", response_model=list[VisitRead])
-async def my_today_visits(current_user: CurrentUser, session: DbSession):
-    """Employee: get today's visits assigned to me."""
-    return await visit_service.get_my_today_visits(current_user, session)
+async def my_today_visits(
+    response: Response,
+    current_user: CurrentUser,
+    session: DbSession,
+    search: str | None = Query(default=None, description="Search by customer name, code, etc."),
+    status: list[VisitStatus] | None = Query(default=None, description="Filter by status"),
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, le=200),
+):
+    """Employee: get today's visits assigned to me with real server-side search, filtering and pagination."""
+    visits, total_count = await visit_service.get_my_today_visits(
+        current_user=current_user,
+        session=session,
+        status=status,
+        search=search,
+        skip=skip,
+        limit=limit,
+    )
+    response.headers["X-Total-Count"] = str(total_count)
+    return visits
 
 
 @router.get("/{visit_id}", response_model=VisitRead, dependencies=[AnyAuth])

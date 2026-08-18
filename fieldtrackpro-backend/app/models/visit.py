@@ -27,8 +27,10 @@ class Visit(Base):
     status: Mapped[VisitStatus] = mapped_column(Enum(VisitStatus, name="visit_status_enum"), default=VisitStatus.PENDING, index=True)
     check_in_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     check_in_location: Mapped[Optional[Any]] = mapped_column(Geography(geometry_type="POINT", srid=4326), nullable=True)
+    check_in_received_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     check_out_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     check_out_location: Mapped[Optional[Any]] = mapped_column(Geography(geometry_type="POINT", srid=4326), nullable=True)
+    check_out_received_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     synced: Mapped[bool] = mapped_column(Boolean, default=False)
     created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -67,3 +69,23 @@ class Visit(Base):
     @property
     def required_form_status(self):
         return self.required_form.status if self.required_form else None
+
+    @property
+    def customer_name(self) -> str:
+        return self.customer.name if self.customer else ""
+
+    @property
+    def customer_address(self) -> str:
+        return self.customer.address if self.customer else ""
+
+    @property
+    def employee_name(self) -> str:
+        return self.employee.full_name if self.employee else ""
+
+    @property
+    def area_name(self) -> Optional[str]:
+        return self.customer.area.name if self.customer and self.customer.area else None
+
+    @property
+    def territory_name(self) -> Optional[str]:
+        return self.customer.territory.name if self.customer and self.customer.territory else None

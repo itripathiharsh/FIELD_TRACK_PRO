@@ -265,4 +265,40 @@ class DtoContractTest {
         assertTrue("Should contain latitude", json.contains("\"latitude\":12.9716"))
         assertTrue("Should contain longitude", json.contains("\"longitude\":77.5946"))
     }
+
+    @Test
+    fun visitDto_withReceivedTimestamps_deserializesCorrectly() {
+        val json = """
+            {
+                "id": "v123",
+                "customer_id": "c456",
+                "employee_id": "e789",
+                "scheduled_at": "2026-01-01T09:00:00Z",
+                "status": "COMPLETED",
+                "check_in_at": "2026-01-01T09:05:00Z",
+                "check_in_received_at": "2026-01-01T11:00:00Z",
+                "check_out_at": "2026-01-01T09:30:00Z",
+                "check_out_received_at": "2026-01-01T11:00:05Z"
+            }
+        """.trimIndent()
+        val visit = gson.fromJson(json, VisitDto::class.java)
+        assertEquals("2026-01-01T09:05:00Z", visit.checkInAt)
+        assertEquals("2026-01-01T11:00:00Z", visit.checkInReceivedAt)
+        assertEquals("2026-01-01T09:30:00Z", visit.checkOutAt)
+        assertEquals("2026-01-01T11:00:05Z", visit.checkOutReceivedAt)
+    }
+
+    @Test
+    fun checkOutRequest_withOptionalIdempotencyKey_serializesCorrectly() {
+        val request = CheckOutRequest(
+            latitude = 12.9716,
+            longitude = 77.5946,
+            accuracyM = 8.0,
+            isMockLocation = false,
+            capturedAt = "2026-08-15T09:30:00Z",
+            idempotencyKey = "action-uuid-123"
+        )
+        val json = gson.toJson(request)
+        assertTrue("Should contain idempotency_key", json.contains("\"idempotency_key\":\"action-uuid-123\""))
+    }
 }

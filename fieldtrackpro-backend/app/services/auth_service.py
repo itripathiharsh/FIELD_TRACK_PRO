@@ -15,14 +15,20 @@ from app.core.security import (
     generate_refresh_token,
     hash_refresh_token,
     verify_password,
+    hash_password,
 )
+import hashlib
+import secrets
+import string
+from sqlalchemy import select
 from app.exceptions.custom import BaseAPIException
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
 from app.repositories.employee_repo import EmployeeRepository
 from app.repositories.token_repo import TokenRepository
 from app.repositories.user_repo import UserRepository
-from app.schemas.auth import LoginRequest, TokenResponse
+from app.schemas.auth import LoginRequest, TokenResponse, ForgotPasswordRequest, ResetPasswordRequest
+from app.models.password_reset import PasswordResetToken
 from app.schemas.user import CurrentUserRead
 
 
@@ -34,7 +40,8 @@ async def login(data: LoginRequest, session: AsyncSession) -> TokenResponse:
     locked-out identifier costs no password verification work and leaks no
     information about whether the account exists.
     """
-    identifier = data.email or data.mobile_number or ""
+    raw_identifier = data.email or data.mobile_number or ""
+    identifier = raw_identifier.strip().lower() if data.email else raw_identifier.strip()
     await login_rate_limiter.check_allowed(identifier, session)
 
     user_repo = UserRepository(session)
@@ -146,16 +153,25 @@ async def build_current_user(user: User, session: AsyncSession) -> CurrentUserRe
 
     if employee is not None:
         full_name = employee.full_name
+        employee_code = employee.employee_code
         # P2-D: the currently EFFECTIVE territory (an active temporary
         # reassignment wins over the base assignment), not the raw column -
         # this is the one place the employee's own session actually reflects
         # the reassignment rules.
         from app.services.territory_assignment_service import get_effective_territory_id
+        from app.repositories.territory_repo import TerritoryRepository
 
         territory_id = await get_effective_territory_id(employee.id, session)
+        territory_name = None
+        if territory_id:
+            territory = await TerritoryRepository(session).get_by_id(territory_id)
+            if territory:
+                territory_name = territory.name
     else:
         full_name = user.email or user.mobile_number or str(user.id)
+        employee_code = None
         territory_id = None
+        territory_name = None
 
     return CurrentUserRead(
         id=user.id,
@@ -165,5 +181,79 @@ async def build_current_user(user: User, session: AsyncSession) -> CurrentUserRe
         role=user.role,
         is_active=user.is_active,
         territory_id=territory_id,
+        territory_name=territory_name,
         employee_id=employee.id if employee else None,
+        employee_code=employee_code,
     )
+
+
+def generate_otp(length=6):
+    return ''.join(secrets.choice(string.digits) for _ in range(length))
+
+def hash_otp(otp: str) -> str:
+    return hashlib.sha256(otp.encode()).hexdigest()
+
+async def forgot_password(email: str, session: AsyncSession) -> None:
+    clean_email = email.strip().lower()
+    await login_rate_limiter.check_allowed(f"forgot_pwd_{clean_email}", session)
+
+    user_repo = UserRepository(session)
+    user = await user_repo.get_by_email(clean_email)
+
+    if not user or not user.is_active:
+        await login_rate_limiter.record_failure(f"forgot_pwd_{clean_email}", session)
+        return
+
+    await login_rate_limiter.record_success(f"forgot_pwd_{clean_email}", session)
+
+    otp = generate_otp()
+    hashed = hash_otp(otp)
+
+    record = PasswordResetToken(
+        user_id=user.id,
+        token_hash=hashed,
+        expires_at=datetime.now(tz=timezone.utc) + timedelta(minutes=15)
+    )
+    session.add(record)
+    await session.commit()
+
+    from app.services.email_service import send_password_reset_email
+    await send_password_reset_email(user.email or clean_email, otp)
+
+async def reset_password(data: ResetPasswordRequest, session: AsyncSession) -> None:
+    clean_email = data.email.strip().lower()
+    await login_rate_limiter.check_allowed(f"reset_pwd_{clean_email}", session)
+
+    user_repo = UserRepository(session)
+    user = await user_repo.get_by_email(clean_email)
+
+    if not user or not user.is_active:
+        await login_rate_limiter.record_failure(f"reset_pwd_{clean_email}", session)
+        raise BaseAPIException(status_code=400, detail="Invalid request", error_code="AUTH_INVALID_RESET")
+
+    hashed = hash_otp(data.otp)
+
+    stmt = select(PasswordResetToken).where(
+        PasswordResetToken.user_id == user.id,
+        PasswordResetToken.token_hash == hashed,
+        PasswordResetToken.used == False,
+        PasswordResetToken.expires_at > datetime.now(tz=timezone.utc)
+    )
+    result = await session.execute(stmt)
+    token = result.scalar_one_or_none()
+
+    if not token:
+        await login_rate_limiter.record_failure(f"reset_pwd_{data.email}", session)
+        raise BaseAPIException(status_code=400, detail="Invalid or expired reset code", error_code="AUTH_INVALID_RESET_CODE")
+
+    await login_rate_limiter.record_success(f"reset_pwd_{data.email}", session)
+
+    user.password_hash = hash_password(data.new_password)
+    session.add(user)
+
+    token.used = True
+    session.add(token)
+
+    await TokenRepository(session).revoke_all_for_user(user.id)
+    await session.commit()
+

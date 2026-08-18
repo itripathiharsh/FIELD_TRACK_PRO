@@ -4,6 +4,7 @@ from app.api.v1 import (
     auth,
     users,
     territories,
+    areas,
     employees,
     customers,
     visits,
@@ -17,6 +18,7 @@ from app.api.v1 import (
     invoices,
     payments,
     imports,
+    collections,
 )
 
 api_router = APIRouter()
@@ -25,6 +27,7 @@ api_router.include_router(health.router, tags=["health"])
 api_router.include_router(auth.router)
 api_router.include_router(users.router)
 api_router.include_router(territories.router)
+api_router.include_router(areas.router)
 api_router.include_router(employees.router)
 api_router.include_router(customers.router)
 api_router.include_router(visits.router)
@@ -38,3 +41,4 @@ api_router.include_router(form_templates.router)
 api_router.include_router(invoices.router)
 api_router.include_router(payments.router)
 api_router.include_router(imports.router)
+api_router.include_router(collections.router)

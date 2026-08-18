@@ -1,40 +1,53 @@
 package com.fieldtrackpro.android.ui.screens.profile
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ExitToApp
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.fieldtrackpro.android.BuildConfig
 import com.fieldtrackpro.android.data.local.TokenManager
-import com.fieldtrackpro.android.data.remote.ApiClient
 import com.fieldtrackpro.android.ui.components.FieldTrackTopAppBar
 import com.fieldtrackpro.android.ui.screens.visits.DetailItem
-import com.fieldtrackpro.android.ui.theme.CoralRed
-import com.fieldtrackpro.android.ui.theme.FieldTrackNavy
-import com.fieldtrackpro.android.ui.theme.SurfaceOffWhite
-import com.fieldtrackpro.android.ui.theme.SurfaceWhite
-import com.fieldtrackpro.android.ui.theme.TextMuted
+import com.fieldtrackpro.android.ui.theme.BrandGold
+import com.fieldtrackpro.android.ui.theme.BrandLightGray
+import com.fieldtrackpro.android.ui.theme.BrandNavy
+import com.fieldtrackpro.android.ui.theme.BrandWhite
+import com.fieldtrackpro.android.ui.theme.ErrorRed
+import com.fieldtrackpro.android.ui.theme.LeagueSpartanFamily
+import com.fieldtrackpro.android.ui.theme.LibreBaskervilleFamily
+import com.fieldtrackpro.android.ui.theme.SurfaceSecondary
+import com.fieldtrackpro.android.ui.theme.TextPrimary
+import com.fieldtrackpro.android.ui.theme.TextSecondary
 import com.fieldtrackpro.android.ui.viewmodel.AuthViewModel
 
 @Composable
@@ -44,8 +57,6 @@ fun ProfileSettingsScreen(
     onNavigateBack: () -> Unit,
     onLogout: () -> Unit
 ) {
-    var customUrl by remember { mutableStateOf(ApiClient.getBaseUrl()) }
-
     Scaffold(
         topBar = {
             FieldTrackTopAppBar(
@@ -57,74 +68,92 @@ fun ProfileSettingsScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(SurfaceOffWhite)
+                .background(SurfaceSecondary)
                 .padding(innerPadding)
-                .padding(20.dp)
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState())
         ) {
+            // Profile Hero Card
             Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = SurfaceWhite)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, BrandLightGray, RoundedCornerShape(14.dp)),
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = BrandWhite),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
-                    Text(
-                        text = "User Profile",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = FieldTrackNavy
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    DetailItem(label = "Full Name", value = tokenManager.getUserName() ?: "N/A")
-                    DetailItem(label = "Email Address", value = tokenManager.getUserEmail()?.ifBlank { "N/A" } ?: "N/A")
-                    DetailItem(label = "Role Profile", value = tokenManager.getUserRole() ?: "N/A")
-                }
-            }
-
-            // P0-3: this card must never reach a production build. Field
-            // reps must not be able to redirect API traffic (including their
-            // auth token) to an arbitrary endpoint - debug/QA builds only.
-            if (BuildConfig.DEBUG) {
-                Spacer(modifier = Modifier.height(20.dp))
-
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = SurfaceWhite)
-                ) {
-                    Column(modifier = Modifier.padding(20.dp)) {
-                        Text(
-                            text = "Backend Server Configuration (Debug Only)",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = FieldTrackNavy
-                        )
-                        Text(
-                            text = "Configure API base endpoint for host emulator or physical device testing.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = TextMuted
-                        )
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        OutlinedTextField(
-                            value = customUrl,
-                            onValueChange = { customUrl = it },
-                            label = { Text("API Base URL") },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        Button(
-                            onClick = { ApiClient.setCustomBaseUrl(customUrl) },
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = FieldTrackNavy,
-                                contentColor = SurfaceWhite
-                            )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(CircleShape)
+                                .background(BrandNavy)
+                                .border(2.dp, BrandGold, CircleShape),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Text("UPDATE BACKEND URL", color = SurfaceWhite)
+                            Icon(
+                                imageVector = Icons.Default.Person,
+                                contentDescription = null,
+                                tint = BrandGold,
+                                modifier = Modifier.size(32.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(16.dp))
+
+                        Column {
+                            Text(
+                                text = tokenManager.getUserName() ?: "Field Representative",
+                                fontFamily = LeagueSpartanFamily,
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = BrandNavy
+                            )
+                            Row(
+                                modifier = Modifier.padding(top = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(BrandGold.copy(alpha = 0.2f))
+                                        .border(1.dp, BrandGold, RoundedCornerShape(4.dp))
+                                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = tokenManager.getUserRole() ?: "REP",
+                                        fontFamily = LeagueSpartanFamily,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 11.sp,
+                                        letterSpacing = 0.8.sp,
+                                        color = BrandNavy
+                                    )
+                                }
+                            }
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    Text(
+                        text = "EMPLOYEE SPECIFICATIONS",
+                        fontFamily = LeagueSpartanFamily,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp,
+                        color = BrandNavy
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    DetailItem(label = "Email Address", value = tokenManager.getUserEmail()?.ifBlank { "N/A" } ?: "N/A")
+                    DetailItem(label = "Phone Number", value = tokenManager.getUserPhone()?.ifBlank { "N/A" } ?: "N/A")
+                    DetailItem(label = "Employee Code", value = tokenManager.getEmployeeCode()?.ifBlank { "N/A" } ?: "N/A")
+                    DetailItem(label = "Assigned Territory", value = tokenManager.getTerritoryName()?.ifBlank { "N/A" } ?: "N/A")
+                    DetailItem(label = "Security Protocol", value = "Keystore-backed Hardware Authentication")
                 }
             }
 
@@ -137,14 +166,30 @@ fun ProfileSettingsScreen(
                 },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(50.dp),
-                shape = RoundedCornerShape(8.dp),
+                    .height(52.dp),
+                shape = RoundedCornerShape(10.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = CoralRed,
-                    contentColor = SurfaceWhite
+                    containerColor = ErrorRed,
+                    contentColor = BrandWhite
                 )
             ) {
-                Text("LOGOUT SESSION", fontWeight = FontWeight.Bold, color = SurfaceWhite)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.ExitToApp,
+                        contentDescription = null,
+                        tint = BrandWhite,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        "LOGOUT ACTIVE SESSION",
+                        fontFamily = LeagueSpartanFamily,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        letterSpacing = 0.8.sp,
+                        color = BrandWhite
+                    )
+                }
             }
         }
     }

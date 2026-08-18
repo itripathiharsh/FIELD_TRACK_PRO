@@ -73,6 +73,13 @@ class Settings(BaseSettings):
     geocoding_user_agent: str = "FieldTrackPro/1.0"
     google_geocoding_api_key: str | None = None
 
+    # Email / SMTP
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_user: str | None = None
+    smtp_password: str | None = None
+    smtp_from_email: str = "noreply@fieldtrackpro.com"
+
     @model_validator(mode="after")
     def _require_media_signing_secret_in_production(self) -> "Settings":
         """

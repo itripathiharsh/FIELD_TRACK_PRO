@@ -1,6 +1,7 @@
 package com.fieldtrackpro.android.ui.screens.sync
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,7 +17,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -35,12 +35,16 @@ import com.fieldtrackpro.android.data.local.OfflineQueueManager
 import com.fieldtrackpro.android.ui.components.EmptyState
 import com.fieldtrackpro.android.ui.components.FieldTrackTopAppBar
 import com.fieldtrackpro.android.ui.components.StatusBadge
-import com.fieldtrackpro.android.ui.theme.FieldTrackAmber
-import com.fieldtrackpro.android.ui.theme.FieldTrackNavy
-import com.fieldtrackpro.android.ui.theme.SurfaceOffWhite
-import com.fieldtrackpro.android.ui.theme.SurfaceWhite
-import com.fieldtrackpro.android.ui.theme.TextMuted
+import com.fieldtrackpro.android.ui.theme.BrandGoldDark
+import com.fieldtrackpro.android.ui.theme.BrandLightGray
+import com.fieldtrackpro.android.ui.theme.BrandNavy
+import com.fieldtrackpro.android.ui.theme.BrandWhite
+import com.fieldtrackpro.android.ui.theme.LeagueSpartanFamily
+import com.fieldtrackpro.android.ui.theme.LibreBaskervilleFamily
+import com.fieldtrackpro.android.ui.theme.SurfaceSecondary
 import com.fieldtrackpro.android.ui.theme.TextPrimary
+import com.fieldtrackpro.android.ui.theme.TextSecondary
+import com.fieldtrackpro.android.ui.theme.TextSubtle
 import com.fieldtrackpro.android.ui.viewmodel.VisitsViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -48,11 +52,11 @@ import java.util.Locale
 
 /** A short, rep-facing label for a conflict type - the raw enum name is developer-facing only. */
 private fun ConflictType.displayLabel(): String = when (this) {
-    ConflictType.STATUS_CHANGED -> "Visit status changed on server"
-    ConflictType.VISIT_UNAVAILABLE -> "Visit no longer available"
-    ConflictType.GEO_VALIDATION_FAILED -> "Location check failed"
-    ConflictType.SERVER_REJECTED -> "Rejected by server"
-    ConflictType.NETWORK_ERROR -> "Server error during sync"
+    ConflictType.STATUS_CHANGED -> "Visit Status Changed on Server"
+    ConflictType.VISIT_UNAVAILABLE -> "Visit No Longer Available"
+    ConflictType.GEO_VALIDATION_FAILED -> "Location Check Failed"
+    ConflictType.SERVER_REJECTED -> "Rejected by Server"
+    ConflictType.NETWORK_ERROR -> "Network Error During Sync"
 }
 
 @Composable
@@ -64,13 +68,12 @@ fun OfflineQueueScreen(
     var queueItems by remember { mutableStateOf(offlineQueueManager.getQueue()) }
     var conflicts by remember { mutableStateOf(offlineQueueManager.getConflicts()) }
     var syncNotice by remember { mutableStateOf("") }
-
-    val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+    val dateFormat = remember { SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()) }
 
     Scaffold(
         topBar = {
             FieldTrackTopAppBar(
-                title = "Offline Action Sync Queue",
+                title = "Offline Action Queue",
                 onBackClick = onNavigateBack
             )
         }
@@ -78,31 +81,44 @@ fun OfflineQueueScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(SurfaceOffWhite)
+                .background(SurfaceSecondary)
                 .padding(innerPadding)
-                .padding(20.dp)
+                .padding(16.dp)
         ) {
             Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = SurfaceWhite)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, BrandLightGray, RoundedCornerShape(14.dp)),
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = BrandWhite),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
             ) {
-                Column(modifier = Modifier.padding(20.dp)) {
+                Column(modifier = Modifier.padding(18.dp)) {
                     Text(
                         text = "Pending Offline Queue (${queueItems.size})",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = FieldTrackNavy
+                        fontFamily = LeagueSpartanFamily,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = BrandNavy
                     )
                     Text(
                         text = "Actions captured while offline are stored locally and synced once network connectivity is restored.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = TextMuted
+                        fontFamily = LibreBaskervilleFamily,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Normal,
+                        color = TextSecondary
                     )
 
                     Spacer(modifier = Modifier.height(16.dp))
 
                     if (syncNotice.isNotBlank()) {
-                        Text(text = syncNotice, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = FieldTrackNavy)
+                        Text(
+                            text = syncNotice,
+                            fontFamily = LeagueSpartanFamily,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = BrandNavy
+                        )
                         Spacer(modifier = Modifier.height(12.dp))
                     }
 
@@ -120,12 +136,19 @@ fun OfflineQueueScreen(
                             },
                             enabled = queueItems.isNotEmpty(),
                             modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = FieldTrackNavy,
-                                contentColor = SurfaceWhite
+                                containerColor = BrandNavy,
+                                contentColor = BrandWhite
                             )
                         ) {
-                            Text("SYNC ALL NOW", color = SurfaceWhite)
+                            Text(
+                                "SYNC ALL NOW",
+                                fontFamily = LeagueSpartanFamily,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = BrandWhite
+                            )
                         }
 
                         OutlinedButton(
@@ -135,15 +158,22 @@ fun OfflineQueueScreen(
                                 syncNotice = "Cleared offline queue."
                             },
                             enabled = queueItems.isNotEmpty(),
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp)
                         ) {
-                            Text("CLEAR QUEUE", color = FieldTrackNavy)
+                            Text(
+                                "CLEAR QUEUE",
+                                fontFamily = LeagueSpartanFamily,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = BrandNavy
+                            )
                         }
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(20.dp))
 
             if (queueItems.isEmpty()) {
                 EmptyState(
@@ -154,13 +184,16 @@ fun OfflineQueueScreen(
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(queueItems) { action ->
                         Card(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(1.dp, BrandLightGray, RoundedCornerShape(12.dp)),
                             shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(containerColor = SurfaceWhite)
+                            colors = CardDefaults.cardColors(containerColor = BrandWhite),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                         ) {
                             Row(
                                 modifier = Modifier
-                                    .padding(16.dp)
+                                    .padding(14.dp)
                                     .fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
@@ -168,19 +201,25 @@ fun OfflineQueueScreen(
                                 Column {
                                     Text(
                                         text = "Visit ID: ${action.visitId.take(8)}...",
-                                        fontSize = 14.sp,
+                                        fontFamily = LeagueSpartanFamily,
+                                        fontSize = 15.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = TextPrimary
+                                        color = BrandNavy
                                     )
+                                    Spacer(modifier = Modifier.height(2.dp))
                                     Text(
                                         text = "Captured: ${dateFormat.format(Date(action.timestamp))}",
-                                        fontSize = 12.sp,
-                                        color = TextMuted
+                                        fontFamily = LibreBaskervilleFamily,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Normal,
+                                        color = TextSecondary
                                     )
                                     Text(
                                         text = "Coords: ${action.latitude}, ${action.longitude}",
+                                        fontFamily = LibreBaskervilleFamily,
                                         fontSize = 12.sp,
-                                        color = TextMuted
+                                        fontWeight = FontWeight.Normal,
+                                        color = TextSubtle
                                     )
                                 }
                                 StatusBadge(status = action.actionType)
@@ -191,40 +230,53 @@ fun OfflineQueueScreen(
             }
 
             if (conflicts.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(20.dp))
                 Text(
-                    text = "Needs Your Attention (${conflicts.size})",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = FieldTrackAmber
+                    text = "NEEDS YOUR ATTENTION (${conflicts.size})",
+                    fontFamily = LeagueSpartanFamily,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.8.sp,
+                    color = BrandGoldDark
                 )
                 Text(
                     text = "These queued actions could not be synced automatically and need a look before they're discarded.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TextMuted
+                    fontFamily = LibreBaskervilleFamily,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Normal,
+                    color = TextSecondary
                 )
                 Spacer(modifier = Modifier.height(10.dp))
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(conflicts, key = { it.id }) { conflict ->
                         Card(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(1.dp, BrandLightGray, RoundedCornerShape(12.dp)),
                             shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(containerColor = SurfaceWhite)
+                            colors = CardDefaults.cardColors(containerColor = BrandWhite),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                         ) {
-                            Column(modifier = Modifier.padding(16.dp)) {
+                            Column(modifier = Modifier.padding(14.dp)) {
                                 Text(
                                     text = conflict.conflictType.displayLabel(),
+                                    fontFamily = LeagueSpartanFamily,
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = FieldTrackAmber
+                                    color = BrandGoldDark
                                 )
                                 Text(
                                     text = "Visit ID: ${conflict.pendingAction.visitId.take(8)}... (${conflict.pendingAction.actionType})",
+                                    fontFamily = LibreBaskervilleFamily,
                                     fontSize = 12.sp,
-                                    color = TextMuted
+                                    fontWeight = FontWeight.Normal,
+                                    color = TextSecondary
                                 )
                                 Text(
                                     text = conflict.message,
-                                    fontSize = 12.sp,
+                                    fontFamily = LibreBaskervilleFamily,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Normal,
                                     color = TextPrimary
                                 )
                                 Spacer(modifier = Modifier.height(8.dp))
@@ -234,9 +286,10 @@ fun OfflineQueueScreen(
                                         offlineQueueManager.removeConflict(conflict.id)
                                         queueItems = offlineQueueManager.getQueue()
                                         conflicts = offlineQueueManager.getConflicts()
-                                    }
+                                    },
+                                    shape = RoundedCornerShape(8.dp)
                                 ) {
-                                    Text("DISCARD THIS ACTION", color = FieldTrackNavy)
+                                    Text("DISCARD THIS ACTION", fontFamily = LeagueSpartanFamily, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = BrandNavy)
                                 }
                             }
                         }

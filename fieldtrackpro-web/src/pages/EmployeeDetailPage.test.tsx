@@ -49,6 +49,7 @@ describe('EmployeeDetailPage', () => {
                 // check below or they'd wrongly resolve with the employee body.
                 if (url.includes('/activity')) return json(null, 404);
                 if (url.includes('/territory-assignments')) return json(null, 404);
+                if (url.includes('/areas')) return json([]);
                 if (url.includes(EMPLOYEE.id)) {
                     return json(employee);
                 }
@@ -128,6 +129,7 @@ describe('EmployeeDetailPage', () => {
             '/api/v1/employees': route((url) => {
                 if (url.includes('/activity')) return json(null, 404);
                 if (url.includes('/territory-assignments')) return json(null, 404);
+                if (url.includes('/areas')) return json([]);
                 if (url.includes(EMPLOYEE.id)) {
                     return json(employee);
                 }

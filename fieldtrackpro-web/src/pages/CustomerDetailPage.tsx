@@ -8,7 +8,7 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { StatusBadge } from '../components/ui/StatusBadge';
 
 import { apiClient, CustomerHistoryRow } from '../api/client';
-import { AccountSummary, Customer, OrderRead } from '../types';
+import { AccountSummary, Customer, OrderRead, Territory } from '../types';
 import { AccountSummaryCard } from '../components/ui/AccountSummaryCard';
 
 /**
@@ -21,6 +21,7 @@ export const CustomerDetailPage: React.FC = () => {
     const [visitHistory, setVisitHistory] = useState<CustomerHistoryRow[]>([]);
     const [account, setAccount] = useState<AccountSummary | null>(null);
     const [orders, setOrders] = useState<OrderRead[]>([]);
+    const [territories, setTerritories] = useState<Territory[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
@@ -28,22 +29,31 @@ export const CustomerDetailPage: React.FC = () => {
         if (!id) return;
         try {
             setIsLoading(true);
-            const [cust, history, acct, orderHistory] = await Promise.all([
+            const [cust, history, acct, orderHistory, territoryList] = await Promise.all([
                 apiClient.getCustomerById(id),
                 apiClient.getCustomerVisitHistory(id).catch(() => [] as CustomerHistoryRow[]),
                 apiClient.getCustomerAccount(id).catch(() => null),
                 apiClient.getCustomerOrders(id).catch(() => [] as OrderRead[]),
+                apiClient.getTerritories().catch(() => [] as Territory[]),
             ]);
             setCustomer(cust);
             setVisitHistory(history);
             setAccount(acct);
             setOrders(orderHistory);
+            setTerritories(territoryList);
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to load customer');
         } finally {
             setIsLoading(false);
         }
     }, [id]);
+
+    // Zone (Territory) - client-side lookup since CustomerRead only carries
+    // territory_id. Area is denormalized straight onto Customer by the
+    // backend (area_name), so it needs no lookup.
+    const territoryName = customer?.territory_id
+        ? territories.find((t) => t.id === customer.territory_id)?.name
+        : null;
 
     useEffect(() => {
         load();
@@ -107,6 +117,14 @@ export const CustomerDetailPage: React.FC = () => {
                             <span className="text-sm font-mono">{customer.outlet_code}</span>
                         </div>
                     )}
+                    <div className="flex items-center gap-space-2">
+                        <span className="text-sm font-semibold text-primary">Zone:</span>
+                        <span className="text-sm">{territoryName || '—'}</span>
+                    </div>
+                    <div className="flex items-center gap-space-2">
+                        <span className="text-sm font-semibold text-primary">Area:</span>
+                        <span className="text-sm">{customer.area_name || '—'}</span>
+                    </div>
                 </div>
             </Card>
 
@@ -174,6 +192,7 @@ export const CustomerDetailPage: React.FC = () => {
                                     <th className="px-space-4 py-space-3 font-bold text-primary">Status</th>
                                     <th className="px-space-4 py-space-3 font-bold text-primary">Employee</th>
                                     <th className="px-space-4 py-space-3 font-bold text-primary">Check-In</th>
+                                    <th className="px-space-4 py-space-3 font-bold text-primary">Check-Out</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-surface-container-highest">
@@ -191,6 +210,9 @@ export const CustomerDetailPage: React.FC = () => {
                                         <td className="px-space-4 py-space-3 text-sm">{row.employee_name}</td>
                                         <td className="px-space-4 py-space-3 text-sm text-on-surface-variant">
                                             {row.check_in_at ? new Date(row.check_in_at).toLocaleString() : '—'}
+                                        </td>
+                                        <td className="px-space-4 py-space-3 text-sm text-on-surface-variant">
+                                            {row.check_out_at ? new Date(row.check_out_at).toLocaleString() : '—'}
                                         </td>
                                     </tr>
                                 ))}

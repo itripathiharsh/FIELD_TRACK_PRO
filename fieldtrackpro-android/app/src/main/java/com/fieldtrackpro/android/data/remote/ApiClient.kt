@@ -21,7 +21,7 @@ import java.util.concurrent.TimeUnit
 
 object ApiClient {
     // Default emulator base URL pointing to host FastAPI backend (http://10.0.2.2:8000/)
-    private var baseUrl: String = "http://10.0.2.2:8000/"
+    private var baseUrl: String = BuildConfig.BASE_URL
 
     /**
      * P0-3: a debug/QA convenience only. Production builds must not let a

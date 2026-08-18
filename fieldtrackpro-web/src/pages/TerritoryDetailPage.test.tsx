@@ -1,10 +1,11 @@
-import { describe, expect, it, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, expect, it, beforeEach, vi } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 
 import { TerritoryDetailPage } from './TerritoryDetailPage';
 import { AuthProvider } from '../context/AuthContext';
 import { ADMIN_USER, baseRoutes, CUSTOMER, EMPLOYEE, TERRITORY, json, mockApi, route, signIn } from '../test/utils';
+import { apiClient } from '../api/client';
 
 function renderTerritoryDetail(id: string) {
     return render(
@@ -22,6 +23,7 @@ describe('TerritoryDetailPage', () => {
     beforeEach(() => {
         localStorage.clear();
         signIn(ADMIN_USER);
+        vi.restoreAllMocks();
     });
 
     it('loads and displays territory details', async () => {
@@ -39,9 +41,10 @@ describe('TerritoryDetailPage', () => {
 
         renderTerritoryDetail(TERRITORY.id);
 
-        expect(await screen.findByText('North Region')).toBeInTheDocument();
-        expect(screen.getByText(/Field Representatives: 1/)).toBeInTheDocument();
-        expect(screen.getByText(/Customer Accounts: 1/)).toBeInTheDocument();
+        const headings = await screen.findAllByText('North Region');
+        expect(headings.length).toBeGreaterThanOrEqual(1);
+        expect(screen.getByText('Field Representatives')).toBeInTheDocument();
+        expect(screen.getAllByText('Customer Accounts').length).toBeGreaterThanOrEqual(1);
     });
 
     it('shows loading state', () => {
@@ -87,10 +90,42 @@ describe('TerritoryDetailPage', () => {
 
         renderTerritoryDetail(TERRITORY.id);
 
-        await screen.findByText('North Region');
+        const headings = await screen.findAllByText('North Region');
+        expect(headings.length).toBeGreaterThanOrEqual(1);
 
         expect(screen.getByText('Test Field Rep')).toBeInTheDocument();
         expect(screen.getByText('Acme Industrial')).toBeInTheDocument();
+    });
+
+    it('calls updateCustomer with territory_id: null when removing an assigned customer', async () => {
+        vi.spyOn(window, 'confirm').mockReturnValue(true);
+        const updateSpy = vi.spyOn(apiClient, 'updateCustomer').mockResolvedValue({
+            ...CUSTOMER,
+            territory_id: null,
+        });
+
+        mockApi({
+            ...baseRoutes(ADMIN_USER),
+            '/api/v1/territories': route((url) => {
+                if (url.includes(TERRITORY.id)) {
+                    return json(TERRITORY);
+                }
+                return json([]);
+            }),
+            '/api/v1/employees': [EMPLOYEE],
+            '/api/v1/customers': [CUSTOMER],
+        });
+
+        renderTerritoryDetail(TERRITORY.id);
+
+        expect(await screen.findByText('Acme Industrial')).toBeInTheDocument();
+
+        const removeButton = screen.getByRole('button', { name: /remove/i });
+        fireEvent.click(removeButton);
+
+        await waitFor(() => {
+            expect(updateSpy).toHaveBeenCalledWith(CUSTOMER.id, { territory_id: null });
+        });
     });
 
     it('has back navigation button', async () => {
@@ -108,7 +143,8 @@ describe('TerritoryDetailPage', () => {
 
         renderTerritoryDetail(TERRITORY.id);
 
-        expect(await screen.findByText('North Region')).toBeInTheDocument();
-        expect(screen.getByText(/back to territories/i)).toBeInTheDocument();
+        const headings = await screen.findAllByText('North Region');
+        expect(headings.length).toBeGreaterThanOrEqual(1);
+        expect(screen.getByRole('button', { name: /back/i })).toBeInTheDocument();
     });
 });

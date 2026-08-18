@@ -1,15 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  FieldTrack Pro Adaptive Icon Foreground
+  Shield + checkmark outline in brand Gold/Yellow (#FFA515)
+  Canvas: 108dp (safe center 72dp)
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+
+    <!-- Shield Outline: Gold/Yellow (#FFA515) -->
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M54,30 L54,78 M30,54 L78,54"
-        android:strokeWidth="8"
-        android:strokeColor="#FFFFFF" />
+        android:fillColor="#00000000"
+        android:strokeColor="#FFA515"
+        android:strokeWidth="4.5"
+        android:strokeLineJoin="round"
+        android:pathData="M54,16 L22,30 L22,52 C22,68 36,80 54,85 C72,80 86,68 86,52 L86,30 Z" />
+
+    <!-- Checkmark: Gold/Yellow (#FFA515) -->
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M42,42 L66,42 L66,66 L42,66 Z" />
+        android:fillColor="#00000000"
+        android:strokeColor="#FFA515"
+        android:strokeWidth="6"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M36,54 L49,67 L72,44" />
+
 </vector>

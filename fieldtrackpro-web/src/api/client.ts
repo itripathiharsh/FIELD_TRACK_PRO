@@ -1,8 +1,11 @@
 import { ENV } from '../config/env';
 import {
   AccountSummary,
+  Area,
+  CollectionsOverviewResponse,
   Customer,
   Employee,
+  EmployeeAreaAssignment,
   EmployeeActivity,
   FormRender,
   FormSection,
@@ -193,6 +196,46 @@ export class ApiClient {
     return response.json() as Promise<T>;
   }
 
+  /** Request helper that extracts the X-Total-Count response header for server-side pagination. */
+  async requestWithTotal<T>(
+    endpoint: string,
+    options: RequestInit = {},
+    allowRefresh = true,
+  ): Promise<{ data: T; total: number }> {
+    const token = this.getAccessToken();
+    const headers: Record<string, string> = {
+      ...(options.headers as Record<string, string>),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+
+    let response: Response;
+    try {
+      response = await fetch(this.url(endpoint), { ...options, headers });
+    } catch {
+      throw new ApiError(
+        'Unable to reach the FieldTrack Pro API. Check your connection and try again.',
+        0,
+        'NETWORK_ERROR',
+      );
+    }
+
+    if (response.status === 401 && allowRefresh && this.getRefreshToken()) {
+      const refreshed = await this.tryRefresh();
+      if (refreshed) {
+        return this.requestWithTotal<T>(endpoint, options, false);
+      }
+    }
+
+    if (!response.ok) {
+      throw await this.parseError(response);
+    }
+
+    const totalHeader = response.headers.get('X-Total-Count');
+    const data = (await response.json()) as T;
+    const total = totalHeader ? parseInt(totalHeader, 10) : (Array.isArray(data) ? data.length : 0);
+    return { data, total };
+  }
+
   /** Exchange the refresh token for a new pair. Returns false if not possible. */
   private async tryRefresh(): Promise<boolean> {
     const refresh_token = this.getRefreshToken();
@@ -288,6 +331,21 @@ export class ApiClient {
     });
   }
 
+  async forgotPassword(email: string): Promise<{ message: string }> {
+    return this.request<{ message: string }>('/api/v1/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+      // Do not try to refresh token since we're not logged in
+    }, false);
+  }
+
+  async resetPassword(email: string, otp: string, newPassword: string): Promise<{ message: string }> {
+    return this.request<{ message: string }>('/api/v1/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ email, otp, new_password: newPassword }),
+    }, false);
+  }
+
   // -- employees -------------------------------------------------------------
 
   /**
@@ -319,9 +377,26 @@ export class ApiClient {
     });
   }
 
+  async registerEmployee(data: {
+    user: {
+      email?: string | null;
+      mobile_number?: string | null;
+      password: string;
+      role: User['role'];
+    };
+    full_name: string;
+    territory_id?: string | null;
+    employee_code?: string | null;
+  }): Promise<Employee> {
+    return this.request<Employee>('/api/v1/employees/register', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
   async updateEmployee(
     id: string,
-    data: { full_name?: string; territory_id?: string | null; employee_code?: string | null },
+    data: { full_name?: string; territory_id?: string | null; employee_code?: string | null; email?: string },
   ): Promise<Employee> {
     return this.request<Employee>(`/api/v1/employees/${id}`, {
       method: 'PATCH',
@@ -378,8 +453,21 @@ export class ApiClient {
 
   // -- customers -------------------------------------------------------------
 
-  async getCustomers(): Promise<Customer[]> {
-    return this.request<Customer[]>('/api/v1/customers');
+  async getCustomers(params?: {
+    territory_id?: string;
+    area_id?: string;
+    skip?: number;
+    limit?: number;
+  }): Promise<Customer[]> {
+    const query = params
+      ? '?' +
+        new URLSearchParams(
+          Object.entries(params)
+            .filter(([, v]) => v !== undefined && v !== '')
+            .map(([k, v]) => [k, String(v)]),
+        ).toString()
+      : '?limit=200';
+    return this.request<Customer[]>(`/api/v1/customers${query}`);
   }
 
   async getCustomerById(id: string): Promise<Customer> {
@@ -394,6 +482,7 @@ export class ApiClient {
     location: { latitude: number; longitude: number };
     geofence_radius_m?: number;
     territory_id?: string | null;
+    area_id?: string | null;
   }): Promise<Customer> {
     return this.request<Customer>('/api/v1/customers', {
       method: 'POST',
@@ -411,6 +500,7 @@ export class ApiClient {
       location: { latitude: number; longitude: number };
       geofence_radius_m: number;
       territory_id: string | null;
+      area_id: string | null;
     }>,
   ): Promise<Customer> {
     return this.request<Customer>(`/api/v1/customers/${id}`, {
@@ -470,11 +560,85 @@ export class ApiClient {
     return this.request<void>(`/api/v1/territories/${id}`, { method: 'DELETE' });
   }
 
+  // -- areas (Zone -> Area -> Outlet) -----------------------------------------
+
+  async getAreas(territoryId?: string): Promise<Area[]> {
+    const query = territoryId ? `?territory_id=${encodeURIComponent(territoryId)}` : '';
+    return this.request<Area[]>(`/api/v1/areas${query}`);
+  }
+
+  async createArea(data: { name: string; territory_id: string }): Promise<Area> {
+    return this.request<Area>('/api/v1/areas', { method: 'POST', body: JSON.stringify(data) });
+  }
+
+  async updateArea(id: string, data: { name: string }): Promise<Area> {
+    return this.request<Area>(`/api/v1/areas/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+  }
+
+  async deleteArea(id: string): Promise<void> {
+    return this.request<void>(`/api/v1/areas/${id}`, { method: 'DELETE' });
+  }
+
+  // -- employee <-> area coverage (brand-agnostic many-to-many) ---------------
+
+  async getEmployeeAreaCoverage(employeeId: string): Promise<EmployeeAreaAssignment[]> {
+    return this.request<EmployeeAreaAssignment[]>(`/api/v1/employees/${employeeId}/areas`);
+  }
+
+  async assignEmployeeArea(employeeId: string, areaId: string): Promise<EmployeeAreaAssignment> {
+    return this.request<EmployeeAreaAssignment>(`/api/v1/employees/${employeeId}/areas`, {
+      method: 'POST',
+      body: JSON.stringify({ area_id: areaId }),
+    });
+  }
+
+  async unassignEmployeeArea(employeeId: string, areaId: string): Promise<void> {
+    return this.request<void>(`/api/v1/employees/${employeeId}/areas/${areaId}`, { method: 'DELETE' });
+  }
+
   // -- visits ----------------------------------------------------------------
 
   async getVisits(status?: VisitStatus): Promise<Visit[]> {
     const query = status ? `?status=${encodeURIComponent(status)}` : '';
     return this.request<Visit[]>(`/api/v1/visits${query}`);
+  }
+
+  async getVisitsPaginated(params?: {
+    status?: VisitStatus | VisitStatus[];
+    employee_id?: string;
+    territory_id?: string;
+    area_id?: string;
+    from_date?: string;
+    to_date?: string;
+    search?: string;
+    sort_order?: 'asc' | 'desc';
+    skip?: number;
+    limit?: number;
+  }): Promise<{ items: Visit[]; total: number }> {
+    const searchParams = new URLSearchParams();
+    if (params) {
+      if (params.search) searchParams.set('search', params.search);
+      if (params.employee_id) searchParams.set('employee_id', params.employee_id);
+      if (params.territory_id) searchParams.set('territory_id', params.territory_id);
+      if (params.area_id) searchParams.set('area_id', params.area_id);
+      if (params.from_date) searchParams.set('from_date', params.from_date);
+      if (params.to_date) searchParams.set('to_date', params.to_date);
+      if (params.sort_order) searchParams.set('sort_order', params.sort_order);
+      if (params.skip !== undefined) searchParams.set('skip', String(params.skip));
+      if (params.limit !== undefined) searchParams.set('limit', String(params.limit));
+      if (params.status) {
+        if (Array.isArray(params.status)) {
+          params.status.forEach((s) => searchParams.append('status', s));
+        } else {
+          searchParams.set('status', params.status);
+        }
+      }
+    }
+    const query = searchParams.toString();
+    const { data, total } = await this.requestWithTotal<Visit[]>(
+      `/api/v1/visits${query ? `?${query}` : ''}`,
+    );
+    return { items: data, total };
   }
 
   async getMyTodayVisits(): Promise<Visit[]> {
@@ -560,6 +724,7 @@ export class ApiClient {
       accuracy_m?: number;
       is_mock_location?: boolean;
       captured_at: string;
+      idempotency_key?: string;
     },
   ): Promise<Visit> {
     return this.request<Visit>(`/api/v1/visits/${visitId}/check-out`, {
@@ -664,6 +829,26 @@ export class ApiClient {
 
   async getCustomerAccount(customerId: string): Promise<AccountSummary> {
     return this.request<AccountSummary>(`/api/v1/customers/${customerId}/account`);
+  }
+
+  /** The outlet-list financial overview (Meeting 2) - totals + per-outlet rows, server-side filtered/paginated. */
+  async getCollectionsOverview(params?: {
+    search?: string;
+    territory_id?: string;
+    area_id?: string;
+    employee_id?: string;
+    collection_status?: string;
+    skip?: number;
+    limit?: number;
+  }): Promise<CollectionsOverviewResponse> {
+    const query = params
+      ? '?' + new URLSearchParams(
+          Object.entries(params)
+            .filter(([, v]) => v !== undefined && v !== '')
+            .map(([k, v]) => [k, String(v)]),
+        ).toString()
+      : '';
+    return this.request<CollectionsOverviewResponse>(`/api/v1/collections/overview${query}`);
   }
 
   async getCustomerInvoices(customerId: string): Promise<Invoice[]> {

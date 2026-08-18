@@ -58,7 +58,9 @@ class CurrentUserRead(BaseModel):
     role: Role
     is_active: bool
     territory_id: uuid.UUID | None = None
+    territory_name: str | None = None
     employee_id: uuid.UUID | None = None
+    employee_code: str | None = None
 
 
 # ---------------------------------------------------------------------------

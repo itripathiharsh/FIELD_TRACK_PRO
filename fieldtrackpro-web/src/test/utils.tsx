@@ -68,6 +68,8 @@ export const CUSTOMER: Customer = {
   geofence_radius_m: 75,
   outlet_code: 'OUT-001',
   territory_id: TERRITORY.id,
+  area_id: null,
+  area_name: null,
   created_by: ADMIN_USER.id,
   created_at: '2026-01-01T00:00:00Z',
 };

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <!-- Dark Navy Container (primary-container: #14213d) -->
+  <rect width="32" height="32" rx="7" fill="#14213d"/>
+  <!-- Gold Shield Body (secondary-container: #ffa515) -->
+  <path d="M16 5L6.5 9V16C6.5 21 10.8 25.5 16 27C21.2 25.5 25.5 21 25.5 16V9Z" stroke="#ffa515" stroke-width="1.8" stroke-linejoin="round" fill="none"/>
+  <!-- Gold Checkmark (secondary-container: #ffa515) -->
+  <path d="M11 16.5L14.5 20L21 13" stroke="#ffa515" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

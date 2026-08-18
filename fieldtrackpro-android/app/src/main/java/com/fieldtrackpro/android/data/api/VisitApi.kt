@@ -14,7 +14,19 @@ import retrofit2.http.Query
 interface VisitApi {
     @GET("api/v1/visits")
     suspend fun getVisits(
-        @Query("status") status: String? = null
+        @Query("status") status: String? = null,
+        @Query("search") search: String? = null,
+        @Query("skip") skip: Int = 0,
+        @Query("limit") limit: Int = 50,
+        @Query("sort_order") sortOrder: String = "desc"
+    ): Response<List<VisitDto>>
+
+    @GET("api/v1/visits/me/today")
+    suspend fun getMyTodayVisits(
+        @Query("status") status: String? = null,
+        @Query("search") search: String? = null,
+        @Query("skip") skip: Int = 0,
+        @Query("limit") limit: Int = 50
     ): Response<List<VisitDto>>
 
     @GET("api/v1/visits/{visit_id}")

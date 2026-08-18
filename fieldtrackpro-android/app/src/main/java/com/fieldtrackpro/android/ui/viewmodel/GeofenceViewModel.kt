@@ -8,6 +8,8 @@ import com.fieldtrackpro.android.geofencing.GeofenceManager
 import com.fieldtrackpro.android.geofencing.GeofenceState
 import com.fieldtrackpro.android.geofencing.GeofenceStateHolder
 import com.fieldtrackpro.android.services.LocationCaptureService
+import com.fieldtrackpro.android.services.LocationPermissionDeniedException
+import com.fieldtrackpro.android.services.LocationServicesDisabledException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -23,6 +25,10 @@ data class GeofenceUiState(
     val hasPermission: Boolean = false,
     val isLocationEnabled: Boolean = false,
     val isMonitoring: Boolean = false,
+    val isLoadingLocation: Boolean = false,
+    val distanceM: Double? = null,
+    val geofenceRadiusM: Double? = null,
+    val accuracyM: Double? = null,
     val errorMessage: String? = null,
 )
 
@@ -71,7 +77,7 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
     }
 
     /**
-     * Start monitoring a customer location with geofence.
+     * Start monitoring a customer location with geofence and active distance calculation.
      *
      * @param visitId The visit ID (used as geofence ID)
      * @param customer The customer data containing coordinates
@@ -82,6 +88,7 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
         customer: CustomerDto,
         radiusMeters: Float = 100f,
     ) {
+        checkPermissions()
         val lat = customer.latitude
         val lng = customer.longitude
 
@@ -93,25 +100,20 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
             return
         }
 
-        // P1-8: already monitoring this exact geofence - re-registering with
-        // the platform API is a needless duplicate call, so skip it.
-        if (currentGeofenceId == visitId) {
+        val radiusD = radiusMeters.toDouble()
+
+        if (currentGeofenceId == visitId && _uiState.value.isMonitoring) {
+            // Already monitoring, but refresh real-time distance
+            refreshRealtimeProximity(lat, lng, radiusD)
             return
         }
 
-        // P1-8: a different geofence was left registered (e.g. the previous
-        // visit's) - remove it first. Without this, switching from visit A
-        // to visit B left A's geofence registered forever (only
-        // currentGeofenceId moved to B; the OS-level registration for A was
-        // never told to stop), accumulating stale geofences toward the
-        // platform's ~100-per-app ceiling.
         GeofenceManager.idToRemoveBeforeRegistering(currentGeofenceId, visitId)?.let {
             geofenceManager.removeGeofence(it)
         }
 
         currentGeofenceId = visitId
 
-        // Register geofence
         val success = geofenceManager.registerGeofence(
             geofenceId = visitId,
             latitude = lat,
@@ -119,15 +121,70 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
             radiusMeters = radiusMeters,
         )
 
-        if (success) {
-            _uiState.value = _uiState.value.copy(
-                isMonitoring = true,
-                errorMessage = null,
-            )
-        } else {
-            _uiState.value = _uiState.value.copy(
-                errorMessage = "Failed to register geofence",
-            )
+        _uiState.value = _uiState.value.copy(
+            isMonitoring = success,
+            geofenceRadiusM = radiusD,
+            isLoadingLocation = true,
+            errorMessage = if (success) null else "Could not register background geofence",
+        )
+
+        refreshRealtimeProximity(lat, lng, radiusD)
+    }
+
+    private fun refreshRealtimeProximity(targetLat: Double, targetLng: Double, radiusM: Double) {
+        viewModelScope.launch {
+            try {
+                _uiState.value = _uiState.value.copy(isLoadingLocation = true)
+                val loc = locationService.getCurrentLocation()
+                val dist = LocationCaptureService.calculateDistanceM(
+                    loc.latitude, loc.longitude, targetLat, targetLng
+                )
+                val inside = dist <= radiusM
+                _uiState.value = _uiState.value.copy(
+                    isInside = inside,
+                    isOutside = !inside,
+                    distanceM = dist,
+                    geofenceRadiusM = radiusM,
+                    accuracyM = loc.accuracy.toDouble(),
+                    isLoadingLocation = false,
+                    isLocationEnabled = true,
+                    hasPermission = true,
+                    errorMessage = null,
+                )
+            } catch (e: LocationPermissionDeniedException) {
+                _uiState.value = _uiState.value.copy(
+                    hasPermission = false,
+                    isLoadingLocation = false,
+                )
+            } catch (e: LocationServicesDisabledException) {
+                _uiState.value = _uiState.value.copy(
+                    isLocationEnabled = false,
+                    isLoadingLocation = false,
+                )
+            } catch (e: Exception) {
+                // If fine location fails, try last known location fallback
+                val last = locationService.getLastLocation()
+                if (last != null) {
+                    val dist = LocationCaptureService.calculateDistanceM(
+                        last.latitude, last.longitude, targetLat, targetLng
+                    )
+                    val inside = dist <= radiusM
+                    _uiState.value = _uiState.value.copy(
+                        isInside = inside,
+                        isOutside = !inside,
+                        distanceM = dist,
+                        geofenceRadiusM = radiusM,
+                        accuracyM = last.accuracy.toDouble(),
+                        isLoadingLocation = false,
+                        errorMessage = null,
+                    )
+                } else {
+                    _uiState.value = _uiState.value.copy(
+                        isLoadingLocation = false,
+                        errorMessage = e.message ?: "Unable to read current GPS location",
+                    )
+                }
+            }
         }
     }
 
@@ -141,6 +198,8 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
             isInside = false,
             isOutside = false,
             isMonitoring = false,
+            distanceM = null,
+            geofenceRadiusM = null,
         )
     }
 

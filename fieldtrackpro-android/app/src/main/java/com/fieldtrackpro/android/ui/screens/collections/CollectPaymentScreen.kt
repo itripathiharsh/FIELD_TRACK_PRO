@@ -6,7 +6,9 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -14,17 +16,24 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -34,7 +43,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -43,12 +54,17 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import com.fieldtrackpro.android.ui.components.ErrorBanner
 import com.fieldtrackpro.android.ui.components.FieldTrackTopAppBar
-import com.fieldtrackpro.android.ui.theme.FieldTrackNavy
+import com.fieldtrackpro.android.ui.theme.BrandBlack
+import com.fieldtrackpro.android.ui.theme.BrandGold
+import com.fieldtrackpro.android.ui.theme.BrandLightGray
+import com.fieldtrackpro.android.ui.theme.BrandNavy
+import com.fieldtrackpro.android.ui.theme.BrandWhite
+import com.fieldtrackpro.android.ui.theme.LeagueSpartanFamily
+import com.fieldtrackpro.android.ui.theme.LibreBaskervilleFamily
 import com.fieldtrackpro.android.ui.theme.SuccessGreen
-import com.fieldtrackpro.android.ui.theme.SurfaceOffWhite
-import com.fieldtrackpro.android.ui.theme.SurfaceWhite
-import com.fieldtrackpro.android.ui.theme.TextMuted
+import com.fieldtrackpro.android.ui.theme.SurfaceSecondary
 import com.fieldtrackpro.android.ui.theme.TextPrimary
+import com.fieldtrackpro.android.ui.theme.TextSecondary
 import com.fieldtrackpro.android.ui.viewmodel.CollectionState
 import com.fieldtrackpro.android.ui.viewmodel.CollectionViewModel
 import kotlinx.coroutines.launch
@@ -66,13 +82,6 @@ private fun createTempImageUri(context: android.content.Context): Uri {
     return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", tempFile)
 }
 
-/**
- * Employee collection capture: amount + method (cash/cheque/online) with
- * method-specific fields, payment date, and an optional proof photo (cheque
- * photo or payment screenshot). Submits as PENDING_VERIFICATION - an
- * admin/accountant must verify it before it counts toward the outlet's
- * paid/outstanding totals (see backend payment_service.py).
- */
 @Composable
 fun CollectPaymentScreen(
     visitId: String,
@@ -135,17 +144,36 @@ fun CollectPaymentScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(SurfaceOffWhite)
+                .background(SurfaceSecondary)
                 .padding(innerPadding)
                 .padding(16.dp)
                 .verticalScroll(rememberScrollState())
         ) {
             Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = SurfaceWhite)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, BrandLightGray, RoundedCornerShape(14.dp)),
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = BrandWhite),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
             ) {
-                Column(modifier = Modifier.padding(20.dp)) {
+                Column(modifier = Modifier.padding(18.dp)) {
+                    Text(
+                        text = "Payment Collection Entry",
+                        fontFamily = LeagueSpartanFamily,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = BrandNavy
+                    )
+                    Text(
+                        text = "Recorded collections are logged and submitted for audit verification.",
+                        fontFamily = LibreBaskervilleFamily,
+                        fontSize = 13.sp,
+                        color = TextSecondary
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
                     fieldError?.let {
                         ErrorBanner(message = it)
                         Spacer(modifier = Modifier.height(12.dp))
@@ -158,49 +186,126 @@ fun CollectPaymentScreen(
                     OutlinedTextField(
                         value = amount,
                         onValueChange = { amount = it },
-                        label = { Text("Amount (₹)") },
-                        modifier = Modifier.fillMaxWidth()
+                        label = { 
+                            Text(
+                                "Collection Amount (₹)",
+                                fontFamily = LeagueSpartanFamily,
+                                fontWeight = FontWeight.Bold
+                            ) 
+                        },
+                        placeholder = { Text("0.00", fontFamily = LeagueSpartanFamily) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary,
+                            focusedBorderColor = BrandGold,
+                            unfocusedBorderColor = BrandLightGray,
+                            focusedLabelColor = BrandNavy,
+                            unfocusedLabelColor = TextSecondary
+                        )
                     )
-                    Spacer(modifier = Modifier.height(12.dp))
 
-                    Text("PAYMENT METHOD", fontSize = 11.sp, color = TextMuted, fontWeight = FontWeight.SemiBold)
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Text(
+                        text = "PAYMENT METHOD",
+                        fontFamily = LeagueSpartanFamily,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.8.sp,
+                        color = BrandNavy
+                    )
                     Spacer(modifier = Modifier.height(6.dp))
+
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         PAYMENT_METHODS.forEach { m ->
                             val selected = method == m
                             OutlinedButton(
                                 onClick = { method = m },
+                                shape = RoundedCornerShape(8.dp),
+                                border = ButtonDefaults.outlinedButtonBorder.copy(
+                                    brush = androidx.compose.ui.graphics.SolidColor(if (selected) BrandGold else BrandLightGray)
+                                ),
                                 colors = ButtonDefaults.outlinedButtonColors(
-                                    containerColor = if (selected) FieldTrackNavy else SurfaceWhite,
-                                    contentColor = if (selected) SurfaceWhite else TextPrimary
+                                    containerColor = if (selected) BrandNavy else BrandWhite,
+                                    contentColor = if (selected) BrandWhite else BrandNavy
                                 ),
                                 modifier = Modifier.weight(1f)
-                            ) { Text(m, fontSize = 12.sp) }
+                            ) { 
+                                Text(
+                                    m,
+                                    fontFamily = LeagueSpartanFamily,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                ) 
+                            }
                         }
                     }
-                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Spacer(modifier = Modifier.height(14.dp))
 
                     OutlinedTextField(
                         value = paymentDate,
                         onValueChange = { paymentDate = it },
-                        label = { Text("Payment Date (YYYY-MM-DD)") },
-                        modifier = Modifier.fillMaxWidth()
+                        label = { 
+                            Text(
+                                "Payment Date (YYYY-MM-DD)",
+                                fontFamily = LeagueSpartanFamily,
+                                fontWeight = FontWeight.SemiBold
+                            ) 
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary,
+                            focusedBorderColor = BrandGold,
+                            unfocusedBorderColor = BrandLightGray
+                        )
                     )
+
                     Spacer(modifier = Modifier.height(12.dp))
 
                     if (method == "CHEQUE") {
                         OutlinedTextField(
                             value = chequeNumber,
                             onValueChange = { chequeNumber = it },
-                            label = { Text("Cheque Number") },
-                            modifier = Modifier.fillMaxWidth()
+                            label = { 
+                                Text(
+                                    "Cheque Number",
+                                    fontFamily = LeagueSpartanFamily,
+                                    fontWeight = FontWeight.SemiBold
+                                ) 
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = TextPrimary,
+                                unfocusedTextColor = TextPrimary,
+                                focusedBorderColor = BrandGold,
+                                unfocusedBorderColor = BrandLightGray
+                            )
                         )
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
                         OutlinedTextField(
                             value = chequeBankName,
                             onValueChange = { chequeBankName = it },
-                            label = { Text("Bank Name") },
-                            modifier = Modifier.fillMaxWidth()
+                            label = { 
+                                Text(
+                                    "Bank Name",
+                                    fontFamily = LeagueSpartanFamily,
+                                    fontWeight = FontWeight.SemiBold
+                                ) 
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = TextPrimary,
+                                unfocusedTextColor = TextPrimary,
+                                focusedBorderColor = BrandGold,
+                                unfocusedBorderColor = BrandLightGray
+                            )
                         )
                         Spacer(modifier = Modifier.height(12.dp))
                     }
@@ -209,32 +314,96 @@ fun CollectPaymentScreen(
                         OutlinedTextField(
                             value = utrReference,
                             onValueChange = { utrReference = it },
-                            label = { Text("UTR / Reference Number") },
-                            modifier = Modifier.fillMaxWidth()
+                            label = { 
+                                Text(
+                                    "UTR / Reference Number",
+                                    fontFamily = LeagueSpartanFamily,
+                                    fontWeight = FontWeight.SemiBold
+                                ) 
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = TextPrimary,
+                                unfocusedTextColor = TextPrimary,
+                                focusedBorderColor = BrandGold,
+                                unfocusedBorderColor = BrandLightGray
+                            )
                         )
                         Spacer(modifier = Modifier.height(12.dp))
                     }
 
                     Text(
-                        if (method == "CHEQUE") "CHEQUE PHOTO" else if (method == "ONLINE") "PAYMENT SCREENSHOT" else "RECEIPT PHOTO (OPTIONAL)",
-                        fontSize = 11.sp, color = TextMuted, fontWeight = FontWeight.SemiBold
+                        text = if (method == "CHEQUE") "CHEQUE PHOTO" else if (method == "ONLINE") "PAYMENT SCREENSHOT" else "RECEIPT PHOTO (OPTIONAL)",
+                        fontFamily = LeagueSpartanFamily,
+                        fontSize = 11.sp,
+                        color = BrandNavy,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.5.sp
                     )
                     Spacer(modifier = Modifier.height(6.dp))
+
                     if (proofUri != null) {
-                        Text("Photo captured ✓", fontSize = 12.sp, color = SuccessGreen)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = SuccessGreen,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Payment receipt image attached ✓", fontFamily = LibreBaskervilleFamily, fontSize = 12.sp, color = SuccessGreen)
+                        }
                         Spacer(modifier = Modifier.height(6.dp))
                     }
-                    OutlinedButton(onClick = { capturePhoto() }, modifier = Modifier.fillMaxWidth()) {
-                        Text(if (proofUri == null) "CAPTURE PHOTO" else "RETAKE PHOTO", color = FieldTrackNavy)
+
+                    OutlinedButton(
+                        onClick = { capturePhoto() },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                        border = ButtonDefaults.outlinedButtonBorder.copy(
+                            brush = androidx.compose.ui.graphics.SolidColor(BrandLightGray)
+                        )
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.CameraAlt,
+                                contentDescription = null,
+                                tint = BrandGold,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                if (proofUri == null) "CAPTURE PAYMENT PROOF PHOTO" else "RETAKE PROOF PHOTO",
+                                fontFamily = LeagueSpartanFamily,
+                                fontWeight = FontWeight.Bold,
+                                color = BrandNavy
+                            )
+                        }
                     }
+
                     Spacer(modifier = Modifier.height(12.dp))
 
                     OutlinedTextField(
                         value = notes,
                         onValueChange = { notes = it },
-                        label = { Text("Notes (optional)") },
-                        modifier = Modifier.fillMaxWidth()
+                        label = { 
+                            Text(
+                                "Notes / Remarks (Optional)",
+                                fontFamily = LeagueSpartanFamily,
+                                fontWeight = FontWeight.SemiBold
+                            ) 
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary,
+                            focusedBorderColor = BrandGold,
+                            unfocusedBorderColor = BrandLightGray
+                        )
                     )
+
                     Spacer(modifier = Modifier.height(20.dp))
 
                     Button(
@@ -284,14 +453,36 @@ fun CollectPaymentScreen(
                                 }
                             )
                         },
-                        modifier = Modifier.fillMaxWidth().height(50.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = FieldTrackNavy, contentColor = SurfaceWhite),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = BrandNavy,
+                            contentColor = BrandWhite
+                        ),
                         enabled = state !is CollectionState.Submitting && !isUploadingProof
                     ) {
                         if (state is CollectionState.Submitting || isUploadingProof) {
-                            CircularProgressIndicator(color = SurfaceWhite, modifier = Modifier.height(20.dp))
+                            CircularProgressIndicator(color = BrandGold, modifier = Modifier.size(24.dp))
                         } else {
-                            Text("RECORD COLLECTION", fontWeight = FontWeight.Bold)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Payments,
+                                    contentDescription = null,
+                                    tint = BrandGold,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    "SUBMIT PAYMENT COLLECTION",
+                                    fontFamily = LeagueSpartanFamily,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    letterSpacing = 0.5.sp,
+                                    color = BrandWhite
+                                )
+                            }
                         }
                     }
                 }

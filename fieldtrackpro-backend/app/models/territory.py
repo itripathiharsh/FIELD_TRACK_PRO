@@ -22,4 +22,8 @@ class Territory(Base):
 
     employees: Mapped[list["Employee"]] = relationship(back_populates="territory")
     customers: Mapped[list["Customer"]] = relationship(back_populates="territory")
+    # Zone -> Area -> Outlet: the client's real geographic hierarchy has an
+    # Area level between Zone (this Territory) and Outlet (Customer) - see
+    # app/models/area.py.
+    areas: Mapped[list["Area"]] = relationship(back_populates="territory")
 

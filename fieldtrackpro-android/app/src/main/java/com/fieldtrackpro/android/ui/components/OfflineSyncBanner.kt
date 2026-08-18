@@ -1,11 +1,13 @@
 package com.fieldtrackpro.android.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -19,8 +21,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.fieldtrackpro.android.ui.theme.FieldTrackAmber
-import com.fieldtrackpro.android.ui.theme.TextPrimary
+import com.fieldtrackpro.android.ui.theme.BrandGold
+import com.fieldtrackpro.android.ui.theme.BrandNavy
+import com.fieldtrackpro.android.ui.theme.LeagueSpartanFamily
 
 @Composable
 fun OfflineSyncBanner(pendingCount: Int, onSyncClick: () -> Unit, modifier: Modifier = Modifier) {
@@ -29,23 +32,26 @@ fun OfflineSyncBanner(pendingCount: Int, onSyncClick: () -> Unit, modifier: Modi
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(FieldTrackAmber.copy(alpha = 0.2f))
+            .clip(RoundedCornerShape(10.dp))
+            .background(BrandGold.copy(alpha = 0.15f))
+            .border(1.dp, BrandGold, RoundedCornerShape(10.dp))
             .clickable { onSyncClick() }
-            .padding(12.dp),
+            .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
             imageVector = Icons.Default.Sync,
             contentDescription = "Sync",
-            tint = FieldTrackAmber
+            tint = BrandNavy,
+            modifier = Modifier.size(20.dp)
         )
-        Spacer(modifier = Modifier.width(8.dp))
+        Spacer(modifier = Modifier.width(10.dp))
         Text(
-            text = "$pendingCount offline actions pending sync. Tap to sync now.",
+            text = "$pendingCount offline action(s) stored locally. Tap to sync.",
+            fontFamily = LeagueSpartanFamily,
             fontSize = 13.sp,
             fontWeight = FontWeight.Bold,
-            color = TextPrimary,
+            color = BrandNavy,
             modifier = Modifier.weight(1f)
         )
     }

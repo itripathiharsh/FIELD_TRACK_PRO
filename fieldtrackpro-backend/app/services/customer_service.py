@@ -54,6 +54,18 @@ async def create_customer(data: CustomerCreate, created_by: uuid.UUID, session: 
             error_code="LOCATION_REQUIRED",
         )
 
+    # Area is the source of truth for the geographic hierarchy: if an area_id
+    # is supplied, its Zone always wins over a separately-supplied
+    # territory_id, so an outlet's Zone and Area can never disagree (rather
+    # than maintaining two independently-editable, potentially-inconsistent
+    # Zone/Area relationships).
+    territory_id = data.territory_id
+    if data.area_id is not None:
+        from app.services.area_service import get_area
+
+        area = await get_area(data.area_id, session)
+        territory_id = area.territory_id
+
     customer = Customer(
         name=data.name,
         contact_number=data.contact_number,
@@ -61,7 +73,8 @@ async def create_customer(data: CustomerCreate, created_by: uuid.UUID, session: 
         address=data.address,
         location=location_wkt,
         geofence_radius_m=data.geofence_radius_m,
-        territory_id=data.territory_id,
+        territory_id=territory_id,
+        area_id=data.area_id,
         outlet_code=data.outlet_code,
         created_by=created_by,
     )
@@ -84,22 +97,23 @@ async def list_customers(
     territory_id: uuid.UUID | None = None,
     skip: int = 0,
     limit: int = 50,
+    area_id: uuid.UUID | None = None,
 ) -> list[Customer]:
     """
     P0-1: ADMIN sees the full outlet directory (optionally filtered by
-    territory_id, as before). An EMPLOYEE is confined server-side to outlets
-    they have at least one visit assigned to - the client-supplied
-    territory_id is honoured only as an additional filter on top of that,
-    never as a way to widen visibility beyond it.
+    territory_id/area_id, as before). An EMPLOYEE is confined server-side to
+    outlets they have at least one visit assigned to - the client-supplied
+    filters are honoured only as additional narrowing on top of that, never
+    as a way to widen visibility beyond it.
     """
     repo = CustomerRepository(session)
     if current_user.role == Role.ADMIN:
-        return await repo.list_by_territory(territory_id, skip, limit)
+        return await repo.list_by_territory(territory_id, skip, limit, area_id)
 
     from app.services.employee_service import get_employee_by_user_id
 
     employee = await get_employee_by_user_id(current_user.id, session)
-    return await repo.list_visited_by_employee(employee.id, territory_id, skip, limit)
+    return await repo.list_visited_by_employee(employee.id, territory_id, skip, limit, area_id)
 
 
 async def assert_employee_can_view_customer(
@@ -136,7 +150,7 @@ async def update_customer(customer_id: uuid.UUID, data: CustomerUpdate, session:
         customer.name = data.name
     if data.contact_number is not None:
         customer.contact_number = data.contact_number
-    if data.contact_person is not None:
+    if "contact_person" in data.model_fields_set:
         customer.contact_person = data.contact_person
     if data.address is not None:
         customer.address = data.address
@@ -155,9 +169,21 @@ async def update_customer(customer_id: uuid.UUID, data: CustomerUpdate, session:
             )
     if data.geofence_radius_m is not None:
         customer.geofence_radius_m = data.geofence_radius_m
-    if data.territory_id is not None:
+    if "area_id" in data.model_fields_set:
+        if data.area_id is not None:
+            # Area wins over a separately-supplied territory_id - see create_customer.
+            from app.services.area_service import get_area
+
+            area = await get_area(data.area_id, session)
+            customer.area_id = data.area_id
+            customer.territory_id = area.territory_id
+        else:
+            customer.area_id = None
+            if "territory_id" in data.model_fields_set:
+                customer.territory_id = data.territory_id
+    elif "territory_id" in data.model_fields_set:
         customer.territory_id = data.territory_id
-    if data.outlet_code is not None:
+    if "outlet_code" in data.model_fields_set:
         customer.outlet_code = data.outlet_code
     session.add(customer)
     await session.commit()

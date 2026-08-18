@@ -1,4 +1,4 @@
-﻿package com.fieldtrackpro.android.data.repository
+package com.fieldtrackpro.android.data.repository
 
 import com.fieldtrackpro.android.data.api.CustomerApi
 import com.fieldtrackpro.android.data.api.GeoApi
@@ -22,9 +22,19 @@ class VisitRepository(
     private val geoApi: GeoApi,
     private val offlineQueueManager: OfflineQueueManager
 ) {
-    suspend fun getVisits(status: String? = null): Resource<List<VisitDto>> {
+    suspend fun getVisits(
+        status: String? = null,
+        search: String? = null,
+        skip: Int = 0,
+        limit: Int = 50
+    ): Resource<List<VisitDto>> {
         return try {
-            val response = visitApi.getVisits(status)
+            val response = visitApi.getVisits(
+                status = status,
+                search = search,
+                skip = skip,
+                limit = limit
+            )
             if (response.isSuccessful && response.body() != null) {
                 val rawVisits = response.body()!!
                 // Enrich visit with customer name/address if available
@@ -42,6 +52,41 @@ class VisitRepository(
                 Resource.Success(enrichedVisits)
             } else {
                 Resource.Error("Failed to fetch visits (${response.code()})", response.code())
+            }
+        } catch (e: Exception) {
+            Resource.Error("Network error: ${e.localizedMessage ?: "Unable to connect"}")
+        }
+    }
+
+    suspend fun getTodayVisits(
+        status: String? = null,
+        search: String? = null,
+        skip: Int = 0,
+        limit: Int = 50
+    ): Resource<List<VisitDto>> {
+        return try {
+            val response = visitApi.getMyTodayVisits(
+                status = status,
+                search = search,
+                skip = skip,
+                limit = limit
+            )
+            if (response.isSuccessful && response.body() != null) {
+                val rawVisits = response.body()!!
+                val enrichedVisits = rawVisits.map { visit ->
+                    try {
+                        val custResp = customerApi.getCustomerById(visit.customerId)
+                        if (custResp.isSuccessful && custResp.body() != null) {
+                            val cust = custResp.body()!!
+                            visit.copy(customerName = cust.name, customerAddress = cust.address)
+                        } else visit
+                    } catch (e: Exception) {
+                        visit
+                    }
+                }
+                Resource.Success(enrichedVisits)
+            } else {
+                Resource.Error("Failed to fetch today's visits (${response.code()})", response.code())
             }
         } catch (e: Exception) {
             Resource.Error("Network error: ${e.localizedMessage ?: "Unable to connect"}")
@@ -142,6 +187,7 @@ class VisitRepository(
         notes: String? = null,
         isOfflineMode: Boolean = false,
         skipEnqueueOnFailure: Boolean = false,
+        idempotencyKey: String? = null,
     ): Resource<VisitDto> {
         if (isOfflineMode) {
             offlineQueueManager.enqueueAction(
@@ -164,6 +210,7 @@ class VisitRepository(
                 accuracyM = accuracyM,
                 isMockLocation = isMock,
                 capturedAt = Instant.ofEpochMilli(capturedAtMillis).toString(),
+                idempotencyKey = idempotencyKey,
             )
             val response = visitApi.checkOut(visitId, req)
             if (response.isSuccessful && response.body() != null) {
@@ -267,6 +314,7 @@ class VisitRepository(
                     capturedAtMillis = action.timestamp,
                     notes = action.notes,
                     isOfflineMode = false,
+                    idempotencyKey = action.id,
                     skipEnqueueOnFailure = true,
                 )
             }

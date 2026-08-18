@@ -18,20 +18,23 @@ from app.schemas.user import UserCreate, UserUpdatePassword
 async def create_user(data: UserCreate, session: AsyncSession) -> User:
     repo = UserRepository(session)
 
-    if not data.email and not data.mobile_number:
+    clean_email = data.email.strip().lower() if data.email else None
+    clean_mobile = data.mobile_number.strip() if data.mobile_number else None
+
+    if not clean_email and not clean_mobile:
         raise BaseAPIException(
             status_code=422,
             detail="email or mobile_number is required",
             error_code="USER_IDENTITY_REQUIRED",
         )
-    if data.email and await repo.email_exists(data.email):
+    if clean_email and await repo.email_exists(clean_email):
         raise DuplicateResourceException("Email already registered")
-    if data.mobile_number and await repo.mobile_exists(data.mobile_number):
+    if clean_mobile and await repo.mobile_exists(clean_mobile):
         raise DuplicateResourceException("Mobile number already registered")
 
     user = User(
-        email=data.email,
-        mobile_number=data.mobile_number,
+        email=clean_email,
+        mobile_number=clean_mobile,
         password_hash=hash_password(data.password),
         role=data.role,
     )

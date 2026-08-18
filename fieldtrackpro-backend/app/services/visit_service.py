@@ -1,9 +1,10 @@
-﻿"""
+"""
 Visit service â€” refactored to use VisitRepository and GeoLogRepository.
 Follows: Router â†’ Service â†’ Repository â†’ DB
 """
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import date, datetime, timedelta, timezone
 
@@ -13,15 +14,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.exceptions.custom import BaseAPIException
 from app.models.form_template import FormStatus, FormTemplate
 from app.models.geo_verification_log import GeoVerificationLog, GeoVerificationType
-from app.models.user import Role
+from app.models.notification import NotificationType
+from app.models.user import Role, User
 from app.models.visit import Visit, VisitStatus
 from app.repositories.geo_log_repo import GeoLogRepository
 from app.repositories.visit_repo import VisitRepository
 from app.schemas.visit import CheckInRequest, CheckOutRequest, VisitCreate
+from app.services import notification_service
 from app.services.customer_service import get_customer, verify_geo_proximity
-from app.services.employee_service import get_employee_by_user_id
+from app.services.employee_service import get_employee, get_employee_by_user_id
 from app.services.visit_state_machine import assert_valid_transition, is_terminal
-from app.models.user import User
+
+logger = logging.getLogger(__name__)
 
 
 async def _validate_required_form(required_form_id: uuid.UUID | None, session: AsyncSession) -> None:
@@ -93,9 +97,11 @@ async def create_visit(data: VisitCreate, created_by: uuid.UUID, session: AsyncS
     ForeignKeyViolation (HTTP 500) instead of a meaningful 404.
     """
     from app.services.employee_service import get_employee
+    from app.services.notification_service import notification_service
+    from app.models.notification import NotificationType
 
-    await get_customer(data.customer_id, session)
-    await get_employee(data.employee_id, session)
+    customer = await get_customer(data.customer_id, session)
+    employee = await get_employee(data.employee_id, session)
     await _validate_required_form(data.required_form_id, session)
 
     repo = VisitRepository(session)
@@ -109,7 +115,23 @@ async def create_visit(data: VisitCreate, created_by: uuid.UUID, session: AsyncS
     )
     await repo.add(visit)
     await repo.commit()
-    return visit
+    full_visit = await repo.get_full(visit.id)
+
+    # Notify employee of newly assigned visit
+    try:
+        if employee and employee.user_id:
+            time_str = data.scheduled_at.strftime("%I:%M %p")
+            await notification_service.create_notification(
+                user_id=employee.user_id,
+                notification_type=NotificationType.NEW_VISIT,
+                message=f"New Visit Assigned: {customer.name} at {time_str}",
+                visit_id=visit.id,
+                session=session,
+            )
+    except Exception as e:
+        logger.warning(f"Failed to create new visit notification: {e}")
+
+    return full_visit
 
 
 async def get_visit(visit_id: uuid.UUID, session: AsyncSession) -> Visit:
@@ -133,10 +155,16 @@ async def list_visits(
     session: AsyncSession,
     current_user: User,
     employee_id: uuid.UUID | None = None,
-    status: VisitStatus | None = None,
+    status: list[VisitStatus] | VisitStatus | None = None,
+    territory_id: uuid.UUID | None = None,
+    area_id: uuid.UUID | None = None,
+    from_date: datetime | None = None,
+    to_date: datetime | None = None,
+    search: str | None = None,
+    sort_order: str = "desc",
     skip: int = 0,
-    limit: int = 50,
-) -> list[Visit]:
+    limit: int = 20,
+) -> tuple[list[Visit], int]:
     """
     List visits, scoped to the caller.
 
@@ -149,17 +177,55 @@ async def list_visits(
         employee_id = scope
 
     repo = VisitRepository(session)
-    return await repo.list_filtered(employee_id, status, skip, limit)
+    return await repo.list_filtered_paginated(
+        employee_id=employee_id,
+        status=status,
+        territory_id=territory_id,
+        area_id=area_id,
+        from_date=from_date,
+        to_date=to_date,
+        search=search,
+        sort_order=sort_order,
+        skip=skip,
+        limit=limit,
+    )
 
 
-async def get_my_today_visits(current_user: User, session: AsyncSession) -> list[Visit]:
-    """Employee: returns today's scheduled visits for the authenticated employee."""
+async def get_my_today_visits(
+    current_user: User,
+    session: AsyncSession,
+    status: list[VisitStatus] | VisitStatus | None = None,
+    search: str | None = None,
+    skip: int = 0,
+    limit: int = 50,
+) -> tuple[list[Visit], int]:
+    """
+    Employee: returns today's scheduled visits for the authenticated employee in IST / local timezone (+05:30)
+    with optional status filtering, search, and pagination.
+    """
     employee = await get_employee_by_user_id(current_user.id, session)
     repo = VisitRepository(session)
-    today = datetime.now(timezone.utc).date()
-    start = datetime(today.year, today.month, today.day, tzinfo=timezone.utc)
-    end = start + timedelta(days=1)
-    return await repo.get_employee_today_visits(employee.id, start, end)
+
+    # Calculate Today's boundaries in IST (+05:30)
+    tz_offset = timezone(timedelta(hours=5, minutes=30))
+    now_local = datetime.now(tz_offset)
+    start_local = datetime(now_local.year, now_local.month, now_local.day, 0, 0, 0, tzinfo=tz_offset)
+    end_local = start_local + timedelta(days=1)
+
+    # Convert to UTC for database comparison
+    start_utc = start_local.astimezone(timezone.utc)
+    end_utc = end_local.astimezone(timezone.utc)
+
+    return await repo.list_filtered_paginated(
+        employee_id=employee.id,
+        status=status,
+        from_date=start_utc,
+        to_date=end_utc,
+        search=search,
+        sort_order="asc",
+        skip=skip,
+        limit=limit,
+    )
 
 
 async def check_in(
@@ -220,12 +286,13 @@ async def check_in(
         )
 
     visit.status = VisitStatus.IN_PROGRESS
-    visit.check_in_at = datetime.now(tz=timezone.utc)
+    visit.check_in_at = data.captured_at if data.captured_at else datetime.now(tz=timezone.utc)
+    visit.check_in_received_at = datetime.now(tz=timezone.utc)
     visit.check_in_location = f"SRID=4326;POINT({data.longitude} {data.latitude})"
     session.add(visit)
     await geo_repo.commit()
-    await session.refresh(visit)
-    return visit
+    repo = VisitRepository(session)
+    return await repo.get_full(visit.id)
 
 
 async def check_out(
@@ -237,6 +304,12 @@ async def check_out(
     from app.services.customer_service import verify_device_against_customer
 
     visit = await get_visit_for_user(visit_id, current_user, session)
+
+    # Idempotency: if key matches a previous successful check-out, return current visit
+    if data.idempotency_key:
+        geo_repo = GeoLogRepository(session)
+        if await geo_repo.idempotency_key_exists(visit.id, data.idempotency_key):
+            return visit
 
     assert_valid_transition(visit.status, VisitStatus.COMPLETED)
 
@@ -261,7 +334,7 @@ async def check_out(
         distance_from_customer_m=geo_res.distance_m,
         is_valid=geo_res.is_valid,
         failure_reason=geo_res.failure_reason,
-        idempotency_key=None,
+        idempotency_key=data.idempotency_key,
     )
     await geo_repo.add(log)
 
@@ -278,12 +351,13 @@ async def check_out(
         )
 
     visit.status = VisitStatus.COMPLETED
-    visit.check_out_at = datetime.now(tz=timezone.utc)
+    visit.check_out_at = data.captured_at if data.captured_at else datetime.now(tz=timezone.utc)
+    visit.check_out_received_at = datetime.now(tz=timezone.utc)
     visit.check_out_location = f"SRID=4326;POINT({data.longitude} {data.latitude})"
     session.add(visit)
     await session.commit()
-    await session.refresh(visit)
-    return visit
+    repo = VisitRepository(session)
+    return await repo.get_full(visit.id)
 
 
 async def get_visit_geo_logs(
@@ -343,8 +417,29 @@ async def admin_force_status(
     visit.status = target_status
     session.add(visit)
     await session.commit()
-    await session.refresh(visit)
-    return visit
+    repo = VisitRepository(session)
+    full_visit = await repo.get_full(visit.id)
+
+    # Notify employee of visit status update
+    try:
+        from app.services.notification_service import notification_service
+        from app.models.notification import NotificationType
+        from app.services.employee_service import get_employee
+        employee = await get_employee(visit.employee_id, session)
+        if employee and employee.user_id:
+            notif_type = NotificationType.GEO_FAILURE_ALERT if target_status in [VisitStatus.MISSED, VisitStatus.FLAGGED] else NotificationType.REMINDER
+            msg = f"Visit status updated to {target_status.value} for {full_visit.customer_name}"
+            await notification_service.create_notification(
+                user_id=employee.user_id,
+                notification_type=notif_type,
+                message=msg,
+                visit_id=visit.id,
+                session=session,
+            )
+    except Exception as e:
+        logger.warning(f"Failed to create visit status notification: {e}")
+
+    return full_visit
 
 
 async def bulk_create_visits(
@@ -382,7 +477,8 @@ async def bulk_create_visits(
     employee = await session.execute(
         select(Employee).where(Employee.id == data.employee_id)
     )
-    if employee.scalar_one_or_none() is None:
+    emp_record = employee.scalar_one_or_none()
+    if emp_record is None:
         raise BaseAPIException(
             status_code=404,
             detail=f"Employee {data.employee_id} not found",
@@ -417,9 +513,28 @@ async def bulk_create_visits(
         visits.append(visit)
 
     await session.commit()
+    repo = VisitRepository(session)
+    full_visits = []
     for visit in visits:
-        await session.refresh(visit)
-    return visits
+        fv = await repo.get_full(visit.id)
+        full_visits.append(fv)
+
+    # Bulk notification
+    try:
+        from app.services.notification_service import notification_service
+        from app.models.notification import NotificationType
+        if emp_record and emp_record.user_id:
+            await notification_service.create_notification(
+                user_id=emp_record.user_id,
+                notification_type=NotificationType.NEW_VISIT,
+                message=f"{len(visits)} new visits have been assigned to your schedule.",
+                visit_id=visits[0].id if visits else None,
+                session=session,
+            )
+    except Exception as e:
+        logger.warning(f"Failed to create bulk visit notification: {e}")
+
+    return full_visits
 
 
 async def update_visit_required_form(
@@ -433,7 +548,7 @@ async def update_visit_required_form(
     visit.required_form_id = required_form_id
     session.add(visit)
     await session.commit()
-    await session.refresh(visit)
-    return visit
+    repo = VisitRepository(session)
+    return await repo.get_full(visit.id)
 
 

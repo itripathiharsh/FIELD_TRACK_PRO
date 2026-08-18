@@ -73,9 +73,20 @@ async def delete_territory(territory_id: uuid.UUID, session: AsyncSession) -> No
     """
     t = await get_territory(territory_id, session)
 
+    from app.models.area import Area
     from app.models.customer import Customer
     from app.models.employee import Employee
     from app.models.employee_territory_assignment import EmployeeTerritoryAssignment
+
+    area_count = await session.scalar(
+        select(func.count()).select_from(Area).where(Area.territory_id == territory_id)
+    )
+    if area_count:
+        raise BaseAPIException(
+            status_code=409,
+            detail="Cannot delete a zone that still has one or more areas under it",
+            error_code="TERRITORY_IN_USE",
+        )
 
     employee_count = await session.scalar(
         select(func.count()).select_from(Employee).where(Employee.territory_id == territory_id)

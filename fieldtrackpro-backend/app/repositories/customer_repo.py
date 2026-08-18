@@ -21,10 +21,13 @@ class CustomerRepository(BaseRepository[Customer]):
         territory_id: uuid.UUID | None = None,
         skip: int = 0,
         limit: int = 50,
+        area_id: uuid.UUID | None = None,
     ) -> list[Customer]:
         stmt = select(Customer).offset(skip).limit(limit)
         if territory_id:
             stmt = stmt.where(Customer.territory_id == territory_id)
+        if area_id:
+            stmt = stmt.where(Customer.area_id == area_id)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
@@ -34,11 +37,13 @@ class CustomerRepository(BaseRepository[Customer]):
         territory_id: uuid.UUID | None = None,
         skip: int = 0,
         limit: int = 50,
+        area_id: uuid.UUID | None = None,
     ) -> list[Customer]:
         """
         P0-1: the outlets an EMPLOYEE is allowed to see - every customer they
-        have at least one visit assigned to. `territory_id` further narrows
-        this set; it can never widen it beyond the employee's own visits.
+        have at least one visit assigned to. `territory_id`/`area_id` further
+        narrow this set; neither can ever widen it beyond the employee's own
+        visits.
         """
         from app.models.visit import Visit
 
@@ -53,5 +58,7 @@ class CustomerRepository(BaseRepository[Customer]):
         )
         if territory_id:
             stmt = stmt.where(Customer.territory_id == territory_id)
+        if area_id:
+            stmt = stmt.where(Customer.area_id == area_id)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())

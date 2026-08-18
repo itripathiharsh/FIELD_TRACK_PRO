@@ -64,6 +64,7 @@ class GeoLogRepository(BaseRepository[GeoVerificationLog]):
             select(GeoVerificationLog).where(
                 GeoVerificationLog.visit_id == visit_id,
                 GeoVerificationLog.idempotency_key == key,
+                GeoVerificationLog.is_valid.is_(True),
             )
         )
         return result.scalar_one_or_none() is not None

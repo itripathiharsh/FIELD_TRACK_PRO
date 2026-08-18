@@ -86,15 +86,13 @@ export const EmployeesPage: React.FC = () => {
 
     setIsSaving(true);
     try {
-      const user = await apiClient.createUser({
-        email: email.trim() || null,
-        mobile_number: mobile.trim() || null,
-        password,
-        role,
-      });
-
-      await apiClient.createEmployee({
-        user_id: user.id,
+      await apiClient.registerEmployee({
+        user: {
+          email: email.trim() || null,
+          mobile_number: mobile.trim() || null,
+          password,
+          role,
+        },
         full_name: fullName.trim(),
         territory_id: territoryId || null,
         employee_code: employeeCode.trim() || null,

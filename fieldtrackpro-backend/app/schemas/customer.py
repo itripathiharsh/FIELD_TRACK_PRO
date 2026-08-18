@@ -55,6 +55,11 @@ class CustomerCreate(BaseModel):
     auto_geocode: bool = Field(default=False)
     geofence_radius_m: int = Field(default=75, gt=0, le=100_000)
     territory_id: uuid.UUID | None = None
+    # Zone -> Area -> Outlet. If set, the service derives/validates
+    # territory_id FROM the area rather than trusting a separately-supplied
+    # value, so an outlet's Zone and Area can never disagree (see
+    # customer_service.py) - Area is the source of truth once assigned.
+    area_id: uuid.UUID | None = None
     # External-system cross-reference (Tally ledger code, Excel/MIS import
     # key) - never the outlet name, to avoid similar-name mismatches.
     outlet_code: str | None = Field(default=None, max_length=50)
@@ -84,6 +89,7 @@ class CustomerUpdate(BaseModel):
     auto_geocode: bool = Field(default=False)
     geofence_radius_m: int | None = Field(default=None, gt=0, le=100_000)
     territory_id: uuid.UUID | None = None
+    area_id: uuid.UUID | None = None
     outlet_code: str | None = Field(default=None, max_length=50)
 
 
@@ -104,6 +110,10 @@ class CustomerRead(BaseModel):
     location: LocationOut
     geofence_radius_m: int
     territory_id: uuid.UUID | None
+    area_id: uuid.UUID | None = None
+    # Denormalized for display (same convention as PaymentRead.territory_name
+    # etc.) - avoids a second round trip just to show an outlet's Area name.
+    area_name: str | None = None
     outlet_code: str | None = None
     created_by: uuid.UUID
     created_at: datetime
@@ -114,6 +124,8 @@ class CustomerRead(BaseModel):
         from app.services.customer_service import extract_coords
 
         latitude, longitude = extract_coords(customer.location)
+        # Safe: Customer.area is lazy="joined", always eagerly loaded.
+        area_name = customer.area.name if customer.area is not None else None
         return cls(
             id=customer.id,
             name=customer.name,
@@ -123,6 +135,8 @@ class CustomerRead(BaseModel):
             location=LocationOut(latitude=latitude, longitude=longitude),
             geofence_radius_m=customer.geofence_radius_m,
             territory_id=customer.territory_id,
+            area_id=customer.area_id,
+            area_name=area_name,
             outlet_code=customer.outlet_code,
             created_by=customer.created_by,
             created_at=customer.created_at,

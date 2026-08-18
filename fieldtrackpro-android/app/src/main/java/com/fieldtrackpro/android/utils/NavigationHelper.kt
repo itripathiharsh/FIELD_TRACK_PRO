@@ -38,20 +38,36 @@ object NavigationHelper {
             setPackage("com.google.android.apps.maps")
         }
 
-        if (navigationIntent.resolveActivity(context.packageManager) != null) {
-            context.startActivity(navigationIntent)
-            return true
+        try {
+            if (navigationIntent.resolveActivity(context.packageManager) != null) {
+                context.startActivity(navigationIntent)
+                return true
+            }
+        } catch (e: Exception) {
+            // Fall through
         }
 
         // Fallback: generic geo: URI
         val fallbackUri = Uri.parse("geo:$lat,$lng?q=$lat,$lng(${Uri.encode(label)})")
         val fallbackIntent = Intent(Intent.ACTION_VIEW, fallbackUri)
 
-        return if (fallbackIntent.resolveActivity(context.packageManager) != null) {
-            context.startActivity(fallbackIntent)
-            true
-        } else {
-            false
+        try {
+            if (fallbackIntent.resolveActivity(context.packageManager) != null) {
+                context.startActivity(fallbackIntent)
+                return true
+            }
+        } catch (e: Exception) {
+            // Fall through
+        }
+
+        // Final Fallback: Web browser
+        try {
+            val webUri = Uri.parse("https://maps.google.com/?q=$lat,$lng")
+            val webIntent = Intent(Intent.ACTION_VIEW, webUri)
+            context.startActivity(webIntent)
+            return true
+        } catch (e: Exception) {
+            return false
         }
     }
 

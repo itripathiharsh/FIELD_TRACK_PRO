@@ -2,8 +2,11 @@ package com.fieldtrackpro.android.data.repository
 
 import com.fieldtrackpro.android.data.api.AuthApi
 import com.fieldtrackpro.android.data.local.TokenManager
+import com.fieldtrackpro.android.data.model.ForgotPasswordRequest
 import com.fieldtrackpro.android.data.model.LoginRequest
+import com.fieldtrackpro.android.data.model.MessageResponse
 import com.fieldtrackpro.android.data.model.RefreshRequest
+import com.fieldtrackpro.android.data.model.ResetPasswordRequest
 import com.fieldtrackpro.android.data.model.UserDto
 
 sealed class Resource<T> {
@@ -59,7 +62,14 @@ class AuthRepository(
             }
 
             val user = meResponse.body()!!
-            tokenManager.saveUserProfile(user.displayName, user.email, user.role)
+            tokenManager.saveUserProfile(
+                name = user.displayName,
+                email = user.email,
+                role = user.role,
+                phone = user.mobileNumber,
+                employeeCode = user.employeeCode,
+                territoryName = user.territoryName
+            )
             Resource.Success(user)
         } catch (e: Exception) {
             tokenManager.clear()
@@ -107,6 +117,32 @@ class AuthRepository(
             // Best effort: the local session must end regardless.
         } finally {
             tokenManager.clear()
+        }
+    }
+
+    suspend fun forgotPassword(email: String): Resource<String> {
+        return try {
+            val response = authApi.forgotPassword(ForgotPasswordRequest(email))
+            if (response.isSuccessful && response.body() != null) {
+                Resource.Success(response.body()!!.message)
+            } else {
+                Resource.Error("Failed to request password reset (${response.code()})")
+            }
+        } catch (e: Exception) {
+            Resource.Error("Network error: ${e.localizedMessage}")
+        }
+    }
+
+    suspend fun resetPassword(email: String, otp: String, newPassword: String): Resource<String> {
+        return try {
+            val response = authApi.resetPassword(ResetPasswordRequest(email, otp, newPassword))
+            if (response.isSuccessful && response.body() != null) {
+                Resource.Success(response.body()!!.message)
+            } else {
+                Resource.Error(if (response.code() == 400) "Invalid or expired code" else "Failed to reset password (${response.code()})")
+            }
+        } catch (e: Exception) {
+            Resource.Error("Network error: ${e.localizedMessage}")
         }
     }
 

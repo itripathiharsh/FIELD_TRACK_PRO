@@ -8,8 +8,16 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
-from app.schemas.user import UserSummary
+from app.schemas.user import UserCreate, UserSummary
 
+
+class EmployeeRegistration(BaseModel):
+    """Create a user account and an employee profile together in one transaction."""
+
+    user: UserCreate
+    full_name: str
+    territory_id: uuid.UUID | None = None
+    employee_code: str | None = None
 
 class EmployeeCreate(BaseModel):
     """Create an employee profile linked to an existing user."""
@@ -22,6 +30,7 @@ class EmployeeCreate(BaseModel):
 
 class EmployeeUpdate(BaseModel):
     full_name: str | None = None
+    email: str | None = None
     territory_id: uuid.UUID | None = None
     employee_code: str | None = None
 

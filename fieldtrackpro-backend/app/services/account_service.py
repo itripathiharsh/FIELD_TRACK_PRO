@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.payment import PaymentStatus
 from app.models.user import User
 from app.repositories.payment_repo import PaymentRepository
+from app.repositories.visit_repo import VisitRepository
 from app.schemas.account import AccountSummary, BrandSummary
 from app.schemas.invoice import InvoiceRead
 from app.services.aging_service import AgingStatus
@@ -83,6 +84,9 @@ async def get_account_summary(
     sorted_payments = sorted(payments, key=lambda p: (p.payment_date, p.created_at), reverse=True)
     most_recent_payment = to_payment_read(sorted_payments[0]) if sorted_payments else None
 
+    visit_repo = VisitRepository(session)
+    most_recent_visit = await visit_repo.get_most_recent_checked_in(customer_id)
+
     brand_totals: dict[str, dict[str, Any]] = defaultdict(
         lambda: {
             "invoiced": Decimal("0"), "outstanding": Decimal("0"), "overdue": Decimal("0"),
@@ -143,6 +147,8 @@ async def get_account_summary(
         max_days_outstanding=max_days_outstanding,
         collection_status=collection_status,
         most_recent_payment=most_recent_payment,
+        most_recent_visit_date=most_recent_visit.check_in_at if most_recent_visit else None,
+        most_recent_visit_employee_name=most_recent_visit.employee.full_name if most_recent_visit else None,
         recent_invoices=invoice_reads[:20],
         recent_payments=[to_payment_read(p) for p in sorted_payments[:20]],
         brand_summary=brand_summary,

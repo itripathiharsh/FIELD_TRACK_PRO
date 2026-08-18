@@ -50,6 +50,11 @@ class AccountSummary(BaseModel):
     collection_status: AgingStatus
 
     most_recent_payment: PaymentRead | None
+    # The most recent visit that actually happened (has a check_in_at), and
+    # who made it - never a future-scheduled visit. None if this outlet has
+    # never had a checked-in visit.
+    most_recent_visit_date: datetime | None = None
+    most_recent_visit_employee_name: str | None = None
     recent_invoices: list[InvoiceRead]
     recent_payments: list[PaymentRead]
     brand_summary: list[BrandSummary]

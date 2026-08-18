@@ -13,7 +13,8 @@ import {
   LogOut,
   ShieldCheck,
   Wallet,
-  UploadCloud
+  UploadCloud,
+  Receipt
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
@@ -31,6 +32,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => 
     { name: 'Employees', path: '/employees', icon: Users, roles: ['ADMIN', 'MANAGER'] },
     { name: 'Territories', path: '/territories', icon: Map, roles: ['ADMIN', 'MANAGER'] },
     { name: 'Customers', path: '/customers', icon: Building2, roles: ['ADMIN', 'MANAGER'] },
+    { name: 'Collections Overview', path: '/collections', icon: Receipt, roles: ['ADMIN', 'MANAGER'] },
     { name: 'Visits', path: '/visits', icon: CalendarCheck, roles: ['ADMIN', 'MANAGER', 'EMPLOYEE'] },
     { name: 'Map', path: '/map', icon: MapPin, roles: ['ADMIN', 'MANAGER'] },
     { name: 'Geo Logs', path: '/geo-logs', icon: MapPin, roles: ['ADMIN', 'MANAGER'] },

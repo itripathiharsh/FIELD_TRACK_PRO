@@ -17,6 +17,8 @@ sealed class AuthState {
     object Loading : AuthState()
     data class Authenticated(val user: UserDto) : AuthState()
     data class Error(val message: String) : AuthState()
+    data class ForgotPasswordSuccess(val message: String) : AuthState()
+    data class ResetPasswordSuccess(val message: String) : AuthState()
 }
 
 class AuthViewModel(
@@ -46,6 +48,32 @@ class AuthViewModel(
         viewModelScope.launch {
             authRepository.logout()
             _authState.value = AuthState.Idle
+        }
+    }
+
+    fun resetAuthState() {
+        _authState.value = AuthState.Idle
+    }
+
+    fun forgotPassword(email: String) {
+        viewModelScope.launch {
+            _authState.value = AuthState.Loading
+            when (val result = authRepository.forgotPassword(email)) {
+                is Resource.Success -> _authState.value = AuthState.ForgotPasswordSuccess(result.data)
+                is Resource.Error -> _authState.value = AuthState.Error(result.message)
+                else -> {}
+            }
+        }
+    }
+
+    fun resetPassword(email: String, otp: String, newPassword: String) {
+        viewModelScope.launch {
+            _authState.value = AuthState.Loading
+            when (val result = authRepository.resetPassword(email, otp, newPassword)) {
+                is Resource.Success -> _authState.value = AuthState.ResetPasswordSuccess(result.data)
+                is Resource.Error -> _authState.value = AuthState.Error(result.message)
+                else -> {}
+            }
         }
     }
 

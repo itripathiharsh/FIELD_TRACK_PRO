@@ -36,6 +36,12 @@ class EmployeeRepository(BaseRepository[Employee]):
     async def user_has_profile(self, user_id: uuid.UUID) -> bool:
         return await self.get_by_user_id(user_id) is not None
 
+    async def code_exists(self, employee_code: str) -> bool:
+        result = await self.session.execute(
+            select(Employee).where(Employee.employee_code == employee_code)
+        )
+        return result.scalar_one_or_none() is not None
+
     async def list_with_user(
         self,
         territory_id: uuid.UUID | None = None,

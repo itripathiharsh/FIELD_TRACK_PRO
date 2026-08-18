@@ -1,6 +1,7 @@
 from app.database import Base
 from app.models.user import User, Role
 from app.models.territory import Territory
+from app.models.area import Area
 from app.models.employee import Employee
 from app.models.customer import Customer
 from app.models.visit import Visit, VisitStatus
@@ -28,13 +29,16 @@ from app.models.payment import Payment, PaymentMethod, PaymentSource, PaymentSta
 from app.models.payment_proof import PaymentProof
 from app.models.import_batch import ImportBatch, ImportStatus
 from app.models.employee_territory_assignment import EmployeeTerritoryAssignment, AssignmentType
+from app.models.employee_area_assignment import EmployeeAreaAssignment
 from app.models.login_attempt import LoginAttempt
+from app.models.password_reset import PasswordResetToken
 
 __all__ = [
     "Base",
     "User",
     "Role",
     "Territory",
+    "Area",
     "Employee",
     "Customer",
     "Visit",
@@ -71,5 +75,7 @@ __all__ = [
     "ImportStatus",
     "EmployeeTerritoryAssignment",
     "AssignmentType",
+    "EmployeeAreaAssignment",
     "LoginAttempt",
+    "PasswordResetToken",
 ]

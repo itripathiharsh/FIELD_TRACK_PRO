@@ -29,7 +29,12 @@ data class CustomerDto(
     /** Geofence centre. Nested object, not flat lat/lng fields. */
     val location: GeoPointDto,
     @SerializedName("geofence_radius_m") val geofenceRadiusM: Int = 75,
+    // Zone.
     @SerializedName("territory_id") val territoryId: String? = null,
+    // Zone -> Area -> Outlet. Once set, Area is the source of truth for the
+    // Zone (kept in sync server-side - see CustomerRead.from_model).
+    @SerializedName("area_id") val areaId: String? = null,
+    @SerializedName("area_name") val areaName: String? = null,
     @SerializedName("created_by") val createdBy: String? = null,
     @SerializedName("created_at") val createdAt: String? = null
 ) {
