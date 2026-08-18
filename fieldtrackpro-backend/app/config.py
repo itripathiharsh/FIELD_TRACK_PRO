@@ -92,7 +92,15 @@ class Settings(BaseSettings):
                     db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
                 if "sslmode=" in db_url:
                     db_url = db_url.replace("sslmode=require", "ssl=require").replace("sslmode=prefer", "ssl=prefer")
-                data["database_url"] = db_url
+            mig_url = data.get("migration_database_url") or data.get("MIGRATION_DATABASE_URL")
+            if mig_url and isinstance(mig_url, str):
+                if mig_url.startswith("postgres://"):
+                    mig_url = mig_url.replace("postgres://", "postgresql+asyncpg://", 1)
+                elif mig_url.startswith("postgresql://") and not mig_url.startswith("postgresql+asyncpg://"):
+                    mig_url = mig_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+                if "sslmode=" in mig_url:
+                    mig_url = mig_url.replace("sslmode=require", "ssl=require").replace("sslmode=prefer", "ssl=prefer")
+                data["migration_database_url"] = mig_url
 
             cors = data.get("cors_allowed_origins") or data.get("CORS_ALLOWED_ORIGINS")
             if isinstance(cors, str) and not cors.strip().startswith("["):

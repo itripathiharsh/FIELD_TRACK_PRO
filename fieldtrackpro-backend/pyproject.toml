@@ -31,6 +31,7 @@ dependencies = [
     "apscheduler>=3.10.4",
     "reportlab (>=5.0.0,<6.0.0)",
     "openpyxl>=3.1.0",
+    "psycopg2-binary>=2.9.9",
 ]
 
 [project.optional-dependencies]
@@ -38,9 +39,6 @@ dev = [
     "pytest>=8.3.0",
     "pytest-asyncio>=0.24.0",
     "httpx>=0.27.0",
-    # Sync driver used by the test harness to check DB readiness and to
-    # assert committed database state independently of the app's async session.
-    "psycopg2-binary>=2.9.9",
 ]
 
 [tool.poetry]
