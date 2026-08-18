@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: fieldtrackpro-backend
+    runtime: python
+    region: oregon
+    plan: free
+    branch: main
+    rootDir: fieldtrackpro-backend
+    buildCommand: pip install poetry && poetry install --no-root
+    startCommand: poetry run alembic upgrade head && poetry run python scripts/seed_demo_data.py && poetry run uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: "false"
+      - key: API_V1_PREFIX
+        value: /api/v1
+      - key: STORAGE_PROVIDER
+        value: LOCAL
+      - key: MEDIA_STORAGE_PATH
+        value: media_storage
+      - key: CORS_ALLOWED_ORIGINS
+        value: '["https://fieldtrack-pro.vercel.app","https://fieldtrack-pro-imharshofficial322-gmailcoms-projects.vercel.app","https://fieldtrack-hedoqegzb-imharshofficial322-gmailcoms-projects.vercel.app","http://localhost:5173"]'
+      - key: JWT_SECRET
+        generateValue: true
+      - key: MEDIA_SIGNING_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: fieldtrackpro-db
+          property: connectionString

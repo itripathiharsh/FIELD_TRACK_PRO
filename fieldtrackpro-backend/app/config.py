@@ -80,6 +80,25 @@ class Settings(BaseSettings):
     smtp_password: str | None = None
     smtp_from_email: str = "noreply@fieldtrackpro.com"
 
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_settings(cls, data: dict) -> dict:
+        if isinstance(data, dict):
+            db_url = data.get("database_url") or data.get("DATABASE_URL")
+            if db_url and isinstance(db_url, str):
+                if db_url.startswith("postgres://"):
+                    db_url = db_url.replace("postgres://", "postgresql+asyncpg://", 1)
+                elif db_url.startswith("postgresql://") and not db_url.startswith("postgresql+asyncpg://"):
+                    db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+                if "sslmode=" in db_url:
+                    db_url = db_url.replace("sslmode=require", "ssl=require").replace("sslmode=prefer", "ssl=prefer")
+                data["database_url"] = db_url
+
+            cors = data.get("cors_allowed_origins") or data.get("CORS_ALLOWED_ORIGINS")
+            if isinstance(cors, str) and not cors.strip().startswith("["):
+                data["cors_allowed_origins"] = [o.strip() for o in cors.split(",") if o.strip()]
+        return data
+
     @model_validator(mode="after")
     def _require_media_signing_secret_in_production(self) -> "Settings":
         """
