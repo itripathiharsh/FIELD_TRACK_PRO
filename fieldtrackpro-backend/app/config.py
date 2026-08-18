@@ -1,6 +1,6 @@
 from typing import List
 
-from pydantic import model_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -80,32 +80,25 @@ class Settings(BaseSettings):
     smtp_password: str | None = None
     smtp_from_email: str = "noreply@fieldtrackpro.com"
 
-    @model_validator(mode="before")
+    @field_validator("database_url", "migration_database_url", mode="before")
     @classmethod
-    def _normalize_settings(cls, data: dict) -> dict:
-        if isinstance(data, dict):
-            db_url = data.get("database_url") or data.get("DATABASE_URL")
-            if db_url and isinstance(db_url, str):
-                if db_url.startswith("postgres://"):
-                    db_url = db_url.replace("postgres://", "postgresql+asyncpg://", 1)
-                elif db_url.startswith("postgresql://") and not db_url.startswith("postgresql+asyncpg://"):
-                    db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
-                if "sslmode=" in db_url:
-                    db_url = db_url.replace("sslmode=require", "ssl=require").replace("sslmode=prefer", "ssl=prefer")
-            mig_url = data.get("migration_database_url") or data.get("MIGRATION_DATABASE_URL")
-            if mig_url and isinstance(mig_url, str):
-                if mig_url.startswith("postgres://"):
-                    mig_url = mig_url.replace("postgres://", "postgresql+asyncpg://", 1)
-                elif mig_url.startswith("postgresql://") and not mig_url.startswith("postgresql+asyncpg://"):
-                    mig_url = mig_url.replace("postgresql://", "postgresql+asyncpg://", 1)
-                if "sslmode=" in mig_url:
-                    mig_url = mig_url.replace("sslmode=require", "ssl=require").replace("sslmode=prefer", "ssl=prefer")
-                data["migration_database_url"] = mig_url
+    def _ensure_asyncpg_driver(cls, v: str | None) -> str | None:
+        if not v or not isinstance(v, str):
+            return v
+        if v.startswith("postgres://"):
+            v = v.replace("postgres://", "postgresql+asyncpg://", 1)
+        elif v.startswith("postgresql://") and not v.startswith("postgresql+asyncpg://"):
+            v = v.replace("postgresql://", "postgresql+asyncpg://", 1)
+        if "sslmode=" in v:
+            v = v.replace("sslmode=require", "ssl=require").replace("sslmode=prefer", "ssl=prefer")
+        return v
 
-            cors = data.get("cors_allowed_origins") or data.get("CORS_ALLOWED_ORIGINS")
-            if isinstance(cors, str) and not cors.strip().startswith("["):
-                data["cors_allowed_origins"] = [o.strip() for o in cors.split(",") if o.strip()]
-        return data
+    @field_validator("cors_allowed_origins", mode="before")
+    @classmethod
+    def _ensure_cors_list(cls, v: list | str) -> list:
+        if isinstance(v, str) and not v.strip().startswith("["):
+            return [o.strip() for o in v.split(",") if o.strip()]
+        return v
 
     @model_validator(mode="after")
     def _require_media_signing_secret_in_production(self) -> "Settings":
