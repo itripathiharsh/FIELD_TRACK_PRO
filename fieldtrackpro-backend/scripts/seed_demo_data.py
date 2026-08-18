@@ -346,6 +346,14 @@ def run() -> None:
         VERSION_ID = "55555555-ffff-4000-8000-000000000009"
         SITE_INSPECTION_CATEGORY = "40df0758-844b-4206-be40-02f9b557369b"
 
+        conn.execute(
+            text(
+                "INSERT INTO requirement_categories (id, name, is_active) "
+                "VALUES (:id, 'Site Inspection', true) ON CONFLICT (id) DO NOTHING"
+            ),
+            {"id": SITE_INSPECTION_CATEGORY},
+        )
+
         existing_form = conn.execute(
             text("SELECT id FROM form_templates WHERE id = :id"), {"id": FORM_ID}
         ).fetchone()
