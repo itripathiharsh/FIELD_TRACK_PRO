@@ -1,7 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { getTileProviderConfig } from './tileConfig';
+import { getTileProviderConfig, MAPLIBRE_WORKER_URL } from './tileConfig';
+
+// Initialize MapLibre worker URL if supported
+try {
+  if (typeof maplibregl.setWorkerUrl === 'function') {
+    maplibregl.setWorkerUrl(MAPLIBRE_WORKER_URL);
+  }
+} catch {
+  // Ignore in environments where setWorkerUrl is not available
+}
 
 /** GeoJSON types defined inline to avoid an external dependency. */
 interface GeoJSONPoint {
@@ -26,7 +35,17 @@ interface GeoJSONFeatureCollection {
 }
 
 /**
- * Map marker data.
+ * Current user / employee GPS telemetry coordinates.
+ */
+export interface CurrentUserLocation {
+  latitude: number;
+  longitude: number;
+  accuracy?: number;
+  label?: string;
+}
+
+/**
+ * Customer / Outlet map marker data.
  */
 export interface MapMarker {
   id: string;
@@ -34,6 +53,9 @@ export interface MapMarker {
   longitude: number;
   label?: string;
   color?: string;
+  outletCode?: string;
+  address?: string;
+  territoryName?: string;
 }
 
 export interface TerritoryCircle {
@@ -55,6 +77,7 @@ export interface FieldTrackMapProps {
   markers?: MapMarker[];
   territoryCircles?: TerritoryCircle[];
   selectedMarkerId?: string | null;
+  currentLocation?: CurrentUserLocation | null;
   height?: string;
   onMarkerClick?: (marker: MapMarker) => void;
   onMapClick?: (lat: number, lng: number) => void;
@@ -64,6 +87,20 @@ export interface FieldTrackMapProps {
 }
 
 const LOADING_TIMEOUT_MS = 15000;
+
+export function isValidCoordinate(lat?: number | null, lng?: number | null): boolean {
+  return (
+    lat != null &&
+    lng != null &&
+    !isNaN(lat) &&
+    !isNaN(lng) &&
+    lat >= -90 &&
+    lat <= 90 &&
+    lng >= -180 &&
+    lng <= 180 &&
+    !(lat === 0 && lng === 0)
+  );
+}
 
 function createGeoJSONCircle(
   center: [number, number],
@@ -107,42 +144,27 @@ function createGeoJSONCircle(
 }
 
 /**
- * Extract a bounding box for all valid markers and territory circles.
+ * Extract a bounding box for all valid markers, employee location, and territory circles.
  */
 export function getBoundsForMarkersAndCircles(
   markers: MapMarker[] = [],
   territoryCircles: TerritoryCircle[] = [],
+  currentLocation?: CurrentUserLocation | null,
 ): [[number, number], [number, number]] | null {
   const points: [number, number][] = [];
 
   for (const m of markers) {
-    if (
-      m.latitude != null &&
-      m.longitude != null &&
-      !isNaN(m.latitude) &&
-      !isNaN(m.longitude) &&
-      m.latitude >= -90 &&
-      m.latitude <= 90 &&
-      m.longitude >= -180 &&
-      m.longitude <= 180 &&
-      !(m.latitude === 0 && m.longitude === 0)
-    ) {
+    if (isValidCoordinate(m.latitude, m.longitude)) {
       points.push([m.longitude, m.latitude]);
     }
   }
 
+  if (currentLocation && isValidCoordinate(currentLocation.latitude, currentLocation.longitude)) {
+    points.push([currentLocation.longitude, currentLocation.latitude]);
+  }
+
   for (const c of territoryCircles) {
-    if (
-      c.centerLat != null &&
-      c.centerLng != null &&
-      !isNaN(c.centerLat) &&
-      !isNaN(c.centerLng) &&
-      c.centerLat >= -90 &&
-      c.centerLat <= 90 &&
-      c.centerLng >= -180 &&
-      c.centerLng <= 180 &&
-      !(c.centerLat === 0 && c.centerLng === 0)
-    ) {
+    if (isValidCoordinate(c.centerLat, c.centerLng)) {
       const radiusKm = c.radiusKm || 10;
       const latDelta = radiusKm / 110.574;
       const cosLat = Math.cos((c.centerLat * Math.PI) / 180);
@@ -178,10 +200,110 @@ function escapeHtml(text: string): string {
   return div.innerHTML;
 }
 
+// Injected CSS for marker animations and radar wave
+const MARKER_STYLES_ID = 'fieldtrack-map-styles';
+function ensureMarkerStylesInjected() {
+  if (typeof document === 'undefined') return;
+  if (document.getElementById(MARKER_STYLES_ID)) return;
+
+  const style = document.createElement('style');
+  style.id = MARKER_STYLES_ID;
+  style.textContent = `
+    @keyframes ft-radar-ping {
+      0% { transform: scale(0.9); opacity: 0.8; }
+      70% { transform: scale(2.4); opacity: 0; }
+      100% { transform: scale(2.4); opacity: 0; }
+    }
+    @keyframes ft-pulse-ring {
+      0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7); }
+      70% { transform: scale(1.05); box-shadow: 0 0 0 8px rgba(245, 158, 11, 0); }
+      100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+    }
+    .ft-customer-pin {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      border-radius: 50% 50% 50% 0;
+      transform: rotate(-45deg);
+      cursor: pointer;
+      box-shadow: 0 3px 8px rgba(0,0,0,0.3);
+      transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+      background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+      border: 2px solid #ffffff;
+    }
+    .ft-customer-pin.is-selected {
+      background: linear-gradient(135deg, #ffa515 0%, #ea580c 100%);
+      border: 3px solid #14213D;
+      animation: ft-pulse-ring 2s infinite;
+      z-index: 100;
+      transform: rotate(-45deg) scale(1.2);
+    }
+    .ft-customer-pin svg {
+      transform: rotate(45deg);
+      width: 16px;
+      height: 16px;
+      color: #ffffff;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2;
+    }
+    .ft-employee-marker-container {
+      position: relative;
+      width: 44px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: auto;
+      cursor: pointer;
+    }
+    .ft-employee-radar-wave {
+      position: absolute;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background-color: rgba(14, 165, 233, 0.4);
+      animation: ft-radar-ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+      pointer-events: none;
+    }
+    .ft-employee-beacon {
+      position: relative;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+      border: 3px solid #ffffff;
+      box-shadow: 0 2px 6px rgba(2, 132, 199, 0.5), 0 0 0 2px #0284c7;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.2s ease;
+    }
+    .ft-employee-beacon:hover {
+      transform: scale(1.15);
+    }
+    .ft-employee-beacon-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background-color: #ffffff;
+    }
+    .maplibregl-popup-content {
+      padding: 10px 12px !important;
+      border-radius: 8px !important;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 8px 10px -6px rgba(0, 0, 0, 0.1) !important;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
 /**
  * FieldTrack Pro Map component using MapLibre GL JS.
  * Supports interactive markers, selection highlights, popups, territory coverage circles,
- * auto-fit bounds, and container resize observation.
+ * live employee GPS tracking, auto-fit bounds, and container resize observation.
  */
 export function FieldTrackMap({
   centerLat,
@@ -190,6 +312,7 @@ export function FieldTrackMap({
   markers = [],
   territoryCircles = [],
   selectedMarkerId = null,
+  currentLocation = null,
   height = '400px',
   onMarkerClick,
   onMapClick,
@@ -197,10 +320,16 @@ export function FieldTrackMap({
   enableClustering = true,
   autoFitBounds = false,
 }: FieldTrackMapProps) {
+  void enableClustering;
   const mapContainer = useRef<HTMLDivElement>(null);
+
   const map = useRef<maplibregl.Map | null>(null);
   const popupRef = useRef<maplibregl.Popup | null>(null);
   const loadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Markers ref to track active DOM marker instances
+  const activeMarkersRef = useRef<Map<string, maplibregl.Marker>>(new Map());
+  const employeeMarkerRef = useRef<maplibregl.Marker | null>(null);
 
   // Keep all callback props in refs so changing them never triggers a map reinit
   const onMapClickRef = useRef(onMapClick);
@@ -209,21 +338,23 @@ export function FieldTrackMap({
   const onMarkerClickRef = useRef(onMarkerClick);
   onMarkerClickRef.current = onMarkerClick;
 
-  // onError is a ref so an inline lambda from the parent (e.g. MapPage) doesn't
-  // cause the map initialisation effect to re-run and destroy the live instance
-  // every time the parent re-renders (e.g. on every filter change).
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
 
   const markersRef = useRef(markers);
   markersRef.current = markers;
 
-  // Track the signature of marker IDs to avoid re-triggering autoFitBounds on selection changes
+  // Track the signature of marker IDs + location to avoid re-triggering autoFitBounds unnecessarily
   const lastFittedSignatureRef = useRef<string | null>(null);
 
   const [isLoading, setIsLoading] = useState(true);
   const [isStyleLoaded, setIsStyleLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Inject CSS animations
+  useEffect(() => {
+    ensureMarkerStylesInjected();
+  }, []);
 
   // Initialize Map
   useEffect(() => {
@@ -234,16 +365,7 @@ export function FieldTrackMap({
       styleObject: { version: 8, sources: {}, layers: [] },
     };
 
-    const hasValidCenter =
-      centerLat != null &&
-      centerLng != null &&
-      !isNaN(centerLat) &&
-      !isNaN(centerLng) &&
-      centerLat >= -90 &&
-      centerLat <= 90 &&
-      centerLng >= -180 &&
-      centerLng <= 180 &&
-      !(centerLat === 0 && centerLng === 0);
+    const hasValidCenter = isValidCoordinate(centerLat, centerLng);
 
     const handleMapError = (msg: string) => {
       setError(msg);
@@ -264,7 +386,7 @@ export function FieldTrackMap({
         container: mapContainer.current,
         ...styleConfig,
         center: hasValidCenter ? [centerLng!, centerLat!] : [77.5946, 12.9716],
-        zoom: hasValidCenter ? zoom : 4,
+        zoom: hasValidCenter ? zoom : 5,
       });
 
       map.current.addControl(new maplibregl.NavigationControl(), 'top-right');
@@ -293,6 +415,11 @@ export function FieldTrackMap({
 
       map.current.on('error', (e: { error?: { message?: string } }) => {
         const msg = e.error?.message || 'Failed to load map tiles';
+        // Ignore non-fatal worker or tile 404 errors so map stays usable
+        if (msg.includes('worker') || msg.includes('404')) {
+          console.warn('MapLibre notice:', msg);
+          return;
+        }
         handleMapError(`Map loading failed: ${msg}`);
       });
     } catch (e) {
@@ -309,14 +436,17 @@ export function FieldTrackMap({
         popupRef.current.remove();
         popupRef.current = null;
       }
+      // Remove all active DOM markers
+      activeMarkersRef.current.forEach((marker) => marker.remove());
+      activeMarkersRef.current.clear();
+      if (employeeMarkerRef.current) {
+        employeeMarkerRef.current.remove();
+        employeeMarkerRef.current = null;
+      }
       map.current?.remove();
       map.current = null;
-      // Reset style-loaded flag so marker/territory effects correctly re-run
-      // when a new map instance initialises after this cleanup.
       setIsStyleLoaded(false);
     };
-  // onError is intentionally excluded: it is accessed via onErrorRef so
-  // changing the callback never destroys and recreates the live map instance.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [centerLat, centerLng, zoom]);
 
@@ -331,17 +461,20 @@ export function FieldTrackMap({
   }, []);
 
   // Compute marker signature for stable autoFitBounds triggering
-  const currentMarkersSignature = markers.map((m) => m.id).sort().join(',');
+  const currentMarkersSignature = [
+    markers.map((m) => m.id).sort().join(','),
+    currentLocation ? `${currentLocation.latitude.toFixed(3)},${currentLocation.longitude.toFixed(3)}` : 'noloc',
+  ].join('|');
 
-  // Auto-fit bounding box ONLY on initial style load or when dataset/filters change, NOT on selection!
+  // Auto-fit bounding box on style load or when dataset/filters change, NOT on selection!
   useEffect(() => {
     if (!map.current || !isStyleLoaded || !autoFitBounds) return;
 
     if (lastFittedSignatureRef.current === currentMarkersSignature) {
-      return; // Skip re-fitting bounds if markers have not changed
+      return; // Skip re-fitting bounds if markers and location have not changed
     }
 
-    const bounds = getBoundsForMarkersAndCircles(markers, territoryCircles);
+    const bounds = getBoundsForMarkersAndCircles(markers, territoryCircles, currentLocation);
     if (bounds) {
       lastFittedSignatureRef.current = currentMarkersSignature;
       const [sw, ne] = bounds;
@@ -353,13 +486,13 @@ export function FieldTrackMap({
         });
       } else {
         map.current.fitBounds(bounds, {
-          padding: 50,
+          padding: 60,
           maxZoom: 14,
           duration: 600,
         });
       }
     }
-  }, [currentMarkersSignature, territoryCircles, autoFitBounds, isStyleLoaded, markers]);
+  }, [currentMarkersSignature, territoryCircles, autoFitBounds, isStyleLoaded, markers, currentLocation]);
 
   // Render Territory Circles
   useEffect(() => {
@@ -368,10 +501,7 @@ export function FieldTrackMap({
     try {
       const validCircles = territoryCircles.filter(
         (c) =>
-          c.centerLat != null &&
-          c.centerLng != null &&
-          !isNaN(c.centerLat) &&
-          !isNaN(c.centerLng) &&
+          isValidCoordinate(c.centerLat, c.centerLng) &&
           c.radiusKm != null &&
           c.radiusKm > 0,
       );
@@ -409,7 +539,7 @@ export function FieldTrackMap({
           source: 'territory-circles-source',
           paint: {
             'fill-color': ['get', 'color'],
-            'fill-opacity': 0.18,
+            'fill-opacity': 0.16,
           },
         });
 
@@ -425,294 +555,171 @@ export function FieldTrackMap({
         });
       }
     } catch (e) {
-      console.error('Error rendering territory circles:', e);
+      console.warn('Notice rendering territory circles:', e);
     }
   }, [territoryCircles, isStyleLoaded]);
 
-  // Update markers GeoJSON and layers
+  // Render Customer Markers using high-performance, worker-independent DOM Markers
   useEffect(() => {
     if (!map.current || !isStyleLoaded) return;
 
     try {
-      // Remove legacy DOM markers if present
-      const existingMarkers = document.querySelectorAll('.maplibre-marker');
-      existingMarkers.forEach((m) => m.remove());
+      const validMarkers = markers.filter((m) => isValidCoordinate(m.latitude, m.longitude));
+      const currentMarkerIds = new Set(validMarkers.map((m) => m.id));
 
-      const validMarkers = markers.filter(
-        (m) =>
-          m.latitude != null &&
-          m.longitude != null &&
-          !isNaN(m.latitude) &&
-          !isNaN(m.longitude) &&
-          m.latitude >= -90 &&
-          m.latitude <= 90 &&
-          m.longitude >= -180 &&
-          m.longitude <= 180 &&
-          !(m.latitude === 0 && m.longitude === 0),
-      );
+      // 1. Remove markers that are no longer in the dataset
+      activeMarkersRef.current.forEach((markerInstance, id) => {
+        if (!currentMarkerIds.has(id)) {
+          markerInstance.remove();
+          activeMarkersRef.current.delete(id);
+        }
+      });
 
-      if (enableClustering) {
-        const geojson: GeoJSONFeatureCollection = {
-          type: 'FeatureCollection',
-          features: validMarkers.map(
-            (m): GeoJSONFeature => ({
-              type: 'Feature',
-              geometry: {
-                type: 'Point',
-                coordinates: [m.longitude, m.latitude],
-              },
-              properties: {
-                id: m.id,
-                label: m.label || '',
-                color: m.color || '#ffa515',
-              },
-            }),
-          ),
-        };
+      // 2. Create or update markers
+      validMarkers.forEach((marker) => {
+        const isSelected = marker.id === selectedMarkerId;
+        let markerInstance = activeMarkersRef.current.get(marker.id);
 
-        const existingSource = map.current.getSource(
-          'markers-source',
-        ) as maplibregl.GeoJSONSource | undefined;
+        if (!markerInstance) {
+          // Build custom SVG Pin DOM Element
+          const el = document.createElement('div');
+          el.className = `ft-customer-pin ${isSelected ? 'is-selected' : ''}`;
+          el.setAttribute('data-testid', `marker-${marker.id}`);
+          el.setAttribute('title', marker.label || 'Customer Outlet');
+          el.setAttribute('tabindex', '0');
+          el.setAttribute('role', 'button');
+          el.setAttribute('aria-label', `Outlet: ${marker.label || marker.id}`);
 
-        if (existingSource) {
-          existingSource.setData(geojson);
-        } else {
-          map.current.addSource('markers-source', {
-            type: 'geojson',
-            data: geojson,
-            cluster: true,
-            clusterMaxZoom: 14,
-            clusterRadius: 50,
-          });
+          // Shop / Building Icon SVG
+          el.innerHTML = `
+            <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+              <polyline points="9 22 9 12 15 12 15 22"></polyline>
+            </svg>
+          `;
 
-          // Cluster circles
-          map.current.addLayer({
-            id: 'clusters',
-            type: 'circle',
-            source: 'markers-source',
-            filter: ['has', 'point_count'],
-            paint: {
-              'circle-color': [
-                'step',
-                ['get', 'point_count'],
-                '#14213D',
-                100,
-                '#fca311',
-                750,
-                '#e63946',
-              ],
-              'circle-radius': [
-                'step',
-                ['get', 'point_count'],
-                20,
-                100,
-                30,
-                750,
-                40,
-              ],
-              'circle-opacity': 0.85,
-              'circle-stroke-width': 2,
-              'circle-stroke-color': '#fff',
-            },
-          });
+          const popupContent = document.createElement('div');
+          popupContent.className = 'font-sans text-xs';
+          popupContent.innerHTML = `
+            <div style="font-weight: 700; color: #0f172a; font-size: 13px; margin-bottom: 2px;">${escapeHtml(marker.label || 'Customer Outlet')}</div>
+            ${marker.outletCode ? `<div style="font-size: 11px; color: #64748b; margin-bottom: 2px;">Code: <strong>${escapeHtml(marker.outletCode)}</strong></div>` : ''}
+            <div style="font-size: 10px; color: #94a3b8;">${marker.latitude.toFixed(4)}°, ${marker.longitude.toFixed(4)}°</div>
+            <div style="margin-top: 6px; font-size: 10px; font-weight: 600; color: #d97706; text-transform: uppercase; letter-spacing: 0.5px;">Click to inspect outlet</div>
+          `;
 
-          // Cluster count labels
-          map.current.addLayer({
-            id: 'cluster-count',
-            type: 'symbol',
-            source: 'markers-source',
-            filter: ['has', 'point_count'],
-            layout: {
-              'text-field': ['get', 'point_count_abbreviated'],
-              'text-size': 12,
-            },
-            paint: {
-              'text-color': '#fff',
-            },
-          });
+          const popup = new maplibregl.Popup({
+            offset: 16,
+            closeButton: false,
+            className: 'fieldtrack-outlet-hover-popup',
+          }).setDOMContent(popupContent);
 
-          // Selected Marker Outer Halo Ring
-          map.current.addLayer({
-            id: 'selected-marker-halo',
-            type: 'circle',
-            source: 'markers-source',
-            filter: ['==', ['get', 'id'], selectedMarkerId || ''],
-            paint: {
-              'circle-color': '#ffa515',
-              'circle-radius': 18,
-              'circle-opacity': 0.35,
-              'circle-stroke-width': 2,
-              'circle-stroke-color': '#fca311',
-              'circle-stroke-opacity': 0.8,
-            },
-          });
+          const handleClick = (e: Event) => {
+            e.stopPropagation();
+            onMarkerClickRef.current?.(marker);
+          };
 
-          // Unclustered individual points
-          map.current.addLayer({
-            id: 'unclustered-point',
-            type: 'circle',
-            source: 'markers-source',
-            filter: ['!', ['has', 'point_count']],
-            paint: {
-              'circle-color': [
-                'case',
-                ['==', ['get', 'id'], selectedMarkerId || ''],
-                '#ffa515',
-                ['get', 'color'],
-              ],
-              'circle-radius': [
-                'case',
-                ['==', ['get', 'id'], selectedMarkerId || ''],
-                11,
-                8,
-              ],
-              'circle-stroke-width': [
-                'case',
-                ['==', ['get', 'id'], selectedMarkerId || ''],
-                3,
-                2,
-              ],
-              'circle-stroke-color': [
-                'case',
-                ['==', ['get', 'id'], selectedMarkerId || ''],
-                '#14213D',
-                '#ffffff',
-              ],
-            },
-          });
-
-          // Click on cluster to zoom in
-          map.current.on('click', 'clusters', async (e) => {
-            if (!map.current) return;
-            const features = map.current.queryRenderedFeatures(e.point, {
-              layers: ['clusters'],
-            });
-            const clusterId = features[0]?.properties?.cluster_id;
-            if (clusterId && features[0]) {
-              const source = map.current.getSource(
-                'markers-source',
-              ) as maplibregl.GeoJSONSource;
-              try {
-                const zoomLevel = await source.getClusterExpansionZoom(clusterId);
-                const coords = (features[0].geometry as GeoJSONPoint).coordinates;
-                map.current?.easeTo({
-                  center: coords as [number, number],
-                  zoom: zoomLevel,
-                });
-              } catch {
-                // Cluster expansion failed, ignore
-              }
-            }
-          });
-
-          // Click on unclustered point
-          map.current.on('click', 'unclustered-point', (e) => {
-            const features = e.features;
-            if (!features || features.length === 0) return;
-            const props = features[0].properties;
-            if (!props) return;
-            const marker = markersRef.current.find((m) => m.id === props.id);
-            if (marker) {
+          el.addEventListener('click', handleClick);
+          el.addEventListener('keydown', (e: KeyboardEvent) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
               onMarkerClickRef.current?.(marker);
             }
           });
 
-          map.current.on('mouseenter', 'clusters', () => {
-            if (map.current) map.current.getCanvas().style.cursor = 'pointer';
-          });
-          map.current.on('mouseleave', 'clusters', () => {
-            if (map.current) map.current.getCanvas().style.cursor = '';
-          });
-          map.current.on('mouseenter', 'unclustered-point', () => {
-            if (map.current) map.current.getCanvas().style.cursor = 'pointer';
-          });
-          map.current.on('mouseleave', 'unclustered-point', () => {
-            if (map.current) map.current.getCanvas().style.cursor = '';
-          });
-        }
-      } else {
-        // Fallback DOM-based markers
-        validMarkers.forEach((marker) => {
-          const isSelected = marker.id === selectedMarkerId;
-          const el = document.createElement('div');
-          el.className = 'maplibre-marker';
-          el.style.width = isSelected ? '32px' : '24px';
-          el.style.height = isSelected ? '32px' : '24px';
-          el.style.borderRadius = '50%';
-          el.style.backgroundColor = marker.color || '#ffa515';
-          el.style.border = isSelected ? '3px solid #14213D' : '3px solid white';
-          el.style.boxShadow = isSelected
-            ? '0 0 12px rgba(252, 163, 17, 0.8)'
-            : '0 2px 4px rgba(0,0,0,0.3)';
-          el.style.cursor = 'pointer';
-          el.style.transition = 'all 0.2s ease-in-out';
-
-          el.addEventListener('click', () => {
-            onMarkerClickRef.current?.(marker);
-          });
-
-          new maplibregl.Marker({ element: el })
+          markerInstance = new maplibregl.Marker({
+            element: el,
+            anchor: 'bottom',
+          })
             .setLngLat([marker.longitude, marker.latitude])
-            .setPopup(
-              new maplibregl.Popup({ offset: 25 }).setText(
-                marker.label ||
-                  `Outlet (${marker.latitude.toFixed(4)}, ${marker.longitude.toFixed(4)})`,
-              ),
-            )
+            .setPopup(popup)
             .addTo(map.current!);
-        });
-      }
-    } catch (e) {
-      console.error('Error updating map markers:', e);
-    }
-  }, [markers, enableClustering, isStyleLoaded, selectedMarkerId]);
 
-  // Handle selected marker visual highlight & popup synchronization
+          activeMarkersRef.current.set(marker.id, markerInstance);
+        } else {
+          // Update position and selected state of existing marker
+          markerInstance.setLngLat([marker.longitude, marker.latitude]);
+          const el = markerInstance.getElement();
+          if (isSelected) {
+            el.classList.add('is-selected');
+          } else {
+            el.classList.remove('is-selected');
+          }
+        }
+      });
+    } catch (e) {
+      console.error('Error rendering customer markers:', e);
+    }
+  }, [markers, isStyleLoaded, selectedMarkerId]);
+
+  // Render Employee Live GPS Current Location Marker
   useEffect(() => {
     if (!map.current || !isStyleLoaded) return;
 
     try {
-      // Update selected-marker-halo layer filter if it exists
-      if (map.current.getLayer('selected-marker-halo')) {
-        map.current.setFilter('selected-marker-halo', [
-          '==',
-          ['get', 'id'],
-          selectedMarkerId || '',
-        ]);
-      }
+      if (currentLocation && isValidCoordinate(currentLocation.latitude, currentLocation.longitude)) {
+        if (!employeeMarkerRef.current) {
+          // Create custom GPS radar marker DOM element
+          const el = document.createElement('div');
+          el.className = 'ft-employee-marker-container';
+          el.setAttribute('data-testid', 'marker-employee-location');
+          el.setAttribute('title', 'Your Current Location');
+          el.setAttribute('aria-label', 'Employee Current GPS Location');
 
-      // Update unclustered-point styling for selected state
-      if (map.current.getLayer('unclustered-point')) {
-        map.current.setPaintProperty('unclustered-point', 'circle-color', [
-          'case',
-          ['==', ['get', 'id'], selectedMarkerId || ''],
-          '#ffa515',
-          ['get', 'color'],
-        ]);
-        map.current.setPaintProperty('unclustered-point', 'circle-radius', [
-          'case',
-          ['==', ['get', 'id'], selectedMarkerId || ''],
-          11,
-          8,
-        ]);
-        map.current.setPaintProperty('unclustered-point', 'circle-stroke-width', [
-          'case',
-          ['==', ['get', 'id'], selectedMarkerId || ''],
-          3,
-          2,
-        ]);
-        map.current.setPaintProperty('unclustered-point', 'circle-stroke-color', [
-          'case',
-          ['==', ['get', 'id'], selectedMarkerId || ''],
-          '#14213D',
-          '#ffffff',
-        ]);
-      }
+          el.innerHTML = `
+            <div class="ft-employee-radar-wave"></div>
+            <div class="ft-employee-beacon">
+              <div class="ft-employee-beacon-dot"></div>
+            </div>
+          `;
 
+          const popupContent = document.createElement('div');
+          popupContent.className = 'font-sans text-xs';
+          popupContent.innerHTML = `
+            <div style="display: flex; align-items: center; gap: 4px; margin-bottom: 2px;">
+              <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background-color: #0ea5e9;"></span>
+              <strong style="color: #0284c7; font-size: 12px;">Your Current Location</strong>
+            </div>
+            <div style="font-size: 11px; color: #334155; font-weight: 500;">Field Representative GPS</div>
+            <div style="font-size: 10px; color: #64748b; margin-top: 2px;">${currentLocation.latitude.toFixed(5)}°, ${currentLocation.longitude.toFixed(5)}°</div>
+            ${currentLocation.accuracy ? `<div style="font-size: 9px; color: #94a3b8; margin-top: 2px;">Accuracy: ±${Math.round(currentLocation.accuracy)}m</div>` : ''}
+          `;
+
+          const popup = new maplibregl.Popup({
+            offset: 14,
+            closeButton: false,
+          }).setDOMContent(popupContent);
+
+          employeeMarkerRef.current = new maplibregl.Marker({
+            element: el,
+            anchor: 'center',
+          })
+            .setLngLat([currentLocation.longitude, currentLocation.latitude])
+            .setPopup(popup)
+            .addTo(map.current!);
+        } else {
+          // Update location smoothly
+          employeeMarkerRef.current.setLngLat([currentLocation.longitude, currentLocation.latitude]);
+        }
+      } else {
+        if (employeeMarkerRef.current) {
+          employeeMarkerRef.current.remove();
+          employeeMarkerRef.current = null;
+        }
+      }
+    } catch (e) {
+      console.error('Error rendering employee location marker:', e);
+    }
+  }, [currentLocation, isStyleLoaded]);
+
+  // Handle selected marker camera centering & active popup synchronization
+  useEffect(() => {
+    if (!map.current || !isStyleLoaded) return;
+
+    try {
       if (selectedMarkerId) {
         const marker = markersRef.current.find((m) => m.id === selectedMarkerId);
-        if (marker) {
-          // Smoothly center the map on the selected customer without zooming out
+        if (marker && isValidCoordinate(marker.latitude, marker.longitude)) {
+          // Smoothly center the map on the selected customer without jarring zoom
           map.current.flyTo({
             center: [marker.longitude, marker.latitude],
             zoom: Math.max(map.current.getZoom(), 13),
@@ -726,18 +733,19 @@ export function FieldTrackMap({
           }
 
           const popupContainer = document.createElement('div');
-          popupContainer.className = 'font-sans p-1 min-w-[160px]';
+          popupContainer.className = 'font-sans p-1 min-w-[180px]';
           popupContainer.innerHTML = `
             <div style="font-weight: 700; color: #14213D; font-size: 13px; margin-bottom: 2px;">${escapeHtml(marker.label || 'Selected Outlet')}</div>
-            <div style="font-size: 11px; color: #64748B; margin-bottom: 2px;">Coordinates: ${marker.latitude.toFixed(4)}°, ${marker.longitude.toFixed(4)}°</div>
-            <div style="display: inline-block; font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 4px; background: #f1f5f9; color: #334155; margin-top: 2px;">Active Outlet</div>
+            ${marker.outletCode ? `<div style="font-size: 11px; color: #475569; margin-bottom: 2px;">Code: <span style="font-family: monospace; font-weight: 600;">${escapeHtml(marker.outletCode)}</span></div>` : ''}
+            <div style="font-size: 11px; color: #64748B; margin-bottom: 4px;">Coordinates: ${marker.latitude.toFixed(4)}°, ${marker.longitude.toFixed(4)}°</div>
+            <div style="display: inline-block; font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 4px; background: #fef3c7; color: #92400e;">Active Outlet</div>
           `;
 
           popupRef.current = new maplibregl.Popup({
-            offset: 16,
-            closeButton: false,
+            offset: 24,
+            closeButton: true,
             closeOnClick: false,
-            className: 'fieldtrack-map-popup',
+            className: 'fieldtrack-map-selected-popup',
           })
             .setLngLat([marker.longitude, marker.latitude])
             .setDOMContent(popupContainer)

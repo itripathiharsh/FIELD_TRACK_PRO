@@ -13,13 +13,16 @@ import {
   RotateCcw,
   ExternalLink,
   Info,
+  Compass,
+  Crosshair,
+  Radio,
 } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { PageHeader } from '../components/ui/PageHeader';
 import { Button } from '../components/ui/Button';
 import { EmptyState } from '../components/ui/EmptyState';
 import { ErrorBanner } from '../components/ui/ErrorBanner';
-import { FieldTrackMap, MapMarker, TerritoryCircle } from '../components/maps/FieldTrackMap';
+import { FieldTrackMap, MapMarker, TerritoryCircle, CurrentUserLocation } from '../components/maps/FieldTrackMap';
 import { apiClient } from '../api/client';
 import { Customer, Territory, Area, Employee } from '../types';
 
@@ -32,7 +35,12 @@ export const MapPage: React.FC = () => {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
+
+  // Live GPS Telemetry state
+  const [currentLocation, setCurrentLocation] = useState<CurrentUserLocation | null>(null);
+  const [gpsStatus, setGpsStatus] = useState<'idle' | 'locating' | 'active' | 'denied' | 'unavailable'>('locating');
+  const [gpsError, setGpsError] = useState<string | null>(null);
+
   // Selection & filter state
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -42,6 +50,57 @@ export const MapPage: React.FC = () => {
 
   useEffect(() => {
     loadMapData();
+  }, []);
+
+  // Continuous real-time GPS tracking
+  useEffect(() => {
+    if (!navigator.geolocation) {
+      setGpsStatus('unavailable');
+      setGpsError('Geolocation is not supported by your browser');
+      return;
+    }
+
+    setGpsStatus('locating');
+
+    const updatePosition = (position: GeolocationPosition) => {
+      const { latitude, longitude, accuracy } = position.coords;
+      setCurrentLocation({
+        latitude,
+        longitude,
+        accuracy,
+        label: 'Your Current Location',
+      });
+      setGpsStatus('active');
+      setGpsError(null);
+    };
+
+    const handleGpsError = (err: GeolocationPositionError) => {
+      if (err.code === err.PERMISSION_DENIED) {
+        setGpsStatus('denied');
+        setGpsError('Location access was denied in browser permissions');
+      } else {
+        setGpsStatus('unavailable');
+        setGpsError(err.message || 'Unable to retrieve current location');
+      }
+    };
+
+    // Quick initial reading
+    navigator.geolocation.getCurrentPosition(updatePosition, handleGpsError, {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 10000,
+    });
+
+    // Real-time position watcher
+    const watchId = navigator.geolocation.watchPosition(updatePosition, handleGpsError, {
+      enableHighAccuracy: true,
+      timeout: 15000,
+      maximumAge: 5000,
+    });
+
+    return () => {
+      navigator.geolocation.clearWatch(watchId);
+    };
   }, []);
 
   const loadMapData = async () => {
@@ -68,6 +127,32 @@ export const MapPage: React.FC = () => {
       setIsLoading(false);
     }
   };
+
+  const handleLocateMe = useCallback(() => {
+    if (!navigator.geolocation) {
+      setError('Geolocation is not supported by your browser');
+      return;
+    }
+    setGpsStatus('locating');
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude, accuracy } = pos.coords;
+        setCurrentLocation({
+          latitude,
+          longitude,
+          accuracy,
+          label: 'Your Current Location',
+        });
+        setGpsStatus('active');
+        setGpsError(null);
+      },
+      (err) => {
+        setGpsStatus(err.code === err.PERMISSION_DENIED ? 'denied' : 'unavailable');
+        setGpsError(err.message);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
+    );
+  }, []);
 
   // Valid customers with coordinates
   const customersWithLocation = useMemo(() => {
@@ -156,13 +241,15 @@ export const MapPage: React.FC = () => {
       }));
   }, [territories, selectedZoneId]);
 
-  // Map markers from filtered customers
+  // Map markers from filtered customers with enriched metadata
   const markers: MapMarker[] = useMemo(() => {
     return filteredCustomers.map((c) => ({
       id: c.id,
       latitude: c.location!.latitude,
       longitude: c.location!.longitude,
       label: c.name,
+      outletCode: c.outlet_code || undefined,
+      address: c.address || undefined,
       color: MARKER_COLOR,
     }));
   }, [filteredCustomers]);
@@ -200,21 +287,17 @@ export const MapPage: React.FC = () => {
     setSelectedCustomer(null);
   }, []);
 
-  // Auto-clear selection when the selected outlet is no longer in the filtered
-  // dataset (e.g. user narrows filter after selecting a marker).
+  // Auto-clear selection when the selected outlet is no longer in the filtered dataset
   useEffect(() => {
     if (selectedCustomer && !filteredCustomers.some((c) => c.id === selectedCustomer.id)) {
       setSelectedCustomer(null);
     }
   }, [filteredCustomers, selectedCustomer]);
 
-  // Stable onError callback — never changes identity so FieldTrackMap's init
-  // effect (which depends on this) is not re-triggered on filter changes.
   const handleMapError = useCallback((msg: string) => setError(msg), []);
 
-  // Stable onMarkerClick callback — identity stable across filter renders.
   const handleMarkerClick = useCallback(
-    (marker: import('../components/maps/FieldTrackMap').MapMarker) => {
+    (marker: MapMarker) => {
       const customer = customersWithLocation.find((c) => c.id === marker.id);
       setSelectedCustomer(customer || null);
     },
@@ -250,7 +333,7 @@ export const MapPage: React.FC = () => {
         />
       )}
 
-      {/* Operation Metrics Quick Summary */}
+      {/* Operation Metrics & GPS Telemetry Summary */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-space-4">
         <Card variant="flat" className="p-space-3 bg-surface-container-low border border-surface-container-highest">
           <div className="flex items-center gap-space-2 text-on-surface-variant">
@@ -282,13 +365,30 @@ export const MapPage: React.FC = () => {
           </p>
         </Card>
 
+        {/* GPS Live Telemetry Card */}
         <Card variant="flat" className="p-space-3 bg-surface-container-low border border-surface-container-highest">
-          <div className="flex items-center gap-space-2 text-on-surface-variant">
-            <UserCheck className="w-4 h-4 text-success" />
-            <span className="font-caption text-xs font-semibold uppercase tracking-wider">Field Force</span>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-space-2 text-on-surface-variant">
+              <Radio className={`w-4 h-4 ${gpsStatus === 'active' ? 'text-sky-500 animate-pulse' : 'text-outline'}`} />
+              <span className="font-caption text-xs font-semibold uppercase tracking-wider">Live GPS</span>
+            </div>
+            {gpsStatus === 'active' && (
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-sky-100 text-sky-800">
+                Online
+              </span>
+            )}
           </div>
-          <p className="font-headline-md text-xl font-bold text-primary mt-1">
-            {employees.length} Reps
+          <p
+            className="font-headline-md text-sm font-bold text-on-surface mt-1 truncate"
+            title={gpsError || (currentLocation ? `Accuracy: ±${Math.round(currentLocation.accuracy || 0)}m` : 'GPS Position')}
+          >
+            {gpsStatus === 'active' && currentLocation
+              ? `${currentLocation.latitude.toFixed(4)}°, ${currentLocation.longitude.toFixed(4)}°`
+              : gpsStatus === 'locating'
+              ? 'Acquiring GPS...'
+              : gpsStatus === 'denied'
+              ? 'Location Denied'
+              : gpsError || 'GPS Inactive'}
           </p>
         </Card>
       </div>
@@ -308,7 +408,7 @@ export const MapPage: React.FC = () => {
             />
           </div>
 
-          {/* Filter Dropdowns */}
+          {/* Filter Dropdowns & Actions */}
           <div className="flex flex-wrap items-center gap-space-3">
             {/* Zone Filter */}
             <select
@@ -358,6 +458,18 @@ export const MapPage: React.FC = () => {
               ))}
             </select>
 
+            {/* Locate Me Button */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleLocateMe}
+              className="flex items-center gap-space-1.5 text-sky-700 border-sky-300 hover:bg-sky-50"
+              title="Refresh / Locate My GPS Position"
+            >
+              <Crosshair className="w-3.5 h-3.5 text-sky-600" />
+              <span>Locate Me</span>
+            </Button>
+
             {/* Reset Filters / View */}
             {(searchQuery || selectedZoneId !== 'ALL' || selectedAreaId !== 'ALL' || selectedEmployeeId !== 'ALL') && (
               <Button
@@ -374,8 +486,7 @@ export const MapPage: React.FC = () => {
         </div>
       </Card>
 
-      {/* Main Map Card — always rendered once data is available; filter changes
-          update markers via setData() without destroying the map instance */}
+      {/* Main Map Card */}
       {isLoading ? (
         <Card>
           <div className="flex items-center justify-center h-96">
@@ -387,7 +498,7 @@ export const MapPage: React.FC = () => {
             </div>
           </div>
         </Card>
-      ) : customersWithLocation.length === 0 && territoryCircles.length === 0 ? (
+      ) : customersWithLocation.length === 0 && territoryCircles.length === 0 && !currentLocation ? (
         <EmptyState
           title="No Location Data"
           subtitle="No customers or territories have valid geographic coordinates. Add location data to see them on the map."
@@ -420,6 +531,7 @@ export const MapPage: React.FC = () => {
             markers={markers}
             territoryCircles={territoryCircles}
             selectedMarkerId={selectedCustomer?.id || null}
+            currentLocation={currentLocation}
             autoFitBounds={true}
             height="520px"
             enableClustering={true}
@@ -454,7 +566,34 @@ export const MapPage: React.FC = () => {
               </h2>
             </div>
 
-            <div className="flex items-center gap-space-3">
+            <div className="flex flex-wrap items-center gap-space-3">
+              {/* Google Maps External Navigation */}
+              {selectedCustomer.location && (
+                <a
+                  href={`https://www.google.com/maps/dir/?api=1&destination=${selectedCustomer.location.latitude},${selectedCustomer.location.longitude}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="flex items-center gap-space-1.5 font-semibold"
+                    title="Open turn-by-turn directions in Google Maps"
+                  >
+                    <Navigation className="w-3.5 h-3.5 text-primary" />
+                    <span>Navigate (Google Maps)</span>
+                    <ExternalLink className="w-3 h-3 ml-0.5 opacity-75" />
+                  </Button>
+                </a>
+              )}
+
+              <Link to={`/customers/${selectedCustomer.id}`}>
+                <Button variant="primary" size="sm" className="flex items-center gap-space-1.5">
+                  <span>View Full Profile</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </Button>
+              </Link>
+
               <Button
                 variant="outline"
                 size="sm"
@@ -464,12 +603,6 @@ export const MapPage: React.FC = () => {
                 <RotateCcw className="w-3.5 h-3.5" />
                 Clear Selection
               </Button>
-              <Link to={`/customers/${selectedCustomer.id}`}>
-                <Button variant="primary" size="sm" className="flex items-center gap-space-1.5">
-                  <span>View Full Profile</span>
-                  <ExternalLink className="w-3.5 h-3.5" />
-                </Button>
-              </Link>
             </div>
           </div>
 
@@ -525,7 +658,7 @@ export const MapPage: React.FC = () => {
             {/* Geofence & Coordinates */}
             <div className="space-y-1">
               <div className="flex items-center gap-space-1.5 text-on-surface-variant font-caption text-xs font-semibold uppercase tracking-wider">
-                <Navigation className="w-3.5 h-3.5 text-tertiary" />
+                <Compass className="w-3.5 h-3.5 text-tertiary" />
                 <span>Geofence & Coordinates</span>
               </div>
               <p className="font-body-md text-sm text-on-surface font-medium">
@@ -581,7 +714,7 @@ export const MapPage: React.FC = () => {
         <h3 className="font-headline-sm text-sm text-primary font-bold mb-space-2">
           Map Legend & Telemetry Indicators
         </h3>
-        <div className="flex flex-wrap items-center gap-space-5 font-caption text-xs text-on-surface-variant">
+        <div className="flex flex-wrap items-center gap-space-6 font-caption text-xs text-on-surface-variant">
           <div className="flex items-center gap-space-2">
             <div
               className="w-4 h-4 rounded-full border-2 border-white shadow"
@@ -589,19 +722,20 @@ export const MapPage: React.FC = () => {
             />
             <span>Customer Outlet Marker</span>
           </div>
+
           <div className="flex items-center gap-space-2">
-            <div
-              className="w-5 h-5 rounded-full border-2 border-white shadow flex items-center justify-center text-[9px] font-bold text-white"
-              style={{ backgroundColor: '#14213D' }}
-            >
-              N
+            <div className="relative flex items-center justify-center w-4 h-4">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-sky-500 border border-white"></span>
             </div>
-            <span>Outlet Cluster (tap to expand)</span>
+            <span className="font-medium text-sky-800">Your Current Location (Live GPS)</span>
           </div>
+
           <div className="flex items-center gap-space-2">
             <div className="w-5 h-5 rounded-full border-2 border-primary bg-secondary-container/40 ring-2 ring-secondary-container shadow" />
             <span>Selected Outlet (active inspection)</span>
           </div>
+
           <div className="flex items-center gap-space-2">
             <div className="w-4 h-4 rounded-full border-2 border-[#14213D] bg-[#14213D]/20 shadow" />
             <span>Operational Zone Coverage Area</span>

@@ -1,6 +1,13 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { render, waitFor } from '@testing-library/react';
-import { FieldTrackMap, MapMarker, TerritoryCircle, getBoundsForMarkersAndCircles } from './FieldTrackMap';
+import {
+    FieldTrackMap,
+    MapMarker,
+    TerritoryCircle,
+    CurrentUserLocation,
+    getBoundsForMarkersAndCircles,
+    isValidCoordinate,
+} from './FieldTrackMap';
 
 const { mockFitBounds, mockFlyTo, mockResize } = vi.hoisted(() => ({
     mockFitBounds: vi.fn(),
@@ -11,7 +18,7 @@ const { mockFitBounds, mockFlyTo, mockResize } = vi.hoisted(() => ({
 // Mock MapLibre GL JS
 vi.mock('maplibre-gl', () => {
     class MockMap {
-        on(event: string, callback: () => void) {
+        on(event: string, callback: (e?: unknown) => void) {
             if (event === 'load') {
                 setTimeout(() => callback(), 0);
             }
@@ -38,9 +45,15 @@ vi.mock('maplibre-gl', () => {
     }
 
     class MockMarker {
+        private _element: HTMLElement;
+        constructor(opts?: { element?: HTMLElement }) {
+            this._element = opts?.element || document.createElement('div');
+        }
         setLngLat() { return this; }
         setPopup() { return this; }
         addTo() { return this; }
+        remove() {}
+        getElement() { return this._element; }
     }
 
     class MockPopup {
@@ -59,11 +72,13 @@ vi.mock('maplibre-gl', () => {
             Marker: MockMarker,
             Popup: MockPopup,
             NavigationControl: MockNavigationControl,
+            setWorkerUrl: vi.fn(),
         },
         Map: MockMap,
         Marker: MockMarker,
         Popup: MockPopup,
         NavigationControl: MockNavigationControl,
+        setWorkerUrl: vi.fn(),
     };
 });
 
@@ -73,6 +88,7 @@ vi.mock('./tileConfig', () => ({
         styleObject: { version: 8, sources: {}, layers: [] },
         styleUrl: null,
     }),
+    MAPLIBRE_WORKER_URL: 'https://test-worker-url.js',
 }));
 
 const mockMarkers: MapMarker[] = [
@@ -84,6 +100,13 @@ const mockMarkers: MapMarker[] = [
 const mockCircles: TerritoryCircle[] = [
     { id: 't1', centerLat: 26.8467, centerLng: 80.9462, radiusKm: 15, name: 'Lucknow Zone' },
 ];
+
+const mockUserLocation: CurrentUserLocation = {
+    latitude: 12.9750,
+    longitude: 77.5900,
+    accuracy: 10,
+    label: 'Your Current Location',
+};
 
 describe('FieldTrackMap', () => {
     beforeEach(() => {
@@ -105,14 +128,17 @@ describe('FieldTrackMap', () => {
         expect(true).toBe(true);
     });
 
-    it('renders with multiple markers for clustering', () => {
-        render(<FieldTrackMap markers={mockMarkers} enableClustering={true} />);
+    it('renders with live employee GPS currentLocation marker', () => {
+        render(<FieldTrackMap markers={mockMarkers} currentLocation={mockUserLocation} />);
         expect(true).toBe(true);
     });
 
-    it('renders with clustering disabled', () => {
-        render(<FieldTrackMap markers={mockMarkers} enableClustering={false} />);
-        expect(true).toBe(true);
+    it('validates coordinates accurately with isValidCoordinate', () => {
+        expect(isValidCoordinate(12.9716, 77.5946)).toBe(true);
+        expect(isValidCoordinate(0, 0)).toBe(false); // Null Island rejected
+        expect(isValidCoordinate(null, 77.5)).toBe(false);
+        expect(isValidCoordinate(95, 77.5)).toBe(false);
+        expect(isValidCoordinate(12.5, 190)).toBe(false);
     });
 
     it('filters out markers at Null Island', () => {
@@ -120,16 +146,7 @@ describe('FieldTrackMap', () => {
             ...mockMarkers,
             { id: 'null', latitude: 0, longitude: 0, label: 'Null Island' },
         ];
-        render(<FieldTrackMap markers={markersWithNullIsland} enableClustering={true} />);
-        expect(true).toBe(true);
-    });
-
-    it('handles markers with invalid coordinates', () => {
-        const markersWithInvalid: MapMarker[] = [
-            ...mockMarkers,
-            { id: 'invalid', latitude: 91, longitude: 181, label: 'Invalid' },
-        ];
-        render(<FieldTrackMap markers={markersWithInvalid} enableClustering={true} />);
+        render(<FieldTrackMap markers={markersWithNullIsland} />);
         expect(true).toBe(true);
     });
 
@@ -172,12 +189,12 @@ describe('FieldTrackMap', () => {
         expect(mockFitBounds).toHaveBeenCalledTimes(1);
     });
 
-    it('correctly calculates bounding box with getBoundsForMarkersAndCircles', () => {
-        const bounds = getBoundsForMarkersAndCircles(mockMarkers, mockCircles);
+    it('correctly calculates bounding box with getBoundsForMarkersAndCircles including employee location', () => {
+        const bounds = getBoundsForMarkersAndCircles(mockMarkers, mockCircles, mockUserLocation);
         expect(bounds).not.toBeNull();
         if (bounds) {
             const [[minLng, minLat], [maxLng, maxLat]] = bounds;
-            expect(minLng).toBeLessThanOrEqual(77.5946);
+            expect(minLng).toBeLessThanOrEqual(77.5900);
             expect(maxLng).toBeGreaterThanOrEqual(80.9462);
             expect(minLat).toBeLessThanOrEqual(12.9716);
             expect(maxLat).toBeGreaterThanOrEqual(26.8467);
@@ -187,7 +204,8 @@ describe('FieldTrackMap', () => {
     it('returns null bounds when all coordinates are empty or invalid', () => {
         const bounds = getBoundsForMarkersAndCircles(
             [{ id: 'invalid', latitude: 0, longitude: 0 }],
-            [{ id: 't_invalid', centerLat: 0, centerLng: 0, radiusKm: 0 }]
+            [{ id: 't_invalid', centerLat: 0, centerLng: 0, radiusKm: 0 }],
+            { latitude: 0, longitude: 0 }
         );
         expect(bounds).toBeNull();
     });

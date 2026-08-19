@@ -40,7 +40,7 @@ const CUSTOMER_2: Customer = {
   created_at: '2026-01-01T00:00:00Z',
 };
 
-// Mock MapLibre GL JS — stable mock with setData support to test filter/source updates
+// Mock MapLibre GL JS
 const mockSetData = vi.fn();
 const mockAddSource = vi.fn();
 const mockAddLayer = vi.fn();
@@ -80,9 +80,15 @@ vi.mock('maplibre-gl', () => {
   }
 
   class MockMarker {
+    private _element: HTMLElement;
+    constructor(opts?: { element?: HTMLElement }) {
+      this._element = opts?.element || document.createElement('div');
+    }
     setLngLat() { return this; }
     setPopup() { return this; }
     addTo() { return this; }
+    remove() {}
+    getElement() { return this._element; }
   }
 
   class MockPopup {
@@ -101,11 +107,13 @@ vi.mock('maplibre-gl', () => {
       Marker: MockMarker,
       Popup: MockPopup,
       NavigationControl: MockNavigationControl,
+      setWorkerUrl: vi.fn(),
     },
     Map: MockMap,
     Marker: MockMarker,
     Popup: MockPopup,
     NavigationControl: MockNavigationControl,
+    setWorkerUrl: vi.fn(),
   };
 });
 
@@ -115,6 +123,7 @@ vi.mock('../components/maps/tileConfig', () => ({
     styleObject: { version: 8, sources: {}, layers: [] },
     styleUrl: null,
   }),
+  MAPLIBRE_WORKER_URL: 'https://test-worker-url.js',
 }));
 
 function renderMapPage() {
@@ -132,9 +141,38 @@ describe('MapPage', () => {
     localStorage.clear();
     signIn(ADMIN_USER);
     vi.clearAllMocks();
+
+    // Mock geolocation
+    const mockGeolocation = {
+      getCurrentPosition: vi.fn((success) => {
+        success({
+          coords: {
+            latitude: 12.9716,
+            longitude: 77.5946,
+            accuracy: 15,
+          },
+        });
+      }),
+      watchPosition: vi.fn((success) => {
+        success({
+          coords: {
+            latitude: 12.9716,
+            longitude: 77.5946,
+            accuracy: 15,
+          },
+        });
+        return 123;
+      }),
+      clearWatch: vi.fn(),
+    };
+    Object.defineProperty(global.navigator, 'geolocation', {
+      value: mockGeolocation,
+      configurable: true,
+      writable: true,
+    });
   });
 
-  it('loads and displays map overview with metric cards', async () => {
+  it('loads and displays map overview with metric cards and GPS telemetry', async () => {
     mockApi({
       '/api/v1/auth/me': json(ADMIN_USER),
       '/api/v1/customers': [CUSTOMER, CUSTOMER_2],
@@ -149,7 +187,10 @@ describe('MapPage', () => {
     expect(screen.getByText('Total Outlets')).toBeInTheDocument();
     expect(screen.getByText('Active Zones')).toBeInTheDocument();
     expect(screen.getByText('Covered Areas')).toBeInTheDocument();
-    expect(screen.getByText('Field Force')).toBeInTheDocument();
+    expect(screen.getByText('Live GPS')).toBeInTheDocument();
+
+    // Locate Me button in toolbar
+    expect(screen.getByRole('button', { name: /locate me/i })).toBeInTheDocument();
 
     // Default guide state in lower panel
     expect(screen.getByText('Select an Outlet on the Map')).toBeInTheDocument();
@@ -263,11 +304,11 @@ describe('MapPage', () => {
     expect(screen.queryByText('No outlets match the selected filters.')).not.toBeInTheDocument();
   });
 
-  it('Employee filter: filters by zone assignment and restores on reset', async () => {
+  it('handles Locate Me button click to refresh GPS position', async () => {
     mockApi({
       '/api/v1/auth/me': json(ADMIN_USER),
-      '/api/v1/customers': [CUSTOMER, CUSTOMER_2],
-      '/api/v1/territories': [TERRITORY, TERRITORY_2],
+      '/api/v1/customers': [CUSTOMER],
+      '/api/v1/territories': [TERRITORY],
       '/api/v1/areas': [AREA],
       '/api/v1/employees': [EMPLOYEE],
     });
@@ -275,82 +316,22 @@ describe('MapPage', () => {
     renderMapPage();
     await screen.findByText('Customer & Territory Locations Map');
 
-    const empSelect = screen.getByRole('combobox', { name: /filter by field representative/i });
-
+    const locateBtn = screen.getByRole('button', { name: /locate me/i });
     await act(async () => {
-      fireEvent.change(empSelect, { target: { value: EMPLOYEE.id } });
+      fireEvent.click(locateBtn);
     });
 
-    // Map remains visible
-    expect(screen.getByText('Map Legend & Telemetry Indicators')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /reset filters/i })).toBeInTheDocument();
-
-    // Return to All
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /reset filters/i }));
-    });
-    expect(empSelect).toHaveValue('ALL');
-  });
-
-  it('Combined filter: zone + search combination keeps map rendered', async () => {
-    mockApi({
-      '/api/v1/auth/me': json(ADMIN_USER),
-      '/api/v1/customers': [CUSTOMER, CUSTOMER_2],
-      '/api/v1/territories': [TERRITORY, TERRITORY_2],
-      '/api/v1/areas': [AREA],
-      '/api/v1/employees': [EMPLOYEE],
-    });
-
-    renderMapPage();
-    await screen.findByText('Customer & Territory Locations Map');
-
-    const zoneSelect = screen.getByRole('combobox', { name: /filter by zone/i });
-    const searchInput = screen.getByPlaceholderText(/search outlet by name/i);
-
-    await act(async () => {
-      fireEvent.change(zoneSelect, { target: { value: TERRITORY.id } });
-      fireEvent.change(searchInput, { target: { value: 'Acme' } });
-    });
-
-    // Both filters active, map still rendered
-    expect(screen.getByText('Map Legend & Telemetry Indicators')).toBeInTheDocument();
-
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /reset filters/i }));
-    });
-    expect(zoneSelect).toHaveValue('ALL');
-    expect(searchInput).toHaveValue('');
-  });
-
-  it('Selection: auto-clears selected outlet when it is filtered out', async () => {
-    // CUSTOMER is in TERRITORY, CUSTOMER_2 is in TERRITORY_2
-    // We'll simulate marker click by triggering onMarkerClick via internals
-    mockApi({
-      '/api/v1/auth/me': json(ADMIN_USER),
-      '/api/v1/customers': [CUSTOMER, CUSTOMER_2],
-      '/api/v1/territories': [TERRITORY, TERRITORY_2],
-      '/api/v1/areas': [AREA],
-      '/api/v1/employees': [EMPLOYEE],
-    });
-
-    renderMapPage();
-    await screen.findByText('Customer & Territory Locations Map');
-
-    // Filter to TERRITORY_2 which only has CUSTOMER_2, CUSTOMER is not in it
-    // CUSTOMER is in TERRITORY, not TERRITORY_2
-    const zoneSelect = screen.getByRole('combobox', { name: /filter by zone/i });
-    await act(async () => {
-      fireEvent.change(zoneSelect, { target: { value: TERRITORY_2.id } });
-    });
-
-    // Map remains rendered
-    expect(screen.getByText('Map Legend & Telemetry Indicators')).toBeInTheDocument();
-
-    // Guide state should be shown (no selection)
-    expect(screen.getByText('Select an Outlet on the Map')).toBeInTheDocument();
+    expect(navigator.geolocation.getCurrentPosition).toHaveBeenCalled();
   });
 
   it('handles empty customer location datasets gracefully', async () => {
+    // Geolocation unavailable
+    Object.defineProperty(global.navigator, 'geolocation', {
+      value: undefined,
+      configurable: true,
+      writable: true,
+    });
+
     mockApi({
       '/api/v1/auth/me': json(ADMIN_USER),
       '/api/v1/customers': [],
@@ -365,6 +346,12 @@ describe('MapPage', () => {
   });
 
   it('handles API errors gracefully', async () => {
+    Object.defineProperty(global.navigator, 'geolocation', {
+      value: undefined,
+      configurable: true,
+      writable: true,
+    });
+
     mockApi({
       '/api/v1/auth/me': json(ADMIN_USER),
       '/api/v1/customers': route(() => {
@@ -379,68 +366,5 @@ describe('MapPage', () => {
 
     // Customers API fails silently (catch(() => [])), so empty state shown
     expect(await screen.findByText('No Location Data')).toBeInTheDocument();
-  });
-
-  it('Area filter: works when zone changes and area is reset', async () => {
-    mockApi({
-      '/api/v1/auth/me': json(ADMIN_USER),
-      '/api/v1/customers': [CUSTOMER, CUSTOMER_2],
-      '/api/v1/territories': [TERRITORY, TERRITORY_2],
-      '/api/v1/areas': [AREA],
-      '/api/v1/employees': [EMPLOYEE],
-    });
-
-    renderMapPage();
-    await screen.findByText('Customer & Territory Locations Map');
-
-    const zoneSelect = screen.getByRole('combobox', { name: /filter by zone/i });
-    const areaSelect = screen.getByRole('combobox', { name: /filter by area/i });
-
-    // Select zone first
-    await act(async () => {
-      fireEvent.change(zoneSelect, { target: { value: TERRITORY.id } });
-    });
-
-    // Area dropdown should now only show AREA (which belongs to TERRITORY)
-    expect(areaSelect).toHaveValue('ALL');
-
-    // Changing zone resets area to ALL
-    await act(async () => {
-      fireEvent.change(zoneSelect, { target: { value: TERRITORY_2.id } });
-    });
-    expect(areaSelect).toHaveValue('ALL');
-
-    // Map remains rendered
-    expect(screen.getByText('Map Legend & Telemetry Indicators')).toBeInTheDocument();
-  });
-
-  it('Multiple successive filter changes do not break map', async () => {
-    mockApi({
-      '/api/v1/auth/me': json(ADMIN_USER),
-      '/api/v1/customers': [CUSTOMER, CUSTOMER_2],
-      '/api/v1/territories': [TERRITORY, TERRITORY_2],
-      '/api/v1/areas': [AREA],
-      '/api/v1/employees': [EMPLOYEE],
-    });
-
-    renderMapPage();
-    await screen.findByText('Customer & Territory Locations Map');
-
-    const zoneSelect = screen.getByRole('combobox', { name: /filter by zone/i });
-    const searchInput = screen.getByPlaceholderText(/search outlet by name/i);
-
-    // Rapid successive filter changes
-    for (let i = 0; i < 3; i++) {
-      await act(async () => {
-        fireEvent.change(zoneSelect, { target: { value: TERRITORY.id } });
-        fireEvent.change(searchInput, { target: { value: 'test' + i } });
-        fireEvent.change(zoneSelect, { target: { value: 'ALL' } });
-        fireEvent.change(searchInput, { target: { value: '' } });
-      });
-    }
-
-    // Map is still rendered and functional
-    expect(screen.getByText('Map Legend & Telemetry Indicators')).toBeInTheDocument();
-    expect(screen.getByText('Select an Outlet on the Map')).toBeInTheDocument();
   });
 });

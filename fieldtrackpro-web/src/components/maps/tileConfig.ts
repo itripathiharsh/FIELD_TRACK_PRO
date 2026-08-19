@@ -58,6 +58,9 @@ function isValidUrl(url: string): boolean {
     }
 }
 
+export const MAPLIBRE_WORKER_URL =
+    'https://cdn.jsdelivr.net/npm/maplibre-gl@6.2.0/dist/maplibre-gl-worker.mjs';
+
 export function getTileProviderConfig(): TileProviderConfig {
     const envUrl = import.meta.env.VITE_MAPLIBRE_TILE_URL;
 
@@ -75,3 +78,4 @@ export function getTileProviderConfig(): TileProviderConfig {
 export function isTileConfigured(): boolean {
     return true;
 }
+
