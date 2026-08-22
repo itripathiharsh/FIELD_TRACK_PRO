@@ -38,13 +38,21 @@ def run() -> None:
                OR customer_id NOT IN (SELECT id FROM customers WHERE outlet_code IS NOT NULL);
         """))
         conn.execute(text("""
+            DELETE FROM form_submissions 
+            WHERE visit_id IN (SELECT id FROM visits WHERE id::text LIKE '44444444-%' OR customer_id NOT IN (SELECT id FROM customers WHERE outlet_code IS NOT NULL));
+        """))
+        conn.execute(text("""
             DELETE FROM visits 
             WHERE id::text LIKE '44444444-%' 
                OR customer_id NOT IN (SELECT id FROM customers WHERE outlet_code IS NOT NULL);
         """))
         conn.execute(text("""
             DELETE FROM form_submissions 
-            WHERE customer_id NOT IN (SELECT id FROM customers WHERE outlet_code IS NOT NULL);
+            WHERE form_id IN (SELECT id FROM form_templates WHERE name IN ('Debug Publish 2', 'Safety Inspection', 'E2E Safety Inspection', 'Sales guy', 'xyz', 'new'));
+        """))
+        conn.execute(text("""
+            DELETE FROM form_templates 
+            WHERE name IN ('Debug Publish 2', 'Safety Inspection', 'E2E Safety Inspection', 'Sales guy', 'xyz', 'new');
         """))
         conn.execute(text("""
             DELETE FROM customers 
