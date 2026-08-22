@@ -82,15 +82,8 @@ export const SettingsPage: React.FC = () => {
   const adminCount = employees.filter(
     (e) =>
       e.working_profile?.toLowerCase().includes('director') ||
-      e.working_profile?.toLowerCase().includes('manager'),
-  ).length;
-
-  const fieldCount = employees.filter(
-    (e) =>
-      e.working_profile?.toLowerCase().includes('fos') ||
-      e.working_profile?.toLowerCase().includes('tse') ||
-      e.working_profile?.toLowerCase().includes('delivery') ||
-      e.working_profile?.toLowerCase().includes('driver'),
+      e.working_profile?.toLowerCase().includes('manager') ||
+      e.working_profile?.toLowerCase().includes('asm'),
   ).length;
 
   const financeCount = employees.filter(
@@ -98,6 +91,8 @@ export const SettingsPage: React.FC = () => {
       e.working_profile?.toLowerCase().includes('accountant') ||
       e.working_profile?.toLowerCase().includes('billing'),
   ).length;
+
+  const fieldCount = Math.max(0, employees.length - adminCount - financeCount);
 
   const tabs: { id: SettingsTab; label: string; icon: React.FC<{ className?: string }> }[] = [
     { id: 'organization', label: 'Organization', icon: Building2 },
@@ -369,15 +364,15 @@ export const SettingsPage: React.FC = () => {
               <div>
                 <h4 className="font-headline-sm text-sm font-bold text-on-surface flex items-center gap-2">
                   Tally Prime / ERP 9 Connector
-                  <span className="text-[10px] font-bold uppercase bg-amber-500/10 text-amber-500 px-2 py-0.5 rounded">
-                    Ready for Sync
+                  <span className="text-[10px] font-bold uppercase bg-error/10 text-error px-2 py-0.5 rounded">
+                    Not Connected • Integration Pending
                   </span>
                 </h4>
                 <p className="text-xs text-on-surface-variant mt-1">
-                  Automated voucher export for field collections (Cash, Cheque, and Bank UTR receipts).
+                  Bi-directional voucher export connector for automated field collection sync. Pending client ERP endpoint &amp; gateway authorization.
                 </p>
               </div>
-              <StatusBadge status="PENDING" size="sm" />
+              <StatusBadge status="INACTIVE" size="sm" />
             </div>
 
             <div className="p-space-4 bg-surface-container-low rounded-lg border border-outline-variant flex items-start justify-between">
@@ -385,11 +380,11 @@ export const SettingsPage: React.FC = () => {
                 <h4 className="font-headline-sm text-sm font-bold text-on-surface flex items-center gap-2">
                   Carto Voyager &amp; MapLibre Spatial Tiles
                   <span className="text-[10px] font-bold uppercase bg-emerald-500/10 text-emerald-500 px-2 py-0.5 rounded">
-                    Connected
+                    Connected (Active)
                   </span>
                 </h4>
                 <p className="text-xs text-on-surface-variant mt-1">
-                  High-resolution vector/raster base map rendering for territory coverage and customer clustering.
+                  High-resolution vector/raster base map rendering for territory coverage boundaries and customer clustering.
                 </p>
               </div>
               <StatusBadge status="ACTIVE" size="sm" />
@@ -431,18 +426,18 @@ export const SettingsPage: React.FC = () => {
               <dt className="text-on-surface-variant block mb-space-1 uppercase font-semibold">
                 Firebase Cloud Messaging (FCM)
               </dt>
-              <dd className="text-on-surface font-semibold text-sm">Real-Time Mobile Push</dd>
+              <dd className="text-on-surface font-semibold text-sm">Schema Ready • Pending Project Key</dd>
               <p className="text-on-surface-variant mt-1 text-[11px]">
-                Instant dispatch alerts and visit reassignment notifications.
+                Mobile push device registry active in database schema. Live dispatch triggers activate upon setting production Firebase service key.
               </p>
             </div>
             <div className="p-space-3 bg-surface-container-low rounded-lg border border-outline-variant">
               <dt className="text-on-surface-variant block mb-space-1 uppercase font-semibold">
-                CUG Telephony &amp; SMS
+                CUG Telephony Directory
               </dt>
-              <dd className="text-on-surface font-semibold text-sm">9839011001 – 9839011030</dd>
+              <dd className="text-on-surface font-semibold text-sm">Active Roster (9839011001 – 9839011030)</dd>
               <p className="text-on-surface-variant mt-1 text-[11px]">
-                Direct dial and field coordination linked to employee directory.
+                Direct calling &amp; SMS coordination mapped to verified employee CUG mobile numbers.
               </p>
             </div>
           </div>
