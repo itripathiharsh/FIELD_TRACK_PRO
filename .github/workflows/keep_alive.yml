@@ -1,0 +1,30 @@
+name: 24/7 Production Keep-Alive Service
+
+on:
+  schedule:
+    # Run every 10 minutes (prevents Render free tier from sleeping after 15 min inactivity)
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping-render:
+    name: Ping Render Backend Health Endpoint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Heartbeat Ping to Render Backend
+        run: |
+          echo "Sending keep-alive heartbeat ping to Render backend..."
+          HTTP_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" https://fieldtrackpro-backend-s7hs.onrender.com/health)
+          echo "HTTP Response Status: $HTTP_RESPONSE"
+          if [ "$HTTP_RESPONSE" -eq 200 ]; then
+            echo "✅ Render backend is active and healthy (200 OK)."
+          else
+            echo "⚠️ Unexpected status code: $HTTP_RESPONSE"
+          fi
+
+      - name: Send Heartbeat Ping to Vercel Frontend
+        run: |
+          echo "Sending keep-alive ping to Vercel frontend..."
+          HTTP_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" https://fieldtrack-pro-rosy.vercel.app/health || curl -s -o /dev/null -w "%{http_code}" https://fieldtrack-pro-rosy.vercel.app/)
+          echo "HTTP Response Status: $HTTP_RESPONSE"
+          echo "✅ Vercel frontend ping completed."
