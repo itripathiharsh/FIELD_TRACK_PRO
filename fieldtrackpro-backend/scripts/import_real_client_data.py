@@ -288,7 +288,6 @@ def run_import() -> None:
                     contact_number="",
                     address=f"{area_name}, {zone_name}",
                     created_by=admin_user.id,
-                    imported_outstanding_amount=agg_data["market_outstanding"],
                 )
                 session.add(cust_obj)
                 session.flush()
@@ -298,7 +297,6 @@ def run_import() -> None:
                 cust_obj.name = outlet_name or cust_obj.name
                 cust_obj.territory_id = terr_obj.id
                 cust_obj.area_id = area_obj.id
-                cust_obj.imported_outstanding_amount = agg_data["market_outstanding"]
                 outlets_updated += 1
 
             # FOS Assignments
