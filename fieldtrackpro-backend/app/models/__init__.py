@@ -30,8 +30,14 @@ from app.models.payment_proof import PaymentProof
 from app.models.import_batch import ImportBatch, ImportStatus
 from app.models.employee_territory_assignment import EmployeeTerritoryAssignment, AssignmentType
 from app.models.employee_area_assignment import EmployeeAreaAssignment
+from app.models.employee_customer_assignment import EmployeeCustomerAssignment
+from app.models.fos_mapping import FOSEmployeeMapping
+from app.models.outlet_financial_snapshot import OutletFinancialSnapshot
+from app.models.monthly_reporting_period import MonthlyReportingPeriod, MonthlyPeriodStatus
+from app.models.field_exception import FieldException, ExceptionType, ExceptionStatus
 from app.models.login_attempt import LoginAttempt
 from app.models.password_reset import PasswordResetToken
+from app.models.user_device import UserDevice
 
 __all__ = [
     "Base",
@@ -76,6 +82,15 @@ __all__ = [
     "EmployeeTerritoryAssignment",
     "AssignmentType",
     "EmployeeAreaAssignment",
+    "EmployeeCustomerAssignment",
+    "FOSEmployeeMapping",
+    "OutletFinancialSnapshot",
+    "MonthlyReportingPeriod",
+    "MonthlyPeriodStatus",
+    "FieldException",
+    "ExceptionType",
+    "ExceptionStatus",
     "LoginAttempt",
     "PasswordResetToken",
+    "UserDevice",
 ]

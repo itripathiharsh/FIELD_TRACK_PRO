@@ -51,13 +51,37 @@ SEED_EMPLOYEE_ID = "328140a1-d592-42a1-a287-69871f287ed2"
 
 
 def make_admin_token(user_id: str | None = None) -> str:
-    uid = user_id or SEED_ADMIN_ID
-    return create_access_token(uid, Role.ADMIN.value)
+    if user_id:
+        return create_access_token(user_id, Role.ADMIN.value)
+    try:
+        from app.config import settings
+        from sqlalchemy import create_engine, select
+        from sqlalchemy.orm import Session
+        engine = create_engine(settings.database_url.replace("postgresql+asyncpg://", "postgresql://"))
+        with Session(engine) as s:
+            u = s.execute(select(User).where(User.role == Role.ADMIN, User.is_active == True)).scalars().first()
+            if u:
+                return create_access_token(str(u.id), Role.ADMIN.value)
+    except Exception:
+        pass
+    return create_access_token(SEED_ADMIN_ID, Role.ADMIN.value)
 
 
 def make_employee_token(user_id: str | None = None) -> str:
-    uid = user_id or SEED_EMPLOYEE_ID
-    return create_access_token(uid, Role.EMPLOYEE.value)
+    if user_id:
+        return create_access_token(user_id, Role.EMPLOYEE.value)
+    try:
+        from app.config import settings
+        from sqlalchemy import create_engine, select
+        from sqlalchemy.orm import Session
+        engine = create_engine(settings.database_url.replace("postgresql+asyncpg://", "postgresql://"))
+        with Session(engine) as s:
+            u = s.execute(select(User).where(User.role == Role.EMPLOYEE, User.is_active == True)).scalars().first()
+            if u:
+                return create_access_token(str(u.id), Role.EMPLOYEE.value)
+    except Exception:
+        pass
+    return create_access_token(SEED_EMPLOYEE_ID, Role.EMPLOYEE.value)
 
 
 

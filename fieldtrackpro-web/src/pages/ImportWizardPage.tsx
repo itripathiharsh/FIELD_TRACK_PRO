@@ -1,44 +1,35 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   UploadCloud,
   FileSpreadsheet,
-  ArrowRight,
-  ArrowLeft,
   CheckCircle2,
   AlertTriangle,
-  XCircle,
   Building2,
   Receipt,
-  Wallet,
   Download,
   RotateCcw,
   History,
+  Sparkles,
+  Users,
+  ShieldCheck,
+  Check,
+  ArrowRight,
+  ArrowLeft,
 } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 import { Card, CardHeader, CardTitle, CardSubtitle } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { Select } from '../components/ui/Select';
 import { ErrorBanner } from '../components/ui/ErrorBanner';
-import { StatusBadge } from '../components/ui/StatusBadge';
 import { MetricCard } from '../components/ui/MetricCard';
-import { EmptyState } from '../components/ui/EmptyState';
 import { apiClient } from '../api/client';
 import {
   ImportBatchRead,
   ImportPreviewResponse,
-  OutletMatchStrategy,
+  Employee,
 } from '../types';
 
-const STEP_LABELS = [
-  'Upload',
-  'Select Sheet',
-  'Map Columns',
-  'Validate & Preview',
-  'Review',
-  'Confirm Import',
-  'Result',
-];
+type WizardScreen = 'UPLOAD' | 'ANALYZING' | 'FOUND_DATA' | 'READY_TO_IMPORT' | 'SUCCESS';
 
 const buildSuggestedMapping = (p: ImportPreviewResponse): Record<string, string> => {
   const m: Record<string, string> = {};
@@ -49,120 +40,94 @@ const buildSuggestedMapping = (p: ImportPreviewResponse): Record<string, string>
   return m;
 };
 
-/** Step indicator bar - no existing Stepper component in the design system, so this follows the same spacing/typography/color conventions as StatusBadge/PageHeader rather than introducing a new visual language. */
-const StepIndicator: React.FC<{ current: number }> = ({ current }) => (
-  <div className="flex items-center gap-space-1 overflow-x-auto pb-space-1">
-    {STEP_LABELS.map((label, idx) => {
-      const stepNum = idx + 1;
-      const isDone = stepNum < current;
-      const isActive = stepNum === current;
-      return (
-        <React.Fragment key={label}>
-          <div className="flex items-center gap-space-2 shrink-0">
-            <div
-              className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 border ${
-                isDone
-                  ? 'bg-primary-container text-on-primary-container border-primary-container'
-                  : isActive
-                    ? 'bg-primary text-on-primary border-primary'
-                    : 'bg-surface text-on-surface-variant border-outline-variant'
-              }`}
-            >
-              {isDone ? <CheckCircle2 className="w-4 h-4" /> : stepNum}
-            </div>
-            <span
-              className={`font-label-md text-xs uppercase tracking-wider whitespace-nowrap ${
-                isActive ? 'text-primary font-bold' : 'text-on-surface-variant'
-              }`}
-            >
-              {label}
-            </span>
-          </div>
-          {idx < STEP_LABELS.length - 1 && (
-            <div className={`w-6 h-px shrink-0 ${isDone ? 'bg-primary-container' : 'bg-outline-variant'}`} />
-          )}
-        </React.Fragment>
-      );
-    })}
-  </div>
-);
-
 export const ImportWizardPage: React.FC = () => {
   const navigate = useNavigate();
 
-  const [step, setStep] = useState(1);
+  const [screen, setScreen] = useState<WizardScreen>('UPLOAD');
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<ImportPreviewResponse | null>(null);
-  const [sheetName, setSheetName] = useState('');
-  const [mapping, setMapping] = useState<Record<string, string>>({});
-  const [strategy, setStrategy] = useState<OutletMatchStrategy>('outlet_code');
-  const [allowGenerated, setAllowGenerated] = useState(false);
   const [batch, setBatch] = useState<ImportBatchRead | null>(null);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [mapping, setMapping] = useState<Record<string, string>>({});
+  const [fosOverrides, setFosOverrides] = useState<Record<string, string>>({});
+  const [showFixDrawer, setShowFixDrawer] = useState(false);
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [analyzingStatus, setAnalyzingStatus] = useState('Reading Excel structure...');
+
+  useEffect(() => {
+    apiClient.getEmployees()
+      .then((data) => setEmployees(data || []))
+      .catch(() => setEmployees([]));
+  }, []);
 
   const resetAll = () => {
-    setStep(1);
+    setScreen('UPLOAD');
     setFile(null);
     setPreview(null);
-    setSheetName('');
-    setMapping({});
-    setStrategy('outlet_code');
-    setAllowGenerated(false);
     setBatch(null);
+    setMapping({});
+    setFosOverrides({});
+    setShowFixDrawer(false);
     setError(null);
+    setAnalyzingStatus('');
   };
 
   const handleFileSelect = async (f: File) => {
     setError(null);
     setIsLoading(true);
+    setFile(f);
+    setScreen('ANALYZING');
+    setAnalyzingStatus('Reading spreadsheet...');
+
     try {
+      // 1. Preview and auto-detect headers/columns
       const p = await apiClient.previewImportFile(f);
-      setFile(f);
       setPreview(p);
-      setSheetName(p.sheet_name);
-      setMapping(buildSuggestedMapping(p));
-      setStep(2);
+      const suggested = buildSuggestedMapping(p);
+      setMapping(suggested);
+
+      setAnalyzingStatus('Matching customer accounts and sales reps...');
+
+      // 2. Validate in the background
+      const mappedColumns = Object.fromEntries(Object.entries(suggested).filter(([, v]) => v));
+      const b = await apiClient.validateImportFile(f, {
+        sheet_name: p.sheet_name,
+        column_mapping: mappedColumns,
+        outlet_match_strategy: 'outlet_code',
+        allow_generated_invoice_numbers: false,
+        fos_mapping_overrides: {},
+      });
+      setBatch(b);
+
+      // 3. Move directly to "We found your data"
+      setScreen('FOUND_DATA');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to read the uploaded file');
+      setError(err instanceof Error ? err.message : 'Failed to read and analyze spreadsheet');
+      setScreen('UPLOAD');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleSheetChange = async (name: string) => {
-    if (!file) return;
-    setError(null);
-    setIsLoading(true);
-    try {
-      const p = await apiClient.previewImportFile(file, name);
-      setPreview(p);
-      setSheetName(p.sheet_name);
-      setMapping(buildSuggestedMapping(p));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load sheet');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleValidate = async () => {
-    if (!file) return;
+  const handleRevalidate = async () => {
+    if (!file || !preview) return;
     setError(null);
     setIsLoading(true);
     try {
       const mappedColumns = Object.fromEntries(Object.entries(mapping).filter(([, v]) => v));
       const b = await apiClient.validateImportFile(file, {
-        sheet_name: sheetName,
+        sheet_name: preview.sheet_name,
         column_mapping: mappedColumns,
-        outlet_match_strategy: strategy,
-        allow_generated_invoice_numbers: allowGenerated,
+        outlet_match_strategy: 'outlet_code',
+        allow_generated_invoice_numbers: false,
+        fos_mapping_overrides: fosOverrides,
       });
       setBatch(b);
-      setStep(4);
+      setShowFixDrawer(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Validation failed');
+      setError(err instanceof Error ? err.message : 'Failed to apply adjustments');
     } finally {
       setIsLoading(false);
     }
@@ -175,36 +140,44 @@ export const ImportWizardPage: React.FC = () => {
     try {
       const committed = await apiClient.commitImportBatch(batch.id);
       setBatch(committed);
-      setStep(7);
+      setScreen('SUCCESS');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Commit failed');
+      setError(err instanceof Error ? err.message : 'Import failed');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleDownloadErrors = async () => {
+  const handleDownloadCredentials = async () => {
     if (!batch) return;
     try {
-      const url = await apiClient.getImportErrorsCsvObjectUrl(batch.id);
+      const url = await apiClient.getImportCredentialsExcelObjectUrl(batch.id);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `import_${batch.filename}_errors.csv`;
+      a.download = `employee_credentials_${batch.id}.xlsx`;
       document.body.appendChild(a);
       a.click();
       a.remove();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to download error report');
+      setError(err instanceof Error ? err.message : 'Failed to download credentials');
     }
   };
 
-  const summary = batch?.summary;
+  const summary = batch?.summary || {};
+  const planRows: any[] = summary?.plan_rows || [];
+  const detectedType = summary?.detected_type || preview?.detected_type || 'generic';
+  const isEmployeeType = detectedType === 'employee_master';
+  const unmatchedFosList: string[] = summary?.unmatched_fos_names || [];
+
+  const totalReadyRecords = (batch?.rows_created || 0) + (batch?.rows_updated || 0);
+  const totalOutletsFound = batch?.rows_processed || planRows.length;
+  const hasIssues = (batch?.rows_error || 0) > 0 || unmatchedFosList.length > 0;
 
   return (
-    <div className="space-y-space-6">
+    <div className="space-y-space-6 max-w-4xl mx-auto pb-space-12">
       <PageHeader
-        title="Import Excel / MIS Data"
-        subtitle="Upload a client MIS/Tally export and bring outlets, invoices, and collection history into FieldTrack Pro safely."
+        title="Excel / MIS Import"
+        subtitle="Import your SGRG Excel/MIS file to automatically sync customer outlets, balances, and staff."
         actions={
           <Button variant="outline" icon={History} onClick={() => navigate('/imports')}>
             Import History
@@ -212,31 +185,38 @@ export const ImportWizardPage: React.FC = () => {
         }
       />
 
-      <Card>
-        <StepIndicator current={step} />
-      </Card>
-
       {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
 
-      {/* Step 1: Upload */}
-      {step === 1 && (
-        <Card>
+      {/* SCREEN 1: UPLOAD */}
+      {screen === 'UPLOAD' && (
+        <Card className="border-outline-variant/70 shadow-sm">
           <CardHeader>
             <div>
-              <CardTitle>Step 1 · Upload File</CardTitle>
-              <CardSubtitle>Excel workbook (.xlsx or .xls) exported from the client's MIS/Tally system.</CardSubtitle>
+              <CardTitle className="text-xl">Upload SGRG Excel / MIS File</CardTitle>
+              <CardSubtitle className="text-sm mt-1">
+                Upload your SGRG Excel/MIS file. We'll automatically read and prepare the data.
+              </CardSubtitle>
             </div>
           </CardHeader>
+
           <label
             htmlFor="import-file-input"
-            className="flex flex-col items-center justify-center gap-space-3 p-space-10 border-2 border-dashed border-outline-variant rounded-2xl bg-surface-container-low/60 hover:border-primary-container hover:bg-surface-container-low transition-colors cursor-pointer text-center"
+            className="flex flex-col items-center justify-center gap-space-4 p-space-12 my-space-2 border-2 border-dashed border-primary/30 rounded-2xl bg-surface-container-low/40 hover:border-primary hover:bg-surface-container-low transition-all cursor-pointer text-center group"
           >
-            <div className="p-space-4 bg-surface rounded-2xl border border-outline-variant/80 text-primary shadow-xs">
-              <UploadCloud className="w-8 h-8 stroke-[1.5]" />
+            <div className="p-space-5 bg-surface rounded-2xl border border-outline-variant/80 text-primary shadow-sm group-hover:scale-105 transition-transform">
+              <UploadCloud className="w-12 h-12 stroke-[1.5]" />
             </div>
             <div>
-              <p className="font-headline-sm text-sm text-primary font-bold">Click to choose a file, or drag it here</p>
-              <p className="font-caption text-xs text-on-surface-variant mt-1">Supported formats: .xlsx, .xls</p>
+              <p className="font-headline-sm text-base text-primary font-bold">
+                Click to choose an Excel file, or drag and drop it here
+              </p>
+              <p className="font-caption text-xs text-on-surface-variant mt-1.5">
+                Works with VU, Usha, Zebronics OS reports, Combined BI, and Employee rosters (.xlsx, .xls)
+              </p>
+            </div>
+            <div className="flex items-center gap-2 text-xs font-label-md text-on-surface-variant bg-surface-container px-3.5 py-1.5 rounded-full border border-outline-variant/40">
+              <Sparkles className="w-4 h-4 text-primary" />
+              <span>Automatic data reading &amp; smart detection</span>
             </div>
             <input
               id="import-file-input"
@@ -250,336 +230,344 @@ export const ImportWizardPage: React.FC = () => {
               }}
             />
           </label>
-          {isLoading && <p className="mt-space-3 text-xs text-on-surface-variant text-center">Reading file…</p>}
         </Card>
       )}
 
-      {/* Step 2: Select Sheet */}
-      {step === 2 && preview && (
-        <Card>
-          <CardHeader>
-            <div>
-              <CardTitle>Step 2 · Select Sheet</CardTitle>
-              <CardSubtitle>{file?.name} · {preview.all_sheets.length} sheet(s) found</CardSubtitle>
+      {/* SCREEN: ANALYZING (Progress) */}
+      {screen === 'ANALYZING' && (
+        <Card className="py-space-16 text-center border-outline-variant/70 shadow-sm">
+          <div className="flex flex-col items-center justify-center gap-space-5">
+            <div className="relative">
+              <div className="w-14 h-14 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
+              <FileSpreadsheet className="w-6 h-6 text-primary absolute inset-0 m-auto" />
             </div>
-          </CardHeader>
-          <div className="max-w-sm mb-space-5">
-            <Select
-              label="Sheet"
-              value={sheetName}
-              onChange={(e) => void handleSheetChange(e.target.value)}
-              disabled={isLoading}
-            >
-              {preview.all_sheets.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </Select>
+            <div>
+              <h3 className="font-headline-sm text-lg text-on-surface font-bold">Analyzing Spreadsheet</h3>
+              <p className="font-caption text-sm text-on-surface-variant mt-1.5 max-w-sm mx-auto">
+                {analyzingStatus}
+              </p>
+            </div>
           </div>
-          <SamplePreviewTable preview={preview} />
-          <div className="flex justify-between mt-space-6">
-            <Button variant="ghost" icon={ArrowLeft} onClick={() => setStep(1)}>Back</Button>
-            <Button variant="primary" icon={ArrowRight} iconPosition="right" onClick={() => setStep(3)} disabled={isLoading}>
-              Continue to Mapping
+        </Card>
+      )}
+
+      {/* SCREEN 2: WE FOUND YOUR DATA */}
+      {screen === 'FOUND_DATA' && batch && (
+        <div className="space-y-space-6">
+          <Card className="border-primary/30 bg-primary-container/10">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3.5">
+                <div className="p-3 bg-primary text-on-primary rounded-2xl shadow-xs">
+                  <CheckCircle2 className="w-7 h-7" />
+                </div>
+                <div>
+                  <h3 className="font-headline-sm text-lg text-on-surface font-bold">We found your data</h3>
+                  <p className="text-xs text-on-surface-variant mt-0.5">
+                    File: <strong>{file?.name}</strong>
+                  </p>
+                </div>
+              </div>
+              <span className="self-start sm:self-auto px-3 py-1 rounded-full text-xs font-bold bg-primary-container text-on-primary-container border border-primary-container">
+                Ready for Review
+              </span>
+            </div>
+          </Card>
+
+          {/* Business-Level Information Metric Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-space-4">
+            <MetricCard
+              title={isEmployeeType ? 'Employees Found' : 'Outlets Found'}
+              value={totalOutletsFound}
+              icon={isEmployeeType ? Users : Building2}
+              color="primary"
+              subtitle="Detected in your file"
+            />
+            <MetricCard
+              title="Records Ready"
+              value={totalReadyRecords}
+              icon={CheckCircle2}
+              color="secondary"
+              subtitle="Ready to import safely"
+            />
+            <MetricCard
+              title="Issues"
+              value={batch.rows_error}
+              icon={batch.rows_error > 0 ? AlertTriangle : ShieldCheck}
+              color={batch.rows_error > 0 ? 'rose' : 'slate'}
+              subtitle={batch.rows_error > 0 ? 'Will be skipped' : '0 issues detected'}
+            />
+          </div>
+
+          {/* Detected Data Checklist */}
+          <Card className="border-outline-variant/70">
+            <h4 className="font-label-md text-xs uppercase tracking-wider text-on-surface-variant font-bold mb-space-3">
+              Information Detected
+            </h4>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-space-3">
+              <div className="flex items-center gap-2.5 p-3 rounded-xl bg-surface-container-low border border-outline-variant/50">
+                <div className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                  <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                </div>
+                <span className="text-xs font-medium text-on-surface">Customer &amp; Outlet Data</span>
+              </div>
+              <div className="flex items-center gap-2.5 p-3 rounded-xl bg-surface-container-low border border-outline-variant/50">
+                <div className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                  <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                </div>
+                <span className="text-xs font-medium text-on-surface">Sales Rep (FOS) Assignments</span>
+              </div>
+              <div className="flex items-center gap-2.5 p-3 rounded-xl bg-surface-container-low border border-outline-variant/50">
+                <div className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                  <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                </div>
+                <span className="text-xs font-medium text-on-surface">Outstanding &amp; Ageing Data</span>
+              </div>
+            </div>
+          </Card>
+
+          {/* Unresolved fields banner (only if issues found) */}
+          {hasIssues && (
+            <div className="p-space-4 bg-secondary-fixed/30 border border-secondary-fixed-dim rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <AlertTriangle className="w-5 h-5 text-secondary shrink-0" />
+                <span className="text-sm font-semibold text-on-secondary-fixed">
+                  Some information couldn't be automatically assigned.
+                </span>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setShowFixDrawer(!showFixDrawer)}
+              >
+                {showFixDrawer ? 'Hide Details' : `Fix ${unmatchedFosList.length || batch.rows_error} fields`}
+              </Button>
+            </div>
+          )}
+
+          {/* Simple Fix Drawer (shown only when clicked) */}
+          {showFixDrawer && unmatchedFosList.length > 0 && (
+            <Card className="border-secondary/40 bg-surface">
+              <CardHeader>
+                <div>
+                  <CardTitle className="text-sm">Assign Sales Representatives</CardTitle>
+                  <CardSubtitle className="text-xs">
+                    Choose which employee represents each name found in the file:
+                  </CardSubtitle>
+                </div>
+              </CardHeader>
+              <div className="space-y-3 mt-space-2">
+                {unmatchedFosList.map((rawFos) => (
+                  <div key={rawFos} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 bg-surface-container-low rounded-xl border border-outline-variant/60">
+                    <span className="text-sm font-semibold text-on-surface font-mono">
+                      "{rawFos}"
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={fosOverrides[rawFos] || ''}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setFosOverrides((prev) => ({ ...prev, [rawFos]: val }));
+                        }}
+                        className="h-8 text-xs bg-surface border border-outline-variant rounded-lg px-2 text-on-surface"
+                      >
+                        <option value="">— Skip direct assignment —</option>
+                        {employees.map((emp) => (
+                          <option key={emp.id} value={emp.id}>
+                            {emp.full_name} ({emp.employee_code || 'No Code'})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                ))}
+                <div className="flex justify-end pt-2">
+                  <Button size="sm" variant="primary" onClick={() => void handleRevalidate()} isLoading={isLoading}>
+                    Apply &amp; Update
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {/* Preview of Parsed Records */}
+          <Card className="border-outline-variant/70">
+            <CardHeader>
+              <div>
+                <CardTitle className="text-base">Sample Parsed Outlets</CardTitle>
+                <CardSubtitle className="text-xs">Preview of records detected in your file.</CardSubtitle>
+              </div>
+            </CardHeader>
+            <div className="rounded-xl border border-surface-container-highest overflow-hidden overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-surface-container-low text-on-surface-variant font-label-md uppercase border-b border-surface-container-highest">
+                  <tr>
+                    {isEmployeeType ? (
+                      <>
+                        <th className="px-space-4 py-space-2.5 font-bold text-primary">Emp Code</th>
+                        <th className="px-space-4 py-space-2.5 font-bold text-primary">Full Name</th>
+                        <th className="px-space-4 py-space-2.5 font-bold text-primary">Role</th>
+                        <th className="px-space-4 py-space-2.5 font-bold text-primary">CUG</th>
+                      </>
+                    ) : (
+                      <>
+                        <th className="px-space-4 py-space-2.5 font-bold text-primary">DMS Code</th>
+                        <th className="px-space-4 py-space-2.5 font-bold text-primary">Outlet Name</th>
+                        <th className="px-space-4 py-space-2.5 font-bold text-primary">Zone / Area</th>
+                        <th className="px-space-4 py-space-2.5 font-bold text-primary">Sales Rep</th>
+                        <th className="px-space-4 py-space-2.5 font-bold text-primary">Market OS</th>
+                        <th className="px-space-4 py-space-2.5 font-bold text-primary">&gt;90d Overdue</th>
+                      </>
+                    )}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-surface-container-highest">
+                  {planRows.slice(0, 5).map((row, idx) => (
+                    <tr key={idx} className="hover:bg-surface-container-low/40">
+                      {isEmployeeType ? (
+                        <>
+                          <td className="px-space-4 py-space-2.5 font-mono font-bold text-primary">{row.employee_code || '—'}</td>
+                          <td className="px-space-4 py-space-2.5 font-semibold text-on-surface">{row.full_name || '—'}</td>
+                          <td className="px-space-4 py-space-2.5 text-on-surface-variant">{row.working_profile || 'FOS'}</td>
+                          <td className="px-space-4 py-space-2.5 font-mono text-on-surface-variant">{row.cug || '—'}</td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="px-space-4 py-space-2.5 font-mono font-bold text-primary">{row.dms_code || '—'}</td>
+                          <td className="px-space-4 py-space-2.5 font-semibold text-on-surface">{row.outlet_name || '—'}</td>
+                          <td className="px-space-4 py-space-2.5 text-on-surface-variant">{row.zone_name} · {row.area_name}</td>
+                          <td className="px-space-4 py-space-2.5 text-on-surface-variant">{row.raw_fos_name || 'Office / Unassigned'}</td>
+                          <td className="px-space-4 py-space-2.5 font-mono font-semibold text-on-surface">
+                            {row.market_outstanding ? `₹${parseFloat(row.market_outstanding).toLocaleString('en-IN')}` : '₹0'}
+                          </td>
+                          <td className="px-space-4 py-space-2.5 font-mono text-secondary">
+                            {row.bucket_gt_90 && parseFloat(row.bucket_gt_90) > 0 ? `₹${parseFloat(row.bucket_gt_90).toLocaleString('en-IN')}` : '—'}
+                          </td>
+                        </>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+
+          {/* Primary Action Button */}
+          <div className="flex items-center justify-between pt-space-2">
+            <Button variant="ghost" icon={ArrowLeft} onClick={resetAll}>
+              Upload Different File
+            </Button>
+            <Button
+              variant="primary"
+              size="lg"
+              icon={ArrowRight}
+              iconPosition="right"
+              onClick={() => setScreen('READY_TO_IMPORT')}
+            >
+              Review Data ({totalReadyRecords} Records)
             </Button>
           </div>
-        </Card>
+        </div>
       )}
 
-      {/* Step 3: Map Columns */}
-      {step === 3 && preview && (
-        <Card>
+      {/* SCREEN 3: READY TO IMPORT */}
+      {screen === 'READY_TO_IMPORT' && batch && (
+        <Card className="border-outline-variant/70 shadow-sm">
           <CardHeader>
             <div>
-              <CardTitle>Step 3 · Map Columns</CardTitle>
-              <CardSubtitle>
-                Match each Excel column to a FieldTrack field. Columns left as "Ignore" are not imported. Auto-matched
-                columns are pre-filled below - review before continuing, since an incorrect mapping is never silently guessed.
+              <CardTitle className="text-xl">Ready to Import</CardTitle>
+              <CardSubtitle className="text-sm mt-1">
+                <strong>{totalReadyRecords} records</strong> will be added or updated in FieldTrack Pro.
               </CardSubtitle>
             </div>
           </CardHeader>
 
-          <div className="rounded-xl border border-surface-container-highest overflow-hidden mb-space-6">
-            <table className="w-full text-left font-body-md text-on-surface">
-              <thead className="bg-surface-container-low text-on-surface-variant font-label-md text-xs uppercase tracking-wider border-b border-surface-container-highest">
-                <tr>
-                  <th className="px-space-6 py-space-3 font-bold text-primary">Excel Column</th>
-                  <th className="px-space-6 py-space-3 font-bold text-primary">Sample Value</th>
-                  <th className="px-space-6 py-space-3 font-bold text-primary">Maps To</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-surface-container-highest">
-                {preview.columns.map((col, idx) => {
-                  const targetKey = mapping[col] || '';
-                  const targetConfig = targetKey ? preview.target_fields[targetKey] : undefined;
-                  const sample = preview.sample_rows[0]?.[idx] ?? '';
-                  return (
-                    <tr key={col}>
-                      <td className="px-space-6 py-space-3 text-sm font-semibold">{col}</td>
-                      <td className="px-space-6 py-space-3 text-xs text-on-surface-variant font-mono truncate max-w-[200px]">{sample || '—'}</td>
-                      <td className="px-space-6 py-space-3">
-                        <select
-                          value={targetKey}
-                          onChange={(e) => setMapping((m) => ({ ...m, [col]: e.target.value }))}
-                          className="w-full h-9 bg-surface border border-outline-variant rounded-lg px-space-3 text-on-surface font-body-md text-sm focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 transition-all cursor-pointer"
-                        >
-                          <option value="">— Ignore this column —</option>
-                          {Object.entries(preview.target_fields).map(([key, cfg]) => (
-                            <option key={key} value={key}>
-                              {cfg.label}{cfg.required ? ' (required)' : ''}
-                            </option>
-                          ))}
-                        </select>
-                        {targetConfig?.required && (
-                          <span className="inline-flex items-center gap-1 mt-1 text-[11px] font-bold text-secondary uppercase tracking-wider">
-                            Required
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-space-4 mb-space-6">
-            <Select
-              label="Outlet Matching Strategy"
-              value={strategy}
-              onChange={(e) => setStrategy(e.target.value as OutletMatchStrategy)}
-              helperText={
-                strategy === 'outlet_code'
-                  ? 'Outlets are matched by outlet_code (stable identifier). Recommended - never matches purely by display name.'
-                  : 'Outlets are matched by name + territory. Only use this when the source has no stable outlet code - ambiguous matches are flagged, never guessed.'
-              }
-            >
-              <option value="outlet_code">Match by Outlet Code (recommended)</option>
-              <option value="name_and_territory">Match by Name + Territory</option>
-            </Select>
-
-            <div className="flex flex-col gap-space-1.5">
-              <label className="font-label-md text-xs text-on-surface uppercase tracking-wider block font-semibold">
-                Missing Invoice Numbers
-              </label>
-              <label className="flex items-start gap-space-2 p-space-3 border border-outline-variant rounded-lg cursor-pointer bg-surface">
-                <input
-                  type="checkbox"
-                  checked={allowGenerated}
-                  onChange={(e) => setAllowGenerated(e.target.checked)}
-                  className="mt-0.5 accent-primary"
-                />
-                <span className="text-sm text-on-surface-variant leading-snug">
-                  Generate a deterministic invoice number when the source has none, built from outlet code + date + amount
-                  (stable across re-imports). Leave unchecked to flag such rows as errors instead.
-                </span>
-              </label>
+          <div className="p-space-6 bg-surface-container-low rounded-2xl border border-outline-variant space-y-3 my-space-4">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-on-surface-variant">New Customer Outlets to Create:</span>
+              <strong className="text-primary font-bold">{batch.rows_created}</strong>
             </div>
-          </div>
-
-          <div className="flex justify-between">
-            <Button variant="ghost" icon={ArrowLeft} onClick={() => setStep(2)}>Back</Button>
-            <Button variant="primary" icon={ArrowRight} iconPosition="right" isLoading={isLoading} onClick={() => void handleValidate()}>
-              Validate &amp; Preview
-            </Button>
-          </div>
-        </Card>
-      )}
-
-      {/* Step 4: Validate & Preview */}
-      {step === 4 && batch && summary && (
-        <div className="space-y-space-6">
-          <Card>
-            <CardHeader>
-              <div>
-                <CardTitle>Step 4 · Validate &amp; Preview</CardTitle>
-                <CardSubtitle>Rows detected: {batch.rows_processed.toLocaleString('en-IN')}</CardSubtitle>
-              </div>
-              <StatusBadge status={batch.status} />
-            </CardHeader>
-
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-space-4">
-              <MetricCard title="Will Create" value={summary.customers_created + summary.territories_created + summary.invoices_created + summary.payments_created} icon={Building2} color="primary" subtitle={`Customers ${summary.customers_created} · Territories ${summary.territories_created} · Invoices ${summary.invoices_created} · Payments ${summary.payments_created}`} />
-              <MetricCard title="Will Update" value={summary.customers_updated + summary.invoices_updated} icon={Receipt} color="secondary" subtitle={`Customers ${summary.customers_updated} · Invoices ${summary.invoices_updated}`} />
-              <MetricCard title="Rows Skipped" value={batch.rows_skipped} icon={Wallet} color="slate" subtitle={`Duplicate invoices skipped: ${summary.invoices_skipped_duplicate}`} />
-              <MetricCard title="Rows With Errors" value={batch.rows_error} icon={XCircle} color={batch.rows_error > 0 ? 'rose' : 'slate'} subtitle={`Warnings on ${summary.rows_with_warnings} row(s)`} />
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-on-surface-variant">Existing Outlets &amp; Balances to Update:</span>
+              <strong className="text-secondary font-bold">{batch.rows_updated}</strong>
             </div>
-          </Card>
-
-          <div className="flex justify-between">
-            <Button variant="ghost" icon={ArrowLeft} onClick={() => setStep(3)}>Back to Mapping</Button>
-            <Button variant="primary" icon={ArrowRight} iconPosition="right" onClick={() => setStep(5)}>
-              Review Warnings &amp; Errors
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* Step 5: Review warnings/errors */}
-      {step === 5 && batch && summary && (
-        <div className="space-y-space-6">
-          <Card>
-            <CardHeader>
-              <div>
-                <CardTitle>Step 5 · Review Warnings &amp; Errors</CardTitle>
-                <CardSubtitle>Rows with errors are skipped entirely and never partially imported. Warnings do not block import.</CardSubtitle>
-              </div>
-              {(batch.error_report?.length ?? 0) > 0 && (
-                <Button variant="outline" size="sm" icon={Download} onClick={() => void handleDownloadErrors()}>
-                  Download Error Report
-                </Button>
-              )}
-            </CardHeader>
-
-            {(batch.error_report?.length ?? 0) === 0 && (summary.warnings?.length ?? 0) === 0 ? (
-              <EmptyState
-                title="No errors or warnings"
-                subtitle="Every row in this file resolved cleanly."
-                icon={CheckCircle2}
-              />
-            ) : (
-              <div className="space-y-space-5">
-                {(batch.error_report?.length ?? 0) > 0 && (
-                  <div>
-                    <p className="font-label-md text-xs uppercase tracking-wider text-error font-bold mb-space-2">
-                      Errors ({batch.error_report?.length}) - these rows will NOT be imported
-                    </p>
-                    <div className="rounded-xl border border-error/40 overflow-hidden max-h-72 overflow-y-auto">
-                      <table className="w-full text-left text-sm">
-                        <thead className="bg-error-container/40 text-on-error-container font-label-md text-xs uppercase sticky top-0">
-                          <tr>
-                            <th className="px-space-4 py-space-2">Row</th>
-                            <th className="px-space-4 py-space-2">Error</th>
-                            <th className="px-space-4 py-space-2">Suggested Fix</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-error/20">
-                          {batch.error_report?.map((e, idx) => (
-                            <tr key={idx}>
-                              <td className="px-space-4 py-space-2 font-mono">{e.row}</td>
-                              <td className="px-space-4 py-space-2">{e.error}</td>
-                              <td className="px-space-4 py-space-2 text-on-surface-variant">{e.suggested_fix}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-
-                {(summary.warnings?.length ?? 0) > 0 && (
-                  <div>
-                    <p className="font-label-md text-xs uppercase tracking-wider text-secondary font-bold mb-space-2">
-                      Warnings ({summary.warnings.length}) - these rows still import
-                    </p>
-                    <div className="rounded-xl border border-outline-variant overflow-hidden max-h-72 overflow-y-auto">
-                      <table className="w-full text-left text-sm">
-                        <thead className="bg-secondary-fixed/40 text-on-secondary-fixed font-label-md text-xs uppercase sticky top-0">
-                          <tr>
-                            <th className="px-space-4 py-space-2">Row</th>
-                            <th className="px-space-4 py-space-2">Warning</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-outline-variant">
-                          {summary.warnings.map((w, idx) => (
-                            <tr key={idx}>
-                              <td className="px-space-4 py-space-2 font-mono">{w.row}</td>
-                              <td className="px-space-4 py-space-2">{w.warning}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-
-                {summary.duplicate_outlet_codes_with_inconsistent_names.length > 0 && (
-                  <div className="p-space-4 bg-secondary-fixed/30 border border-secondary-fixed-dim rounded-xl">
-                    <p className="flex items-center gap-2 font-label-md text-xs uppercase tracking-wider text-on-secondary-fixed font-bold mb-space-2">
-                      <AlertTriangle className="w-4 h-4" /> Same outlet code, inconsistent names in source file
-                    </p>
-                    <ul className="text-sm space-y-1">
-                      {summary.duplicate_outlet_codes_with_inconsistent_names.map((d) => (
-                        <li key={d.outlet_code}>
-                          <span className="font-mono">{d.outlet_code}</span>: {d.names_seen.join(' / ')}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
+            {batch.rows_error > 0 && (
+              <div className="flex items-center justify-between text-sm text-error">
+                <span>Excluded Rows (Errors):</span>
+                <strong>{batch.rows_error}</strong>
               </div>
             )}
-          </Card>
-
-          <div className="flex justify-between">
-            <Button variant="ghost" icon={ArrowLeft} onClick={() => setStep(3)}>Back to Mapping</Button>
-            <Button variant="primary" icon={ArrowRight} iconPosition="right" onClick={() => setStep(6)}>
-              Continue to Confirm
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* Step 6: Confirm Import */}
-      {step === 6 && batch && summary && (
-        <Card>
-          <CardHeader>
-            <div>
-              <CardTitle>Step 6 · Confirm Import</CardTitle>
-              <CardSubtitle>This is the only step that writes to the database. It runs as a single transaction - if anything fails, nothing is committed.</CardSubtitle>
+            <div className="pt-2 border-t border-surface-container-highest text-xs text-on-surface-variant flex items-center gap-1.5">
+              <ShieldCheck className="w-4 h-4 text-primary" />
+              <span>Safe transactional import — updates all records in one complete step.</span>
             </div>
-          </CardHeader>
-
-          <div className="p-space-5 bg-surface-container-low rounded-xl border border-outline-variant font-body-md text-sm leading-relaxed space-y-1 mb-space-6">
-            <p>Rows detected: <strong>{batch.rows_processed.toLocaleString('en-IN')}</strong></p>
-            <p>Will create: Customers <strong>{summary.customers_created}</strong> · Territories <strong>{summary.territories_created}</strong> · Invoices <strong>{summary.invoices_created}</strong> · Payments <strong>{summary.payments_created}</strong></p>
-            <p>Will update: Customers <strong>{summary.customers_updated}</strong> · Invoices <strong>{summary.invoices_updated}</strong></p>
-            <p>Skipped duplicate invoices (within file): <strong>{summary.invoices_skipped_duplicate}</strong></p>
-            <p>Rows skipped (no actionable data): <strong>{batch.rows_skipped}</strong></p>
-            <p className={batch.rows_error > 0 ? 'text-error font-semibold' : ''}>Rows with errors (will be excluded): <strong>{batch.rows_error}</strong></p>
           </div>
 
-          <div className="flex justify-between">
-            <Button variant="ghost" icon={ArrowLeft} onClick={() => setStep(5)}>Back</Button>
-            <Button variant="primary" icon={CheckCircle2} isLoading={isLoading} onClick={() => void handleCommit()}>
-              Confirm Import
+          <div className="flex items-center justify-between pt-space-4">
+            <Button variant="ghost" icon={ArrowLeft} onClick={() => setScreen('FOUND_DATA')}>
+              Back
+            </Button>
+            <Button
+              variant="primary"
+              size="lg"
+              icon={CheckCircle2}
+              isLoading={isLoading}
+              onClick={() => void handleCommit()}
+              className="shadow-sm"
+            >
+              Import {totalReadyRecords} Records
             </Button>
           </div>
         </Card>
       )}
 
-      {/* Step 7: Import Result */}
-      {step === 7 && batch && (
-        <Card>
+      {/* SCREEN 4: SUCCESS */}
+      {screen === 'SUCCESS' && batch && (
+        <Card className="border-outline-variant/70 shadow-sm">
           <CardHeader>
             <div>
-              <CardTitle>Step 7 · Import Result</CardTitle>
-              <CardSubtitle>{batch.filename}</CardSubtitle>
+              <CardTitle className="text-xl">Import Complete</CardTitle>
+              <CardSubtitle className="text-sm mt-1">{batch.filename}</CardSubtitle>
             </div>
-            <StatusBadge status={batch.status} />
           </CardHeader>
 
           {batch.status === 'FAILED' ? (
-            <ErrorBanner message={batch.failure_reason || 'Import failed and was fully rolled back. No data was written.'} />
+            <ErrorBanner message={batch.failure_reason || 'Import could not be completed.'} />
           ) : (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-space-4 mb-space-6">
-              <MetricCard title="Created" value={batch.rows_created} icon={Building2} color="primary" />
-              <MetricCard title="Updated" value={batch.rows_updated} icon={Receipt} color="secondary" />
-              <MetricCard title="Skipped" value={batch.rows_skipped} icon={Wallet} color="slate" />
-              <MetricCard title="Errors" value={batch.rows_error} icon={XCircle} color={batch.rows_error > 0 ? 'rose' : 'slate'} />
+            <div className="space-y-space-6 my-space-2">
+              <div className="p-space-6 bg-primary-container/10 border border-primary-container/30 rounded-2xl flex items-center gap-4">
+                <div className="p-3 bg-primary-container text-on-primary-container rounded-2xl shadow-xs">
+                  <CheckCircle2 className="w-8 h-8" />
+                </div>
+                <div>
+                  <h3 className="font-headline-sm text-lg text-on-surface font-bold">Successfully Synchronized!</h3>
+                  <p className="text-xs text-on-surface-variant mt-1">
+                    All {totalReadyRecords} records from <strong>{batch.filename}</strong> are now live in the system.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-space-4">
+                <MetricCard title="New Outlets" value={batch.rows_created} icon={Building2} color="primary" subtitle="Created in system" />
+                <MetricCard title="Updated Outlets" value={batch.rows_updated} icon={Receipt} color="secondary" subtitle="Balances refreshed" />
+                <MetricCard title="Total Synced" value={totalReadyRecords} icon={CheckCircle2} color="slate" subtitle="Live in database" />
+              </div>
             </div>
           )}
 
-          <div className="flex flex-wrap gap-space-3">
-            {(batch.error_report?.length ?? 0) > 0 && (
-              <Button variant="outline" icon={Download} onClick={() => void handleDownloadErrors()}>
-                Download Error Report
+          <div className="flex flex-wrap items-center gap-space-3 mt-space-6 pt-space-4 border-t border-surface-container-highest">
+            {isEmployeeType && (
+              <Button variant="primary" icon={Download} onClick={() => void handleDownloadCredentials()}>
+                Download Onboarding Credentials (.xlsx)
               </Button>
             )}
-            <Button variant="outline" icon={History} onClick={() => navigate('/imports')}>
-              View Import History
+            <Button variant="outline" icon={Building2} onClick={() => navigate('/customers')}>
+              View Customers Directory
             </Button>
-            <Button variant="primary" icon={RotateCcw} onClick={resetAll}>
-              Start New Import
+            <Button variant="outline" icon={Receipt} onClick={() => navigate('/reports')}>
+              View Financial &amp; BI Reports
+            </Button>
+            <Button variant="ghost" icon={RotateCcw} onClick={resetAll} className="ml-auto">
+              Import Another File
             </Button>
           </div>
         </Card>
@@ -587,33 +575,3 @@ export const ImportWizardPage: React.FC = () => {
     </div>
   );
 };
-
-const SamplePreviewTable: React.FC<{ preview: ImportPreviewResponse }> = ({ preview }) => (
-  <div className="rounded-xl border border-surface-container-highest overflow-hidden overflow-x-auto">
-    <table className="w-full text-left text-xs">
-      <thead className="bg-surface-container-low text-on-surface-variant font-label-md uppercase">
-        <tr>
-          {preview.columns.map((c) => (
-            <th key={c} className="px-space-4 py-space-2 whitespace-nowrap font-bold text-primary">
-              <FileSpreadsheet className="w-3 h-3 inline mr-1" />{c}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody className="divide-y divide-surface-container-highest">
-        {preview.sample_rows.slice(0, 5).map((row, idx) => (
-          <tr key={idx}>
-            {row.map((cell, cIdx) => (
-              <td key={cIdx} className="px-space-4 py-space-2 whitespace-nowrap text-on-surface-variant">{cell || '—'}</td>
-            ))}
-          </tr>
-        ))}
-      </tbody>
-    </table>
-    {preview.truncated && (
-      <p className="px-space-4 py-space-2 text-[11px] text-on-surface-variant bg-surface-container-low border-t border-surface-container-highest">
-        Showing first {preview.sample_rows.length} of {preview.total_data_rows.toLocaleString('en-IN')} rows.
-      </p>
-    )}
-  </div>
-);

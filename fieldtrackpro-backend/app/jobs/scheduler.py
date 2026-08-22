@@ -1,17 +1,9 @@
 """
 Background job scheduler.
 
-FT-021: `missed_visit_scheduler.py` documented itself as "runs every 15 minutes
-via APScheduler (configured in main.py lifespan)" - but no such wiring existed
-anywhere in the codebase. Overdue visits were therefore never transitioned to
-MISSED, so the MISSED status was unreachable in normal operation.
-
-Implemented to the locked design in `19_business_logic.md` section 4:
-APScheduler, `cron` trigger at `minute="*/15"`, two-hour grace window.
-
-A single module-level scheduler instance is created lazily and guarded, so
-repeated calls to `start_scheduler()` (multiple workers importing the module,
-or tests) cannot register duplicate jobs.
+Handles:
+1. Overdue visit sweep (every 15 minutes) -> transitions to MISSED.
+2. Expired security records cleanup (daily at 03:00 UTC) -> purges expired tokens & old login attempts.
 """
 from __future__ import annotations
 
@@ -21,11 +13,13 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app.database import AsyncSessionLocal
 from app.jobs.missed_visit_scheduler import mark_overdue_visits_as_missed
+from app.services.security_cleanup_service import security_cleanup_service
 
 logger = logging.getLogger("fieldtrackpro")
 
-#: Stable id so the job can never be registered twice.
+#: Stable ids so jobs can never be registered twice.
 MISSED_VISIT_JOB_ID = "missed_visit_sweep"
+SECURITY_CLEANUP_JOB_ID = "security_records_cleanup"
 
 _scheduler: AsyncIOScheduler | None = None
 
@@ -38,10 +32,19 @@ async def _run_missed_visit_sweep() -> None:
             if updated:
                 logger.info("[scheduler] marked %s visit(s) as MISSED", updated)
         except Exception:
-            # A failed sweep must never kill the scheduler thread; the next
-            # run (15 minutes later) retries. The traceback is recorded.
             await session.rollback()
             logger.exception("[scheduler] missed-visit sweep failed")
+
+
+async def _run_security_cleanup_sweep() -> None:
+    """Open a dedicated session and purge expired security records."""
+    async with AsyncSessionLocal() as session:
+        try:
+            counts = await security_cleanup_service.cleanup_expired_records(session)
+            logger.info(f"[scheduler] security cleanup sweep finished: {counts}")
+        except Exception:
+            await session.rollback()
+            logger.exception("[scheduler] security cleanup sweep failed")
 
 
 def start_scheduler() -> AsyncIOScheduler | None:
@@ -65,6 +68,8 @@ def start_scheduler() -> AsyncIOScheduler | None:
         return _scheduler
 
     _scheduler = AsyncIOScheduler(timezone="UTC")
+
+    # 1. Overdue visit sweep - every 15 minutes
     _scheduler.add_job(
         _run_missed_visit_sweep,
         trigger="cron",
@@ -75,8 +80,22 @@ def start_scheduler() -> AsyncIOScheduler | None:
         coalesce=True,            # a backlog collapses into one run
         misfire_grace_time=300,
     )
+
+    # 2. Expired security records cleanup - daily at 03:00 UTC
+    _scheduler.add_job(
+        _run_security_cleanup_sweep,
+        trigger="cron",
+        hour=3,
+        minute=0,
+        id=SECURITY_CLEANUP_JOB_ID,
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=600,
+    )
+
     _scheduler.start()
-    logger.info("[scheduler] started; missed-visit sweep runs every 15 minutes")
+    logger.info("[scheduler] started; missed-visit sweep (*/15 min) and security cleanup (daily 03:00 UTC) active")
     return _scheduler
 
 

@@ -11,7 +11,9 @@ from datetime import date, datetime, timedelta, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.exceptions.custom import BaseAPIException
+import os
+
+from app.exceptions.custom import BaseAPIException, DuplicateVisitException
 from app.models.form_template import FormStatus, FormTemplate
 from app.models.geo_verification_log import GeoVerificationLog, GeoVerificationType
 from app.models.notification import NotificationType
@@ -51,6 +53,10 @@ async def _validate_required_form(required_form_id: uuid.UUID | None, session: A
 # Number of geo-verification failures before auto-flagging
 GEO_FAILURE_THRESHOLD = 3
 
+# Minimum gap (in minutes) required between two active visits for the same employee.
+# Configurable via environment variable VISIT_CONFLICT_WINDOW_MINUTES (default 60).
+VISIT_CONFLICT_WINDOW_MINUTES: int = int(os.environ.get("VISIT_CONFLICT_WINDOW_MINUTES", "60"))
+
 
 async def _resolve_employee_scope(
     current_user: User, session: AsyncSession
@@ -88,6 +94,45 @@ async def assert_visit_access(
     return visit
 
 
+async def _check_duplicate_visit(
+    employee_id: uuid.UUID,
+    scheduled_at: "datetime",
+    session: AsyncSession,
+    *,
+    exclude_visit_id: uuid.UUID | None = None,
+) -> None:
+    """
+    Raise DuplicateVisitException when *employee_id* already has a
+    non-terminal visit within VISIT_CONFLICT_WINDOW_MINUTES of *scheduled_at*.
+
+    This is called inside the same unit-of-work as the INSERT so that the
+    check and the write are effectively atomic at the application layer.
+    The database-level partial unique index (h1i2j3k4l5m6 migration) catches
+    any race condition that slips through concurrent requests.
+    """
+    repo = VisitRepository(session)
+    conflict = await repo.find_conflicting_visit(
+        employee_id=employee_id,
+        scheduled_at=scheduled_at,
+        window_minutes=VISIT_CONFLICT_WINDOW_MINUTES,
+        exclude_visit_id=exclude_visit_id,
+    )
+    if conflict is not None:
+        # Build a human-readable message that tells the admin exactly which
+        # existing visit causes the conflict.
+        conflict_time = conflict.scheduled_at.strftime("%Y-%m-%d %H:%M UTC")
+        conflict_customer = conflict.customer_name if conflict.customer_name else str(conflict.customer_id)
+        employee_name = conflict.employee_name if conflict.employee_name else str(employee_id)
+        raise DuplicateVisitException(
+            detail=(
+                f"Scheduling conflict: {employee_name} already has a "
+                f"{conflict.status.value} visit to '{conflict_customer}' at "
+                f"{conflict_time} (visit {conflict.id}). "
+                f"Visits must be at least {VISIT_CONFLICT_WINDOW_MINUTES} minutes apart."
+            )
+        )
+
+
 async def create_visit(data: VisitCreate, created_by: uuid.UUID, session: AsyncSession) -> Visit:
     """
     Admin: schedule a visit.
@@ -103,6 +148,10 @@ async def create_visit(data: VisitCreate, created_by: uuid.UUID, session: AsyncS
     customer = await get_customer(data.customer_id, session)
     employee = await get_employee(data.employee_id, session)
     await _validate_required_form(data.required_form_id, session)
+
+    # Duplicate visit guard — must run before repo.add() inside the same
+    # unit-of-work so the check-then-insert is effectively atomic.
+    await _check_duplicate_visit(data.employee_id, data.scheduled_at, session)
 
     repo = VisitRepository(session)
     visit = Visit(
@@ -485,6 +534,10 @@ async def bulk_create_visits(
             error_code="EMPLOYEE_NOT_FOUND",
         )
     await _validate_required_form(data.required_form_id, session)
+
+    # Duplicate visit guard for bulk — checked ONCE before writing any rows.
+    # A single pre-existing conflict blocks the entire batch (all-or-nothing).
+    await _check_duplicate_visit(data.employee_id, data.scheduled_at, session)
 
     visits = []
     for customer_id in data.customer_ids:

@@ -4,9 +4,9 @@ Visit repository.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from sqlalchemy import select, func, or_, cast, String
+from sqlalchemy import select, func, or_, cast, String, and_
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -181,3 +181,65 @@ class VisitRepository(BaseRepository[Visit]):
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    # --- Non-terminal statuses that participate in the conflict check. ---
+    # Terminal visits (COMPLETED, MISSED) are finished and must NOT block
+    # future scheduling for the same employee at the same time slot.
+    _ACTIVE_STATUSES: tuple[VisitStatus, ...] = (
+        VisitStatus.PENDING,
+        VisitStatus.IN_PROGRESS,
+        VisitStatus.FLAGGED,
+    )
+
+    async def find_conflicting_visit(
+        self,
+        employee_id: uuid.UUID,
+        scheduled_at: datetime,
+        window_minutes: int = 60,
+        exclude_visit_id: uuid.UUID | None = None,
+    ) -> Visit | None:
+        """
+        Return the first non-terminal visit for *employee_id* whose
+        ``scheduled_at`` falls within ±*window_minutes* of the requested
+        time, or ``None`` when no conflict exists.
+
+        Only PENDING, IN_PROGRESS, and FLAGGED visits count.
+        COMPLETED and MISSED are deliberately excluded so that rescheduling
+        after a missed/completed visit for the same slot is allowed.
+
+        *exclude_visit_id* lets rescheduling flows avoid a self-collision
+        (the visit being updated should not conflict with itself).
+
+        The query hits the existing ``ix_visits_employee_id`` index and
+        filters *status* through the existing ``ix_visits_status`` index.
+        The new partial unique index (h1i2j3k4l5m6 migration) gives O(1)
+        exact-duplicate detection at the DB level.
+        """
+        window = timedelta(minutes=window_minutes)
+        lower = scheduled_at - window
+        upper = scheduled_at + window
+
+        stmt = (
+            select(Visit)
+            .options(
+                selectinload(Visit.employee),
+                selectinload(Visit.customer),
+            )
+            .where(
+                and_(
+                    Visit.employee_id == employee_id,
+                    Visit.status.in_(self._ACTIVE_STATUSES),
+                    Visit.scheduled_at >= lower,
+                    Visit.scheduled_at <= upper,
+                )
+            )
+            .order_by(Visit.scheduled_at.asc())
+            .limit(1)
+        )
+
+        if exclude_visit_id is not None:
+            stmt = stmt.where(Visit.id != exclude_visit_id)
+
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+

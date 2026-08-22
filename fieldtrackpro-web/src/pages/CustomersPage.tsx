@@ -9,6 +9,7 @@ import { Input } from '../components/ui/Input';
 import { Select } from '../components/ui/Select';
 import { EmptyState } from '../components/ui/EmptyState';
 import { ErrorBanner } from '../components/ui/ErrorBanner';
+import { MapPicker } from '../components/ui/MapPicker';
 import { apiClient } from '../api/client';
 import { Area, Customer, Territory } from '../types';
 import { validatePhoneNumber } from '../utils/phoneValidation';
@@ -21,20 +22,22 @@ const emptyForm = {
   address: '',
   latitude: '',
   longitude: '',
-  geofenceRadius: '75', // FT-054: matches the backend/database default
+  geofenceRadius: '75',
   territoryId: '',
   areaId: '',
+  outletCode: '',
 };
 
 export const CustomersPage: React.FC = () => {
-    const navigate = useNavigate();
-    const [customers, setCustomers] = useState<Customer[]>([]);
-    const [areas, setAreas] = useState<Area[]>([]);
-    const [territories, setTerritories] = useState<Territory[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
+  const navigate = useNavigate();
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [areas, setAreas] = useState<Area[]>([]);
+  const [territories, setTerritories] = useState<Territory[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isMapPickerOpen, setIsMapPickerOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState({ ...emptyForm });
   const [formError, setFormError] = useState<string | null>(null);
@@ -64,8 +67,6 @@ export const CustomersPage: React.FC = () => {
     apiClient.getAreas().then(setAreas).catch(() => setAreas([]));
   }, [fetchCustomers]);
 
-  // Area options narrow to the selected Zone - an outlet's Area always
-  // belongs to exactly one Zone.
   const areaOptions = form.territoryId ? areas.filter((a) => a.territory_id === form.territoryId) : [];
 
   const openCreate = () => {
@@ -75,22 +76,28 @@ export const CustomersPage: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  /** FT-014: editing was impossible; PATCH /customers/{id} had no UI. */
   const openEdit = (customer: Customer) => {
     setEditingId(customer.id);
     setForm({
       name: customer.name,
       contactPerson: customer.contact_person ?? '',
-      contactNumber: customer.contact_number,
-      address: customer.address,
-      latitude: String(customer.location.latitude),
-      longitude: String(customer.location.longitude),
-      geofenceRadius: String(customer.geofence_radius_m),
+      contactNumber: customer.contact_number || '',
+      address: customer.address || '',
+      latitude: customer.location?.latitude != null ? String(customer.location.latitude) : '',
+      longitude: customer.location?.longitude != null ? String(customer.location.longitude) : '',
+      geofenceRadius: String(customer.geofence_radius_m || 75),
       territoryId: customer.territory_id ?? '',
       areaId: customer.area_id ?? '',
+      outletCode: customer.outlet_code ?? customer.dms_code ?? '',
     });
     setFormError(null);
     setIsModalOpen(true);
+  };
+
+  const handleMapPickerConfirm = (pickedLat: number, pickedLng: number, pickedRadius: number) => {
+    set('latitude', String(pickedLat));
+    set('longitude', String(pickedLng));
+    set('geofenceRadius', String(pickedRadius));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -123,19 +130,14 @@ export const CustomersPage: React.FC = () => {
     try {
       const payload = {
         name: form.name.trim(),
-        // FT-013: contact_person and contact_number are distinct fields. The
-        // form previously wrote a person's name into contact_number, which is
-        // varchar(20) and produced a 500 for any realistic full name.
         contact_person: form.contactPerson.trim() || null,
         contact_number: form.contactNumber.trim(),
         address: form.address.trim(),
         location: { latitude, longitude },
         geofence_radius_m: radius,
         territory_id: form.territoryId || null,
-        // Area is the source of truth once set - the backend derives/keeps
-        // territory_id in sync from it, so an outlet's Zone and Area can
-        // never disagree.
         area_id: form.areaId || null,
+        outlet_code: form.outletCode.trim() || null,
       };
 
       if (editingId) {
@@ -144,11 +146,9 @@ export const CustomersPage: React.FC = () => {
         await apiClient.createCustomer(payload);
       }
       setIsModalOpen(false);
-      setForm({ ...emptyForm });
-      setEditingId(null);
       fetchCustomers();
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'Failed to save customer record');
+    } catch (err: unknown) {
+      setFormError(err instanceof Error ? err.message : 'Unable to save customer');
     } finally {
       setIsSaving(false);
     }
@@ -159,10 +159,19 @@ export const CustomersPage: React.FC = () => {
       header: 'Customer Account',
       accessor: (cust) => (
         <div>
-          <p className="font-headline-sm text-sm text-primary font-bold">{cust.name}</p>
-          <p className="font-caption text-xs text-on-surface-variant">
-            Contact: {cust.contact_person || '—'}
+          <p className="font-headline-sm text-sm text-primary font-bold hover:text-secondary transition-colors">
+            {cust.name}
           </p>
+          <div className="flex items-center gap-2 mt-1">
+            {cust.outlet_code && (
+              <span className="font-mono text-[11px] font-bold text-on-primary-container bg-primary-container px-2 py-0.5 rounded shadow-2xs">
+                {cust.outlet_code}
+              </span>
+            )}
+            <p className="font-caption text-xs text-on-surface-variant">
+              Contact: {cust.contact_person || '—'}
+            </p>
+          </div>
         </div>
       ),
     },
@@ -170,39 +179,50 @@ export const CustomersPage: React.FC = () => {
       header: 'Zone / Area',
       accessor: (cust) => (
         <div className="font-caption text-xs space-y-0.5">
-          <p className="text-on-surface">{territories.find((t) => t.id === cust.territory_id)?.name || '—'}</p>
-          <p className="text-on-surface-variant">{cust.area_name || '—'}</p>
+          <p className="font-headline-sm text-xs font-bold text-primary">
+            {territories.find((t) => t.id === cust.territory_id)?.name || cust.territory_name || '—'}
+          </p>
+          <p className="text-on-surface-variant font-caption">
+            {cust.area_name || '—'}
+          </p>
         </div>
       ),
     },
     {
       header: 'Address Location',
       accessor: (cust) => (
-        <div className="flex items-start gap-space-1.5 max-w-xs font-body-md text-xs text-on-surface">
-          <MapPin className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-          <span className="truncate">{cust.address}</span>
+        <div className="flex items-start gap-1.5 max-w-xs font-body-md text-xs text-on-surface">
+          <MapPin className="w-3.5 h-3.5 text-secondary-container shrink-0 mt-0.5" />
+          <span className="truncate">{cust.address || '—'}</span>
         </div>
       ),
     },
     {
       header: 'GPS & Geofence',
-      accessor: (cust) => (
-        /* FT-012: real coordinates. This column was permanently blank because
-           CustomerRead did not return the location at all. */
-        <div className="font-caption text-xs space-y-0.5">
-          <p className="text-on-surface font-mono">
-            {cust.location.latitude.toFixed(6)}, {cust.location.longitude.toFixed(6)}
-          </p>
-          <p className="text-primary font-bold text-[11px] bg-primary-tint/50 px-2 py-0.5 rounded inline-block">
-            Geofence: {cust.geofence_radius_m}m
-          </p>
-        </div>
-      ),
+      accessor: (cust) => {
+        const hasCoords = cust.location && cust.location.latitude != null && cust.location.longitude != null;
+        return (
+          <div className="font-caption text-xs space-y-1">
+            {hasCoords ? (
+              <p className="text-primary font-mono text-xs font-semibold">
+                {cust.location!.latitude.toFixed(6)}, {cust.location!.longitude.toFixed(6)}
+              </p>
+            ) : (
+              <span className="inline-flex items-center px-2 py-0.5 text-[10px] font-label-md uppercase tracking-wider font-semibold bg-secondary-fixed text-on-secondary-fixed border border-secondary-fixed-dim rounded">
+                Missing GPS
+              </span>
+            )}
+            <p className="text-primary font-label-md font-bold text-[11px] bg-primary-fixed/60 px-2 py-0.5 rounded border border-primary-fixed-dim inline-block">
+              Geofence: {cust.geofence_radius_m || 75}m
+            </p>
+          </div>
+        );
+      },
     },
     {
       header: 'Contact Number',
       accessor: (cust) => (
-        <span className="font-caption text-xs text-on-surface-variant">
+        <span className="font-mono text-xs font-semibold text-primary">
           {cust.contact_number || '—'}
         </span>
       ),
@@ -210,7 +230,7 @@ export const CustomersPage: React.FC = () => {
     {
       header: 'Action',
       accessor: (cust) => (
-        <div className="flex gap-1">
+        <div className="flex items-center gap-1.5">
           <Button
             variant="outline"
             size="sm"
@@ -244,9 +264,14 @@ export const CustomersPage: React.FC = () => {
         title="Customer Accounts Directory"
         subtitle="Geofenced client sites and visit location parameters."
         actions={
-          <Button variant="secondary" size="sm" icon={Plus} onClick={openCreate}>
-            Add Account
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => navigate('/imports')}>
+              Import Outlets
+            </Button>
+            <Button variant="secondary" size="sm" icon={Plus} onClick={openCreate}>
+              Add Account
+            </Button>
+          </div>
         }
       />
 
@@ -272,8 +297,11 @@ export const CustomersPage: React.FC = () => {
           isLoading={isLoading}
           searchPlaceholder="Search customers by name, address..."
           searchFilter={(cust, q) =>
-            cust.name.toLowerCase().includes(q.toLowerCase()) ||
-            cust.address.toLowerCase().includes(q.toLowerCase())
+            Boolean(
+              cust.name.toLowerCase().includes(q.toLowerCase()) ||
+              (cust.outlet_code && cust.outlet_code.toLowerCase().includes(q.toLowerCase())) ||
+              (cust.address && cust.address.toLowerCase().includes(q.toLowerCase()))
+            )
           }
           onRowClick={(cust) => navigate(`/customers/${cust.id}`)}
         />
@@ -298,6 +326,14 @@ export const CustomersPage: React.FC = () => {
             value={form.name}
             onChange={(e) => set('name', e.target.value)}
             placeholder="Acme Industrial Corp"
+          />
+          <Input
+            label="DMS Code (External Key)"
+            type="text"
+            value={form.outletCode}
+            onChange={(e) => set('outletCode', e.target.value)}
+            placeholder="e.g. SGRGUS1463"
+            helperText="Anchor outlet key for BI and Excel import mapping."
           />
           <Input
             label="Contact Person"
@@ -325,6 +361,17 @@ export const CustomersPage: React.FC = () => {
             onChange={(e) => set('address', e.target.value)}
             placeholder="100 Tech Park Blvd"
           />
+          <div className="flex items-center justify-between pt-1">
+            <span className="text-xs font-bold text-on-surface">Location Coordinates</span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setIsMapPickerOpen(true)}
+            >
+              <MapPin className="w-3.5 h-3.5 mr-1 text-primary" /> Map Picker
+            </Button>
+          </div>
           <div className="grid grid-cols-2 gap-space-3">
             <Input
               label="Latitude"
@@ -360,8 +407,6 @@ export const CustomersPage: React.FC = () => {
             value={form.territoryId}
             onChange={(e) => {
               set('territoryId', e.target.value);
-              // Changing the Zone invalidates any previously-selected Area,
-              // since an Area always belongs to exactly one Zone.
               set('areaId', '');
             }}
           >
@@ -397,6 +442,18 @@ export const CustomersPage: React.FC = () => {
           </div>
         </form>
       </Modal>
+
+      {/* Interactive Map Picker Modal */}
+      <MapPicker
+        isOpen={isMapPickerOpen}
+        onClose={() => setIsMapPickerOpen(false)}
+        initialLat={form.latitude ? parseFloat(form.latitude) : null}
+        initialLng={form.longitude ? parseFloat(form.longitude) : null}
+        initialRadius={form.geofenceRadius ? parseInt(form.geofenceRadius, 10) : 75}
+        outletName={form.name}
+        outletAddress={form.address}
+        onConfirm={handleMapPickerConfirm}
+      />
     </div>
   );
 };

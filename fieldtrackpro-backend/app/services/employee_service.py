@@ -1,17 +1,19 @@
 """
-Employee service — refactored to use EmployeeRepository.
+Employee service — refactored to support business Working Profile, CUG, DOB, and Address.
 """
 from __future__ import annotations
 
 import uuid
-
+from datetime import date
 from sqlalchemy.ext.asyncio import AsyncSession
-
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import select, func
+
 from app.core.security import hash_password
 from app.exceptions.custom import BaseAPIException, DuplicateResourceException
 from app.models.employee import Employee
 from app.models.user import User
+from app.models.employee_customer_assignment import EmployeeCustomerAssignment
 from app.repositories.employee_repo import EmployeeRepository
 from app.repositories.user_repo import UserRepository
 from app.repositories.token_repo import TokenRepository
@@ -51,6 +53,10 @@ async def register_employee(data: EmployeeRegistration, session: AsyncSession) -
         full_name=data.full_name,
         territory_id=data.territory_id,
         employee_code=data.employee_code,
+        working_profile=data.working_profile,
+        cug=data.cug,
+        date_of_birth=data.date_of_birth,
+        address=data.address,
     )
     session.add(employee)
 
@@ -70,6 +76,7 @@ async def register_employee(data: EmployeeRegistration, session: AsyncSession) -
     await session.refresh(employee, ["user"])
     return employee
 
+
 async def create_employee(data: EmployeeCreate, session: AsyncSession) -> Employee:
     user_repo = UserRepository(session)
     emp_repo = EmployeeRepository(session)
@@ -84,6 +91,10 @@ async def create_employee(data: EmployeeCreate, session: AsyncSession) -> Employ
         full_name=data.full_name,
         territory_id=data.territory_id,
         employee_code=data.employee_code,
+        working_profile=data.working_profile,
+        cug=data.cug,
+        date_of_birth=data.date_of_birth,
+        address=data.address,
     )
     await emp_repo.add(employee)
     await emp_repo.commit()
@@ -124,6 +135,16 @@ async def update_employee(employee_id: uuid.UUID, data: EmployeeUpdate, session:
         emp.territory_id = data.territory_id
     if data.employee_code is not None:
         emp.employee_code = data.employee_code
+    if data.working_profile is not None:
+        emp.working_profile = data.working_profile
+    if data.cug is not None:
+        emp.cug = data.cug
+    if data.date_of_birth is not None:
+        emp.date_of_birth = data.date_of_birth
+    if data.address is not None:
+        emp.address = data.address
+    if data.must_change_password is not None:
+        emp.must_change_password = data.must_change_password
 
     if data.email is not None and data.email != emp.user.email:
         user_repo = UserRepository(session)
@@ -132,6 +153,13 @@ async def update_employee(employee_id: uuid.UUID, data: EmployeeUpdate, session:
         emp.user.email = data.email
         session.add(emp.user)
         await TokenRepository(session).revoke_all_for_user(emp.user.id)
+
+    if data.mobile_number is not None and data.mobile_number != emp.user.mobile_number:
+        user_repo = UserRepository(session)
+        if await user_repo.mobile_exists(data.mobile_number):
+            raise DuplicateResourceException(f"Mobile number '{data.mobile_number}' is already in use.")
+        emp.user.mobile_number = data.mobile_number
+        session.add(emp.user)
 
     session.add(emp)
     await session.commit()

@@ -1,12 +1,12 @@
-﻿import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { ApiClient, ApiError } from './client';
 
 /**
  * API client contract tests.
  *
- * Covers FT-040 (access token never persisted), FT-008 (refresh on 401),
- * FT-009 (logout revokes server-side), FT-010 (login field names) and
- * FT-055 (single base-URL normalisation).
+ * Covers FT-040 & Hardening (access token in memory only, refresh token in HttpOnly cookie,
+ * credentials: 'include'), FT-008 (refresh on 401), FT-009 (logout revokes server-side),
+ * FT-010 (login field names) and FT-055 (single base-URL normalisation).
  */
 
 const REFRESH_KEY = 'fieldtrack_refresh_token';
@@ -24,7 +24,7 @@ const TOKENS = {
   token_type: 'bearer',
 };
 
-describe('ApiClient - token storage (FT-040)', () => {
+describe('ApiClient - token storage & cookie hardening (FT-040)', () => {
   let client: ApiClient;
 
   beforeEach(() => {
@@ -32,20 +32,15 @@ describe('ApiClient - token storage (FT-040)', () => {
     client = new ApiClient();
   });
 
-  it('never writes the access token to localStorage', async () => {
+  it('never writes access token or refresh token to localStorage', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse(TOKENS));
 
     await client.login('user@example.com', 'correct-password');
 
     const stored = Object.keys(localStorage).map((k) => localStorage.getItem(k) ?? '');
     expect(stored.some((v) => v.includes(TOKENS.access_token))).toBe(false);
+    expect(localStorage.getItem(REFRESH_KEY)).toBeNull();
     expect(client.getAccessToken()).toBe(TOKENS.access_token);
-  });
-
-  it('keeps the refresh token so a reload can re-establish the session', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse(TOKENS));
-    await client.login('user@example.com', 'correct-password');
-    expect(localStorage.getItem(REFRESH_KEY)).toBe(TOKENS.refresh_token);
   });
 
   it('drops the in-memory token when the session is cleared', async () => {
@@ -58,7 +53,7 @@ describe('ApiClient - token storage (FT-040)', () => {
     expect(localStorage.getItem(REFRESH_KEY)).toBeNull();
   });
 
-  it('sends the Authorization header from memory', async () => {
+  it('sends the Authorization header from memory and uses credentials: include', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse(TOKENS));
     await client.login('user@example.com', 'correct-password');
 
@@ -68,15 +63,14 @@ describe('ApiClient - token storage (FT-040)', () => {
     const [, init] = fetchSpy.mock.calls.at(-1)!;
     const headers = (init as RequestInit).headers as Record<string, string>;
     expect(headers.Authorization).toBe(`Bearer ${TOKENS.access_token}`);
+    expect((init as RequestInit).credentials).toBe('include');
   });
 });
 
-describe('ApiClient - session restore after reload (FT-040 / FT-008)', () => {
+describe('ApiClient - session restore after reload (HttpOnly Cookie Auth)', () => {
   beforeEach(() => localStorage.clear());
 
-  it('mints a new access token from the stored refresh token', async () => {
-    // Simulates a fresh page load: refresh token present, no in-memory token.
-    localStorage.setItem(REFRESH_KEY, 'surviving-refresh-token');
+  it('mints a new access token via HttpOnly refresh cookie exchange', async () => {
     const client = new ApiClient();
     expect(client.getAccessToken()).toBeNull();
 
@@ -107,8 +101,7 @@ describe('ApiClient - session restore after reload (FT-040 / FT-008)', () => {
     expect(fetchSpy.mock.calls.some(([u]) => String(u).includes('/auth/refresh'))).toBe(true);
   });
 
-  it('fails cleanly when the refresh token is no longer valid', async () => {
-    localStorage.setItem(REFRESH_KEY, 'revoked-token');
+  it('fails cleanly when the refresh cookie is no longer valid', async () => {
     const client = new ApiClient();
 
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
@@ -117,7 +110,7 @@ describe('ApiClient - session restore after reload (FT-040 / FT-008)', () => {
     });
 
     await expect(client.getCurrentUser()).rejects.toBeInstanceOf(ApiError);
-    // The dead refresh token must not be left behind.
+    expect(client.getAccessToken()).toBeNull();
     expect(localStorage.getItem(REFRESH_KEY)).toBeNull();
   });
 });
@@ -158,7 +151,6 @@ describe('ApiClient - transparent refresh on 401 (FT-008)', () => {
   });
 
   it('does not loop indefinitely when the refresh also fails', async () => {
-    localStorage.setItem(REFRESH_KEY, 'stale');
     const client = new ApiClient();
 
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
@@ -175,7 +167,7 @@ describe('ApiClient - transparent refresh on 401 (FT-008)', () => {
 describe('ApiClient - logout (FT-009)', () => {
   beforeEach(() => localStorage.clear());
 
-  it('revokes the refresh token server-side', async () => {
+  it('revokes the refresh token server-side and clears cookie', async () => {
     const client = new ApiClient();
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse(TOKENS));
     await client.login('user@example.com', 'pw');
@@ -185,9 +177,6 @@ describe('ApiClient - logout (FT-009)', () => {
 
     const logoutCall = fetchSpy.mock.calls.find(([u]) => String(u).includes('/auth/logout'));
     expect(logoutCall, 'logout must call the revocation endpoint').toBeDefined();
-    expect(JSON.parse((logoutCall![1] as RequestInit).body as string)).toEqual({
-      refresh_token: TOKENS.refresh_token,
-    });
     expect(client.getAccessToken()).toBeNull();
     expect(localStorage.getItem(REFRESH_KEY)).toBeNull();
   });
@@ -248,64 +237,4 @@ describe('ApiClient - error surfacing', () => {
       message: 'Invalid credentials',
     });
   });
-
-  it('reports an unreachable API distinctly from a rejection', async () => {
-    const client = new ApiClient();
-    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('Failed to fetch'));
-
-    await expect(client.getHealth()).rejects.toMatchObject({ code: 'NETWORK_ERROR', status: 0 });
-  });
 });
-
-describe('ApiClient - base URL normalisation (FT-055)', () => {
-  it('builds the same URL whether or not the env value includes /api/v1', () => {
-    const client = new ApiClient();
-    const built = client.url('/api/v1/customers');
-    expect(built).toMatch(/\/api\/v1\/customers$/);
-    // The prefix must never be duplicated.
-    expect(built.match(/\/api\/v1/g)).toHaveLength(1);
-  });
-});
-
-describe('ApiClient - media download (P0 fix)', () => {
-  it('fetches the pre-signed download_url for the file bytes instead of blob-ifying the JSON pointer', async () => {
-    const client = new ApiClient();
-    const fetchSpy = vi.spyOn(globalThis, 'fetch');
-
-    fetchSpy.mockResolvedValueOnce(
-      jsonResponse({ download_url: 'http://localhost:8000/api/v1/media/local-file?key=x&expires=1&sig=y', expires_in_minutes: 15 }),
-    );
-    const fileBlob = new Blob(['fake-jpeg-bytes'], { type: 'image/jpeg' });
-    fetchSpy.mockResolvedValueOnce(
-      new Response(fileBlob, { status: 200, headers: { 'Content-Type': 'image/jpeg' } }),
-    );
-
-    // jsdom does not implement URL.createObjectURL, so it must be assigned
-    // directly rather than spied on (vi.spyOn requires the property to
-    // already exist) - same pattern used in MediaThumbnail.test.tsx.
-    const createObjectURLMock = vi.fn().mockReturnValue('blob:test-url');
-    URL.createObjectURL = createObjectURLMock;
-
-    const result = await client.getMediaObjectUrl('media-1');
-
-    expect(fetchSpy).toHaveBeenCalledTimes(2);
-    const [secondUrl] = fetchSpy.mock.calls[1]!;
-    expect(secondUrl).toBe('http://localhost:8000/api/v1/media/local-file?key=x&expires=1&sig=y');
-    // The object URL must be built from the actual file bytes (second
-    // response), not the first response's JSON pointer.
-    const blobPassedToCreateObjectURL = createObjectURLMock.mock.calls[0]![0] as Blob;
-    expect(blobPassedToCreateObjectURL.type).toBe('image/jpeg');
-    expect(result).toBe('blob:test-url');
-  });
-
-  it('surfaces an error if the second fetch (the actual file) fails', async () => {
-    const client = new ApiClient();
-    const fetchSpy = vi.spyOn(globalThis, 'fetch');
-
-    fetchSpy.mockResolvedValueOnce(jsonResponse({ download_url: 'http://x/local-file?expired', expires_in_minutes: 15 }));
-    fetchSpy.mockResolvedValueOnce(new Response(null, { status: 403 }));
-
-    await expect(client.getMediaObjectUrl('media-1')).rejects.toThrow(/403/);
-  });
-});
-

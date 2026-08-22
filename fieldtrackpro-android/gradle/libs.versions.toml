@@ -17,8 +17,10 @@ coroutines = "1.8.1"
 # Keystore-backed encrypted preferences, required by Security Design s1
 # for token storage on device (FT-027).
 securityCrypto = "1.1.0-alpha06"
+firebaseMessaging = "24.1.0"
 
 [libraries]
+firebase-messaging = { group = "com.google.firebase", name = "firebase-messaging", version.ref = "firebaseMessaging" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }

@@ -9,6 +9,7 @@ import com.fieldtrackpro.android.data.remote.ApiClient
 import com.fieldtrackpro.android.data.repository.NotificationRepository
 import com.fieldtrackpro.android.data.repository.Resource
 import com.fieldtrackpro.android.notifications.NotificationHelper
+import com.fieldtrackpro.android.notifications.NotificationTracker
 
 class NotificationSyncWorker(
     private val context: Context,
@@ -17,8 +18,6 @@ class NotificationSyncWorker(
 
     companion object {
         private const val TAG = "NotificationSyncWorker"
-        private const val PREFS_NOTIF_TRACKER = "fieldtrack_notif_tracker"
-        private const val KEY_DELIVERED_IDS = "delivered_notif_ids"
     }
 
     override suspend fun doWork(): Result {
@@ -34,16 +33,18 @@ class NotificationSyncWorker(
             when (val res = repo.getMyNotifications()) {
                 is Resource.Success -> {
                     val notifications = res.data
-                    val prefs = context.getSharedPreferences(PREFS_NOTIF_TRACKER, Context.MODE_PRIVATE)
-                    val deliveredIds = prefs.getStringSet(KEY_DELIVERED_IDS, emptySet())?.toMutableSet() ?: mutableSetOf()
 
                     for (notif in notifications) {
-                        if (!notif.isRead && !deliveredIds.contains(notif.id)) {
+                        if (!notif.isRead && !NotificationTracker.isDelivered(context, notif.id)) {
                             val title = when (notif.notificationType) {
                                 "NEW_VISIT" -> "New Visit Assigned"
                                 "RESCHEDULED" -> "Visit Rescheduled"
                                 "CANCELLED" -> "Visit Cancelled"
                                 "REMINDER" -> "Visit Reminder"
+                                "OVERDUE" -> "Visit Overdue"
+                                "COMPLETED" -> "Visit Completed"
+                                "GEO_FAILURE_ALERT" -> "Geofence Verification Alert"
+                                "GEO_ALERT" -> "Geofence Alert"
                                 else -> "FieldTrack Notification"
                             }
 
@@ -52,13 +53,13 @@ class NotificationSyncWorker(
                                 notificationId = notif.id.hashCode(),
                                 title = title,
                                 message = notif.message,
-                                visitId = notif.visitId
+                                visitId = notif.visitId,
+                                notificationIdStr = notif.id
                             )
-                            deliveredIds.add(notif.id)
+                            NotificationTracker.markDelivered(context, notif.id)
                         }
                     }
 
-                    prefs.edit().putStringSet(KEY_DELIVERED_IDS, deliveredIds).apply()
                     Result.success()
                 }
                 else -> Result.retry()
@@ -69,3 +70,4 @@ class NotificationSyncWorker(
         }
     }
 }
+

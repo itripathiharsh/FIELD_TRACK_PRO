@@ -56,6 +56,9 @@ class Settings(BaseSettings):
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:3000",
+        "https://fieldtrack-pro-rosy.vercel.app",
+        "https://fieldtrack-pro-imharshofficial322-gmailcoms-projects.vercel.app",
+        "https://fieldtrack-pro-git-main-imharshofficial322-gmailcoms-projects.vercel.app",
     ]
 
     # Background jobs
@@ -118,5 +121,58 @@ class Settings(BaseSettings):
             self.media_signing_secret = "dev-only-media-signing-secret-do-not-use-in-production"
         return self
 
+    @model_validator(mode="after")
+    def _validate_production_storage_config(self) -> "Settings":
+        """
+        Production hardening: reject default, placeholder, or predictable development
+        credentials for MinIO when running in production.
+        """
+        if self.environment == "production" and self.storage_provider.upper() == "MINIO":
+            insecure_defaults = {
+                "minioadmin",
+                "minio",
+                "admin",
+                "secret",
+                "password",
+                "default",
+                "changeme",
+                "test",
+                "12345678",
+                "accesskey",
+                "secretkey",
+            }
+
+            access_key = (self.minio_access_key or "").strip()
+            secret_key = (self.minio_secret_key or "").strip()
+            endpoint = (self.minio_endpoint or "").strip().lower()
+            bucket = (self.minio_bucket or "").strip().lower()
+
+            if not access_key or access_key.lower() in insecure_defaults:
+                raise ValueError(
+                    "MINIO_ACCESS_KEY must be configured with a secure, non-default credential "
+                    "when ENVIRONMENT=production and STORAGE_PROVIDER=MINIO."
+                )
+
+            if not secret_key or secret_key.lower() in insecure_defaults:
+                raise ValueError(
+                    "MINIO_SECRET_KEY must be configured with a secure, non-default credential "
+                    "when ENVIRONMENT=production and STORAGE_PROVIDER=MINIO."
+                )
+
+            if not endpoint or "localhost" in endpoint or "127.0.0.1" in endpoint:
+                raise ValueError(
+                    "MINIO_ENDPOINT must point to a dedicated production storage host (not localhost) "
+                    "when ENVIRONMENT=production and STORAGE_PROVIDER=MINIO."
+                )
+
+            if not bucket or bucket == "fieldtrackpro-dev" or "dev" in bucket:
+                raise ValueError(
+                    "MINIO_BUCKET must be configured with a production bucket name (not development default) "
+                    "when ENVIRONMENT=production and STORAGE_PROVIDER=MINIO."
+                )
+
+        return self
+
 
 settings = Settings()
+

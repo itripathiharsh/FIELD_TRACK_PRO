@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, ShieldCheck, Image as ImageIcon, MapPin, Upload, LogOut, FileSignature, ClipboardList, Eye, PlayCircle, PackagePlus } from 'lucide-react';
+import { ArrowLeft, ShieldCheck, Image as ImageIcon, MapPin, Upload, LogOut, FileSignature, ClipboardList, Eye, PlayCircle, PackagePlus, AlertOctagon } from 'lucide-react';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -8,7 +8,18 @@ import { Input } from '../components/ui/Input';
 import { ErrorBanner } from '../components/ui/ErrorBanner';
 import { useAuth } from '../context/AuthContext';
 import { apiClient } from '../api/client';
-import { AccountSummary, Customer, FormSubmission, GeoVerificationLog, Visit, VisitMedia, VisitSignature, VisitStatus } from '../types';
+import {
+  AccountSummary,
+  Customer,
+  FormSubmission,
+  GeoVerificationLog,
+  Visit,
+  VisitMedia,
+  VisitSignature,
+  VisitStatus,
+  ExceptionType,
+  FieldException,
+} from '../types';
 import { MediaThumbnail } from '../components/ui/MediaThumbnail';
 import { SignatureThumbnail } from '../components/ui/SignatureThumbnail';
 import { AccountSummaryCard } from '../components/ui/AccountSummaryCard';
@@ -28,7 +39,12 @@ export const VisitDetailsPage: React.FC = () => {
   const currentSignatures = signatures.filter((sig) => sig.superseded_at === null);
   const [formSubmissions, setFormSubmissions] = useState<FormSubmission[]>([]);
   const [account, setAccount] = useState<AccountSummary | null>(null);
+  const [visitExceptions, setVisitExceptions] = useState<FieldException[]>([]);
   const [isCollectModalOpen, setIsCollectModalOpen] = useState(false);
+  const [isExceptionModalOpen, setIsExceptionModalOpen] = useState(false);
+  const [exceptionType, setExceptionType] = useState<ExceptionType>('VEHICLE_BREAKDOWN');
+  const [exceptionDesc, setExceptionDesc] = useState('');
+  const [isSubmittingException, setIsSubmittingException] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -65,7 +81,7 @@ export const VisitDetailsPage: React.FC = () => {
       const visitData = await apiClient.getVisitById(id);
       setVisit(visitData);
 
-      const [logs, media, cust, sigs, submissions, acct] = await Promise.all([
+      const [logs, media, cust, sigs, submissions, acct, excs] = await Promise.all([
         apiClient.getVisitGeoLogs(id).catch(() => [] as GeoVerificationLog[]),
         apiClient.getVisitMedia(id).catch(() => [] as VisitMedia[]),
         apiClient.getCustomerById(visitData.customer_id).catch(() => null),
@@ -74,6 +90,7 @@ export const VisitDetailsPage: React.FC = () => {
         // are already on visitData.required_form_id, not a global catalog.
         apiClient.getFormSubmissions({ visit_id: id }).catch(() => [] as FormSubmission[]),
         apiClient.getCustomerAccount(visitData.customer_id).catch(() => null),
+        apiClient.getFieldExceptions({ customer_id: visitData.customer_id }).catch(() => [] as FieldException[]),
       ]);
       setGeoLogs(logs);
       setMediaList(media);
@@ -81,10 +98,32 @@ export const VisitDetailsPage: React.FC = () => {
       setSignatures(sigs);
       setFormSubmissions(submissions);
       setAccount(acct);
+      setVisitExceptions(excs.filter((e) => e.visit_id === id));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load visit details');
     }
   }, [id]);
+
+  const handleFileException = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!visit || !exceptionDesc.trim()) return;
+    setIsSubmittingException(true);
+    try {
+      await apiClient.createFieldException({
+        visit_id: visit.id,
+        customer_id: visit.customer_id,
+        exception_type: exceptionType,
+        description: exceptionDesc.trim(),
+      });
+      setIsExceptionModalOpen(false);
+      setExceptionDesc('');
+      await reload();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to submit exception');
+    } finally {
+      setIsSubmittingException(false);
+    }
+  };
 
   useEffect(() => {
     setIsLoading(true);
@@ -330,20 +369,33 @@ export const VisitDetailsPage: React.FC = () => {
           </div>
         </div>
 
-        {/* FT-020: admin override, previously unreachable from the UI. */}
-        {isAdmin && visit.status !== 'COMPLETED' && visit.status !== 'MISSED' && (
-          <div className="mt-space-4 pt-space-4 border-t border-surface-container-highest flex flex-wrap items-center gap-space-3">
-            <span className="font-label-md text-xs uppercase text-on-surface-variant font-semibold">
-              Admin override
-            </span>
-            <Button variant="outline" size="sm" onClick={() => void handleForceStatus('MISSED')}>
-              Mark Missed
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => void handleForceStatus('COMPLETED')}>
-              Approve As Completed
+        {/* Operational Actions & Admin override */}
+        <div className="mt-space-4 pt-space-4 border-t border-surface-container-highest flex flex-wrap items-center justify-between gap-space-3">
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsExceptionModalOpen(true)}
+              className="text-amber-500 border-amber-500/30 hover:bg-amber-500/10"
+            >
+              Report Issue / Exception
             </Button>
           </div>
-        )}
+
+          {isAdmin && visit.status !== 'COMPLETED' && visit.status !== 'MISSED' && (
+            <div className="flex flex-wrap items-center gap-space-3">
+              <span className="font-label-md text-xs uppercase text-on-surface-variant font-semibold">
+                Admin override
+              </span>
+              <Button variant="outline" size="sm" onClick={() => void handleForceStatus('MISSED')}>
+                Mark Missed
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => void handleForceStatus('COMPLETED')}>
+                Approve As Completed
+              </Button>
+            </div>
+          )}
+        </div>
       </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-space-6">
@@ -700,6 +752,38 @@ export const VisitDetailsPage: React.FC = () => {
             </div>
           </Card>
         )}
+        {/* Field Exceptions History */}
+        {visitExceptions.length > 0 && (
+          <Card variant="default" className="space-y-space-4">
+            <div className="flex items-center gap-space-2 border-b border-surface-container-highest pb-space-3">
+              <AlertOctagon className="w-5 h-5 text-amber-500" />
+              <h3 className="font-headline-sm text-base font-bold text-primary">
+                Filed Exceptions ({visitExceptions.length})
+              </h3>
+            </div>
+            <div className="space-y-space-3">
+              {visitExceptions.map((exc) => (
+                <div key={exc.id} className="p-3 bg-surface-container-low border border-outline-variant rounded-lg space-y-1 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-primary">{exc.exception_type}</span>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                      exc.status === 'APPROVED' ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' :
+                      exc.status === 'REJECTED' ? 'bg-rose-950 text-rose-400 border border-rose-800' :
+                      'bg-amber-950 text-amber-400 border border-amber-800'
+                    }`}>
+                      {exc.status}
+                    </span>
+                  </div>
+                  <p className="text-on-surface-variant">{exc.description}</p>
+                  {exc.admin_notes && (
+                    <p className="text-cyan-400 font-medium pt-1">Admin note: {exc.admin_notes}</p>
+                  )}
+                  <span className="text-[10px] text-outline block">{new Date(exc.created_at).toLocaleString()}</span>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
       </div>
 
       {id && (
@@ -710,6 +794,64 @@ export const VisitDetailsPage: React.FC = () => {
           outstandingInvoices={account?.recent_invoices?.filter((inv) => Number(inv.remaining_amount) > 0) ?? []}
           onCollected={() => void reload()}
         />
+      )}
+
+      {/* Exception Submission Modal */}
+      {isExceptionModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
+                <AlertOctagon className="w-5 h-5 text-amber-400" />
+                Report Field Exception
+              </h3>
+              <button
+                onClick={() => setIsExceptionModalOpen(false)}
+                className="text-slate-400 hover:text-slate-200"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleFileException} className="space-y-4 text-xs">
+              <div>
+                <label className="block text-slate-300 font-medium mb-1">Issue / Exception Type</label>
+                <select
+                  value={exceptionType}
+                  onChange={(e) => setExceptionType(e.target.value as ExceptionType)}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-cyan-500"
+                >
+                  <option value="VEHICLE_BREAKDOWN">Vehicle Breakdown / Transit Delay</option>
+                  <option value="GPS_UNAVAILABLE">GPS Signal Unavailable / Device Issue</option>
+                  <option value="OUTLET_CLOSED">Outlet Closed / Under Renovation</option>
+                  <option value="CUSTOMER_UNAVAILABLE">Customer / Decision Maker Unavailable</option>
+                  <option value="OTHER">Other Approved Reason</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-medium mb-1">Detailed Explanation</label>
+                <textarea
+                  rows={3}
+                  required
+                  placeholder="Describe the operational issue and location circumstances..."
+                  value={exceptionDesc}
+                  onChange={(e) => setExceptionDesc(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-slate-200 focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+                <Button variant="outline" size="sm" type="button" onClick={() => setIsExceptionModalOpen(false)}>
+                  Cancel
+                </Button>
+                <Button variant="secondary" size="sm" type="submit" isLoading={isSubmittingException}>
+                  Submit Exception
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );

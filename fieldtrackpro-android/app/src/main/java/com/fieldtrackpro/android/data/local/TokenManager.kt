@@ -37,6 +37,7 @@ class TokenManager(context: Context) {
         private const val KEY_USER_PHONE = "user_phone"
         private const val KEY_EMPLOYEE_CODE = "employee_code"
         private const val KEY_TERRITORY_NAME = "territory_name"
+        private const val KEY_FCM_TOKEN = "fcm_token"
 
         private fun createPreferences(context: Context): SharedPreferences {
             val masterKey = MasterKey.Builder(context)
@@ -112,8 +113,23 @@ class TokenManager(context: Context) {
      */
     fun getUserRole(): String? = prefs.getString(KEY_USER_ROLE, null)?.ifBlank { null }
 
+    fun saveFcmToken(token: String) {
+        prefs.edit().putString(KEY_FCM_TOKEN, token).apply()
+    }
+
+    fun getFcmToken(): String? = prefs.getString(KEY_FCM_TOKEN, null)?.ifBlank { null }
+
+    fun clearFcmToken() {
+        prefs.edit().remove(KEY_FCM_TOKEN).apply()
+    }
+
     fun clear() {
+        // Keep FCM device token so the next logged-in user can register it
+        val fcmToken = getFcmToken()
         prefs.edit().clear().apply()
+        if (fcmToken != null) {
+            saveFcmToken(fcmToken)
+        }
     }
 
     fun isLoggedIn(): Boolean = getAccessToken() != null

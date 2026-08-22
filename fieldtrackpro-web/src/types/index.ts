@@ -35,6 +35,12 @@ export interface Employee {
   full_name: string;
   territory_id: string | null;
   employee_code: string | null;
+  working_profile?: string | null;
+  cug?: string | null;
+  date_of_birth?: string | null;
+  address?: string | null;
+  must_change_password?: boolean;
+  assigned_outlets_count?: number;
   created_at: string;
   /** Present on detail endpoints that embed the linked account. */
   user?: {
@@ -52,6 +58,8 @@ export interface GeoPoint {
   longitude: number;
 }
 
+export type LocationStatus = 'VERIFIED' | 'NEEDS_REVIEW' | 'MISSING';
+
 /** Response of `GET /api/v1/customers`. */
 export interface Customer {
   id: string;
@@ -60,16 +68,20 @@ export interface Customer {
   /** FT-013: separate human contact, distinct from the phone number. */
   contact_person: string | null;
   address: string;
-  /** FT-012: the geofence centre, required by the customers table. */
-  location: GeoPoint;
+  /** FT-012: the geofence centre, optional/nullable for bulk imported records. */
+  location: GeoPoint | null;
   geofence_radius_m: number;
+  location_status?: LocationStatus;
   /** Zone. */
   territory_id: string | null;
+  territory_name?: string | null;
   /** Zone -> Area -> Outlet. Once set, Area is the source of truth for the Zone (territory_id is kept in sync server-side, never independently editable once an Area is assigned). */
   area_id: string | null;
   area_name: string | null;
-  /** External-system cross-reference (Tally ledger code, Excel/MIS import key). */
+  /** External-system cross-reference (DMS Code / External MIS anchor). */
   outlet_code: string | null;
+  dms_code?: string | null;
+  assigned_fos_names?: string[];
   created_by: string;
   created_at: string;
 }
@@ -537,8 +549,15 @@ export interface ImportPreviewResponse {
   sample_rows: string[][];
   total_data_rows: number;
   truncated: boolean;
+  detected_type?: string;
   suggested_mapping: Record<string, string | null>;
   target_fields: Record<string, ImportTargetFieldConfig>;
+  unmatched_fos_names?: string[];
+  header_row_index?: number;
+  is_confident?: boolean;
+  matched_columns_count?: number;
+  total_columns_count?: number;
+  detected_entity_count?: number;
 }
 
 export interface ImportRowError {
@@ -554,18 +573,24 @@ export interface ImportRowWarning {
 
 /** Shape of `ImportBatchRead.summary` - mirrors import_service.create_import_batch's summary dict. */
 export interface ImportSummary {
-  territories_created: number;
-  employees_matched: number;
-  employees_unresolved: number;
-  customers_created: number;
-  customers_updated: number;
-  invoices_created: number;
-  invoices_updated: number;
-  invoices_skipped_duplicate: number;
-  payments_created: number;
-  duplicate_outlet_codes_with_inconsistent_names: { outlet_code: string; names_seen: string[] }[];
-  warnings: ImportRowWarning[];
-  rows_with_warnings: number;
+  territories_created?: number;
+  employees_matched?: number;
+  employees_unresolved?: number;
+  customers_created?: number;
+  customers_updated?: number;
+  invoices_created?: number;
+  invoices_updated?: number;
+  invoices_skipped_duplicate?: number;
+  payments_created?: number;
+  duplicate_outlet_codes_with_inconsistent_names?: { outlet_code: string; names_seen: string[] }[];
+  warnings?: ImportRowWarning[];
+  rows_with_warnings?: number;
+  plan_rows?: any[];
+  detected_type?: string;
+  unmatched_fos_names?: string[];
+  total_rows?: number;
+  valid_rows?: number;
+  [key: string]: any;
 }
 
 /** Response of `POST /api/v1/imports/validate`, `.../commit`, `GET /api/v1/imports[/{id}]`. */
@@ -702,3 +727,282 @@ export interface TerritoryAssignmentHistory {
   effective_territory_name: string | null;
   assignments: TerritoryAssignmentRead[];
 }
+
+// -- Real Business BI & Financial Snapshots ----------------------------------
+
+export interface BusinessSummaryRow {
+  brand: string;
+  dimension_name: string;
+  dms_code?: string | null;
+  outlet_name?: string | null;
+  zone_name?: string | null;
+  area_name?: string | null;
+  fos_name?: string | null;
+  outlets_count: number;
+  sales: string;
+  collection: string;
+  market_outstanding: string;
+  bucket_lt_15: string;
+  bucket_15_30: string;
+  bucket_30_45: string;
+  bucket_45_60: string;
+  bucket_60_75: string;
+  bucket_75_90: string;
+  bucket_gt_90: string;
+}
+
+export interface BusinessBIDashboard {
+  snapshot_date?: string | null;
+  total_outlets: number;
+  total_sales: string;
+  total_collection: string;
+  total_market_outstanding: string;
+  total_overdue_gt_90: string;
+  brand_summaries: BusinessSummaryRow[];
+  zone_summaries: BusinessSummaryRow[];
+  area_summaries: BusinessSummaryRow[];
+  fos_summaries: BusinessSummaryRow[];
+  raw_outlet_rows: BusinessSummaryRow[];
+}
+
+export interface FOSEmployeeMappingRead {
+  id: string;
+  raw_fos_name: string;
+  employee_id: string;
+  employee_name?: string | null;
+  employee_code?: string | null;
+  created_at: string;
+}
+
+export interface EmployeeReportRow {
+  employee_id: string;
+  employee_name: string;
+  total_visits: number;
+  completed_visits: number;
+  pending_visits: number;
+  missed_visits: number;
+  flagged_visits: number;
+  completion_rate: number;
+}
+
+export interface ProductivityDashboardData {
+  total_employees: number;
+  active_employees: number;
+  total_visits_today: number;
+  completed_visits_today: number;
+  pending_visits_today: number;
+  missed_visits_today: number;
+  flagged_visits_today: number;
+  avg_visits_per_employee: number;
+}
+
+export interface GeoReportRow {
+  visit_id: string;
+  employee_name: string;
+  customer_name: string;
+  dms_code?: string;
+  attempted_at: string;
+  verification_type: string;
+  is_valid: boolean;
+  distance_m: number;
+  failure_reason: string | null;
+}
+
+export interface OverviewReportData {
+  total_employees: number;
+  total_outlets: number;
+  total_sales: string;
+  total_collection: string;
+  total_market_outstanding: string;
+  total_overdue_gt_90: string;
+  total_visits: number;
+  completed_visits: number;
+  completion_rate: number;
+  brand_breakdown: BusinessSummaryRow[];
+  zone_breakdown: BusinessSummaryRow[];
+  fos_breakdown: BusinessSummaryRow[];
+}
+
+export interface EmployeeMasterReportRow {
+  employee_id: string;
+  employee_code: string;
+  full_name: string;
+  email?: string;
+  phone_number?: string;
+  cug?: string;
+  working_profile?: string;
+  role: string;
+  is_active: boolean;
+  assigned_outlets_count: number;
+  zone_names: string[];
+}
+
+export interface OutletReportRow {
+  customer_id: string;
+  dms_code?: string;
+  outlet_name: string;
+  contact_person?: string;
+  contact_number?: string;
+  address?: string;
+  zone_name?: string;
+  area_name?: string;
+  fos_name?: string;
+  brand?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  geofence_radius_m: number;
+  location_status: string;
+  sales: string;
+  collection: string;
+  market_outstanding: string;
+  overdue_gt_90: string;
+}
+
+export interface OutstandingAgeingReportRow {
+  customer_id: string;
+  dms_code?: string;
+  outlet_name: string;
+  brand: string;
+  zone_name?: string;
+  area_name?: string;
+  fos_name?: string;
+  market_outstanding: string;
+  bucket_lt_15: string;
+  bucket_15_30: string;
+  bucket_30_45: string;
+  bucket_45_60: string;
+  bucket_60_75: string;
+  bucket_75_90: string;
+  bucket_gt_90: string;
+  highest_overdue_bucket: string;
+}
+
+export interface CollectionReportRow {
+  customer_id: string;
+  dms_code?: string;
+  outlet_name: string;
+  brand: string;
+  zone_name?: string;
+  area_name?: string;
+  fos_name?: string;
+  collection_amount: string;
+  sales_amount: string;
+  snapshot_date: string;
+}
+
+export interface VisitDetailedReportRow {
+  visit_id: string;
+  scheduled_at: string;
+  employee_name: string;
+  customer_name: string;
+  dms_code?: string;
+  zone_name?: string;
+  area_name?: string;
+  status: string;
+  check_in_at?: string | null;
+  check_out_at?: string | null;
+  duration_minutes?: number | null;
+  is_gps_verified: boolean;
+}
+
+export interface MonthlyReportingPeriod {
+  id: string;
+  period_year: number;
+  period_month: number;
+  period_name: string;
+  status: 'OPEN' | 'FINALIZED';
+  snapshot_count: number;
+  total_outlets: number;
+  total_sales: string;
+  total_collection: string;
+  total_market_os: string;
+  total_overdue_gt_90: string;
+  finalized_at?: string | null;
+  finalized_by?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ExceptionType =
+  | 'VEHICLE_BREAKDOWN'
+  | 'GPS_UNAVAILABLE'
+  | 'OUTLET_CLOSED'
+  | 'CUSTOMER_UNAVAILABLE'
+  | 'OTHER';
+
+export type ExceptionStatus = 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED';
+
+export interface FieldException {
+  id: string;
+  visit_id: string | null;
+  employee_id: string;
+  employee_name: string | null;
+  customer_id: string;
+  customer_name: string | null;
+  dms_code: string | null;
+  exception_type: ExceptionType;
+  description: string;
+  status: ExceptionStatus;
+  admin_notes: string | null;
+  reviewed_by: string | null;
+  reviewed_by_name: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FieldExceptionCreate {
+  visit_id?: string | null;
+  customer_id: string;
+  exception_type: ExceptionType;
+  description: string;
+}
+
+export interface FieldExceptionReview {
+  status: ExceptionStatus;
+  admin_notes?: string;
+}
+
+export interface DashboardExecutiveKPIs {
+  total_outlets: number;
+  total_sales: string;
+  total_collection: string;
+  total_market_outstanding: string;
+  total_overdue_gt_90: string;
+  total_employees: number;
+  total_visits: number;
+  completed_visits: number;
+  pending_visits: number;
+  flagged_visits: number;
+  gps_verified_visits: number;
+  total_exceptions: number;
+  pending_exceptions: number;
+  total_collections_count: number;
+  total_orders_count: number;
+}
+
+export interface DashboardSummaryResponse {
+  period: string;
+  is_historical: boolean;
+  kpis: DashboardExecutiveKPIs;
+  brand_breakdown: BusinessSummaryRow[];
+  fos_breakdown: BusinessSummaryRow[];
+  zone_breakdown: BusinessSummaryRow[];
+  area_breakdown: BusinessSummaryRow[];
+  ageing_distribution: Record<string, string>;
+  recent_exceptions: FieldException[];
+}
+
+export interface EmployeeDayDashboardResponse {
+  employee_id: string;
+  employee_name: string;
+  assigned_outlets_count: number;
+  today_visits_count: number;
+  completed_visits_count: number;
+  pending_visits_count: number;
+  collections_today_count: number;
+  collections_today_amount: string;
+  orders_today_count: number;
+}
+
+

@@ -66,3 +66,31 @@ def test_preview_handles_blank_column_headers():
     data = _make_xlsx(["Name", None, "Amount"], [["X", "skip", 5]])
     result = preview_excel_file(data, "gaps.xlsx")
     assert result["columns"][1] == "(blank column 2)"
+
+
+def test_preview_skips_title_and_total_rows():
+    # Row 1: Company title banner
+    # Row 2: Totals summary
+    # Row 3: Actual table headers
+    # Row 4+: Data
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["SGRG SERVICES PRIVATE LIMITED - OS Report (VU)", None, None, None, None, "Date :-", "2026-08-21"])
+    ws.append(["Total", None, 87, 87, 87, 9933698.29, 754264])
+    ws.append(["DMS Code", "OUTLET_NAME", "ZONE", "AREA", "FOS NAME", "MARKET_OS", "(< 15 days )"])
+    ws.append(["SGRGVU101", "Pihu Electronics", "KANPUR", "MANGLA VIHAR", "RAUNAK", 26590, 26590])
+    ws.append(["SGRGVU102", "Luxmi Electronics", "FARRUKHABAD", "TIRWA", "YOGESH", 49980, 49980])
+    buf = io.BytesIO()
+    wb.save(buf)
+    data = buf.getvalue()
+
+    result = preview_excel_file(data, "vu_format.xlsx")
+    assert result["header_row_index"] == 3
+    assert result["columns"] == ["DMS Code", "OUTLET_NAME", "ZONE", "AREA", "FOS NAME", "MARKET_OS", "(< 15 days )"]
+    assert result["total_data_rows"] == 2
+    assert result["is_confident"] is True
+    assert result["matched_columns_count"] == 7
+    assert result["suggested_mapping"]["DMS Code"] == "dms_code"
+    assert result["suggested_mapping"]["OUTLET_NAME"] == "outlet_name"
+    assert result["suggested_mapping"]["MARKET_OS"] == "market_outstanding"
+

@@ -237,7 +237,8 @@ describe('ReportsPage - CSV Export', () => {
             });
 
         renderWithProviders(<ReportsPage />);
-        await userEvent.click(await screen.findByRole('button', { name: /geo verification/i }));
+        await userEvent.click(await screen.findByRole('button', { name: 'visits' }));
+        await userEvent.click(await screen.findByRole('button', { name: /geo verification audit/i }));
         await userEvent.click(await screen.findByRole('button', { name: /csv/i }));
 
         expect(clickSpy).toHaveBeenCalled();
@@ -686,7 +687,7 @@ describe('ReportsPage - P1-13 draft vs applied filter state', () => {
 
         // Trigger unrelated re-renders (tab switching).
         await userEvent.click(screen.getByRole('button', { name: 'employees' }));
-        await userEvent.click(screen.getByRole('button', { name: 'overview' }));
+        await userEvent.click(screen.getByRole('button', { name: 'business_bi' }));
         await new Promise((resolve) => setTimeout(resolve, 300));
 
         const employeeCalls = requestedUrls.filter((u) => u.includes('/reports/employees'));

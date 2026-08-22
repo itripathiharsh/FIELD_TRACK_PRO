@@ -157,8 +157,13 @@ class MainActivity : ComponentActivity() {
 
     private fun handleNotificationIntent(intent: Intent?) {
         val visitId = intent?.getStringExtra(NotificationHelper.EXTRA_VISIT_ID)
+            ?: intent?.extras?.getString(NotificationHelper.EXTRA_VISIT_ID)
+            ?: intent?.getStringExtra("visit_id")
+            ?: intent?.extras?.getString("visit_id")
+
         if (!visitId.isNullOrBlank()) {
             pendingNotificationVisitId = visitId
         }
     }
+
 }

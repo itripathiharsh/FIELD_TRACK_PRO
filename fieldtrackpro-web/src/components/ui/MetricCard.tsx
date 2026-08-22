@@ -35,31 +35,37 @@ export const MetricCard: React.FC<MetricCardProps> = ({
     <Card
       variant="hover"
       onClick={onClick}
-      className={`flex items-start justify-between ${onClick ? 'cursor-pointer' : ''}`}
+      className={`h-full flex flex-col justify-between !p-4 min-w-0 ${onClick ? 'cursor-pointer' : ''}`}
     >
-      <div>
-        <span className="font-label-md text-xs text-on-surface-variant block uppercase tracking-wider font-semibold mb-space-1">
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <span className="font-label-md text-[11px] sm:text-xs text-on-surface-variant block uppercase tracking-wider font-semibold truncate flex-1 min-w-0">
           {title}
         </span>
-        <div className="flex items-baseline gap-space-2 mt-1">
-          <span className="font-headline-lg text-3xl font-bold tracking-tight text-primary">
+        <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 shadow-2xs ${colorMap[color] || colorMap.primary}`}>
+          <Icon className="w-4 h-4" />
+        </div>
+      </div>
+
+      <div className="my-auto py-1 min-w-0">
+        <div className="flex items-baseline flex-wrap gap-1.5">
+          <span className="font-headline-lg text-lg sm:text-xl lg:text-lg 2xl:text-xl font-bold tracking-tight text-primary break-words leading-tight">
             {value}
           </span>
           {trend && (
-            <span className="font-label-md text-xs text-secondary-container font-bold bg-secondary-fixed/50 px-2 py-0.5 rounded">
+            <span className="font-label-md text-[10px] text-secondary-container font-bold bg-secondary-fixed/50 px-1.5 py-0.5 rounded shrink-0">
               {trend}
             </span>
           )}
         </div>
-        {subtitle && (
-          <p className="font-caption text-xs text-on-surface-variant mt-space-2 leading-tight">
-            {subtitle}
-          </p>
-        )}
       </div>
-      <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 shadow-xs ${colorMap[color] || colorMap.primary}`}>
-        <Icon className="w-5 h-5" />
-      </div>
+
+      {subtitle ? (
+        <p className="font-caption text-[11px] text-on-surface-variant mt-1.5 leading-tight truncate">
+          {subtitle}
+        </p>
+      ) : (
+        <div className="h-2" />
+      )}
     </Card>
   );
 };

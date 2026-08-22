@@ -247,7 +247,6 @@ def _purge_test_artifacts() -> None:
         # RESTRICT against territories, so it must go before the territories
         # delete below. Matched by employee/area/creator OR by belonging to a
         # test-marker-named zone, so a test that created its own dedicated
-        # zone+area (not just reusing seeded_world's) is still fully swept.
         cur.execute(
             "DELETE FROM employee_area_assignments WHERE "
             "  employee_id IN (SELECT id FROM employees WHERE employee_code LIKE %s)"
@@ -256,10 +255,40 @@ def _purge_test_artifacts() -> None:
             "  OR created_by IN (SELECT id FROM users WHERE email LIKE %s)",
             (f"{TEST_MARKER}%", f"{TEST_MARKER}%", f"{TEST_MARKER}%", f"{TEST_MARKER}%"),
         )
-        cur.execute("DELETE FROM employees WHERE employee_code LIKE %s", (f"{TEST_MARKER}%",))
+        cur.execute(
+            "DELETE FROM employee_customer_assignments WHERE "
+            "  employee_id IN (SELECT id FROM employees WHERE employee_code LIKE %s)"
+            "  OR customer_id IN (SELECT id FROM customers WHERE name LIKE %s)"
+            "  OR created_by IN (SELECT id FROM users WHERE email LIKE %s)",
+            (f"{TEST_MARKER}%", f"{TEST_MARKER}%", f"{TEST_MARKER}%"),
+        )
+        cur.execute(
+            "DELETE FROM fos_employee_mappings WHERE "
+            "  employee_id IN (SELECT id FROM employees WHERE employee_code LIKE %s)",
+            (f"{TEST_MARKER}%",),
+        )
+        cur.execute(
+            "DELETE FROM outlet_financial_snapshots WHERE "
+            "  customer_id IN (SELECT id FROM customers WHERE name LIKE %s)",
+            (f"{TEST_MARKER}%",),
+        )
+        cur.execute(
+            "DELETE FROM customers WHERE "
+            "  name LIKE %s OR created_by IN (SELECT id FROM users WHERE email LIKE %s)",
+            (f"{TEST_MARKER}%", f"{TEST_MARKER}%"),
+        )
+        cur.execute(
+            "DELETE FROM employees WHERE employee_code LIKE %s OR user_id IN ("
+            "  SELECT id FROM users WHERE email LIKE %s)",
+            (f"{TEST_MARKER}%", f"{TEST_MARKER}%"),
+        )
         cur.execute(
             "DELETE FROM refresh_tokens WHERE user_id IN ("
             "  SELECT id FROM users WHERE email LIKE %s)",
+            (f"{TEST_MARKER}%",),
+        )
+        cur.execute(
+            "DELETE FROM login_attempts WHERE identifier LIKE %s",
             (f"{TEST_MARKER}%",),
         )
         cur.execute(
@@ -283,6 +312,16 @@ def _purge_test_artifacts() -> None:
         )
         cur.execute(
             "DELETE FROM form_templates WHERE created_by IN ("
+            "  SELECT id FROM users WHERE email LIKE %s)",
+            (f"{TEST_MARKER}%",),
+        )
+        cur.execute(
+            "DELETE FROM user_devices WHERE user_id IN ("
+            "  SELECT id FROM users WHERE email LIKE %s)",
+            (f"{TEST_MARKER}%",),
+        )
+        cur.execute(
+            "DELETE FROM import_batches WHERE uploaded_by IN ("
             "  SELECT id FROM users WHERE email LIKE %s)",
             (f"{TEST_MARKER}%",),
         )

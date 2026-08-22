@@ -2,11 +2,15 @@ import { ENV } from '../config/env';
 import {
   AccountSummary,
   Area,
+  BusinessBIDashboard,
   CollectionsOverviewResponse,
   Customer,
   Employee,
   EmployeeAreaAssignment,
   EmployeeActivity,
+  CollectionReportRow,
+  EmployeeMasterReportRow,
+  FOSEmployeeMappingRead,
   FormRender,
   FormSection,
   FormSubmission,
@@ -20,8 +24,12 @@ import {
   ImportTargetFieldConfig,
   Invoice,
   LoginResponse,
+  MonthlyReportingPeriod,
   OrderRead,
   OutletMatchStrategy,
+  OutletReportRow,
+  OutstandingAgeingReportRow,
+  OverviewReportData,
   Payment,
   PaymentMethod,
   PaymentProof,
@@ -35,27 +43,19 @@ import {
   TerritoryAssignmentRead,
   User,
   Visit,
+  VisitDetailedReportRow,
   VisitMedia,
   VisitSignature,
   VisitStatus,
 } from '../types';
 
 /**
- * FT-040: the access token is held in memory only.
- *
- * Security Design section 1 requires: "Web: access token in memory only (never
- * localStorage - XSS risk); refresh token in httpOnly, Secure, SameSite=Strict
- * cookie."
- *
- * The first half is implemented here: the short-lived access token never
- * touches persistent storage, so injected script cannot read it and it does not
- * survive the tab. The refresh token still uses localStorage, because moving it
- * to an httpOnly cookie requires backend cookie issuance plus CSRF protection
- * and would change the contract the Android client also depends on. That
- * remainder is tracked as FT-065 with the rationale in docs/REPAIR_DECISIONS.md
- * (RD-003) rather than being quietly dropped.
+ * FT-040 & Security Hardening:
+ * - Access token is held in-memory only (never localStorage - XSS risk).
+ * - Refresh token is stored in HttpOnly, Secure, SameSite cookie by the backend.
+ * - Requests use credentials: 'include' for secure cookie exchange.
  */
-const REFRESH_TOKEN_KEY = 'fieldtrack_refresh_token';
+const LEGACY_REFRESH_TOKEN_KEY = 'fieldtrack_refresh_token';
 
 /**
  * Error carrying the HTTP status and the backend's error code, so callers can
@@ -80,6 +80,7 @@ export class ApiClient {
   /** In-memory access token. Deliberately never persisted (FT-040). */
   private accessToken: string | null = null;
 
+
   constructor() {
     // FT-055: one normalisation, applied once. VITE_API_BASE_URL may or may not
     // already include the /api/v1 suffix; every request path in this client is
@@ -87,6 +88,15 @@ export class ApiClient {
     // re-derived per call site.
     const raw = ENV.API_BASE_URL || 'http://127.0.0.1:8000';
     this.baseUrl = raw.replace(/\/api\/v1\/?$/, '').replace(/\/+$/, '');
+
+    // Cleanup any legacy plaintext refresh tokens in localStorage
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem(LEGACY_REFRESH_TOKEN_KEY);
+      }
+    } catch {
+      // Ignore in environments without localStorage
+    }
   }
 
   /** Absolute URL for an API path. Used by callers that need a raw URL. */
@@ -100,28 +110,30 @@ export class ApiClient {
     return this.accessToken;
   }
 
-  private getRefreshToken(): string | null {
-    return localStorage.getItem(REFRESH_TOKEN_KEY);
-  }
-
   /**
-   * True when a session may be restorable.
-   *
-   * After a page reload the in-memory access token is gone by design, so the
-   * refresh token is what indicates a session worth re-establishing.
+   * True when an in-memory session or refresh token indicator exists.
    */
   hasStoredSession(): boolean {
-    return Boolean(this.accessToken || this.getRefreshToken());
+    try {
+      return Boolean(this.accessToken || (typeof localStorage !== 'undefined' && localStorage.getItem(LEGACY_REFRESH_TOKEN_KEY)));
+    } catch {
+      return Boolean(this.accessToken);
+    }
   }
 
   private storeSession(tokens: LoginResponse): void {
     this.accessToken = tokens.access_token;
-    localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refresh_token);
   }
 
   clearSession(): void {
     this.accessToken = null;
-    localStorage.removeItem(REFRESH_TOKEN_KEY);
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem(LEGACY_REFRESH_TOKEN_KEY);
+      }
+    } catch {
+      // Ignore
+    }
   }
 
   private authHeader(): Record<string, string> {
@@ -169,7 +181,11 @@ export class ApiClient {
 
     let response: Response;
     try {
-      response = await fetch(this.url(endpoint), { ...options, headers });
+      response = await fetch(this.url(endpoint), {
+        credentials: 'include',
+        ...options,
+        headers,
+      });
     } catch {
       // Network-level failure: distinguish clearly from an auth rejection.
       throw new ApiError(
@@ -179,7 +195,7 @@ export class ApiClient {
       );
     }
 
-    if (response.status === 401 && allowRefresh && this.getRefreshToken()) {
+    if (response.status === 401 && allowRefresh) {
       const refreshed = await this.tryRefresh();
       if (refreshed) {
         return this.request<T>(endpoint, options, false);
@@ -210,7 +226,11 @@ export class ApiClient {
 
     let response: Response;
     try {
-      response = await fetch(this.url(endpoint), { ...options, headers });
+      response = await fetch(this.url(endpoint), {
+        credentials: 'include',
+        ...options,
+        headers,
+      });
     } catch {
       throw new ApiError(
         'Unable to reach the FieldTrack Pro API. Check your connection and try again.',
@@ -219,7 +239,7 @@ export class ApiClient {
       );
     }
 
-    if (response.status === 401 && allowRefresh && this.getRefreshToken()) {
+    if (response.status === 401 && allowRefresh) {
       const refreshed = await this.tryRefresh();
       if (refreshed) {
         return this.requestWithTotal<T>(endpoint, options, false);
@@ -236,23 +256,24 @@ export class ApiClient {
     return { data, total };
   }
 
-  /** Exchange the refresh token for a new pair. Returns false if not possible. */
+  /** Exchange the HttpOnly refresh token cookie for a new pair. Returns false if not possible. */
   private async tryRefresh(): Promise<boolean> {
-    const refresh_token = this.getRefreshToken();
-    if (!refresh_token) return false;
     try {
       const response = await fetch(this.url('/api/v1/auth/refresh'), {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refresh_token }),
+        body: JSON.stringify({}),
       });
       if (!response.ok) {
         this.clearSession();
         return false;
       }
-      this.storeSession((await response.json()) as LoginResponse);
+      const tokens = (await response.json()) as LoginResponse;
+      this.storeSession(tokens);
       return true;
     } catch {
+      this.clearSession();
       return false;
     }
   }
@@ -276,10 +297,14 @@ export class ApiClient {
       ? { email: identity, password }
       : { mobile_number: identity, password };
 
-    const tokens = await this.request<LoginResponse>('/api/v1/auth/login', {
-      method: 'POST',
-      body: JSON.stringify(body),
-    });
+    const tokens = await this.request<LoginResponse>(
+      '/api/v1/auth/login',
+      {
+        method: 'POST',
+        body: JSON.stringify(body),
+      },
+      false,
+    );
     this.storeSession(tokens);
     return tokens;
   }
@@ -287,12 +312,12 @@ export class ApiClient {
   /**
    * Identity of the signed-in caller.
    *
-   * FT-040: after a page reload there is no in-memory access token, so one is
-   * minted from the refresh token first. If that fails the session is genuinely
-   * over and the error propagates - no fabricated user is ever returned.
+   * FT-040 & Hardening: after a page reload there is no in-memory access token,
+   * so one is minted from the HttpOnly refresh token cookie first. If that fails
+   * the session is genuinely over and the error propagates.
    */
   async getCurrentUser(): Promise<User> {
-    if (!this.accessToken && this.getRefreshToken()) {
+    if (!this.accessToken) {
       const restored = await this.tryRefresh();
       if (!restored) {
         throw new ApiError('Session expired. Please sign in again.', 401, 'SESSION_EXPIRED');
@@ -304,19 +329,19 @@ export class ApiClient {
   /**
    * End the session.
    *
-   * FT-009: the refresh token is revoked server-side. Previously only local
-   * storage was cleared, leaving the token usable for its full 7-day life.
+   * FT-009: the refresh token is revoked server-side and HttpOnly cookie cleared.
    * Local state is cleared regardless of the network outcome.
    */
   async logout(): Promise<void> {
-    const refresh_token = this.getRefreshToken();
     try {
-      if (refresh_token) {
-        await this.request<void>('/api/v1/auth/logout', {
+      await this.request<void>(
+        '/api/v1/auth/logout',
+        {
           method: 'POST',
-          body: JSON.stringify({ refresh_token }),
-        });
-      }
+          body: JSON.stringify({}),
+        },
+        false,
+      );
     } catch {
       // Revocation failed (offline, already revoked). Still clear locally.
     } finally {
@@ -330,6 +355,7 @@ export class ApiClient {
       body: JSON.stringify({ old_password: oldPassword, new_password: newPassword }),
     });
   }
+
 
   async forgotPassword(email: string): Promise<{ message: string }> {
     return this.request<{ message: string }>('/api/v1/auth/forgot-password', {
@@ -478,11 +504,13 @@ export class ApiClient {
     name: string;
     contact_number: string;
     contact_person?: string | null;
-    address: string;
-    location: { latitude: number; longitude: number };
+    address?: string;
+    location?: { latitude: number; longitude: number } | null;
     geofence_radius_m?: number;
     territory_id?: string | null;
     area_id?: string | null;
+    outlet_code?: string | null;
+    location_status?: string | null;
   }): Promise<Customer> {
     return this.request<Customer>('/api/v1/customers', {
       method: 'POST',
@@ -497,10 +525,12 @@ export class ApiClient {
       contact_number: string;
       contact_person: string | null;
       address: string;
-      location: { latitude: number; longitude: number };
+      location: { latitude: number; longitude: number } | null;
       geofence_radius_m: number;
       territory_id: string | null;
       area_id: string | null;
+      outlet_code: string | null;
+      location_status: string | null;
     }>,
   ): Promise<Customer> {
     return this.request<Customer>(`/api/v1/customers/${id}`, {
@@ -812,6 +842,308 @@ export class ApiClient {
     return this.request<GeoReportRow[]>(
       `/api/v1/reports/geo-verification${query ? `?${query}` : ''}`
     );
+  }
+
+  async getOverviewReport(params?: {
+    brand?: string;
+    zone_id?: string;
+    area_id?: string;
+    employee_id?: string;
+    month?: string;
+  }): Promise<OverviewReportData> {
+    const query = params
+      ? '?' +
+        new URLSearchParams(
+          Object.entries(params)
+            .filter(([, v]) => v !== undefined && v !== '')
+            .map(([k, v]) => [k, String(v)]),
+        ).toString()
+      : '';
+    return this.request<OverviewReportData>(`/api/v1/reports/overview${query}`);
+  }
+
+  async getBusinessSummary(
+    brand?: string,
+    zone_id?: string,
+    area_id?: string,
+    employee_id?: string,
+    month?: string,
+  ): Promise<BusinessBIDashboard> {
+    const params = new URLSearchParams();
+    if (brand && brand !== 'ALL') params.set('brand', brand);
+    if (zone_id && zone_id !== 'ALL') params.set('zone_id', zone_id);
+    if (area_id && area_id !== 'ALL') params.set('area_id', area_id);
+    if (employee_id && employee_id !== 'ALL') params.set('employee_id', employee_id);
+    if (month && month !== 'ALL') params.set('month', month);
+    const query = params.toString();
+    return this.request<BusinessBIDashboard>(
+      `/api/v1/reports/business-summary${query ? `?${query}` : ''}`
+    );
+  }
+
+  async getEmployeesMasterReport(params?: {
+    working_profile?: string;
+    role?: string;
+    is_active?: boolean;
+    query?: string;
+  }): Promise<EmployeeMasterReportRow[]> {
+    const q = params
+      ? '?' +
+        new URLSearchParams(
+          Object.entries(params)
+            .filter(([, v]) => v !== undefined && v !== '')
+            .map(([k, v]) => [k, String(v)]),
+        ).toString()
+      : '';
+    return this.request<EmployeeMasterReportRow[]>(`/api/v1/reports/employees/master${q}`);
+  }
+
+  async getOutletsReport(params?: {
+    brand?: string;
+    zone_id?: string;
+    area_id?: string;
+    employee_id?: string;
+    location_status?: string;
+    query?: string;
+  }): Promise<OutletReportRow[]> {
+    const q = params
+      ? '?' +
+        new URLSearchParams(
+          Object.entries(params)
+            .filter(([, v]) => v !== undefined && v !== '')
+            .map(([k, v]) => [k, String(v)]),
+        ).toString()
+      : '';
+    return this.request<OutletReportRow[]>(`/api/v1/reports/outlets${q}`);
+  }
+
+  async getOutstandingReport(params?: {
+    brand?: string;
+    zone_id?: string;
+    area_id?: string;
+    employee_id?: string;
+    ageing_bucket?: string;
+    month?: string;
+    query?: string;
+  }): Promise<OutstandingAgeingReportRow[]> {
+    const q = params
+      ? '?' +
+        new URLSearchParams(
+          Object.entries(params)
+            .filter(([, v]) => v !== undefined && v !== '')
+            .map(([k, v]) => [k, String(v)]),
+        ).toString()
+      : '';
+    return this.request<OutstandingAgeingReportRow[]>(`/api/v1/reports/outstanding${q}`);
+  }
+
+  async getCollectionsReport(params?: {
+    brand?: string;
+    zone_id?: string;
+    area_id?: string;
+    employee_id?: string;
+    month?: string;
+    query?: string;
+  }): Promise<CollectionReportRow[]> {
+    const q = params
+      ? '?' +
+        new URLSearchParams(
+          Object.entries(params)
+            .filter(([, v]) => v !== undefined && v !== '')
+            .map(([k, v]) => [k, String(v)]),
+        ).toString()
+      : '';
+    return this.request<CollectionReportRow[]>(`/api/v1/reports/collections${q}`);
+  }
+
+  async getVisitsDetailedReport(params?: {
+    start_date?: string;
+    end_date?: string;
+    employee_id?: string;
+    zone_id?: string;
+    area_id?: string;
+    status?: string;
+  }): Promise<VisitDetailedReportRow[]> {
+    const q = params
+      ? '?' +
+        new URLSearchParams(
+          Object.entries(params)
+            .filter(([, v]) => v !== undefined && v !== '')
+            .map(([k, v]) => [k, String(v)]),
+        ).toString()
+      : '';
+    return this.request<VisitDetailedReportRow[]>(`/api/v1/reports/visits${q}`);
+  }
+
+  async getMonthlyPeriods(): Promise<MonthlyReportingPeriod[]> {
+    return this.request<MonthlyReportingPeriod[]>('/api/v1/reports/monthly-periods');
+  }
+
+  async finalizeMonthlyPeriod(periodId: string): Promise<MonthlyReportingPeriod> {
+    return this.request<MonthlyReportingPeriod>(`/api/v1/reports/monthly-periods/${periodId}/finalize`, {
+      method: 'POST',
+    });
+  }
+
+  async reopenMonthlyPeriod(periodId: string): Promise<MonthlyReportingPeriod> {
+    return this.request<MonthlyReportingPeriod>(`/api/v1/reports/monthly-periods/${periodId}/reopen`, {
+      method: 'POST',
+    });
+  }
+
+  async exportOverviewExcelObjectUrl(params?: {
+    brand?: string;
+    zone_id?: string;
+    area_id?: string;
+    employee_id?: string;
+    month?: string;
+  }): Promise<string> {
+    const q = params
+      ? '?' +
+        new URLSearchParams(
+          Object.entries(params)
+            .filter(([, v]) => v !== undefined && v !== '')
+            .map(([k, v]) => [k, String(v)]),
+        ).toString()
+      : '';
+    const res = await fetch(this.url(`/api/v1/reports/overview/export${q}`), {
+      headers: this.authHeader(),
+    });
+    if (!res.ok) throw await this.parseError(res);
+    return URL.createObjectURL(await res.blob());
+  }
+
+  async exportBusinessSummaryExcelObjectUrl(
+    brand?: string,
+    zone_id?: string,
+    area_id?: string,
+    employee_id?: string,
+    month?: string,
+  ): Promise<string> {
+    const params = new URLSearchParams();
+    if (brand && brand !== 'ALL') params.set('brand', brand);
+    if (zone_id && zone_id !== 'ALL') params.set('zone_id', zone_id);
+    if (area_id && area_id !== 'ALL') params.set('area_id', area_id);
+    if (employee_id && employee_id !== 'ALL') params.set('employee_id', employee_id);
+    if (month && month !== 'ALL') params.set('month', month);
+    const q = params.toString();
+    const res = await fetch(this.url(`/api/v1/reports/business-summary/export${q ? `?${q}` : ''}`), {
+      headers: this.authHeader(),
+    });
+    if (!res.ok) throw await this.parseError(res);
+    return URL.createObjectURL(await res.blob());
+  }
+
+  async exportEmployeesMasterExcelObjectUrl(params?: {
+    working_profile?: string;
+    role?: string;
+    is_active?: boolean;
+    query?: string;
+  }): Promise<string> {
+    const q = params
+      ? '?' +
+        new URLSearchParams(
+          Object.entries(params)
+            .filter(([, v]) => v !== undefined && v !== '')
+            .map(([k, v]) => [k, String(v)]),
+        ).toString()
+      : '';
+    const res = await fetch(this.url(`/api/v1/reports/employees/master/export${q}`), {
+      headers: this.authHeader(),
+    });
+    if (!res.ok) throw await this.parseError(res);
+    return URL.createObjectURL(await res.blob());
+  }
+
+  async exportOutletsExcelObjectUrl(params?: {
+    brand?: string;
+    zone_id?: string;
+    area_id?: string;
+    employee_id?: string;
+    query?: string;
+  }): Promise<string> {
+    const q = params
+      ? '?' +
+        new URLSearchParams(
+          Object.entries(params)
+            .filter(([, v]) => v !== undefined && v !== '')
+            .map(([k, v]) => [k, String(v)]),
+        ).toString()
+      : '';
+    const res = await fetch(this.url(`/api/v1/reports/outlets/export${q}`), {
+      headers: this.authHeader(),
+    });
+    if (!res.ok) throw await this.parseError(res);
+    return URL.createObjectURL(await res.blob());
+  }
+
+  async exportOutstandingExcelObjectUrl(params?: {
+    brand?: string;
+    zone_id?: string;
+    area_id?: string;
+    employee_id?: string;
+    ageing_bucket?: string;
+    month?: string;
+    query?: string;
+  }): Promise<string> {
+    const q = params
+      ? '?' +
+        new URLSearchParams(
+          Object.entries(params)
+            .filter(([, v]) => v !== undefined && v !== '')
+            .map(([k, v]) => [k, String(v)]),
+        ).toString()
+      : '';
+    const res = await fetch(this.url(`/api/v1/reports/outstanding/export${q}`), {
+      headers: this.authHeader(),
+    });
+    if (!res.ok) throw await this.parseError(res);
+    return URL.createObjectURL(await res.blob());
+  }
+
+  async exportCollectionsExcelObjectUrl(params?: {
+    brand?: string;
+    zone_id?: string;
+    area_id?: string;
+    employee_id?: string;
+    month?: string;
+    query?: string;
+  }): Promise<string> {
+    const q = params
+      ? '?' +
+        new URLSearchParams(
+          Object.entries(params)
+            .filter(([, v]) => v !== undefined && v !== '')
+            .map(([k, v]) => [k, String(v)]),
+        ).toString()
+      : '';
+    const res = await fetch(this.url(`/api/v1/reports/collections/export${q}`), {
+      headers: this.authHeader(),
+    });
+    if (!res.ok) throw await this.parseError(res);
+    return URL.createObjectURL(await res.blob());
+  }
+
+  async exportVisitsDetailedExcelObjectUrl(params?: {
+    start_date?: string;
+    end_date?: string;
+    employee_id?: string;
+    zone_id?: string;
+    area_id?: string;
+  }): Promise<string> {
+    const q = params
+      ? '?' +
+        new URLSearchParams(
+          Object.entries(params)
+            .filter(([, v]) => v !== undefined && v !== '')
+            .map(([k, v]) => [k, String(v)]),
+        ).toString()
+      : '';
+    const res = await fetch(this.url(`/api/v1/reports/visits/export${q}`), {
+      headers: this.authHeader(),
+    });
+    if (!res.ok) throw await this.parseError(res);
+    return URL.createObjectURL(await res.blob());
   }
 
 
@@ -1159,6 +1491,7 @@ export class ApiClient {
       column_mapping: Record<string, string>;
       outlet_match_strategy: OutletMatchStrategy;
       allow_generated_invoice_numbers: boolean;
+      fos_mapping_overrides?: Record<string, string>;
     },
   ): Promise<ImportBatchRead> {
     const formData = new FormData();
@@ -1191,6 +1524,88 @@ export class ApiClient {
       throw await this.parseError(response);
     }
     return URL.createObjectURL(await response.blob());
+  }
+
+  async getImportCredentialsExcelObjectUrl(batchId: string): Promise<string> {
+    const response = await fetch(this.url(`/api/v1/imports/${batchId}/credentials.xlsx`), {
+      headers: this.authHeader(),
+    });
+    if (!response.ok) {
+      throw await this.parseError(response);
+    }
+    return URL.createObjectURL(await response.blob());
+  }
+
+  async getFOSMappings(): Promise<FOSEmployeeMappingRead[]> {
+    return this.request<FOSEmployeeMappingRead[]>('/api/v1/imports/fos-mappings');
+  }
+
+  async setFOSMapping(rawFosName: string, employeeId: string): Promise<FOSEmployeeMappingRead> {
+    return this.request<FOSEmployeeMappingRead>('/api/v1/imports/fos-mappings', {
+      method: 'POST',
+      body: JSON.stringify({ raw_fos_name: rawFosName, employee_id: employeeId }),
+    });
+  }
+
+  // -- Phase 5 Field Exceptions ----------------------------------------------
+
+  async createFieldException(data: import('../types').FieldExceptionCreate): Promise<import('../types').FieldException> {
+    return this.request<import('../types').FieldException>('/api/v1/field-exceptions', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getFieldExceptions(params?: {
+    status?: string;
+    employee_id?: string;
+    customer_id?: string;
+    skip?: number;
+    limit?: number;
+  }): Promise<import('../types').FieldException[]> {
+    const q: Record<string, string> = {};
+    if (params?.status && params.status !== 'ALL') q.status = params.status;
+    if (params?.employee_id && params.employee_id !== 'ALL') q.employee_id = params.employee_id;
+    if (params?.customer_id) q.customer_id = params.customer_id;
+    if (params?.skip !== undefined) q.skip = String(params.skip);
+    if (params?.limit !== undefined) q.limit = String(params.limit);
+    const qs = new URLSearchParams(q).toString();
+    return this.request<import('../types').FieldException[]>(`/api/v1/field-exceptions${qs ? `?${qs}` : ''}`);
+  }
+
+  async reviewFieldException(
+    exceptionId: string,
+    data: import('../types').FieldExceptionReview
+  ): Promise<import('../types').FieldException> {
+    return this.request<import('../types').FieldException>(`/api/v1/field-exceptions/${exceptionId}/review`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  // -- Phase 6 Dashboard BI & My-Day -----------------------------------------
+
+  async getDashboardSummary(params?: {
+    brand?: string;
+    zone_id?: string;
+    area_id?: string;
+    employee_id?: string;
+    ageing_bucket?: string;
+    month?: string;
+  }): Promise<import('../types').DashboardSummaryResponse> {
+    const p: Record<string, string> = {};
+    if (params?.brand && params.brand !== 'ALL') p.brand = params.brand;
+    if (params?.zone_id && params.zone_id !== 'ALL') p.zone_id = params.zone_id;
+    if (params?.area_id && params.area_id !== 'ALL') p.area_id = params.area_id;
+    if (params?.employee_id && params.employee_id !== 'ALL') p.employee_id = params.employee_id;
+    if (params?.ageing_bucket && params.ageing_bucket !== 'ALL') p.ageing_bucket = params.ageing_bucket;
+    if (params?.month && params.month !== 'ALL') p.month = params.month;
+    const qs = new URLSearchParams(p).toString();
+    return this.request<import('../types').DashboardSummaryResponse>(`/api/v1/dashboard/summary${qs ? `?${qs}` : ''}`);
+  }
+
+  async getEmployeeDayDashboard(): Promise<import('../types').EmployeeDayDashboardResponse> {
+    return this.request<import('../types').EmployeeDayDashboardResponse>('/api/v1/dashboard/my-day');
   }
 }
 

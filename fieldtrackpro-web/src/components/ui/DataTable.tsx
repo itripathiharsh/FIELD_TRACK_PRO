@@ -30,8 +30,12 @@ interface DataTableProps<T> {
   serverSide?: boolean;
   /** Total rows matching the current filters, across all pages - required in server mode for the page count / "Total: N" label. */
   totalCount?: number;
-  /** Rows per server page - required in server mode. */
+  /** Rows per server/client page. */
   pageSize?: number;
+  /** Initial rows per page (default: 25). */
+  initialPageSize?: number;
+  /** Available page size options (default: [10, 25, 50, 100, 200]). */
+  pageSizeOptions?: number[];
   /** 1-indexed current page (server mode is controlled - the caller owns page state). */
   page?: number;
   onPageChange?: (page: number) => void;
@@ -52,13 +56,17 @@ export function DataTable<T extends object>({
   serverSide = false,
   totalCount,
   pageSize: serverPageSize,
+  initialPageSize = 25,
+  pageSizeOptions = [10, 25, 50, 100, 200],
   page: serverPage,
   onPageChange,
   onSearchChange,
 }: DataTableProps<T>) {
   const [searchQuery, setSearchQuery] = useState('');
   const [localPage, setLocalPage] = useState(1);
-  const pageSize = serverSide ? (serverPageSize || data.length || 1) : 8;
+  const [localPageSize, setLocalPageSize] = useState<number>(initialPageSize || serverPageSize || 25);
+
+  const pageSize = serverSide ? (serverPageSize || data.length || 1) : localPageSize;
 
   const currentPage = serverSide ? (serverPage ?? 1) : localPage;
   const setCurrentPage = (next: number | ((p: number) => number)) => {
@@ -77,6 +85,9 @@ export function DataTable<T extends object>({
   const recordCount = serverSide ? (totalCount ?? filteredData.length) : filteredData.length;
   const totalPages = Math.ceil(recordCount / pageSize) || 1;
   const paginatedData = serverSide ? data : filteredData.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  const startIdx = recordCount === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const endIdx = Math.min(currentPage * pageSize, recordCount);
 
   return (
     <div className="bg-surface rounded-xl border border-surface-container-highest shadow-xs overflow-hidden flex flex-col transition-all duration-200">
@@ -104,8 +115,32 @@ export function DataTable<T extends object>({
             </div>
           ) : <div />}
 
-          <div className="flex items-center gap-space-3 justify-between sm:justify-end">
+          <div className="flex flex-wrap items-center gap-space-3 justify-between sm:justify-end">
             {actions}
+            {!serverSide && (
+              <div className="flex items-center gap-1.5">
+                <span className="font-label-md text-xs text-on-surface-variant uppercase tracking-wider font-semibold">
+                  Show:
+                </span>
+                <select
+                  value={pageSize >= 999999 ? 'all' : pageSize}
+                  onChange={(e) => {
+                    const val = e.target.value === 'all' ? 999999 : Number(e.target.value);
+                    setLocalPageSize(val);
+                    setCurrentPage(1);
+                  }}
+                  className="h-8 bg-surface border border-outline-variant rounded-lg px-2 py-1 text-xs text-primary font-bold focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 transition-all cursor-pointer"
+                  aria-label="Rows per page"
+                >
+                  {pageSizeOptions.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt} rows
+                    </option>
+                  ))}
+                  <option value="all">All ({recordCount})</option>
+                </select>
+              </div>
+            )}
             <span className="font-label-md text-xs text-on-surface-variant uppercase tracking-wider shrink-0 font-medium">
               Total: <strong className="text-primary font-bold">{recordCount}</strong> records
             </span>
@@ -171,31 +206,61 @@ export function DataTable<T extends object>({
       </div>
 
       {/* Pagination Footer */}
-      {totalPages > 1 && (
-        <div className="px-space-6 py-space-3 border-t border-surface-container-highest flex items-center justify-between bg-surface-container-low/50">
-          <span className="font-caption text-xs text-on-surface-variant">
-            Page <strong className="text-primary">{currentPage}</strong> of <strong className="text-primary">{totalPages}</strong>
-          </span>
-          <div className="flex items-center gap-space-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={currentPage === 1}
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-            >
-              <ChevronLeft className="w-4 h-4" />
-              <span>Prev</span>
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={currentPage === totalPages}
-              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-            >
-              <span>Next</span>
-              <ChevronRight className="w-4 h-4" />
-            </Button>
+      {(recordCount > 0) && (
+        <div className="px-space-6 py-space-3 border-t border-surface-container-highest flex flex-wrap items-center justify-between gap-3 bg-surface-container-low/50">
+          <div className="flex items-center gap-3">
+            <span className="font-caption text-xs text-on-surface-variant">
+              Showing <strong className="text-primary">{startIdx}</strong>–<strong className="text-primary">{endIdx}</strong> of <strong className="text-primary">{recordCount}</strong>
+            </span>
+            {!serverSide && (
+              <div className="flex items-center gap-1.5 text-xs text-on-surface-variant">
+                <span className="font-label-md uppercase tracking-wider text-[11px] font-semibold">Per page:</span>
+                <select
+                  value={pageSize >= 999999 ? 'all' : pageSize}
+                  onChange={(e) => {
+                    const val = e.target.value === 'all' ? 999999 : Number(e.target.value);
+                    setLocalPageSize(val);
+                    setCurrentPage(1);
+                  }}
+                  className="h-7 bg-surface border border-outline-variant rounded-md px-2 text-xs text-primary font-bold focus:outline-none focus:border-primary-container cursor-pointer"
+                  aria-label="Pagination per page"
+                >
+                  {pageSizeOptions.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                  <option value="all">All</option>
+                </select>
+              </div>
+            )}
           </div>
+
+          {totalPages > 1 && (
+            <div className="flex items-center gap-space-2">
+              <span className="font-caption text-xs text-on-surface-variant mr-2">
+                Page <strong className="text-primary">{currentPage}</strong> of <strong className="text-primary">{totalPages}</strong>
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              >
+                <ChevronLeft className="w-4 h-4" />
+                <span>Prev</span>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={currentPage === totalPages}
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              >
+                <span>Next</span>
+                <ChevronRight className="w-4 h-4" />
+              </Button>
+            </div>
+          )}
         </div>
       )}
     </div>

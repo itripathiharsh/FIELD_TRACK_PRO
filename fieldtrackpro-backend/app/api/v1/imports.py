@@ -1,15 +1,8 @@
 """
 Imports router — /api/v1/imports
 
-Full Excel/MIS import pipeline: preview -> validate (full parse + mapping +
-resolution + validation, writes only an audit/staging ImportBatch row) ->
-commit (the only step that writes to territories/employees/customers/
-invoices/payments, transactionally) -> history.
-
-Route order matters: static paths (`/preview`, `/target-fields`, `""`) must
-be declared before the `/{batch_id}` family below them, or Starlette's
-suffix matcher would capture them as a batch id (same class of bug fixed
-earlier in media.py's local-file route).
+Full Excel/MIS import pipeline: preview -> validate -> resolve mappings -> commit -> history.
+Includes FOS mapping management and employee credential spreadsheet generation.
 """
 from __future__ import annotations
 
@@ -17,20 +10,24 @@ import csv
 import io
 import json
 import uuid
-from typing import Annotated
+from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps.auth import CurrentUser, require_role
 from app.database import get_async_session
 from app.models.user import Role, User
+from app.models.employee import Employee
+from app.models.fos_mapping import FOSEmployeeMapping
 from app.schemas.import_batch import (
     ImportBatchRead,
     ImportPreviewResponse,
     ImportValidateRequest,
+    FOSEmployeeMappingRead,
+    FOSEmployeeMappingCreate,
 )
 from app.services import import_service
 
@@ -89,8 +86,58 @@ async def validate_import(
         allow_generated_invoice_numbers=payload.allow_generated_invoice_numbers,
         current_user=current_user,
         session=session,
+        fos_mapping_overrides=payload.fos_mapping_overrides,
     )
     return await _to_read(batch, session)
+
+
+@router.get("/fos-mappings", dependencies=[AdminOnly])
+async def list_fos_mappings(session: DbSession):
+    """List all established raw FOS name to Employee ID mappings."""
+    stmt = (
+        select(FOSEmployeeMapping, Employee.full_name, Employee.employee_code)
+        .join(Employee, FOSEmployeeMapping.employee_id == Employee.id)
+        .order_by(FOSEmployeeMapping.raw_fos_name)
+    )
+    res = await session.execute(stmt)
+    rows = []
+    for mapping, emp_name, emp_code in res.all():
+        rows.append({
+            "id": mapping.id,
+            "raw_fos_name": mapping.raw_fos_name,
+            "employee_id": mapping.employee_id,
+            "employee_name": emp_name,
+            "employee_code": emp_code,
+            "created_at": mapping.created_at,
+        })
+    return rows
+
+
+@router.post("/fos-mappings", response_model=FOSEmployeeMappingRead, dependencies=[AdminOnly])
+async def set_fos_mapping(
+    payload: FOSEmployeeMappingCreate,
+    session: DbSession,
+):
+    """Create or update a mapping between a raw source FOS string and an Employee."""
+    norm_name = payload.raw_fos_name.strip()
+    res = await session.execute(
+        select(FOSEmployeeMapping).where(func.lower(FOSEmployeeMapping.raw_fos_name) == func.lower(norm_name))
+    )
+    existing = res.scalar_one_or_none()
+    if existing:
+        existing.employee_id = payload.employee_id
+        await session.commit()
+        await session.refresh(existing)
+        return existing
+    else:
+        new_map = FOSEmployeeMapping(
+            raw_fos_name=norm_name,
+            employee_id=payload.employee_id,
+        )
+        session.add(new_map)
+        await session.commit()
+        await session.refresh(new_map)
+        return new_map
 
 
 @router.get("", response_model=list[ImportBatchRead], dependencies=[AdminOnly])
@@ -126,8 +173,39 @@ async def download_import_errors(batch_id: uuid.UUID, session: DbSession):
     )
 
 
+@router.get("/{batch_id}/credentials.xlsx", dependencies=[AdminOnly])
+async def download_import_credentials(batch_id: uuid.UUID, session: DbSession):
+    """Download the onboarding credentials Excel file generated for imported employees."""
+    batch = await import_service.get_import_batch(batch_id, session)
+    creds = (batch.summary or {}).get("credentials", [])
+    if not creds:
+        # Fallback: fetch all employees and build credentials
+        res = await session.execute(
+            select(Employee, User.email, User.role)
+            .join(User, Employee.user_id == User.id)
+            .order_by(Employee.employee_code)
+        )
+        for emp, email, role in res.all():
+            creds.append({
+                "employee_name": emp.full_name,
+                "employee_id": emp.employee_code or "",
+                "email": email or "",
+                "temporary_password": "ProvidedSeparately",
+                "application_role": role.value if role else "EMPLOYEE",
+                "working_profile": emp.working_profile or "",
+                "cug": emp.cug or "",
+            })
+
+    excel_bytes = import_service.generate_onboarding_excel(creds)
+    return Response(
+        content=excel_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="employee_onboarding_credentials_{batch_id}.xlsx"'},
+    )
+
+
 @router.post("/{batch_id}/commit", response_model=ImportBatchRead, dependencies=[AdminOnly])
 async def commit_import(batch_id: uuid.UUID, current_user: CurrentUser, session: DbSession):
-    """The only endpoint that writes to territories/employees/customers/invoices/payments."""
+    """The only endpoint that writes to territories/employees/customers/financial_snapshots."""
     batch = await import_service.commit_import_batch(batch_id, current_user, session)
     return await _to_read(batch, session)

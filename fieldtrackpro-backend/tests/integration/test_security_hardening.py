@@ -571,15 +571,21 @@ async def test_scheduler_registers_exactly_one_job(monkeypatch):
     try:
         first = scheduler_module.start_scheduler()
         assert first is not None
-        assert len(first.get_jobs()) == 1
+        job_ids = [j.id for j in first.get_jobs()]
+        assert scheduler_module.MISSED_VISIT_JOB_ID in job_ids
+        assert scheduler_module.SECURITY_CLEANUP_JOB_ID in job_ids
 
         second = scheduler_module.start_scheduler()
         assert second is first, "a second start must not create another scheduler"
-        assert len(second.get_jobs()) == 1, "the job must not be registered twice"
+        assert len(second.get_jobs()) == len(first.get_jobs()), "the jobs must not be registered twice"
 
         job = first.get_job(scheduler_module.MISSED_VISIT_JOB_ID)
         assert job is not None
         assert "*/15" in str(job.trigger), f"expected a 15-minute cadence, got {job.trigger}"
+
+        cleanup_job = first.get_job(scheduler_module.SECURITY_CLEANUP_JOB_ID)
+        assert cleanup_job is not None
+
     finally:
         scheduler_module.shutdown_scheduler()
 

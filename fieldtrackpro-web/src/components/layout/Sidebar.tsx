@@ -14,7 +14,6 @@ import {
   ShieldCheck,
   Wallet,
   UploadCloud,
-  Receipt
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
@@ -32,14 +31,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => 
     { name: 'Employees', path: '/employees', icon: Users, roles: ['ADMIN', 'MANAGER'] },
     { name: 'Territories', path: '/territories', icon: Map, roles: ['ADMIN', 'MANAGER'] },
     { name: 'Customers', path: '/customers', icon: Building2, roles: ['ADMIN', 'MANAGER'] },
-    { name: 'Collections Overview', path: '/collections', icon: Receipt, roles: ['ADMIN', 'MANAGER'] },
     { name: 'Visits', path: '/visits', icon: CalendarCheck, roles: ['ADMIN', 'MANAGER', 'EMPLOYEE'] },
     { name: 'Map', path: '/map', icon: MapPin, roles: ['ADMIN', 'MANAGER'] },
     { name: 'Geo Logs', path: '/geo-logs', icon: MapPin, roles: ['ADMIN', 'MANAGER'] },
     { name: 'Requirement Forms', path: '/forms', icon: FileText, roles: ['ADMIN', 'MANAGER'] },
     { name: 'Payment Collections', path: '/payments', icon: Wallet, roles: ['ADMIN', 'MANAGER'] },
     { name: 'Excel / MIS Import', path: '/imports', icon: UploadCloud, roles: ['ADMIN', 'MANAGER'] },
-    { name: 'Reports', path: '/reports', icon: BarChart3, roles: ['ADMIN', 'MANAGER'] },
+    { name: 'Reports & Collections', path: '/reports', icon: BarChart3, roles: ['ADMIN', 'MANAGER'] },
   ];
 
   const visibleNavItems = navItems.filter((item) => {

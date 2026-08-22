@@ -16,6 +16,7 @@ object NotificationHelper {
     const val CHANNEL_ID = "fieldtrack_visits"
     const val CHANNEL_NAME = "Visit Notifications"
     const val EXTRA_VISIT_ID = "extra_visit_id"
+    const val EXTRA_NOTIFICATION_ID = "extra_notification_id"
 
     fun createNotificationChannel(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -34,7 +35,8 @@ object NotificationHelper {
         notificationId: Int,
         title: String,
         message: String,
-        visitId: String? = null
+        visitId: String? = null,
+        notificationIdStr: String? = null
     ) {
         createNotificationChannel(context)
 
@@ -42,6 +44,11 @@ object NotificationHelper {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
             if (visitId != null) {
                 putExtra(EXTRA_VISIT_ID, visitId)
+                putExtra("visit_id", visitId)
+            }
+            if (notificationIdStr != null) {
+                putExtra(EXTRA_NOTIFICATION_ID, notificationIdStr)
+                putExtra("notification_id", notificationIdStr)
             }
         }
 

@@ -19,6 +19,9 @@ from app.api.v1 import (
     payments,
     imports,
     collections,
+    field_exceptions,
+    dashboard,
+    devices,
 )
 
 api_router = APIRouter()
@@ -26,6 +29,7 @@ api_router = APIRouter()
 api_router.include_router(health.router, tags=["health"])
 api_router.include_router(auth.router)
 api_router.include_router(users.router)
+api_router.include_router(devices.router)
 api_router.include_router(territories.router)
 api_router.include_router(areas.router)
 api_router.include_router(employees.router)
@@ -42,3 +46,6 @@ api_router.include_router(invoices.router)
 api_router.include_router(payments.router)
 api_router.include_router(imports.router)
 api_router.include_router(collections.router)
+api_router.include_router(field_exceptions.router)
+api_router.include_router(dashboard.router)
+

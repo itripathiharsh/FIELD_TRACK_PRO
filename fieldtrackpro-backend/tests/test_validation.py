@@ -52,7 +52,7 @@ def _cleanup_validation_test_rows():
 async def test_login_empty_password(client: AsyncClient):
     resp = await client.post("/api/v1/auth/login", json={"email": "x@x.com", "password": ""})
     # Empty password is valid JSON; real rejection happens at DB lookup
-    assert resp.status_code in (401, 500, 503)
+    assert resp.status_code in (401, 429, 500, 503)
 
 
 @pytest.mark.asyncio

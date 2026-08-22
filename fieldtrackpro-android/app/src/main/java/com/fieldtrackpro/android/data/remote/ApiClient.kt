@@ -129,6 +129,9 @@ object ApiClient {
     fun createNotificationApi(tokenManager: TokenManager): NotificationApi =
         getRetrofit(tokenManager).create(NotificationApi::class.java)
 
+    fun createDeviceApi(tokenManager: TokenManager): com.fieldtrackpro.android.data.api.DeviceApi =
+        getRetrofit(tokenManager).create(com.fieldtrackpro.android.data.api.DeviceApi::class.java)
+
     fun createCollectionApi(tokenManager: TokenManager): CollectionApi =
         getRetrofit(tokenManager).create(CollectionApi::class.java)
 

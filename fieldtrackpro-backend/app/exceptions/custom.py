@@ -41,6 +41,13 @@ class DuplicateResourceException(BaseAPIException):
         super().__init__(detail=detail, status_code=409, error_code="DUPLICATE_RESOURCE")
 
 
+class DuplicateVisitException(BaseAPIException):
+    """Raised when a new visit would conflict with an existing active/scheduled visit for the same employee."""
+
+    def __init__(self, detail: str = "Scheduling conflict: employee already has an active visit in this time window"):
+        super().__init__(detail=detail, status_code=409, error_code="DUPLICATE_VISIT")
+
+
 class InvalidStateTransitionException(BaseAPIException):
     def __init__(self, detail: str = "Invalid state transition"):
         super().__init__(detail=detail, status_code=422, error_code="INVALID_STATE_TRANSITION")

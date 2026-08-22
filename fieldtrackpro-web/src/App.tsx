@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Layout } from './components/layout/Layout';
@@ -17,7 +17,6 @@ import { FormSubmissionsPage } from './pages/FormSubmissionsPage';
 import { FormSubmissionDetailPage } from './pages/FormSubmissionDetailPage';
 import { FormFillPage } from './pages/FormFillPage';
 import { ReportsPage } from './pages/ReportsPage';
-import { CollectionsOverviewPage } from './pages/CollectionsOverviewPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { MapPage } from './pages/MapPage';
@@ -90,7 +89,7 @@ export function AppContent() {
                 <Route path="/forms/:id/submissions/:submissionId" element={<AdminRoute><FormSubmissionDetailPage /></AdminRoute>} />
                 <Route path="/visits/:visitId/forms/:formId" element={<FormFillPage />} />
                 <Route path="/reports" element={<AdminRoute><ReportsPage /></AdminRoute>} />
-                <Route path="/collections" element={<AdminRoute><CollectionsOverviewPage /></AdminRoute>} />
+                <Route path="/collections" element={<Navigate to="/reports?tab=collections_workbench" replace />} />
                 <Route path="/payments" element={<AdminRoute><PaymentReviewPage /></AdminRoute>} />
                 <Route path="/imports" element={<AdminRoute><ImportHistoryPage /></AdminRoute>} />
                 <Route path="/imports/new" element={<AdminRoute><ImportWizardPage /></AdminRoute>} />

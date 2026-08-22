@@ -13,10 +13,12 @@ export interface PDFExportOptions {
         startDate?: string;
         endDate?: string;
     };
+    filters?: Record<string, string>;
+    summaryKPIs?: Array<{ label: string; value: string }>;
 }
 
 export function generatePDFContent(options: PDFExportOptions): Uint8Array {
-    const { title, headers, rows, dateRange } = options;
+    const { title, headers, rows, dateRange, filters, summaryKPIs } = options;
 
     const escapePDF = (str: string) =>
         str.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
@@ -50,29 +52,49 @@ export function generatePDFContent(options: PDFExportOptions): Uint8Array {
     };
 
     // Title
-    pushText(title, 16);
-    y -= 6;
-
-    // Date range
-    if (dateRange?.startDate || dateRange?.endDate) {
-        pushText(`Period: ${dateRange.startDate || 'Start'} to ${dateRange.endDate || 'End'}`, 10);
-        y -= 4;
-    }
+    pushText(`FieldTrack - ${title}`, 15);
+    y -= 4;
 
     // Generated timestamp
     pushText(`Generated: ${new Date().toLocaleString()}`, 8);
-    y -= 8;
-
-    // Table header
-    pushText(headers.join(' | '), 9);
     y -= 2;
 
-    pushText('-'.repeat(Math.min(80, headers.length * 12)), 8);
-    y -= 6;
+    // Date range / Filters
+    if (dateRange?.startDate || dateRange?.endDate) {
+        pushText(`Period: ${dateRange.startDate || 'Start'} to ${dateRange.endDate || 'End'}`, 9);
+        y -= 2;
+    }
+    if (filters) {
+        const filterStr = Object.entries(filters)
+            .filter(([, v]) => !!v && v !== 'ALL')
+            .map(([k, v]) => `${k}: ${v}`)
+            .join(' | ');
+        if (filterStr) {
+            pushText(`Filters Applied: ${filterStr}`, 8);
+            y -= 2;
+        }
+    }
+
+    // Summary KPIs
+    if (summaryKPIs && summaryKPIs.length > 0) {
+        const kpiStr = summaryKPIs.map((k) => `${k.label}: ${k.value}`).join('   |   ');
+        pushText(`Summary: ${kpiStr}`, 9);
+        y -= 4;
+    }
+
+    pushText('='.repeat(Math.min(95, Math.max(40, headers.length * 14))), 8);
+    y -= 4;
+
+    // Table header
+    pushText(headers.join('  |  '), 8);
+    y -= 2;
+
+    pushText('-'.repeat(Math.min(95, Math.max(40, headers.length * 14))), 8);
+    y -= 4;
 
     // Table rows
     for (const row of rows) {
-        pushText(row.join(' | '), 9);
+        pushText(row.join('  |  '), 8);
     }
 
     blocks.push(current);

@@ -320,7 +320,7 @@ fun VisitDetailsScreen(
                         title = "Live Map & Routing",
                         subtitle = "View customer location, radius & live navigation",
                         icon = Icons.Default.Map,
-                        onClick = { onNavigateToMap(visit.id) }
+                        onClick = { onNavigateToMap(visit.customerId) }
                     )
 
                     Spacer(modifier = Modifier.height(8.dp))

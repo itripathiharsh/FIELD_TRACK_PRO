@@ -70,6 +70,10 @@ class AuthRepository(
                 employeeCode = user.employeeCode,
                 territoryName = user.territoryName
             )
+
+            // Register active FCM token with backend for real push notifications
+            registerFcmDeviceToken()
+
             Resource.Success(user)
         } catch (e: Exception) {
             tokenManager.clear()
@@ -110,6 +114,9 @@ class AuthRepository(
     suspend fun logout() {
         val refreshToken = tokenManager.getRefreshToken()
         try {
+            // Unregister FCM device token before revoking credentials
+            unregisterFcmDeviceToken()
+
             if (refreshToken != null) {
                 authApi.logout(RefreshRequest(refreshToken))
             }
@@ -119,6 +126,40 @@ class AuthRepository(
             tokenManager.clear()
         }
     }
+
+    private suspend fun registerFcmDeviceToken() {
+        try {
+            val fcmToken = tokenManager.getFcmToken()
+            if (!fcmToken.isNullOrBlank()) {
+                val deviceApi = com.fieldtrackpro.android.data.remote.ApiClient.createDeviceApi(tokenManager)
+                deviceApi.registerDevice(
+                    com.fieldtrackpro.android.data.model.DeviceRegisterRequest(
+                        fcmToken = fcmToken,
+                        deviceType = "ANDROID"
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            // Non-fatal for auth flow
+        }
+    }
+
+    private suspend fun unregisterFcmDeviceToken() {
+        try {
+            val fcmToken = tokenManager.getFcmToken()
+            if (!fcmToken.isNullOrBlank()) {
+                val deviceApi = com.fieldtrackpro.android.data.remote.ApiClient.createDeviceApi(tokenManager)
+                deviceApi.unregisterDevice(
+                    com.fieldtrackpro.android.data.model.DeviceUnregisterRequest(
+                        fcmToken = fcmToken
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            // Non-fatal for logout flow
+        }
+    }
+
 
     suspend fun forgotPassword(email: String): Resource<String> {
         return try {

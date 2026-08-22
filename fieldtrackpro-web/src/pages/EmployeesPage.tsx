@@ -144,8 +144,17 @@ export const EmployeesPage: React.FC = () => {
       ),
     },
     {
-      header: 'Role',
-      accessor: (emp) => <StatusBadge status={emp.user?.role ?? 'EMPLOYEE'} size="sm" showDot={false} />,
+      header: 'Role & Profile',
+      accessor: (emp) => (
+        <div className="space-y-1">
+          <StatusBadge status={emp.user?.role ?? 'EMPLOYEE'} size="sm" showDot={false} />
+          {emp.working_profile && (
+            <span className="inline-block px-2 py-0.5 text-[10px] font-semibold bg-surface-container border border-outline-variant text-on-surface rounded">
+              {emp.working_profile}
+            </span>
+          )}
+        </div>
+      ),
     },
     {
       header: 'Territory',
@@ -154,22 +163,28 @@ export const EmployeesPage: React.FC = () => {
       ),
     },
     {
-      header: 'Contact Info',
+      header: 'Contact / CUG',
       accessor: (emp) => (
         <div className="font-caption text-xs space-y-0.5">
+          {emp.cug && (
+            <div className="flex items-center gap-1.5 text-primary font-mono text-[11px]">
+              <Phone className="w-3 h-3 text-primary shrink-0" />
+              <span>CUG: {emp.cug}</span>
+            </div>
+          )}
           {emp.user?.email && (
             <div className="flex items-center gap-1.5 text-on-surface">
               <Mail className="w-3.5 h-3.5 text-outline shrink-0" />
               <span>{emp.user.email}</span>
             </div>
           )}
-          {emp.user?.mobile_number && (
+          {emp.user?.mobile_number && !emp.cug && (
             <div className="flex items-center gap-1.5 text-on-surface-variant">
               <Phone className="w-3.5 h-3.5 text-outline shrink-0" />
               <span>{emp.user.mobile_number}</span>
             </div>
           )}
-          {!emp.user?.email && !emp.user?.mobile_number && (
+          {!emp.user?.email && !emp.user?.mobile_number && !emp.cug && (
             <span className="text-outline">—</span>
           )}
         </div>

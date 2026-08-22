@@ -1,4 +1,4 @@
-﻿import { describe, expect, it, beforeEach, vi } from 'vitest';
+import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
@@ -56,7 +56,6 @@ describe('Routing - unauthenticated', () => {
 
   it('shows a loading screen while a saved session is being restored', async () => {
     localStorage.setItem('fieldtrack_refresh_token', 'test-refresh-token');
-
     let resolveAuthMe!: (value: Response) => void;
     const pendingAuthMe = new Promise<Response>((resolve) => {
       resolveAuthMe = resolve;

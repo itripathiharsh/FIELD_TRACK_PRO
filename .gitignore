@@ -99,3 +99,23 @@ Thumbs.db
 # --- Local Media Storage (runtime artifact) ----------------------------------
 fieldtrackpro-backend/media_storage/**
 !fieldtrackpro-backend/media_storage/.gitkeep
+
+# --- Scratch scripts & Temporary audit outputs --------------------------------
+CREDENTIALS.md
+*.txt
+fieldtrackpro-backend/scripts/audit_production_data.py
+fieldtrackpro-backend/scripts/check_*.py
+fieldtrackpro-backend/scripts/cleanup_demo_data.py
+fieldtrackpro-backend/scripts/deep_audit.py
+fieldtrackpro-backend/scripts/execute_approved_cleanup.py
+fieldtrackpro-backend/scripts/final_comprehensive_check.py
+fieldtrackpro-backend/scripts/forensic_checks.py
+fieldtrackpro-backend/scripts/inspect_*.py
+fieldtrackpro-backend/scripts/investigate_*.py
+fieldtrackpro-backend/scripts/reconcile_*.py
+fieldtrackpro-backend/scripts/run_cleanup_*.py
+fieldtrackpro-backend/scripts/set_credentials_passwords.py
+fieldtrackpro-backend/scripts/spot_check_*.py
+fieldtrackpro-backend/scripts/summary_counts.py
+fieldtrackpro-backend/scripts/test_*.py
+

@@ -98,6 +98,9 @@ dependencies {
     // Google Play Services Location for Geofencing (Phase 4 Section 3)
     implementation(libs.gms.play.services.location)
 
+    // Firebase Cloud Messaging (FCM) for real push notifications
+    implementation(libs.firebase.messaging)
+
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(libs.androidx.junit)

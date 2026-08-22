@@ -88,42 +88,44 @@ export const CustomerDetailPage: React.FC = () => {
                     <CardTitle>Profile</CardTitle>
                     <CardSubtitle>Customer information</CardSubtitle>
                 </CardHeader>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-space-4 p-space-5">
-                    <div className="flex items-center gap-space-2">
-                        <Phone className="w-4 h-4 text-on-surface-variant" />
-                        <span className="text-sm">{customer.contact_number}</span>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-5">
+                    <div className="flex items-center gap-2">
+                        <Phone className="w-4 h-4 text-secondary-container" />
+                        <span className="text-sm font-mono text-on-surface">{customer.contact_number || '—'}</span>
                     </div>
-                    <div className="flex items-center gap-space-2">
-                        <Building2 className="w-4 h-4 text-on-surface-variant" />
-                        <span className="text-sm">{customer.contact_person || '—'}</span>
+                    <div className="flex items-center gap-2">
+                        <Building2 className="w-4 h-4 text-primary" />
+                        <span className="text-sm text-on-surface">{customer.contact_person || '—'}</span>
                     </div>
-                    <div className="flex items-center gap-space-2">
-                        <MapPin className="w-4 h-4 text-on-surface-variant" />
-                        <span className="text-sm">{customer.address}</span>
+                    <div className="flex items-center gap-2">
+                        <MapPin className="w-4 h-4 text-secondary-container" />
+                        <span className="text-sm text-on-surface">{customer.address || '—'}</span>
                     </div>
-                    <div className="flex items-center gap-space-2">
-                        <Navigation className="w-4 h-4 text-on-surface-variant" />
-                        <span className="text-sm">
-                            {customer.location?.latitude.toFixed(4)}, {customer.location?.longitude.toFixed(4)}
+                    <div className="flex items-center gap-2">
+                        <Navigation className="w-4 h-4 text-primary" />
+                        <span className="text-sm font-mono text-on-surface">
+                            {customer.location?.latitude != null && customer.location?.longitude != null
+                                ? `${customer.location.latitude.toFixed(4)}, ${customer.location.longitude.toFixed(4)}`
+                                : 'Missing GPS'}
                         </span>
                     </div>
-                    <div className="flex items-center gap-space-2">
-                        <span className="text-sm font-semibold text-primary">Geofence:</span>
-                        <span className="text-sm">{customer.geofence_radius_m}m</span>
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs font-label-md uppercase tracking-wider font-bold text-primary">Geofence:</span>
+                        <span className="font-label-md text-xs font-bold text-primary bg-primary-fixed/60 px-2 py-0.5 rounded border border-primary-fixed-dim">{customer.geofence_radius_m || 75}m</span>
                     </div>
                     {customer.outlet_code && (
-                        <div className="flex items-center gap-space-2">
-                            <span className="text-sm font-semibold text-primary">Outlet Code:</span>
-                            <span className="text-sm font-mono">{customer.outlet_code}</span>
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs font-label-md uppercase tracking-wider font-bold text-primary">Outlet Code:</span>
+                            <span className="font-mono text-xs font-bold text-on-primary-container bg-primary-container px-2 py-0.5 rounded shadow-2xs">{customer.outlet_code}</span>
                         </div>
                     )}
-                    <div className="flex items-center gap-space-2">
-                        <span className="text-sm font-semibold text-primary">Zone:</span>
-                        <span className="text-sm">{territoryName || '—'}</span>
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs font-label-md uppercase tracking-wider font-bold text-primary">Zone:</span>
+                        <span className="text-sm text-on-surface font-semibold">{territoryName || '—'}</span>
                     </div>
-                    <div className="flex items-center gap-space-2">
-                        <span className="text-sm font-semibold text-primary">Area:</span>
-                        <span className="text-sm">{customer.area_name || '—'}</span>
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs font-label-md uppercase tracking-wider font-bold text-primary">Area:</span>
+                        <span className="text-sm text-on-surface font-semibold">{customer.area_name || '—'}</span>
                     </div>
                 </div>
             </Card>

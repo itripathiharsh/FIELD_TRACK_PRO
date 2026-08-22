@@ -45,13 +45,17 @@ interface Filters {
 
 const emptyFilters: Filters = { search: '', territoryId: '', areaId: '', employeeId: '', collectionStatus: '' };
 
+export interface CollectionsOverviewPageProps {
+  hideHeader?: boolean;
+}
+
 /**
  * Collections Overview - the outlet-list financial view (Meeting 2's
  * "Excel screenshot" replacement). Every number here comes straight from
  * GET /api/v1/collections/overview, which itself reuses aging_service and
  * account_service's exact calculations - nothing is computed client-side.
  */
-export const CollectionsOverviewPage: React.FC = () => {
+export const CollectionsOverviewPage: React.FC<CollectionsOverviewPageProps> = ({ hideHeader = false }) => {
   const navigate = useNavigate();
   const [rows, setRows] = useState<OutletCollectionRow[]>([]);
   const [totals, setTotals] = useState<CollectionsOverviewTotals | null>(null);
@@ -189,10 +193,12 @@ export const CollectionsOverviewPage: React.FC = () => {
 
   return (
     <div className="space-y-space-6">
-      <PageHeader
-        title="Collections Overview"
-        subtitle="Who owes money, how much, how old it is, who handles it, and when they were last paid or visited."
-      />
+      {!hideHeader && (
+        <PageHeader
+          title="Collections Overview"
+          subtitle="Who owes money, how much, how old it is, who handles it, and when they were last paid or visited."
+        />
+      )}
 
       {error && <ErrorBanner message={error} onRetry={load} onDismiss={() => setError(null)} />}
 

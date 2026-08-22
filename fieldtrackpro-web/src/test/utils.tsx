@@ -5,6 +5,7 @@ import { vi } from 'vitest';
 
 import { AuthProvider } from '../context/AuthContext';
 import { Customer, Employee, Territory, User, Visit, VisitMedia } from '../types';
+import { apiClient } from '../api/client';
 
 /**
  * Shared test helpers.
@@ -194,6 +195,23 @@ export function renderWithProviders(
 
 /** Seed a session so AuthProvider resolves to the given user. */
 export function signIn(user: User) {
-  localStorage.setItem('fieldtrack_refresh_token', 'test-refresh-token');
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('fieldtrack_refresh_token', 'test-refresh-token');
+    }
+  } catch {
+    // Ignore
+  }
+  try {
+    if (typeof (apiClient as unknown as { storeSession?: (tokens: unknown) => void })?.storeSession === 'function') {
+      (apiClient as unknown as { storeSession: (tokens: unknown) => void }).storeSession({
+        access_token: 'test-access-token',
+        refresh_token: 'test-refresh-token',
+        token_type: 'bearer',
+      });
+    }
+  } catch {
+    // Ignore
+  }
   return user;
 }
