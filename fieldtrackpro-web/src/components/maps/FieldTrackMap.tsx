@@ -360,11 +360,6 @@ export function FieldTrackMap({
   useEffect(() => {
     if (!mapContainer.current || map.current) return;
 
-    const tileConfig = getTileProviderConfig() || {
-      styleUrl: null,
-      styleObject: { version: 8, sources: {}, layers: [] },
-    };
-
     const hasValidCenter = isValidCoordinate(centerLat, centerLng);
 
     const handleMapError = (msg: string) => {
@@ -378,6 +373,11 @@ export function FieldTrackMap({
     };
 
     try {
+      const tileConfig = getTileProviderConfig() || {
+        styleUrl: null,
+        styleObject: { version: 8, sources: {}, layers: [] },
+      };
+
       const styleConfig = tileConfig.styleUrl
         ? { style: tileConfig.styleUrl }
         : { style: tileConfig.styleObject as maplibregl.StyleSpecification };

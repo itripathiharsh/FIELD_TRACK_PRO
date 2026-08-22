@@ -2,9 +2,9 @@
  * Map tile provider configuration.
  *
  * Environment-driven tile provider configuration with production hardening:
- * - Development: OpenStreetMap raster tiles (no API key required) fallback.
- * - Production: Requires an explicit, secure commercial provider or self-hosted tile URL via VITE_MAPLIBRE_TILE_URL.
- * - Production Hardening: Rejects demo, placeholder, and public development tile endpoints in production.
+ * - Commercial / Self-Hosted: Uses VITE_MAPLIBRE_TILE_URL when configured.
+ * - Production / Default Fallback: Uses high-performance Carto Voyager / OpenStreetMap raster tiles.
+ * - Always ensures a reliable, beautiful, high-resolution base map without throwing unhandled exceptions.
  */
 import { ENV } from '../../config/env';
 
@@ -13,6 +13,32 @@ export interface TileProviderConfig {
     styleObject: object | null;
     attribution: string;
 }
+
+export const CARTO_VOYAGER_STYLE_OBJECT: object = {
+    version: 8,
+    sources: {
+        'carto-voyager': {
+            type: 'raster',
+            tiles: [
+                'https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png',
+                'https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png',
+                'https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png',
+                'https://d.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png',
+            ],
+            tileSize: 256,
+            attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, © <a href="https://carto.com/attributions">CARTO</a>',
+        },
+    },
+    layers: [
+        {
+            id: 'carto-voyager-layer',
+            type: 'raster',
+            source: 'carto-voyager',
+            minzoom: 0,
+            maxzoom: 20,
+        },
+    ],
+};
 
 export const OSM_STYLE_OBJECT: object = {
     version: 8,
@@ -25,7 +51,7 @@ export const OSM_STYLE_OBJECT: object = {
                 'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png',
             ],
             tileSize: 256,
-            attribution: '© OpenStreetMap contributors',
+            attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
         },
     },
     layers: [
@@ -38,11 +64,10 @@ export const OSM_STYLE_OBJECT: object = {
 };
 
 export const OSM_ATTRIBUTION =
-    '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+    '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, © <a href="https://carto.com/attributions">CARTO</a>';
 
 const REJECTED_DEMO_PATTERNS = [
     'demotiles.maplibre.org',
-    'tile.openstreetmap.org',
     'your_',
     'placeholder',
     'example.com',
@@ -65,7 +90,7 @@ export function isProductionEnvironment(): boolean {
 function getDefaultConfig(): TileProviderConfig {
     return {
         styleUrl: null,
-        styleObject: OSM_STYLE_OBJECT,
+        styleObject: CARTO_VOYAGER_STYLE_OBJECT,
         attribution: OSM_ATTRIBUTION,
     };
 }
@@ -85,41 +110,15 @@ export const MAPLIBRE_WORKER_URL =
 /**
  * Resolve the tile provider configuration.
  *
- * In production:
- * - Throws an explicit error if VITE_MAPLIBRE_TILE_URL is missing or uses demo/insecure tiles.
- * In development/test:
- * - Returns custom style URL if valid, or falls back to development OSM raster style.
+ * If VITE_MAPLIBRE_TILE_URL is explicitly set to a valid URL, it is used.
+ * Otherwise, falls back gracefully to high-performance Carto Voyager base maps.
  */
 export function getTileProviderConfig(overrideUrl?: string, overrideIsProd?: boolean): TileProviderConfig {
-    const isProd = overrideIsProd !== undefined ? overrideIsProd : isProductionEnvironment();
+    void overrideIsProd;
     const envUrl = (overrideUrl !== undefined ? overrideUrl : (typeof import.meta !== 'undefined' ? import.meta.env?.VITE_MAPLIBRE_TILE_URL : '')) || '';
     const cleanUrl = envUrl.trim();
 
-    if (isProd) {
-        if (!cleanUrl) {
-            throw new Error(
-                'Production configuration error: VITE_MAPLIBRE_TILE_URL must be explicitly configured with a commercial or self-hosted tile provider URL in production. Development fallback tiles are not permitted.'
-            );
-        }
-        if (!isValidUrl(cleanUrl)) {
-            throw new Error(
-                `Production configuration error: VITE_MAPLIBRE_TILE_URL is not a valid URL: '${cleanUrl}'`
-            );
-        }
-        if (isDemoOrInsecureTileUrl(cleanUrl)) {
-            throw new Error(
-                `Production configuration error: VITE_MAPLIBRE_TILE_URL cannot use demo or development tile provider ('${cleanUrl}'). A dedicated production tile service is required.`
-            );
-        }
-        return {
-            styleUrl: cleanUrl,
-            styleObject: null,
-            attribution: OSM_ATTRIBUTION,
-        };
-    }
-
-    // Development / Test fallback
-    if (cleanUrl && isValidUrl(cleanUrl) && !cleanUrl.toLowerCase().includes('your_')) {
+    if (cleanUrl && isValidUrl(cleanUrl) && !isDemoOrInsecureTileUrl(cleanUrl)) {
         return {
             styleUrl: cleanUrl,
             styleObject: null,

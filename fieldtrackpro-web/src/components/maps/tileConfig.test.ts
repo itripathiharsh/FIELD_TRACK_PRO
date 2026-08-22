@@ -3,20 +3,15 @@ import {
     getTileProviderConfig,
     isDemoOrInsecureTileUrl,
     isValidUrl,
-    OSM_STYLE_OBJECT,
+    CARTO_VOYAGER_STYLE_OBJECT,
     OSM_ATTRIBUTION,
 } from './tileConfig';
 
-describe('tileConfig Production Hardening', () => {
+describe('tileConfig Configuration & Fallback', () => {
     describe('isDemoOrInsecureTileUrl', () => {
         it('detects demo maplibre URLs as demo/insecure', () => {
             expect(isDemoOrInsecureTileUrl('https://demotiles.maplibre.org/style.json')).toBe(true);
             expect(isDemoOrInsecureTileUrl('http://demotiles.maplibre.org')).toBe(true);
-        });
-
-        it('detects openstreetmap tile URLs as public/demo', () => {
-            expect(isDemoOrInsecureTileUrl('https://tile.openstreetmap.org/0/0/0.png')).toBe(true);
-            expect(isDemoOrInsecureTileUrl('https://a.tile.openstreetmap.org/style.json')).toBe(true);
         });
 
         it('detects placeholder and localhost URLs as insecure', () => {
@@ -41,54 +36,25 @@ describe('tileConfig Production Hardening', () => {
         });
     });
 
-    describe('getTileProviderConfig in Development (isProd=false)', () => {
-        it('falls back to default OSM raster style when no URL configured', () => {
+    describe('getTileProviderConfig Resolution', () => {
+        it('falls back to default Carto Voyager style when no URL is configured', () => {
             const config = getTileProviderConfig('', false);
             expect(config.styleUrl).toBeNull();
-            expect(config.styleObject).toEqual(OSM_STYLE_OBJECT);
+            expect(config.styleObject).toEqual(CARTO_VOYAGER_STYLE_OBJECT);
             expect(config.attribution).toBe(OSM_ATTRIBUTION);
         });
 
-        it('uses custom valid URL if provided in development', () => {
+        it('uses custom valid URL if provided', () => {
             const customUrl = 'https://custom-tiles.org/style.json';
             const config = getTileProviderConfig(customUrl, false);
             expect(config.styleUrl).toBe(customUrl);
             expect(config.styleObject).toBeNull();
         });
-    });
 
-    describe('getTileProviderConfig in Production (isProd=true)', () => {
-        it('throws error when VITE_MAPLIBRE_TILE_URL is missing in production', () => {
-            expect(() => getTileProviderConfig('', true)).toThrowError(/VITE_MAPLIBRE_TILE_URL must be explicitly configured/);
-        });
-
-        it('throws error when VITE_MAPLIBRE_TILE_URL is invalid URL in production', () => {
-            expect(() => getTileProviderConfig('not_a_url', true)).toThrowError(/not a valid URL/);
-        });
-
-        it('throws error when demo tiles (demotiles.maplibre.org) are used in production', () => {
-            expect(() => getTileProviderConfig('https://demotiles.maplibre.org/style.json', true)).toThrowError(
-                /cannot use demo or development tile provider/
-            );
-        });
-
-        it('throws error when public openstreetmap tiles are used in production', () => {
-            expect(() => getTileProviderConfig('https://a.tile.openstreetmap.org/style.json', true)).toThrowError(
-                /cannot use demo or development tile provider/
-            );
-        });
-
-        it('throws error when placeholder tokens are used in production', () => {
-            expect(() => getTileProviderConfig('https://api.maptiler.com/style.json?key=YOUR_KEY', true)).toThrowError(
-                /cannot use demo or development tile provider/
-            );
-        });
-
-        it('succeeds and returns styleUrl when a valid production tile URL is provided', () => {
-            const prodTileUrl = 'https://tiles.fieldtrackpro.com/production/style.json?key=prod_secret_token_99';
-            const config = getTileProviderConfig(prodTileUrl, true);
-            expect(config.styleUrl).toBe(prodTileUrl);
-            expect(config.styleObject).toBeNull();
+        it('gracefully falls back in production when no custom tile URL is set', () => {
+            const config = getTileProviderConfig('', true);
+            expect(config.styleUrl).toBeNull();
+            expect(config.styleObject).toEqual(CARTO_VOYAGER_STYLE_OBJECT);
         });
     });
 });
