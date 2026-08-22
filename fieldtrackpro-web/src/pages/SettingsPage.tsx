@@ -111,8 +111,8 @@ export const SettingsPage: React.FC = () => {
         subtitle="Manage business configuration, operational thresholds, access policies, and system diagnostics."
       />
 
-      {/* Settings Navigation Tabs */}
-      <div className="flex flex-wrap gap-2 border-b border-surface-container-highest pb-2">
+      {/* Brand Navigation Tabs */}
+      <div className="flex flex-wrap gap-2 border-b border-surface-container-highest pb-3">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -120,14 +120,18 @@ export const SettingsPage: React.FC = () => {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-headline-sm text-sm font-semibold transition-all ${
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-headline-sm text-sm font-semibold transition-all duration-150 border ${
                 isActive
-                  ? 'bg-primary text-on-primary shadow-sm'
-                  : 'bg-surface-container-low text-on-surface-variant hover:bg-surface-container hover:text-on-surface'
+                  ? 'bg-primary-container text-on-primary-container border-secondary-container/40 shadow-sm'
+                  : 'bg-surface-container-low text-on-surface-variant hover:bg-surface-container hover:text-on-surface border-surface-container-highest'
               }`}
             >
-              <Icon className={`w-4 h-4 ${isActive ? 'text-on-primary' : 'text-primary'}`} />
-              {tab.label}
+              <Icon
+                className={`w-4 h-4 transition-colors ${
+                  isActive ? 'text-secondary-container' : 'text-primary'
+                }`}
+              />
+              <span className="tracking-tight">{tab.label}</span>
             </button>
           );
         })}
@@ -137,43 +141,69 @@ export const SettingsPage: React.FC = () => {
       {activeTab === 'organization' && (
         <Card variant="default" className="space-y-space-5">
           <div className="flex items-center justify-between border-b border-surface-container-highest pb-space-3">
-            <div className="flex items-center gap-space-2">
-              <Building2 className="w-5 h-5 text-primary" />
-              <h3 className="font-headline-sm text-base font-bold text-primary">
-                Enterprise Organization Profile
-              </h3>
+            <div className="flex items-center gap-space-3">
+              <div className="p-2 rounded-lg bg-primary-container/10 text-primary">
+                <Building2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-headline-sm text-lg font-bold text-primary tracking-tight">
+                  Enterprise Organization Profile
+                </h3>
+                <p className="font-caption text-xs text-on-surface-variant">
+                  Master corporate entity and operational divisions
+                </p>
+              </div>
             </div>
             <StatusBadge status="ACTIVE" size="sm" />
           </div>
 
-          <dl className="grid grid-cols-1 md:grid-cols-2 gap-space-4 font-caption text-xs">
-            <div className="p-space-3 bg-surface-container-low rounded-lg border border-outline-variant">
-              <dt className="text-on-surface-variant block mb-space-1 uppercase font-semibold">
+          <dl className="grid grid-cols-1 md:grid-cols-2 gap-space-4">
+            <div className="p-space-4 bg-surface-container-low rounded-xl border border-surface-container-highest hover:border-secondary-container/30 transition-all">
+              <dt className="font-headline-sm text-xs uppercase font-bold text-secondary mb-space-1 tracking-wider">
                 Legal Entity Name
               </dt>
-              <dd className="text-on-surface font-semibold text-sm">SGRG Services Private Limited</dd>
+              <dd className="font-headline-sm text-base font-bold text-on-surface">
+                SGRG Services Private Limited
+              </dd>
+              <p className="font-caption text-xs text-on-surface-variant mt-1">
+                Verified client corporate entity for multi-brand distribution.
+              </p>
             </div>
-            <div className="p-space-3 bg-surface-container-low rounded-lg border border-outline-variant">
-              <dt className="text-on-surface-variant block mb-space-1 uppercase font-semibold">
+
+            <div className="p-space-4 bg-surface-container-low rounded-xl border border-surface-container-highest hover:border-secondary-container/30 transition-all">
+              <dt className="font-headline-sm text-xs uppercase font-bold text-secondary mb-space-1 tracking-wider">
                 Operational Command Hub
               </dt>
-              <dd className="text-on-surface font-semibold text-sm">Kanpur Central, Uttar Pradesh</dd>
+              <dd className="font-headline-sm text-base font-bold text-on-surface">
+                Kanpur Central, Uttar Pradesh
+              </dd>
+              <p className="font-caption text-xs text-on-surface-variant mt-1">
+                Central headquarters for field telemetry, dispatch &amp; credit recovery.
+              </p>
             </div>
-            <div className="p-space-3 bg-surface-container-low rounded-lg border border-outline-variant">
-              <dt className="text-on-surface-variant block mb-space-1 uppercase font-semibold">
+
+            <div className="p-space-4 bg-surface-container-low rounded-xl border border-surface-container-highest hover:border-secondary-container/30 transition-all">
+              <dt className="font-headline-sm text-xs uppercase font-bold text-secondary mb-space-1 tracking-wider">
                 Active Business Divisions
               </dt>
-              <dd className="text-on-surface font-medium">
+              <dd className="font-body-md text-sm font-semibold text-on-surface">
                 Telecom Distribution (11001–11020) &amp; Consumer Electronics (11021–11030)
               </dd>
+              <p className="font-caption text-xs text-on-surface-variant mt-1">
+                Independent cost centers mapped to CUG employee series.
+              </p>
             </div>
-            <div className="p-space-3 bg-surface-container-low rounded-lg border border-outline-variant">
-              <dt className="text-on-surface-variant block mb-space-1 uppercase font-semibold">
+
+            <div className="p-space-4 bg-surface-container-low rounded-xl border border-surface-container-highest hover:border-secondary-container/30 transition-all">
+              <dt className="font-headline-sm text-xs uppercase font-bold text-secondary mb-space-1 tracking-wider">
                 System Timezone &amp; Currency
               </dt>
-              <dd className="text-on-surface font-medium">
-                Asia/Kolkata (IST, UTC+5:30) • INR (₹)
+              <dd className="font-body-md text-sm font-semibold text-on-surface">
+                Asia/Kolkata (IST, UTC+5:30) • Indian Rupee (INR ₹)
               </dd>
+              <p className="font-caption text-xs text-on-surface-variant mt-1">
+                Standard reporting period format with Lakh / Crore Indian number formatting.
+              </p>
             </div>
           </dl>
         </Card>
@@ -183,58 +213,82 @@ export const SettingsPage: React.FC = () => {
       {activeTab === 'users_roles' && (
         <Card variant="default" className="space-y-space-5">
           <div className="flex items-center justify-between border-b border-surface-container-highest pb-space-3">
-            <div className="flex items-center gap-space-2">
-              <Users className="w-5 h-5 text-primary" />
-              <h3 className="font-headline-sm text-base font-bold text-primary">
-                Users &amp; Role-Based Access Controls
-              </h3>
+            <div className="flex items-center gap-space-3">
+              <div className="p-2 rounded-lg bg-primary-container/10 text-primary">
+                <Users className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-headline-sm text-lg font-bold text-primary tracking-tight">
+                  Users &amp; Role-Based Access Controls
+                </h3>
+                <p className="font-caption text-xs text-on-surface-variant">
+                  Personnel hierarchy and role distribution
+                </p>
+              </div>
             </div>
-            <span className="text-xs font-semibold text-on-surface-variant bg-surface-container px-2.5 py-1 rounded">
+            <span className="font-headline-sm text-xs font-bold text-primary bg-primary-tint/40 border border-primary-fixed-dim px-3 py-1 rounded-lg">
               {employees.length} Active Personnel
             </span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-space-4">
-            <div className="p-space-4 bg-surface-container-low rounded-lg border border-outline-variant">
-              <span className="text-xs font-bold uppercase text-primary block mb-1">
-                Leadership &amp; Admins
-              </span>
-              <p className="text-2xl font-black text-on-surface mb-1">{adminCount}</p>
-              <p className="text-xs text-on-surface-variant">
-                Directors &amp; Sales Managers with full administrative override &amp; reporting authority.
+            <div className="p-space-4 bg-surface-container-low rounded-xl border border-surface-container-highest">
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-headline-sm text-xs font-bold uppercase tracking-wider text-secondary">
+                  Leadership &amp; Admins
+                </span>
+                <span className="font-headline-sm text-xs font-bold bg-secondary-container/20 text-on-secondary-container px-2 py-0.5 rounded">
+                  Admin
+                </span>
+              </div>
+              <p className="font-headline-lg text-3xl font-black text-primary mb-1">{adminCount}</p>
+              <p className="font-caption text-xs text-on-surface-variant leading-relaxed">
+                Directors, Sales Managers, and ASMs with full administrative command and reporting authority.
               </p>
             </div>
-            <div className="p-space-4 bg-surface-container-low rounded-lg border border-outline-variant">
-              <span className="text-xs font-bold uppercase text-primary block mb-1">
-                Field Force (FOS / TSE)
-              </span>
-              <p className="text-2xl font-black text-on-surface mb-1">{fieldCount}</p>
-              <p className="text-xs text-on-surface-variant">
-                On-field officers executing beat visits, customer check-ins, and payment collections.
+
+            <div className="p-space-4 bg-surface-container-low rounded-xl border border-surface-container-highest">
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-headline-sm text-xs font-bold uppercase tracking-wider text-secondary">
+                  Field Force (FOS / TSE)
+                </span>
+                <span className="font-headline-sm text-xs font-bold bg-primary/10 text-primary px-2 py-0.5 rounded">
+                  Field
+                </span>
+              </div>
+              <p className="font-headline-lg text-3xl font-black text-primary mb-1">{fieldCount}</p>
+              <p className="font-caption text-xs text-on-surface-variant leading-relaxed">
+                On-field officers executing beat schedules, check-ins, forms, and collection pickups.
               </p>
             </div>
-            <div className="p-space-4 bg-surface-container-low rounded-lg border border-outline-variant">
-              <span className="text-xs font-bold uppercase text-primary block mb-1">
-                Finance &amp; Operations
-              </span>
-              <p className="text-2xl font-black text-on-surface mb-1">{financeCount}</p>
-              <p className="text-xs text-on-surface-variant">
-                Accountants &amp; billing operators verifying cheques, cash, and online UTR receipts.
+
+            <div className="p-space-4 bg-surface-container-low rounded-xl border border-surface-container-highest">
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-headline-sm text-xs font-bold uppercase tracking-wider text-secondary">
+                  Finance &amp; Operations
+                </span>
+                <span className="font-headline-sm text-xs font-bold bg-emerald-500/10 text-emerald-700 px-2 py-0.5 rounded">
+                  Finance
+                </span>
+              </div>
+              <p className="font-headline-lg text-3xl font-black text-primary mb-1">{financeCount}</p>
+              <p className="font-caption text-xs text-on-surface-variant leading-relaxed">
+                Accountants and billing operators verifying cheques, cash receipts, and UTR references.
               </p>
             </div>
           </div>
 
-          <div className="p-space-4 bg-surface-container-low rounded-lg border border-outline-variant space-y-2">
+          <div className="p-space-4 bg-surface-container-low rounded-xl border border-surface-container-highest space-y-2">
             <div className="flex items-center gap-2">
-              <Lock className="w-4 h-4 text-primary" />
-              <h4 className="font-headline-sm text-xs font-bold uppercase text-primary">
-                Authentication &amp; Security Policy
+              <Lock className="w-4 h-4 text-secondary" />
+              <h4 className="font-headline-sm text-xs font-bold uppercase tracking-wider text-primary">
+                Authentication &amp; Session Security Policy
               </h4>
             </div>
-            <ul className="text-xs text-on-surface-variant list-disc pl-5 space-y-1">
+            <ul className="font-caption text-xs text-on-surface-variant list-disc pl-5 space-y-1">
               <li>Dual-identifier login supported via official Work Email or CUG Mobile Number.</li>
-              <li>Encrypted salted Bcrypt hashing with standard JSON Web Token (JWT) bearer verification.</li>
-              <li>Automatic token refresh lifecycle with hardened HTTP-only cookie support.</li>
+              <li>Salted Bcrypt password hashing with standard JSON Web Token (JWT) bearer validation.</li>
+              <li>Automatic token refresh cycle with HTTP-only cookie security for hardened web sessions.</li>
             </ul>
           </div>
         </Card>
@@ -244,61 +298,79 @@ export const SettingsPage: React.FC = () => {
       {activeTab === 'field_ops' && (
         <Card variant="default" className="space-y-space-5">
           <div className="flex items-center justify-between border-b border-surface-container-highest pb-space-3">
-            <div className="flex items-center gap-space-2">
-              <MapPin className="w-5 h-5 text-primary" />
-              <h3 className="font-headline-sm text-base font-bold text-primary">
-                Field Operations &amp; PostGIS Geofencing Policies
-              </h3>
+            <div className="flex items-center gap-space-3">
+              <div className="p-2 rounded-lg bg-primary-container/10 text-primary">
+                <MapPin className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-headline-sm text-lg font-bold text-primary tracking-tight">
+                  Field Operations &amp; PostGIS Geofencing Policies
+                </h3>
+                <p className="font-caption text-xs text-on-surface-variant">
+                  Spatial boundaries and hardware telemetry verification rules
+                </p>
+              </div>
             </div>
-            <span className="text-xs font-semibold text-secondary bg-surface-container px-2.5 py-1 rounded flex items-center gap-1.5">
-              <CheckCircle2 className="w-3.5 h-3.5 text-secondary" /> PostGIS Active
+            <span className="font-headline-sm text-xs font-bold text-emerald-700 bg-emerald-500/10 border border-emerald-300 px-3 py-1 rounded-lg flex items-center gap-1.5">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> PostGIS Engine Active
             </span>
           </div>
 
-          <dl className="grid grid-cols-1 md:grid-cols-2 gap-space-4 font-caption text-xs">
-            <div className="p-space-3 bg-surface-container-low rounded-lg border border-outline-variant">
-              <dt className="text-on-surface-variant block mb-space-1 uppercase font-semibold">
+          <dl className="grid grid-cols-1 md:grid-cols-2 gap-space-4">
+            <div className="p-space-4 bg-surface-container-low rounded-xl border border-surface-container-highest">
+              <dt className="font-headline-sm text-xs uppercase font-bold text-secondary mb-space-1 tracking-wider">
                 Default Geofence Radius
               </dt>
-              <dd className="text-on-surface font-semibold text-sm">75 Metres</dd>
-              <p className="text-on-surface-variant mt-1 text-[11px]">
-                Server-side verified per outlet from stored GPS coordinates.
+              <dd className="font-headline-sm text-xl font-bold text-primary">75 Metres</dd>
+              <p className="font-caption text-xs text-on-surface-variant mt-1">
+                Server-side verified per outlet using stored PostGIS geography points.
               </p>
             </div>
-            <div className="p-space-3 bg-surface-container-low rounded-lg border border-outline-variant">
-              <dt className="text-on-surface-variant block mb-space-1 uppercase font-semibold">
+
+            <div className="p-space-4 bg-surface-container-low rounded-xl border border-surface-container-highest">
+              <dt className="font-headline-sm text-xs uppercase font-bold text-secondary mb-space-1 tracking-wider">
                 Minimum GPS Accuracy Threshold
               </dt>
-              <dd className="text-on-surface font-semibold text-sm">100 Metres</dd>
-              <p className="text-on-surface-variant mt-1 text-[11px]">
-                Readings exceeding 100m error margin are flagged for review.
+              <dd className="font-headline-sm text-xl font-bold text-primary">100 Metres</dd>
+              <p className="font-caption text-xs text-on-surface-variant mt-1">
+                Hardware readings with uncertainty &gt;100m are flagged automatically.
               </p>
             </div>
-            <div className="p-space-3 bg-surface-container-low rounded-lg border border-outline-variant">
-              <dt className="text-on-surface-variant block mb-space-1 uppercase font-semibold">
+
+            <div className="p-space-4 bg-surface-container-low rounded-xl border border-surface-container-highest">
+              <dt className="font-headline-sm text-xs uppercase font-bold text-secondary mb-space-1 tracking-wider">
                 Operational Territories &amp; Beats
               </dt>
-              <dd className="text-on-surface font-semibold text-sm">
+              <dd className="font-headline-sm text-base font-bold text-primary">
                 {territories.length} Zones • {areas.length} Granular Areas
               </dd>
+              <p className="font-caption text-xs text-on-surface-variant mt-1">
+                Structured geographic distribution across Kanpur, Lucknow &amp; surrounding beats.
+              </p>
             </div>
-            <div className="p-space-3 bg-surface-container-low rounded-lg border border-outline-variant">
-              <dt className="text-on-surface-variant block mb-space-1 uppercase font-semibold">
-                Registered Outlets Under Coverage
+
+            <div className="p-space-4 bg-surface-container-low rounded-xl border border-surface-container-highest">
+              <dt className="font-headline-sm text-xs uppercase font-bold text-secondary mb-space-1 tracking-wider">
+                Retail Outlets Under Coverage
               </dt>
-              <dd className="text-on-surface font-semibold text-sm">{customers.length} Verified Outlets</dd>
+              <dd className="font-headline-sm text-base font-bold text-primary">
+                {customers.length} Genuine Client Outlets
+              </dd>
+              <p className="font-caption text-xs text-on-surface-variant mt-1">
+                Catalog of active retail counters with assigned DMS codes.
+              </p>
             </div>
           </dl>
 
-          <div className="p-space-4 bg-surface-container-low rounded-lg border border-outline-variant space-y-2">
+          <div className="p-space-4 bg-surface-container-low rounded-xl border border-surface-container-highest space-y-2">
             <div className="flex items-center gap-2">
-              <Shield className="w-4 h-4 text-primary" />
-              <h4 className="font-headline-sm text-xs font-bold uppercase text-primary">
+              <Shield className="w-4 h-4 text-secondary" />
+              <h4 className="font-headline-sm text-xs font-bold uppercase tracking-wider text-primary">
                 Anti-Fraud &amp; Hardware Telemetry Integrity
               </h4>
             </div>
-            <ul className="text-xs text-on-surface-variant list-disc pl-5 space-y-1">
-              <li>Mock location signals and software GPS emulators are rejected automatically.</li>
+            <ul className="font-caption text-xs text-on-surface-variant list-disc pl-5 space-y-1">
+              <li>Mock location providers and software GPS emulators are rejected at the gateway.</li>
               <li>Check-in and check-out events record an immutable, insert-only audit log in PostgreSQL.</li>
               <li>On-site dwell duration is measured to prevent rapid check-in spoofing.</li>
             </ul>
@@ -310,35 +382,57 @@ export const SettingsPage: React.FC = () => {
       {activeTab === 'data_import' && (
         <Card variant="default" className="space-y-space-5">
           <div className="flex items-center justify-between border-b border-surface-container-highest pb-space-3">
-            <div className="flex items-center gap-space-2">
-              <FileSpreadsheet className="w-5 h-5 text-primary" />
-              <h3 className="font-headline-sm text-base font-bold text-primary">
-                MIS &amp; Excel Data Ingestion Pipeline
-              </h3>
+            <div className="flex items-center gap-space-3">
+              <div className="p-2 rounded-lg bg-primary-container/10 text-primary">
+                <FileSpreadsheet className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-headline-sm text-lg font-bold text-primary tracking-tight">
+                  MIS &amp; Excel Data Ingestion Pipeline
+                </h3>
+                <p className="font-caption text-xs text-on-surface-variant">
+                  Multi-brand batch parser and reconciliation engine
+                </p>
+              </div>
             </div>
             <StatusBadge status="ACTIVE" size="sm" />
           </div>
 
-          <dl className="grid grid-cols-1 md:grid-cols-2 gap-space-4 font-caption text-xs">
-            <div className="p-space-3 bg-surface-container-low rounded-lg border border-outline-variant">
-              <dt className="text-on-surface-variant block mb-space-1 uppercase font-semibold">
-                Supported File Types
+          <dl className="grid grid-cols-1 md:grid-cols-2 gap-space-4">
+            <div className="p-space-4 bg-surface-container-low rounded-xl border border-surface-container-highest">
+              <dt className="font-headline-sm text-xs uppercase font-bold text-secondary mb-space-1 tracking-wider">
+                Supported File Formats
               </dt>
-              <dd className="text-on-surface font-semibold text-sm">Microsoft Excel (.xlsx, .xls)</dd>
+              <dd className="font-headline-sm text-base font-bold text-on-surface">
+                Microsoft Excel (.xlsx, .xls)
+              </dd>
+              <p className="font-caption text-xs text-on-surface-variant mt-1">
+                OpenPyXL high-throughput streaming reader with schema validation.
+              </p>
             </div>
-            <div className="p-space-3 bg-surface-container-low rounded-lg border border-outline-variant">
-              <dt className="text-on-surface-variant block mb-space-1 uppercase font-semibold">
-                Deduplication &amp; Reconciliation Engine
+
+            <div className="p-space-4 bg-surface-container-low rounded-xl border border-surface-container-highest">
+              <dt className="font-headline-sm text-xs uppercase font-bold text-secondary mb-space-1 tracking-wider">
+                Deduplication &amp; Idempotency
               </dt>
-              <dd className="text-on-surface font-semibold text-sm">Idempotent DMS Code Matching</dd>
+              <dd className="font-headline-sm text-base font-bold text-on-surface">
+                Idempotent DMS Outlet Matching
+              </dd>
+              <p className="font-caption text-xs text-on-surface-variant mt-1">
+                Repeated batch imports overwrite financial snapshots safely with zero doubling.
+              </p>
             </div>
-            <div className="p-space-3 bg-surface-container-low rounded-lg border border-outline-variant md:col-span-2">
-              <dt className="text-on-surface-variant block mb-space-1 uppercase font-semibold">
-                Recognized Brand Sheets &amp; Formats
+
+            <div className="p-space-4 bg-surface-container-low rounded-xl border border-surface-container-highest md:col-span-2">
+              <dt className="font-headline-sm text-xs uppercase font-bold text-secondary mb-space-1 tracking-wider">
+                Recognized Brand Sheets &amp; MIS Formats
               </dt>
-              <dd className="text-on-surface font-medium">
+              <dd className="font-body-md text-sm font-semibold text-on-surface">
                 Combined BI Excel, Usha, VU, ZBR, Telecom Roster, and Consumer Electronics (CE) Master Sheets.
               </dd>
+              <p className="font-caption text-xs text-on-surface-variant mt-1">
+                Automatic multi-tab detection parses brand sales, collections, and ageing ledgers.
+              </p>
             </div>
           </dl>
         </Card>
@@ -348,57 +442,64 @@ export const SettingsPage: React.FC = () => {
       {activeTab === 'integrations' && (
         <Card variant="default" className="space-y-space-5">
           <div className="flex items-center justify-between border-b border-surface-container-highest pb-space-3">
-            <div className="flex items-center gap-space-2">
-              <Layers className="w-5 h-5 text-primary" />
-              <h3 className="font-headline-sm text-base font-bold text-primary">
-                Enterprise Integrations &amp; Connectors
-              </h3>
+            <div className="flex items-center gap-space-3">
+              <div className="p-2 rounded-lg bg-primary-container/10 text-primary">
+                <Layers className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-headline-sm text-lg font-bold text-primary tracking-tight">
+                  Enterprise Integrations &amp; Connectors
+                </h3>
+                <p className="font-caption text-xs text-on-surface-variant">
+                  External services, accounting ERP, and spatial map tiles
+                </p>
+              </div>
             </div>
-            <span className="text-xs font-semibold text-on-surface-variant bg-surface-container px-2.5 py-1 rounded">
-              3 Connected Services
+            <span className="font-headline-sm text-xs font-bold text-primary bg-primary-tint/40 border border-primary-fixed-dim px-3 py-1 rounded-lg">
+              3 Monitored Services
             </span>
           </div>
 
           <div className="space-y-space-3">
-            <div className="p-space-4 bg-surface-container-low rounded-lg border border-outline-variant flex items-start justify-between">
+            <div className="p-space-4 bg-surface-container-low rounded-xl border border-surface-container-highest flex items-start justify-between">
               <div>
-                <h4 className="font-headline-sm text-sm font-bold text-on-surface flex items-center gap-2">
+                <h4 className="font-headline-sm text-sm font-bold text-primary flex items-center gap-2">
                   Tally Prime / ERP 9 Connector
-                  <span className="text-[10px] font-bold uppercase bg-error/10 text-error px-2 py-0.5 rounded">
+                  <span className="font-headline-sm text-[10px] font-bold uppercase bg-error/10 text-error border border-error/20 px-2 py-0.5 rounded">
                     Not Connected • Integration Pending
                   </span>
                 </h4>
-                <p className="text-xs text-on-surface-variant mt-1">
-                  Bi-directional voucher export connector for automated field collection sync. Pending client ERP endpoint &amp; gateway authorization.
+                <p className="font-caption text-xs text-on-surface-variant mt-1">
+                  Bi-directional voucher export connector for automated field collection sync (Cash, Cheque, and UTR clearance). Pending client ERP endpoint &amp; gateway authorization.
                 </p>
               </div>
               <StatusBadge status="INACTIVE" size="sm" />
             </div>
 
-            <div className="p-space-4 bg-surface-container-low rounded-lg border border-outline-variant flex items-start justify-between">
+            <div className="p-space-4 bg-surface-container-low rounded-xl border border-surface-container-highest flex items-start justify-between">
               <div>
-                <h4 className="font-headline-sm text-sm font-bold text-on-surface flex items-center gap-2">
+                <h4 className="font-headline-sm text-sm font-bold text-primary flex items-center gap-2">
                   Carto Voyager &amp; MapLibre Spatial Tiles
-                  <span className="text-[10px] font-bold uppercase bg-emerald-500/10 text-emerald-500 px-2 py-0.5 rounded">
+                  <span className="font-headline-sm text-[10px] font-bold uppercase bg-emerald-500/10 text-emerald-700 border border-emerald-300 px-2 py-0.5 rounded">
                     Connected (Active)
                   </span>
                 </h4>
-                <p className="text-xs text-on-surface-variant mt-1">
-                  High-resolution vector/raster base map rendering for territory coverage boundaries and customer clustering.
+                <p className="font-caption text-xs text-on-surface-variant mt-1">
+                  High-resolution vector/raster base map rendering for territory coverage boundaries, beat navigation, and customer clustering.
                 </p>
               </div>
               <StatusBadge status="ACTIVE" size="sm" />
             </div>
 
-            <div className="p-space-4 bg-surface-container-low rounded-lg border border-outline-variant flex items-start justify-between">
+            <div className="p-space-4 bg-surface-container-low rounded-xl border border-surface-container-highest flex items-start justify-between">
               <div>
-                <h4 className="font-headline-sm text-sm font-bold text-on-surface flex items-center gap-2">
+                <h4 className="font-headline-sm text-sm font-bold text-primary flex items-center gap-2">
                   Secure Media &amp; Signature Vault
-                  <span className="text-[10px] font-bold uppercase bg-emerald-500/10 text-emerald-500 px-2 py-0.5 rounded">
+                  <span className="font-headline-sm text-[10px] font-bold uppercase bg-emerald-500/10 text-emerald-700 border border-emerald-300 px-2 py-0.5 rounded">
                     Encrypted
                   </span>
                 </h4>
-                <p className="text-xs text-on-surface-variant mt-1">
+                <p className="font-caption text-xs text-on-surface-variant mt-1">
                   Cryptographic SHA-256 validation for site photos, requirement forms, and customer touch signatures.
                 </p>
               </div>
@@ -412,32 +513,44 @@ export const SettingsPage: React.FC = () => {
       {activeTab === 'notifications' && (
         <Card variant="default" className="space-y-space-5">
           <div className="flex items-center justify-between border-b border-surface-container-highest pb-space-3">
-            <div className="flex items-center gap-space-2">
-              <Bell className="w-5 h-5 text-primary" />
-              <h3 className="font-headline-sm text-base font-bold text-primary">
-                Notification Channels &amp; Field Alerts
-              </h3>
+            <div className="flex items-center gap-space-3">
+              <div className="p-2 rounded-lg bg-primary-container/10 text-primary">
+                <Bell className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-headline-sm text-lg font-bold text-primary tracking-tight">
+                  Notification Channels &amp; Field Alerts
+                </h3>
+                <p className="font-caption text-xs text-on-surface-variant">
+                  Push dispatch channels and cellular CUG directory
+                </p>
+              </div>
             </div>
             <StatusBadge status="ACTIVE" size="sm" />
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-space-4 font-caption text-xs">
-            <div className="p-space-3 bg-surface-container-low rounded-lg border border-outline-variant">
-              <dt className="text-on-surface-variant block mb-space-1 uppercase font-semibold">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-space-4">
+            <div className="p-space-4 bg-surface-container-low rounded-xl border border-surface-container-highest">
+              <dt className="font-headline-sm text-xs uppercase font-bold text-secondary mb-space-1 tracking-wider">
                 Firebase Cloud Messaging (FCM)
               </dt>
-              <dd className="text-on-surface font-semibold text-sm">Schema Ready • Pending Project Key</dd>
-              <p className="text-on-surface-variant mt-1 text-[11px]">
-                Mobile push device registry active in database schema. Live dispatch triggers activate upon setting production Firebase service key.
+              <dd className="font-headline-sm text-base font-bold text-on-surface">
+                Schema Ready • Pending Project Key
+              </dd>
+              <p className="font-caption text-xs text-on-surface-variant mt-1">
+                Mobile push device registry active in PostgreSQL database schema. Live dispatch triggers activate upon setting production Firebase service key.
               </p>
             </div>
-            <div className="p-space-3 bg-surface-container-low rounded-lg border border-outline-variant">
-              <dt className="text-on-surface-variant block mb-space-1 uppercase font-semibold">
+
+            <div className="p-space-4 bg-surface-container-low rounded-xl border border-surface-container-highest">
+              <dt className="font-headline-sm text-xs uppercase font-bold text-secondary mb-space-1 tracking-wider">
                 CUG Telephony Directory
               </dt>
-              <dd className="text-on-surface font-semibold text-sm">Active Roster (9839011001 – 9839011030)</dd>
-              <p className="text-on-surface-variant mt-1 text-[11px]">
-                Direct calling &amp; SMS coordination mapped to verified employee CUG mobile numbers.
+              <dd className="font-headline-sm text-base font-bold text-on-surface">
+                Active Roster (9839011001 – 9839011030)
+              </dd>
+              <p className="font-caption text-xs text-on-surface-variant mt-1">
+                Direct calling and SMS coordination mapped to verified employee CUG mobile numbers.
               </p>
             </div>
           </div>
@@ -448,51 +561,68 @@ export const SettingsPage: React.FC = () => {
       {activeTab === 'diagnostics' && (
         <Card variant="default" className="space-y-space-5">
           <div className="flex items-center justify-between border-b border-surface-container-highest pb-space-3">
-            <div className="flex items-center gap-space-2">
-              <Activity className="w-5 h-5 text-primary" />
-              <h3 className="font-headline-sm text-base font-bold text-primary">
-                System Diagnostics &amp; Telemetry Health
-              </h3>
+            <div className="flex items-center gap-space-3">
+              <div className="p-2 rounded-lg bg-primary-container/10 text-primary">
+                <Activity className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-headline-sm text-lg font-bold text-primary tracking-tight">
+                  System Diagnostics &amp; Telemetry Health
+                </h3>
+                <p className="font-caption text-xs text-on-surface-variant">
+                  Live backend API connectivity and environment telemetry
+                </p>
+              </div>
             </div>
             <div className="flex items-center gap-2">
               {health === 'checking' && (
-                <span className="text-xs text-on-surface-variant">Checking…</span>
+                <span className="font-headline-sm text-xs text-on-surface-variant">Checking…</span>
               )}
               {health === 'online' && (
-                <span className="text-xs font-semibold text-secondary flex items-center gap-1">
-                  <CheckCircle2 className="w-4 h-4 text-secondary" /> System Healthy
+                <span className="font-headline-sm text-xs font-bold text-emerald-700 bg-emerald-500/10 border border-emerald-300 px-3 py-1 rounded-lg flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" /> System Healthy
                 </span>
               )}
               {health === 'offline' && (
-                <span className="text-xs font-semibold text-error flex items-center gap-1">
+                <span className="font-headline-sm text-xs font-bold text-error bg-error/10 border border-error/20 px-3 py-1 rounded-lg flex items-center gap-1.5">
                   <XCircle className="w-4 h-4 text-error" /> Service Offline
                 </span>
               )}
             </div>
           </div>
 
-          <dl className="grid grid-cols-1 md:grid-cols-2 gap-space-4 font-caption text-xs">
-            <div className="p-space-3 bg-surface-container-low rounded-lg border border-outline-variant">
-              <dt className="text-on-surface-variant block mb-space-1 uppercase font-semibold">
+          <dl className="grid grid-cols-1 md:grid-cols-2 gap-space-4">
+            <div className="p-space-4 bg-surface-container-low rounded-xl border border-surface-container-highest">
+              <dt className="font-headline-sm text-xs uppercase font-bold text-secondary mb-space-1 tracking-wider">
                 API Base URL
               </dt>
-              <dd className="text-primary font-mono break-all text-xs">{ENV.API_BASE_URL}</dd>
+              <dd className="font-mono text-xs text-primary font-bold break-all bg-surface-container-high px-2.5 py-1.5 rounded-lg border border-surface-container-highest">
+                {ENV.API_BASE_URL}
+              </dd>
             </div>
-            <div className="p-space-3 bg-surface-container-low rounded-lg border border-outline-variant">
-              <dt className="text-on-surface-variant block mb-space-1 uppercase font-semibold">
+
+            <div className="p-space-4 bg-surface-container-low rounded-xl border border-surface-container-highest">
+              <dt className="font-headline-sm text-xs uppercase font-bold text-secondary mb-space-1 tracking-wider">
                 Deployment Environment
               </dt>
-              <dd className="text-primary font-mono text-xs uppercase">{ENV.APP_ENV}</dd>
+              <dd className="font-mono text-xs text-primary font-bold uppercase bg-surface-container-high px-2.5 py-1.5 rounded-lg border border-surface-container-highest inline-block">
+                {ENV.APP_ENV}
+              </dd>
             </div>
-            <div className="p-space-3 bg-surface-container-low rounded-lg border border-outline-variant md:col-span-2">
-              <dt className="text-on-surface-variant block mb-space-1 uppercase font-semibold">
-                Health Check Endpoint Status
+
+            <div className="p-space-4 bg-surface-container-low rounded-xl border border-surface-container-highest md:col-span-2">
+              <dt className="font-headline-sm text-xs uppercase font-bold text-secondary mb-space-1 tracking-wider">
+                Health Probe Status
               </dt>
               <dd className="flex items-center gap-space-2 font-mono text-xs">
                 {health === 'online' ? (
-                  <span className="text-on-surface">{healthDetail}</span>
+                  <span className="text-on-surface font-semibold bg-surface-container-high px-2.5 py-1.5 rounded-lg border border-surface-container-highest">
+                    {healthDetail}
+                  </span>
                 ) : (
-                  <span className="text-error">{healthDetail || 'Backend unreachable'}</span>
+                  <span className="text-error font-semibold bg-error/10 px-2.5 py-1.5 rounded-lg border border-error/20">
+                    {healthDetail || 'Backend unreachable'}
+                  </span>
                 )}
               </dd>
             </div>
