@@ -73,9 +73,19 @@ def run_import() -> None:
     sync_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
     engine = create_engine(sync_url)
 
-    excel_path = r"F:\sentio wala\sheet\Combined_BI_Excle_By_TGIshan.xlsx"
-    if not os.path.exists(excel_path):
-        print(f"Error: Real BI Excel file not found at {excel_path}")
+    candidate_paths = [
+        Path(__file__).resolve().parent.parent / "data" / "sheet" / "Combined_BI_Excle_By_TGIshan.xlsx",
+        Path(__file__).resolve().parent.parent.parent / "sheet" / "Combined_BI_Excle_By_TGIshan.xlsx",
+        Path(r"F:\sentio wala\sheet\Combined_BI_Excle_By_TGIshan.xlsx"),
+    ]
+    excel_path = None
+    for p in candidate_paths:
+        if p.exists():
+            excel_path = str(p)
+            break
+
+    if not excel_path:
+        print("Error: Real BI Excel file not found in any candidate path")
         return
 
     print(f"Loading real client workbook: {excel_path}")

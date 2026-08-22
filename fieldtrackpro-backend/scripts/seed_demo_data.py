@@ -552,6 +552,13 @@ def run() -> None:
         for line in report["kept_ambiguous"]:
             print(f"  - {line}")
 
+        try:
+            from scripts.import_real_client_data import run_import
+            print("\nRunning SGRG genuine client data import...")
+            run_import()
+        except Exception as e:
+            print(f"SGRG client data import error: {e}")
+
 
 if __name__ == "__main__":
     run()
