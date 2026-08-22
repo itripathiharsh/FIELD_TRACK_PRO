@@ -37,6 +37,7 @@ android {
 
     buildTypes {
         release {
+            signingConfig = signingConfigs.getByName("debug")
             isMinifyEnabled = false
             val prodBaseUrl = "https://fieldtrackpro-backend-s7hs.onrender.com/"
             buildConfigField("String", "BASE_URL", "\"$prodBaseUrl\"")
