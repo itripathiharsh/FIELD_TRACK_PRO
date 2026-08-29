@@ -71,10 +71,13 @@ def run() -> None:
 
     # 3. Trigger standard idempotent import
     try:
-        from scripts.import_real_client_data import run_import
+        try:
+            from scripts.import_real_client_data import run_import
+        except ModuleNotFoundError:
+            from import_real_client_data import run_import
         run_import()
     except Exception as e:
-        print(f"Data import note: {e}")
+        print(f"Data import note (non-fatal): {e}")
 
 
 if __name__ == "__main__":
