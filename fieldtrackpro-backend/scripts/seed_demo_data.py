@@ -43,7 +43,7 @@ def run() -> None:
         conn.execute(
             text("""
                 INSERT INTO users (id, email, mobile_number, password_hash, role, is_active, created_at, updated_at)
-                VALUES (:id, 'imharshofficial322@gmail.com', '9565249244', :pw, 'FIELD_REP', true, now(), now())
+                VALUES (:id, 'imharshofficial322@gmail.com', '9565249244', :pw, 'EMPLOYEE', true, now(), now())
                 ON CONFLICT (id) DO UPDATE SET 
                     email = 'imharshofficial322@gmail.com',
                     password_hash = EXCLUDED.password_hash,
