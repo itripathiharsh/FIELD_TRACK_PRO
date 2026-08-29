@@ -2,7 +2,7 @@ from __future__ import annotations
 import uuid
 from decimal import Decimal
 from typing import Optional
-from sqlalchemy import select, func
+from sqlalchemy import select, func, case, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.datetime_utils import get_ist_today_range
@@ -95,11 +95,50 @@ async def get_dashboard_summary(
     exc_res = await session.execute(exc_q)
     exc_row = exc_res.one()
 
-    # 5. Fetch Collections count
-    col_q = select(func.count(Payment.id))
+    # 5. Fetch Collections count & Realized Live Payments sum
+    col_q = select(
+        func.count(Payment.id).label("total_count"),
+        func.coalesce(
+            func.sum(case((Payment.status == "VERIFIED", Payment.amount), else_=Decimal("0.00"))),
+            Decimal("0.00"),
+        ).label("verified_sum"),
+    )
     if employee_id:
         col_q = col_q.where(Payment.employee_id == employee_id)
-    col_count = (await session.execute(col_q)).scalar_one() or 0
+    if zone_id or area_id:
+        col_q = col_q.join(Customer, Payment.customer_id == Customer.id)
+        if zone_id:
+            col_q = col_q.where(Customer.territory_id == zone_id)
+        if area_id:
+            col_q = col_q.where(Customer.area_id == area_id)
+
+    col_res = (await session.execute(col_q)).one()
+    col_count = col_res.total_count or 0
+    live_verified_col = col_res.verified_sum or Decimal("0.00")
+
+    # 5b. Compute accurate total customer accounts (from snapshots, assignments, or visits)
+    cust_q = select(func.count(func.distinct(Customer.id)))
+    if employee_id:
+        cust_q = cust_q.outerjoin(
+            EmployeeCustomerAssignment,
+            EmployeeCustomerAssignment.customer_id == Customer.id,
+        ).outerjoin(
+            Visit,
+            Visit.customer_id == Customer.id,
+        ).where(
+            or_(
+                EmployeeCustomerAssignment.employee_id == employee_id,
+                Visit.employee_id == employee_id,
+            )
+        )
+    if zone_id:
+        cust_q = cust_q.where(Customer.territory_id == zone_id)
+    if area_id:
+        cust_q = cust_q.where(Customer.area_id == area_id)
+
+    act_outlets_count = (await session.execute(cust_q)).scalar() or 0
+    final_outlets = max(bi_data.total_outlets, act_outlets_count)
+    final_collection = max(bi_data.total_collection, live_verified_col) if bi_data.total_collection == Decimal("0.00") else (bi_data.total_collection + live_verified_col)
 
     # 6. Fetch Orders count
     order_q = select(func.count(VisitMedia.id)).where(VisitMedia.media_type == MediaType.ORDER)
@@ -138,9 +177,9 @@ async def get_dashboard_summary(
         ageing_distribution[">90"] += b.bucket_gt_90
 
     kpis = DashboardExecutiveKPIs(
-        total_outlets=bi_data.total_outlets,
+        total_outlets=final_outlets,
         total_sales=bi_data.total_sales,
-        total_collection=bi_data.total_collection,
+        total_collection=final_collection,
         total_market_outstanding=bi_data.total_market_outstanding,
         total_overdue_gt_90=bi_data.total_overdue_gt_90,
         total_employees=total_employees,
