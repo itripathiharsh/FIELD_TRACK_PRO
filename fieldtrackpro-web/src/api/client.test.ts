@@ -6,7 +6,7 @@ import { ApiClient, ApiError } from './client';
  *
  * Covers FT-040 & Hardening (access token in memory only, refresh token in HttpOnly cookie,
  * credentials: 'include'), FT-008 (refresh on 401), FT-009 (logout revokes server-side),
- * FT-010 (login field names) and FT-055 (single base-URL normalisation).
+ * FT-010 (login field names), FT-055 (single base-URL normalisation), and WEB-H-1 (export token refresh).
  */
 
 const REFRESH_KEY = 'fieldtrack_refresh_token';
@@ -161,6 +161,47 @@ describe('ApiClient - transparent refresh on 401 (FT-008)', () => {
     await expect(client.getVisits()).rejects.toBeInstanceOf(ApiError);
     const refreshCalls = fetchSpy.mock.calls.filter(([u]) => String(u).includes('/auth/refresh'));
     expect(refreshCalls.length).toBeLessThanOrEqual(1);
+  });
+});
+
+describe('ApiClient - export token refresh (WEB-H-1)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    if (!URL.createObjectURL) URL.createObjectURL = vi.fn().mockReturnValue('blob:test-url');
+  });
+
+  it('retries export request after transparent token refresh on 401', async () => {
+    const client = new ApiClient();
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/auth/login')) {
+        return jsonResponse(TOKENS);
+      }
+      if (url.includes('/auth/refresh')) {
+        return jsonResponse({ ...TOKENS, access_token: 'fresh.token' });
+      }
+      if (url.includes('/reports/overview/export')) {
+        return client.getAccessToken() === 'fresh.token'
+          ? new Response(new Blob(['col1,col2\nval1,val2']), { status: 200 })
+          : new Response('', { status: 401 });
+      }
+      return jsonResponse({}, 404);
+    });
+
+    await client.login('user@example.com', 'pw');
+    const objectUrl = await client.exportOverviewExcelObjectUrl();
+    expect(objectUrl).toBe('blob:test-url');
+  });
+
+  it('throws ApiError and cleans up when refresh fails during export', async () => {
+    const client = new ApiClient();
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/auth/refresh')) return new Response('', { status: 401 });
+      return new Response('', { status: 401 });
+    });
+
+    await expect(client.exportOverviewExcelObjectUrl()).rejects.toBeInstanceOf(ApiError);
   });
 });
 

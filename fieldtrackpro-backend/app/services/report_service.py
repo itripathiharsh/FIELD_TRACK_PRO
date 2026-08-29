@@ -7,7 +7,7 @@ from __future__ import annotations
 import io
 import re
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, timedelta
 from decimal import Decimal
 from typing import Any, Optional
 
@@ -67,8 +67,20 @@ class ReportService:
             month=month,
         )
 
-        # Count total active employees
-        emp_stmt = select(func.count(Employee.id))
+        # Count total active employees within filter scope
+        emp_stmt = select(func.count(func.distinct(Employee.id)))
+        if employee_id:
+            emp_stmt = emp_stmt.where(Employee.id == employee_id)
+        if zone_id:
+            emp_stmt = emp_stmt.where(Employee.territory_id == zone_id)
+        if area_id:
+            emp_stmt = emp_stmt.join(
+                EmployeeCustomerAssignment,
+                EmployeeCustomerAssignment.employee_id == Employee.id,
+            ).join(
+                Customer,
+                Customer.id == EmployeeCustomerAssignment.customer_id,
+            ).where(Customer.area_id == area_id)
         emp_res = await session.execute(emp_stmt)
         total_employees = emp_res.scalar() or 0
 
@@ -114,6 +126,8 @@ class ReportService:
         role: Optional[str] = None,
         is_active: Optional[bool] = None,
         query: Optional[str] = None,
+        skip: Optional[int] = None,
+        limit: Optional[int] = None,
     ) -> list[EmployeeMasterReportRow]:
         """
         Detailed employee master reporting with real working profile, CUG, and assigned outlet counts.
@@ -150,6 +164,11 @@ class ReportService:
                 )
             )
 
+        if skip is not None:
+            stmt = stmt.offset(skip)
+        if limit is not None:
+            stmt = stmt.limit(limit)
+
         res = await session.execute(stmt)
         rows = res.all()
 
@@ -181,6 +200,8 @@ class ReportService:
         employee_id: Optional[uuid.UUID] = None,
         location_status: Optional[str] = None,
         query: Optional[str] = None,
+        skip: Optional[int] = None,
+        limit: Optional[int] = None,
     ) -> list[OutletReportRow]:
         """
         Complete outlet directory report with geographic location and financial aggregates.
@@ -227,7 +248,6 @@ class ReportService:
             )
             .order_by(Customer.name.asc())
         )
-
         if zone_id:
             stmt = stmt.where(Customer.territory_id == zone_id)
         if area_id:
@@ -236,15 +256,27 @@ class ReportService:
             stmt = stmt.where(EmployeeCustomerAssignment.employee_id == employee_id)
         if location_status and location_status != "ALL":
             stmt = stmt.where(Customer.location_status == location_status)
+        if brand and brand != "ALL":
+            stmt = stmt.where(func.lower(OutletFinancialSnapshot.brand) == func.lower(brand))
         if query:
             q_str = f"%{query.strip().lower()}%"
             stmt = stmt.where(
                 or_(
                     func.lower(Customer.name).like(q_str),
                     func.lower(Customer.outlet_code).like(q_str),
+                    func.lower(Customer.contact_person).like(q_str),
+                    func.lower(Customer.contact_number).like(q_str),
+                    func.lower(Territory.name).like(q_str),
+                    func.lower(Area.name).like(q_str),
+                    func.lower(Employee.full_name).like(q_str),
                     func.lower(Customer.address).like(q_str),
                 )
             )
+
+        if skip is not None:
+            stmt = stmt.offset(skip)
+        if limit is not None:
+            stmt = stmt.limit(limit)
 
         res = await session.execute(stmt)
         rows = res.all()
@@ -294,6 +326,8 @@ class ReportService:
         ageing_bucket: Optional[str] = None,
         month: Optional[str] = None,
         query: Optional[str] = None,
+        skip: Optional[int] = None,
+        limit: Optional[int] = None,
     ) -> list[OutstandingAgeingReportRow]:
         """
         Dedicated Market Outstanding & Ageing Buckets report.
@@ -313,7 +347,7 @@ class ReportService:
             .outerjoin(EmployeeCustomerAssignment, EmployeeCustomerAssignment.customer_id == Customer.id)
             .outerjoin(Employee, EmployeeCustomerAssignment.employee_id == Employee.id)
             .where(OutletFinancialSnapshot.market_outstanding > 0)
-            .order_by(OutletFinancialSnapshot.bucket_gt_90.desc(), OutletFinancialSnapshot.market_outstanding.desc())
+            .order_by(OutletFinancialSnapshot.bucket_gt_90.desc(), OutletFinancialSnapshot.market_outstanding.desc(), OutletFinancialSnapshot.id.asc())
         )
 
         if brand and brand != "ALL":
@@ -364,6 +398,11 @@ class ReportService:
                     func.lower(Employee.full_name).like(q_str),
                 )
             )
+
+        if skip is not None:
+            stmt = stmt.offset(skip)
+        if limit is not None:
+            stmt = stmt.limit(limit)
 
         res = await session.execute(stmt)
         records = res.all()
@@ -422,6 +461,8 @@ class ReportService:
         employee_id: Optional[uuid.UUID] = None,
         month: Optional[str] = None,
         query: Optional[str] = None,
+        skip: Optional[int] = None,
+        limit: Optional[int] = None,
     ) -> list[CollectionReportRow]:
         """
         Collections report per outlet and brand snapshot.
@@ -441,7 +482,7 @@ class ReportService:
             .outerjoin(EmployeeCustomerAssignment, EmployeeCustomerAssignment.customer_id == Customer.id)
             .outerjoin(Employee, EmployeeCustomerAssignment.employee_id == Employee.id)
             .where(OutletFinancialSnapshot.collection > 0)
-            .order_by(OutletFinancialSnapshot.collection.desc())
+            .order_by(OutletFinancialSnapshot.collection.desc(), OutletFinancialSnapshot.id.asc())
         )
 
         if brand and brand != "ALL":
@@ -471,6 +512,11 @@ class ReportService:
                     func.lower(Customer.outlet_code).like(q_str),
                 )
             )
+
+        if skip is not None:
+            stmt = stmt.offset(skip)
+        if limit is not None:
+            stmt = stmt.limit(limit)
 
         res = await session.execute(stmt)
         records = res.all()
@@ -508,6 +554,8 @@ class ReportService:
         zone_id: Optional[uuid.UUID] = None,
         area_id: Optional[uuid.UUID] = None,
         status: Optional[str] = None,
+        skip: Optional[int] = None,
+        limit: Optional[int] = None,
     ) -> list[VisitDetailedReportRow]:
         """
         Detailed operational visits report with GPS verification status.
@@ -525,7 +573,7 @@ class ReportService:
             .join(Customer, Visit.customer_id == Customer.id)
             .outerjoin(Territory, Customer.territory_id == Territory.id)
             .outerjoin(Area, Customer.area_id == Area.id)
-            .order_by(Visit.scheduled_at.desc())
+            .order_by(Visit.scheduled_at.desc(), Visit.id.asc())
         )
 
         if start_date:
@@ -540,6 +588,11 @@ class ReportService:
             stmt = stmt.where(Customer.area_id == area_id)
         if status and status != "ALL":
             stmt = stmt.where(Visit.status == VisitStatus(status))
+
+        if skip is not None:
+            stmt = stmt.offset(skip)
+        if limit is not None:
+            stmt = stmt.limit(limit)
 
         res = await session.execute(stmt)
         rows = res.all()
@@ -584,31 +637,30 @@ class ReportService:
                 func.sum(case((Visit.status == VisitStatus.MISSED, 1), else_=0)).label("missed_visits"),
                 func.sum(case((Visit.status == VisitStatus.FLAGGED, 1), else_=0)).label("flagged_visits"),
             )
-            .join(Visit, Employee.id == Visit.employee_id)
+            .outerjoin(Visit, and_(
+                Visit.employee_id == Employee.id,
+                Visit.scheduled_at >= datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc) if start_date else True,
+                Visit.scheduled_at <= datetime.combine(end_date, datetime.max.time(), tzinfo=timezone.utc) if end_date else True,
+            ))
             .group_by(Employee.id, Employee.full_name)
             .order_by(Employee.full_name.asc())
         )
-
-        if start_date:
-            stmt = stmt.where(Visit.scheduled_at >= datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc))
-        if end_date:
-            stmt = stmt.where(Visit.scheduled_at <= datetime.combine(end_date, datetime.max.time(), tzinfo=timezone.utc))
 
         result = await session.execute(stmt)
         rows = result.all()
 
         return [
             {
-                "employee_id": row.employee_id,
+                "employee_id": str(row.employee_id),
                 "employee_name": row.employee_name,
-                "total_visits": row.total_visits,
+                "total_visits": row.total_visits or 0,
                 "completed_visits": row.completed_visits or 0,
                 "pending_visits": row.pending_visits or 0,
                 "missed_visits": row.missed_visits or 0,
                 "flagged_visits": row.flagged_visits or 0,
                 "completion_rate": round(
-                    ((row.completed_visits or 0) / row.total_visits * 100), 1
-                ) if row.total_visits > 0 else 0.0,
+                    ((row.completed_visits or 0) / float(row.total_visits) * 100), 1
+                ) if row.total_visits and row.total_visits > 0 else 0.0,
             }
             for row in rows
         ]
@@ -644,26 +696,27 @@ class ReportService:
 
     @staticmethod
     async def get_productivity_dashboard(session: AsyncSession) -> dict:
-        total_emp = (await session.execute(select(func.count(Employee.id)))).scalar() or 0
-        active_emp = (
-            await session.execute(
-                select(func.count(User.id)).where(User.is_active == True, User.role == Role.EMPLOYEE)
-            )
-        ).scalar() or 0
-
         today_start = datetime.combine(date.today(), datetime.min.time(), tzinfo=timezone.utc)
         today_end = datetime.combine(date.today(), datetime.max.time(), tzinfo=timezone.utc)
 
-        stmt = (
-            select(
-                func.count(Visit.id).label("total"),
-                func.sum(case((Visit.status == VisitStatus.COMPLETED, 1), else_=0)).label("completed"),
-                func.sum(case((Visit.status == VisitStatus.PENDING, 1), else_=0)).label("pending"),
-                func.sum(case((Visit.status == VisitStatus.MISSED, 1), else_=0)).label("missed"),
-                func.sum(case((Visit.status == VisitStatus.FLAGGED, 1), else_=0)).label("flagged"),
-            )
-            .where(Visit.scheduled_at >= today_start, Visit.scheduled_at <= today_end)
+        total_emp_res = await session.execute(select(func.count(Employee.id)))
+        total_emp = total_emp_res.scalar() or 0
+
+        active_emp_res = await session.execute(
+            select(func.count(Employee.id))
+            .join(User, Employee.user_id == User.id)
+            .where(User.is_active == True)
         )
+        active_emp = active_emp_res.scalar() or 0
+
+        stmt = select(
+            func.count(Visit.id).label("total"),
+            func.sum(case((Visit.status == VisitStatus.COMPLETED, 1), else_=0)).label("completed"),
+            func.sum(case((Visit.status == VisitStatus.PENDING, 1), else_=0)).label("pending"),
+            func.sum(case((Visit.status == VisitStatus.MISSED, 1), else_=0)).label("missed"),
+            func.sum(case((Visit.status == VisitStatus.FLAGGED, 1), else_=0)).label("flagged"),
+        ).where(and_(Visit.scheduled_at >= today_start, Visit.scheduled_at <= today_end))
+
         result = await session.execute(stmt)
         row = result.one_or_none()
 
@@ -689,6 +742,8 @@ class ReportService:
         session: AsyncSession,
         start_date: date | None = None,
         end_date: date | None = None,
+        skip: Optional[int] = None,
+        limit: Optional[int] = None,
     ) -> list[dict]:
         query = (
             select(
@@ -700,13 +755,18 @@ class ReportService:
             .join(Visit, GeoVerificationLog.visit_id == Visit.id)
             .join(Employee, Visit.employee_id == Employee.id)
             .join(Customer, Visit.customer_id == Customer.id)
-            .order_by(GeoVerificationLog.attempted_at.desc())
+            .order_by(GeoVerificationLog.attempted_at.desc(), GeoVerificationLog.id.asc())
         )
 
         if start_date:
             query = query.where(GeoVerificationLog.attempted_at >= datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc))
         if end_date:
-            query = query.where(GeoVerificationLog.attempted_at < datetime.combine(end_date, datetime.max.time(), tzinfo=timezone.utc))
+            query = query.where(GeoVerificationLog.attempted_at < datetime.combine(end_date + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc))
+
+        if skip is not None:
+            query = query.offset(skip)
+        if limit is not None:
+            query = query.limit(limit)
 
         result = await session.execute(query)
         rows = result.all()
@@ -919,8 +979,9 @@ class ReportService:
                 )
                 p_res = await session.execute(p_stmt)
                 period_row = p_res.scalar_one_or_none()
-                if period_row and period_row.status == MonthlyPeriodStatus.FINALIZED:
-                    is_finalized = True
+                if period_row:
+                    status_val = period_row.status.value if hasattr(period_row.status, "value") else str(period_row.status)
+                    is_fin = (status_val == MonthlyPeriodStatus.FINALIZED.value or status_val == "FINALIZED")
             except Exception:
                 pass
 
@@ -974,18 +1035,19 @@ class ReportService:
             "July", "August", "September", "October", "November", "December"
         ]
 
+        # Batch fetch all existing periods to avoid N+1 queries
+        existing_res = await session.execute(select(MonthlyReportingPeriod))
+        existing_periods = {
+            (p.period_year, p.period_month): p for p in existing_res.scalars().all()
+        }
+
         # Sync or ensure MonthlyReportingPeriod exists for each month
         for s_year, s_month, snap_cnt, out_cnt, tot_s, tot_c, tot_os, tot_gt90 in snap_months:
             y = int(s_year)
             m = int(s_month)
             p_name = f"{month_names[m]} {y}"
 
-            p_stmt = select(MonthlyReportingPeriod).where(
-                MonthlyReportingPeriod.period_year == y,
-                MonthlyReportingPeriod.period_month == m,
-            )
-            p_res = await session.execute(p_stmt)
-            period = p_res.scalar_one_or_none()
+            period = existing_periods.get((y, m))
 
             if not period:
                 period = MonthlyReportingPeriod(
@@ -1001,6 +1063,7 @@ class ReportService:
                     total_overdue_gt_90=tot_gt90 or Decimal("0.00"),
                 )
                 session.add(period)
+                existing_periods[(y, m)] = period
             else:
                 # Update counts only if OPEN (preserve finalized numbers if locked)
                 if period.status == MonthlyPeriodStatus.OPEN:

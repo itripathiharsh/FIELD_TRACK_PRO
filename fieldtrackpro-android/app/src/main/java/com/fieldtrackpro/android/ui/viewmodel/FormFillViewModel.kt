@@ -9,6 +9,7 @@ import com.fieldtrackpro.android.data.repository.FormTemplateRepository
 import com.fieldtrackpro.android.data.repository.MediaRepository
 import com.fieldtrackpro.android.data.repository.Resource
 import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,18 +22,10 @@ sealed class FormFillState {
     data class Error(val message: String) : FormFillState()
 }
 
-/**
- * Drives the employee-facing form-fill screen: loads a published form's live
- * structure, restores any existing draft/submission for this visit, keeps
- * answers as local state with an auto-save draft on every change, validates
- * required questions before the final submit, and uploads
- * FILE_UPLOAD/PHOTO_UPLOAD answers through the existing visit-media endpoint
- * (never a separate upload path - Part 10 requires reusing existing media
- * infrastructure).
- */
 class FormFillViewModel(tokenManager: TokenManager) : ViewModel() {
     private val repository = FormTemplateRepository(ApiClient.createFormTemplateApi(tokenManager))
     private val mediaRepository = MediaRepository(ApiClient.createMediaApi(tokenManager))
+    private val gson = Gson()
 
     private val _state = MutableStateFlow<FormFillState>(FormFillState.Loading)
     val state: StateFlow<FormFillState> = _state.asStateFlow()
@@ -58,103 +51,167 @@ class FormFillViewModel(tokenManager: TokenManager) : ViewModel() {
         this.formId = formId
         viewModelScope.launch {
             _state.value = FormFillState.Loading
-            when (val renderRes = repository.renderForm(formId)) {
-                is Resource.Success -> _form.value = renderRes.data
-                is Resource.Error -> {
-                    _state.value = FormFillState.Error(renderRes.message)
-                    return@launch
-                }
-                else -> {}
-            }
-
-            when (val subRes = repository.getSubmissionForVisit(formId, visitId)) {
+            when (val templateResult = repository.renderForm(formId)) {
                 is Resource.Success -> {
-                    val existing = subRes.data
-                    if (existing != null) {
-                        submissionId = existing.id
-                        _answers.value = existing.answers.associate { it.questionId to it.answerValue }
-                        _isReadOnly.value = existing.status == "SUBMITTED"
+                    val formRender = templateResult.data
+                    _form.value = formRender
+
+                    when (val subResult = repository.getSubmissionForVisit(formId = formId, visitId = visitId)) {
+                        is Resource.Success -> {
+                            val sub = subResult.data
+                            if (sub != null) {
+                                submissionId = sub.id
+                                val answerMap = sub.answers.associate { it.questionId to it.answerValue }
+                                _answers.value = answerMap
+                                _isReadOnly.value = (sub.status == "SUBMITTED")
+                            } else {
+                                submissionId = null
+                                _answers.value = emptyMap()
+                                _isReadOnly.value = false
+                            }
+                            _state.value = FormFillState.Ready
+                        }
+                        is Resource.Error -> {
+                            _state.value = FormFillState.Error(subResult.message)
+                        }
+                        else -> {
+                            _state.value = FormFillState.Ready
+                        }
                     }
                 }
                 is Resource.Error -> {
-                    _state.value = FormFillState.Error(subRes.message)
-                    return@launch
+                    _state.value = FormFillState.Error(templateResult.message)
                 }
                 else -> {}
             }
-            _state.value = FormFillState.Ready
         }
     }
 
     fun setAnswer(questionId: String, value: String?) {
-        _answers.value = _answers.value.toMutableMap().apply { put(questionId, value) }
-        _fieldErrors.value = _fieldErrors.value.toMutableMap().apply { remove(questionId) }
-        viewModelScope.launch { saveDraft() }
+        if (_isReadOnly.value) return
+        val updated = _answers.value.toMutableMap()
+        if (value.isNullOrBlank()) {
+            updated.remove(questionId)
+        } else {
+            updated[questionId] = value
+        }
+        _answers.value = updated
+
+        if (_fieldErrors.value.containsKey(questionId)) {
+            val errors = _fieldErrors.value.toMutableMap()
+            errors.remove(questionId)
+            _fieldErrors.value = errors
+        }
+
+        saveDraft()
     }
 
-    /** CHECKBOXES answers are multi-valued; encoded the same way as the web client (a JSON array string). */
     fun toggleCheckboxOption(questionId: String, optionValue: String) {
-        val current = decodeCheckboxValues(_answers.value[questionId])
-        val next = if (current.contains(optionValue)) current - optionValue else current + optionValue
-        setAnswer(questionId, if (next.isEmpty()) null else Gson().toJson(next))
+        if (_isReadOnly.value) return
+        val currentList = decodeCheckboxValues(_answers.value[questionId]).toMutableList()
+        if (currentList.contains(optionValue)) {
+            currentList.remove(optionValue)
+        } else {
+            currentList.add(optionValue)
+        }
+        val encoded = if (currentList.isEmpty()) null else gson.toJson(currentList)
+        setAnswer(questionId, encoded)
     }
 
-    fun decodeCheckboxValues(value: String?): List<String> {
-        if (value.isNullOrBlank()) return emptyList()
+    fun decodeCheckboxValues(raw: String?): List<String> {
+        if (raw.isNullOrBlank()) return emptyList()
         return try {
-            @Suppress("UNCHECKED_CAST")
-            Gson().fromJson(value, List::class.java) as List<String>
+            val type = object : TypeToken<List<String>>() {}.type
+            gson.fromJson(raw, type) ?: emptyList()
         } catch (e: Exception) {
             emptyList()
         }
     }
 
-    /** Reuses the existing visit-media upload endpoint (Part 10: no separate attachment system). */
     fun uploadAttachment(questionId: String, fileName: String, mimeType: String, bytes: ByteArray) {
+        if (visitId.isBlank() || _isReadOnly.value) return
         viewModelScope.launch {
             when (val res = mediaRepository.uploadVisitMedia(visitId, fileName, mimeType, bytes)) {
-                is Resource.Success -> setAnswer(questionId, res.data.id)
-                is Resource.Error -> _state.value = FormFillState.Error(res.message)
+                is Resource.Success -> {
+                    setAnswer(questionId, res.data.id)
+                }
+                is Resource.Error -> {
+                    val errors = _fieldErrors.value.toMutableMap()
+                    errors[questionId] = "Upload failed: ${res.message}"
+                    _fieldErrors.value = errors
+                }
                 else -> {}
             }
         }
     }
 
-    private suspend fun saveDraft() {
-        val request = _answers.value
-        when (val res = repository.saveDraft(formId, visitId, request)) {
-            is Resource.Success -> submissionId = res.data.id
-            is Resource.Error -> _state.value = FormFillState.Error(res.message)
-            else -> {}
+    private fun saveDraft() {
+        if (visitId.isBlank() || formId.isBlank() || _isReadOnly.value) return
+        viewModelScope.launch {
+            val saveRes = repository.saveDraft(formId = formId, visitId = visitId, answers = _answers.value)
+            if (saveRes is Resource.Success) {
+                submissionId = saveRes.data.id
+            }
         }
     }
 
-    fun submit() {
-        val currentForm = _form.value ?: return
-        val missing = currentForm.sections
-            .flatMap { it.questions }
-            .filter { it.required && _answers.value[it.id].isNullOrBlank() }
-        if (missing.isNotEmpty()) {
-            _fieldErrors.value = missing.associate { it.id to "This question is required." }
+    fun submit(onSuccess: () -> Unit = {}) {
+        val form = _form.value ?: return
+        val currentAnswers = _answers.value
+        val errors = mutableMapOf<String, String>()
+
+        for (section in form.sections) {
+            for (field in section.questions) {
+                if (field.required) {
+                    val answer = currentAnswers[field.id]
+                    if (answer.isNullOrBlank()) {
+                        errors[field.id] = "${field.questionText} is required"
+                    }
+                }
+            }
+        }
+
+        if (errors.isNotEmpty()) {
+            _fieldErrors.value = errors
             return
         }
 
         viewModelScope.launch {
             _state.value = FormFillState.Loading
-            saveDraft()
-            val id = submissionId
-            if (id == null) {
-                _state.value = FormFillState.Error("Could not save your answers before submitting.")
-                return@launch
+            var subId = submissionId
+            if (subId == null) {
+                val saveRes = repository.saveDraft(formId = formId, visitId = visitId, answers = currentAnswers)
+                if (saveRes is Resource.Success) {
+                    subId = saveRes.data.id
+                    submissionId = subId
+                } else {
+                    _state.value = FormFillState.Error("Could not save form draft before submission")
+                    return@launch
+                }
             }
-            when (val res = repository.submit(id)) {
+
+            when (val submitRes = repository.submit(subId)) {
                 is Resource.Success -> {
                     _isReadOnly.value = true
                     _state.value = FormFillState.Submitted
+                    onSuccess()
                 }
-                is Resource.Error -> _state.value = FormFillState.Error(res.message)
+                is Resource.Error -> {
+                    _state.value = FormFillState.Error(submitRes.message)
+                }
                 else -> {}
             }
         }
+    }
+
+    fun resetState() {
+        _state.value = FormFillState.Loading
+        _form.value = null
+        _answers.value = emptyMap()
+        _fieldErrors.value = emptyMap()
+        _isReadOnly.value = false
+        submissionId = null
+        visitId = ""
+        formId = ""
     }
 }

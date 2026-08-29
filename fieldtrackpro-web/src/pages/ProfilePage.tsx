@@ -170,7 +170,7 @@ export const ProfilePage: React.FC = () => {
                 <p className="font-label-md text-xs text-on-surface-variant uppercase font-semibold">
                   Territory
                 </p>
-                <p className="text-on-surface font-medium mt-0.5">{employee.territory_id || 'Unassigned'}</p>
+                <p className="text-on-surface font-medium mt-0.5">{employee.effective_territory_name || employee.territory_id || 'Unassigned'}</p>
               </div>
               <div>
                 <p className="font-label-md text-xs text-on-surface-variant uppercase font-semibold">

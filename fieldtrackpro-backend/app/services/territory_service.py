@@ -16,15 +16,31 @@ from app.schemas.territory import TerritoryCreate, TerritoryUpdate
 
 async def create_territory(data: TerritoryCreate, session: AsyncSession) -> Territory:
     repo = TerritoryRepository(session)
+    clean_name = data.name.strip()
+    existing = await repo.get_by_name(clean_name)
+    if existing is not None:
+        raise BaseAPIException(
+            status_code=409,
+            detail=f"Territory with name '{clean_name}' already exists",
+            error_code="TERRITORY_EXISTS",
+        )
     territory = Territory(
-        name=data.name,
+        name=clean_name,
         center_latitude=data.center_latitude,
         center_longitude=data.center_longitude,
         radius_km=data.radius_km,
         status=data.status,
     )
-    await repo.add(territory)
-    await repo.commit()
+    try:
+        await repo.add(territory)
+        await repo.commit()
+    except Exception as exc:
+        await session.rollback()
+        raise BaseAPIException(
+            status_code=409,
+            detail=f"Territory with name '{clean_name}' already exists",
+            error_code="TERRITORY_EXISTS",
+        ) from exc
     return territory
 
 
@@ -36,15 +52,24 @@ async def get_territory(territory_id: uuid.UUID, session: AsyncSession) -> Terri
     return t
 
 
-async def list_territories(session: AsyncSession) -> list[Territory]:
+async def list_territories(session: AsyncSession, status: str | None = None) -> list[Territory]:
     repo = TerritoryRepository(session)
-    return await repo.list_all()
+    return await repo.list_all(status=status)
 
 
 async def update_territory(territory_id: uuid.UUID, data: TerritoryUpdate, session: AsyncSession) -> Territory:
+    repo = TerritoryRepository(session)
     t = await get_territory(territory_id, session)
     if data.name is not None:
-        t.name = data.name
+        clean_name = data.name.strip()
+        existing = await repo.get_by_name(clean_name, exclude_id=territory_id)
+        if existing is not None:
+            raise BaseAPIException(
+                status_code=409,
+                detail=f"Territory with name '{clean_name}' already exists",
+                error_code="TERRITORY_EXISTS",
+            )
+        t.name = clean_name
     if data.center_latitude is not None:
         t.center_latitude = data.center_latitude
     if data.center_longitude is not None:

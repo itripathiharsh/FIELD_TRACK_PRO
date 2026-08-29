@@ -11,6 +11,7 @@ from geoalchemy2.elements import WKBElement, WKTElement
 from geoalchemy2.shape import to_shape
 from shapely.wkb import loads as wkb_loads
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -32,6 +33,16 @@ _WKT_POINT_RE = re.compile(
 
 async def create_customer(data: CustomerCreate, created_by: uuid.UUID, session: AsyncSession) -> Customer:
     repo = CustomerRepository(session)
+
+    cleaned_outlet_code = data.outlet_code.strip().upper() if data.outlet_code else None
+    if cleaned_outlet_code:
+        existing = await repo.get_by_outlet_code(cleaned_outlet_code)
+        if existing is not None:
+            raise BaseAPIException(
+                status_code=409,
+                detail=f"A customer with DMS Code '{cleaned_outlet_code}' already exists.",
+                error_code="OUTLET_CODE_EXISTS",
+            )
 
     location_wkt = None
     loc_status = data.location_status or "MISSING"
@@ -62,12 +73,23 @@ async def create_customer(data: CustomerCreate, created_by: uuid.UUID, session: 
         location_status=loc_status,
         territory_id=territory_id,
         area_id=data.area_id,
-        outlet_code=data.outlet_code,
+        outlet_code=cleaned_outlet_code,
         created_by=created_by,
     )
-    await repo.add(customer)
-    await repo.commit()
+    try:
+        await repo.add(customer)
+        await repo.commit()
+    except IntegrityError as exc:
+        await session.rollback()
+        if "outlet_code" in str(exc).lower():
+            raise BaseAPIException(
+                status_code=409,
+                detail=f"A customer with DMS Code '{cleaned_outlet_code}' already exists.",
+                error_code="OUTLET_CODE_EXISTS",
+            ) from exc
+        raise
     return customer
+
 
 
 async def get_customer(customer_id: uuid.UUID, session: AsyncSession) -> Customer:
@@ -85,14 +107,15 @@ async def list_customers(
     skip: int = 0,
     limit: int = 50,
     area_id: uuid.UUID | None = None,
-) -> list[Customer]:
+    search: str | None = None,
+) -> tuple[list[Customer], int]:
     repo = CustomerRepository(session)
 
     if current_user.role == Role.ADMIN:
-        return await repo.list_by_territory(territory_id, skip, limit, area_id)
+        return await repo.list_by_territory(territory_id, skip, limit, area_id, search)
 
     employee = await get_employee_by_user_id(current_user.id, session)
-    return await repo.list_visited_by_employee(employee.id, territory_id, skip, limit, area_id)
+    return await repo.list_visited_by_employee(employee.id, territory_id, skip, limit, area_id, search)
 
 
 async def assert_employee_can_view_customer(
@@ -118,6 +141,7 @@ async def assert_employee_can_view_customer(
 async def update_customer(
     customer_id: uuid.UUID, data: CustomerUpdate, session: AsyncSession
 ) -> Customer:
+    repo = CustomerRepository(session)
     customer = await get_customer(customer_id, session)
     if data.name is not None:
         customer.name = data.name
@@ -158,12 +182,41 @@ async def update_customer(
     elif "territory_id" in data.model_fields_set:
         customer.territory_id = data.territory_id
     if "outlet_code" in data.model_fields_set:
-        customer.outlet_code = data.outlet_code
+        cleaned_code = data.outlet_code.strip().upper() if data.outlet_code else None
+        if cleaned_code:
+            existing = await repo.get_by_outlet_code(cleaned_code, exclude_id=customer_id)
+            if existing is not None:
+                raise BaseAPIException(
+                    status_code=409,
+                    detail=f"A customer with DMS Code '{cleaned_code}' already exists.",
+                    error_code="OUTLET_CODE_EXISTS",
+                )
+        customer.outlet_code = cleaned_code
 
-    session.add(customer)
-    await session.commit()
-    await session.refresh(customer)
+    try:
+        session.add(customer)
+        await session.commit()
+        await session.refresh(customer)
+    except IntegrityError as exc:
+        await session.rollback()
+        if "outlet_code" in str(exc).lower():
+            code_display = data.outlet_code or ""
+            raise BaseAPIException(
+                status_code=409,
+                detail=f"A customer with DMS Code '{code_display}' already exists.",
+                error_code="OUTLET_CODE_EXISTS",
+            ) from exc
+        raise
     return customer
+
+
+async def list_customer_map_locations(
+    session: AsyncSession,
+    territory_id: uuid.UUID | None = None,
+    area_id: uuid.UUID | None = None,
+) -> list[Customer]:
+    repo = CustomerRepository(session)
+    return await repo.list_map_locations(territory_id=territory_id, area_id=area_id)
 
 
 def extract_coords(location: Any) -> tuple[float, float]:
@@ -245,9 +298,20 @@ async def verify_device_against_customer(
 ):
     from app.services.geo_verification_service import GeoVerificationService
 
+    if customer.location is None:
+        from app.services.geo_verification_service import GeoVerificationResult
+        return GeoVerificationResult(
+            is_valid=False,
+            distance_m=0.0,
+            geofence_radius_m=customer.geofence_radius_m or 100.0,
+            is_mock=is_mock_location,
+            accuracy_m=accuracy_m,
+            failure_reason="Customer location not configured",
+        )
+
     coordinates_in_range = -90.0 <= device_lat <= 90.0 and -180.0 <= device_lng <= 180.0
     measured: float | None = None
-    if coordinates_in_range and customer.location is not None:
+    if coordinates_in_range:
         measured = await measure_distance_to_customer(customer, device_lat, device_lng, session)
 
     target_lat, target_lng = extract_coords(getattr(customer, "location", None))

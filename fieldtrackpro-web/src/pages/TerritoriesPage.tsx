@@ -335,8 +335,9 @@ export const TerritoriesPage: React.FC = () => {
       {/* Create Territory Modal with Map Location Picker */}
       <Modal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        title="Create Geographic Territory"
+        onClose={() => !isSaving && setIsModalOpen(false)}
+        disableClose={isSaving}
+        title="Add New Territory"
         subtitle="Define an operational center and coverage radius for field sales representatives."
       >
         {formError && (
@@ -474,6 +475,7 @@ export const TerritoriesPage: React.FC = () => {
               type="button"
               variant="ghost"
               size="sm"
+              disabled={isSaving}
               onClick={() => setIsModalOpen(false)}
             >
               Cancel

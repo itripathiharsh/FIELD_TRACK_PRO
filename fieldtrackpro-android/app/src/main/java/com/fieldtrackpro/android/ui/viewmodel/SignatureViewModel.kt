@@ -23,7 +23,6 @@ sealed class SignatureState {
     object Loading : SignatureState()
     data class ListSuccess(val items: List<SignatureDto>) : SignatureState()
     data class UploadSuccess(val signature: SignatureDto) : SignatureState()
-    /** P1-6: queued for automatic WorkManager retry rather than lost - see MediaState.QueuedForRetry. */
     data class QueuedForRetry(val message: String) : SignatureState()
     data class Error(val message: String) : SignatureState()
 }
@@ -35,7 +34,6 @@ class SignatureViewModel(application: Application, tokenManager: TokenManager) :
     private val _signatureState = MutableStateFlow<SignatureState>(SignatureState.Idle)
     val signatureState: StateFlow<SignatureState> = _signatureState.asStateFlow()
 
-    // Hold capture states across recompositions and screen rotations
     val employeeSignatureState = com.fieldtrackpro.android.ui.screens.signature.SignatureCaptureState()
     val customerSignatureState = com.fieldtrackpro.android.ui.screens.signature.SignatureCaptureState()
 
@@ -56,23 +54,6 @@ class SignatureViewModel(application: Application, tokenManager: TokenManager) :
         }
     }
 
-    /**
-     * Uploads a signature/acknowledgement and suspends until the result is
-     * known, so a caller can wait for completion before navigating away.
-     *
-     * Durability: [imageBytes] is persisted to a durable file and a
-     * WorkManager safety-net retry is scheduled BEFORE the direct upload is
-     * even attempted - so the capture survives even if the app process dies
-     * the instant after this is called, not only if the direct attempt
-     * happens to fail while the app is still alive to notice. If the direct
-     * attempt succeeds, the safety-net job is cancelled as redundant.
-     *
-     * @return true if the upload succeeded outright. A transient failure that
-     * gets queued for background retry (P1-6) returns false here too - the
-     * caller still shouldn't navigate away treating it as a success - but
-     * `signatureState` distinguishes [SignatureState.QueuedForRetry] from a
-     * permanent [SignatureState.Error] for the UI.
-     */
     suspend fun uploadSignatureAwait(
         visitId: String,
         signatureType: String,
@@ -96,12 +77,8 @@ class SignatureViewModel(application: Application, tokenManager: TokenManager) :
             }
             is Resource.Error -> {
                 if (UploadRetryPolicy.isTransientFailure(res.message)) {
-                    // Safety-net job already scheduled above - nothing more to do.
                     _signatureState.value = SignatureState.QueuedForRetry("Upload failed - queued for automatic retry: ${res.message}")
                 } else {
-                    // A permanent rejection (bad image, duplicate, etc.) will
-                    // never succeed on retry either - cancel the safety net
-                    // so it doesn't waste a network round trip repeating it.
                     cancelSafetyNet(uniqueWorkName)
                     _signatureState.value = SignatureState.Error(res.message)
                 }
@@ -111,7 +88,6 @@ class SignatureViewModel(application: Application, tokenManager: TokenManager) :
         }
     }
 
-    /** Same durability/cancel-on-success pattern as [uploadSignatureAwait], for correcting an existing capture. */
     suspend fun replaceSignatureAwait(
         visitId: String,
         signatureId: String,
@@ -148,5 +124,11 @@ class SignatureViewModel(application: Application, tokenManager: TokenManager) :
 
     private fun cancelSafetyNet(uniqueWorkName: String) {
         WorkManager.getInstance(getApplication()).cancelUniqueWork(uniqueWorkName)
+    }
+
+    fun resetState() {
+        _signatureState.value = SignatureState.Idle
+        employeeSignatureState.clear()
+        customerSignatureState.clear()
     }
 }

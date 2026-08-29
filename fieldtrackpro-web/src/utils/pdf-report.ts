@@ -55,8 +55,8 @@ export function generatePDFContent(options: PDFExportOptions): Uint8Array {
     pushText(`FieldTrack - ${title}`, 15);
     y -= 4;
 
-    // Generated timestamp
-    pushText(`Generated: ${new Date().toLocaleString()}`, 8);
+    // Generated timestamp in IST (Asia/Kolkata)
+    pushText(`Generated: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST`, 8);
     y -= 2;
 
     // Date range / Filters

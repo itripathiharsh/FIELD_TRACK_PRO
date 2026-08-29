@@ -21,8 +21,8 @@ android {
         applicationId = "com.fieldtrackpro.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.0.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -35,9 +35,21 @@ android {
         buildConfigField("String", "MAPLIBRE_TILE_URL", "\"$maplibreTileUrl\"")
     }
 
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file(System.getProperty("user.home") + "/.android/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+            enableV1Signing = true
+            enableV2Signing = true
+        }
+    }
+
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("debug")
+            isDebuggable = false
             isMinifyEnabled = false
             val prodBaseUrl = "https://fieldtrackpro-backend-s7hs.onrender.com/"
             buildConfigField("String", "BASE_URL", "\"$prodBaseUrl\"")
@@ -47,6 +59,7 @@ android {
             )
         }
         debug {
+            signingConfig = signingConfigs.getByName("debug")
             val debugBaseUrl: String = localProperties.getProperty("BASE_URL")?.toString()?.removeSurrounding("\"")
                 ?: project.findProperty("BASE_URL") as? String
                 ?: "http://10.0.2.2:8000/"
@@ -63,6 +76,9 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+    testOptions {
+        unitTests.isReturnDefaultValues = true
     }
 }
 

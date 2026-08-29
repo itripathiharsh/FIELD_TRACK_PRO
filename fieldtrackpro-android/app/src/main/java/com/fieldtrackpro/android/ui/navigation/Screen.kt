@@ -1,5 +1,7 @@
 package com.fieldtrackpro.android.ui.navigation
 
+import java.net.URLEncoder
+
 sealed class Screen(val route: String) {
     object Splash : Screen("splash")
     object Login : Screen("login")
@@ -17,8 +19,6 @@ sealed class Screen(val route: String) {
     object MediaUpload : Screen("media_upload/{visitId}") {
         fun createRoute(visitId: String) = "media_upload/$visitId"
     }
-    // P2-B: order capture - a distinct nav destination (Visit -> Order),
-    // reusing MediaUploadScreen in isOrderMode rather than a second camera flow.
     object OrderCapture : Screen("order_capture/{visitId}") {
         fun createRoute(visitId: String) = "order_capture/$visitId"
     }
@@ -28,8 +28,14 @@ sealed class Screen(val route: String) {
         fun createRoute(customerId: String) = "map/$customerId"
     }
     object AttachmentPreview : Screen("attachment_preview/{mediaId}/{fileName}/{isPhoto}") {
-        fun createRoute(mediaId: String, fileName: String, isPhoto: Boolean) =
-            "attachment_preview/$mediaId/$fileName/$isPhoto"
+        fun createRoute(mediaId: String, fileName: String, isPhoto: Boolean): String {
+            val encoded = try {
+                URLEncoder.encode(fileName, "UTF-8")
+            } catch (e: Exception) {
+                fileName
+            }
+            return "attachment_preview/$mediaId/$encoded/$isPhoto"
+        }
     }
     object VisitSummary : Screen("visit_summary/{visitId}") {
         fun createRoute(visitId: String) = "visit_summary/$visitId"

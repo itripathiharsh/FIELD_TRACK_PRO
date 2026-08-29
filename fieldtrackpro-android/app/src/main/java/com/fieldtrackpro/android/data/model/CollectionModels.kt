@@ -100,6 +100,7 @@ data class PaymentCreateRequest(
     @SerializedName("cheque_bank_name") val chequeBankName: String? = null,
     @SerializedName("utr_reference") val utrReference: String? = null,
     val notes: String? = null,
+    @SerializedName("idempotency_key") val idempotencyKey: String? = null,
 )
 
 data class PaymentProofDownloadResponse(

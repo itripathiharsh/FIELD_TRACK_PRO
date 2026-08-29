@@ -116,6 +116,8 @@ async def get_employees_master_report(
     role: Optional[str] = Query(default=None),
     is_active: Optional[bool] = Query(default=None),
     query: Optional[str] = Query(default=None),
+    skip: Optional[int] = Query(default=None, ge=0),
+    limit: Optional[int] = Query(default=None, ge=1, le=200),
     current_user: CurrentUser = None,
     session=Depends(get_async_session),
 ) -> list[EmployeeMasterReportRow]:
@@ -126,6 +128,8 @@ async def get_employees_master_report(
         role=role,
         is_active=is_active,
         query=query,
+        skip=skip,
+        limit=limit,
     )
 
 
@@ -181,6 +185,8 @@ async def get_outlets_report(
     employee_id: Optional[uuid.UUID] = Query(default=None),
     location_status: Optional[str] = Query(default=None),
     query: Optional[str] = Query(default=None),
+    skip: Optional[int] = Query(default=None, ge=0),
+    limit: Optional[int] = Query(default=None, ge=1, le=200),
     current_user: CurrentUser = None,
     session=Depends(get_async_session),
 ) -> list[OutletReportRow]:
@@ -193,6 +199,8 @@ async def get_outlets_report(
         employee_id=employee_id,
         location_status=location_status,
         query=query,
+        skip=skip,
+        limit=limit,
     )
 
 
@@ -262,6 +270,8 @@ async def get_outstanding_report(
     ageing_bucket: Optional[str] = Query(default=None),
     month: Optional[str] = Query(default=None),
     query: Optional[str] = Query(default=None),
+    skip: Optional[int] = Query(default=None, ge=0),
+    limit: Optional[int] = Query(default=None, ge=1, le=200),
     current_user: CurrentUser = None,
     session=Depends(get_async_session),
 ) -> list[OutstandingAgeingReportRow]:
@@ -275,6 +285,8 @@ async def get_outstanding_report(
         ageing_bucket=ageing_bucket,
         month=month,
         query=query,
+        skip=skip,
+        limit=limit,
     )
 
 
@@ -344,6 +356,8 @@ async def get_collections_report(
     employee_id: Optional[uuid.UUID] = Query(default=None),
     month: Optional[str] = Query(default=None),
     query: Optional[str] = Query(default=None),
+    skip: Optional[int] = Query(default=None, ge=0),
+    limit: Optional[int] = Query(default=None, ge=1, le=200),
     current_user: CurrentUser = None,
     session=Depends(get_async_session),
 ) -> list[CollectionReportRow]:
@@ -356,6 +370,8 @@ async def get_collections_report(
         employee_id=employee_id,
         month=month,
         query=query,
+        skip=skip,
+        limit=limit,
     )
 
 
@@ -416,6 +432,8 @@ async def get_visits_detailed_report(
     zone_id: Optional[uuid.UUID] = Query(default=None),
     area_id: Optional[uuid.UUID] = Query(default=None),
     status: Optional[str] = Query(default=None),
+    skip: Optional[int] = Query(default=None, ge=0),
+    limit: Optional[int] = Query(default=None, ge=1, le=200),
     current_user: CurrentUser = None,
     session=Depends(get_async_session),
 ) -> list[VisitDetailedReportRow]:
@@ -428,6 +446,8 @@ async def get_visits_detailed_report(
         zone_id=zone_id,
         area_id=area_id,
         status=status,
+        skip=skip,
+        limit=limit,
     )
 
 
@@ -545,10 +565,12 @@ async def productivity_dashboard(
 async def geo_verification_report(
     start_date: date | None = Query(default=None, description="Start date (YYYY-MM-DD)"),
     end_date: date | None = Query(default=None, description="End date (YYYY-MM-DD)"),
+    skip: Optional[int] = Query(default=None, ge=0),
+    limit: Optional[int] = Query(default=None, ge=1, le=200),
     current_user: CurrentUser = None,
     session=Depends(get_async_session),
 ) -> list[GeoVerificationReportRow]:
-    data = await report_service.get_geo_verification_report(session, start_date, end_date)
+    data = await report_service.get_geo_verification_report(session, start_date, end_date, skip=skip, limit=limit)
     return [GeoVerificationReportRow(**row) for row in data]
 
 

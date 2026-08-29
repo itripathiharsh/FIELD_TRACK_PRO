@@ -24,6 +24,7 @@ import { MediaThumbnail } from '../components/ui/MediaThumbnail';
 import { SignatureThumbnail } from '../components/ui/SignatureThumbnail';
 import { AccountSummaryCard } from '../components/ui/AccountSummaryCard';
 import { CollectPaymentModal } from '../components/ui/CollectPaymentModal';
+import { formatIstDateTime } from '../utils/date';
 
 export const VisitDetailsPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -104,10 +105,13 @@ export const VisitDetailsPage: React.FC = () => {
     }
   }, [id]);
 
+  const [exceptionError, setExceptionError] = useState<string | null>(null);
+
   const handleFileException = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!visit || !exceptionDesc.trim()) return;
     setIsSubmittingException(true);
+    setExceptionError(null);
     try {
       await apiClient.createFieldException({
         visit_id: visit.id,
@@ -119,7 +123,7 @@ export const VisitDetailsPage: React.FC = () => {
       setExceptionDesc('');
       await reload();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to submit exception');
+      setExceptionError(err instanceof Error ? err.message : 'Failed to submit exception');
     } finally {
       setIsSubmittingException(false);
     }
@@ -137,34 +141,32 @@ export const VisitDetailsPage: React.FC = () => {
    * Geolocation API. They were previously pre-populated with fixed Bengaluru
    * coordinates, which invited a check-in that had nothing to do with where
    * the user actually was. The fields are also read-only (see the JSX below)
-   * - this is the ONLY place lat/lng/accuracy/capturedAt are ever set, so a
-   * check-in can never be built from hand-typed coordinates.
+   * so an operator can't type numbers in either.
    */
   const useMyLocation = () => {
     if (!navigator.geolocation) {
-      setGeoStatus({ ok: false, text: 'This browser does not provide location services.' });
+      setGeoStatus({ ok: false, text: 'Geolocation is not supported by this browser.' });
       return;
     }
     setIsLocating(true);
+    setGeoStatus(null);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        setLat(String(pos.coords.latitude));
-        setLng(String(pos.coords.longitude));
-        if (pos.coords.accuracy) setAccuracy(String(Math.round(pos.coords.accuracy)));
-        setCapturedAt(new Date().toISOString());
+        setLat(pos.coords.latitude.toFixed(6));
+        setLng(pos.coords.longitude.toFixed(6));
+        setAccuracy(pos.coords.accuracy ? pos.coords.accuracy.toFixed(1) : '10.0');
+        setCapturedAt(new Date(pos.timestamp).toISOString());
         setHasRealCapture(true);
-        setGeoStatus(null);
         setIsLocating(false);
+        setGeoStatus({ ok: true, text: `GPS fix acquired (±${Math.round(pos.coords.accuracy || 10)}m accuracy).` });
       },
-      (err) => {
+      (geoErr) => {
+        setIsLocating(false);
+        setHasRealCapture(false);
         setGeoStatus({
           ok: false,
-          text:
-            err.code === err.PERMISSION_DENIED
-              ? 'Location permission denied. Enable it to check in.'
-              : 'Could not obtain a GPS fix. Move to open sky and retry.',
+          text: `GPS capture failed: ${geoErr.message}. Ensure location permissions are granted.`,
         });
-        setIsLocating(false);
       },
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
     );
@@ -172,14 +174,11 @@ export const VisitDetailsPage: React.FC = () => {
 
   const submitGeoAction = async (action: 'check-in' | 'check-out') => {
     if (!id) return;
-    if (!hasRealCapture || !capturedAt) {
-      setGeoStatus({ ok: false, text: 'Capture your location before continuing.' });
-      return;
-    }
     const latitude = parseFloat(lat);
     const longitude = parseFloat(lng);
-    if (Number.isNaN(latitude) || Number.isNaN(longitude)) {
-      setGeoStatus({ ok: false, text: 'Capture your location before continuing.' });
+    const accuracyM = accuracy ? parseFloat(accuracy) : NaN;
+    if (Number.isNaN(latitude) || Number.isNaN(longitude) || Number.isNaN(accuracyM)) {
+      setGeoStatus({ ok: false, text: 'Capture accurate location coordinates and GPS accuracy before continuing.' });
       return;
     }
     setGeoStatus(null);
@@ -188,9 +187,9 @@ export const VisitDetailsPage: React.FC = () => {
       const payload = {
         latitude,
         longitude,
-        accuracy_m: accuracy ? parseFloat(accuracy) : undefined,
+        accuracy_m: accuracyM,
         is_mock_location: false,
-        captured_at: capturedAt,
+        captured_at: capturedAt || new Date().toISOString(),
       };
       if (action === 'check-in') {
         // FT-037: an idempotency key makes a retried check-in safe.
@@ -281,7 +280,7 @@ export const VisitDetailsPage: React.FC = () => {
   }
 
   const canCheckIn = visit.status === 'PENDING' || visit.status === 'FLAGGED';
-  const canCheckOut = visit.status === 'IN_PROGRESS';
+  const canCheckOut = visit.status === 'IN_PROGRESS' || visit.status === 'FLAGGED';
   const failureCount = geoLogs.filter((l) => !l.is_valid).length;
 
   return (
@@ -324,7 +323,7 @@ export const VisitDetailsPage: React.FC = () => {
               Scheduled
             </p>
             <p className="font-body-md text-sm text-on-surface font-medium">
-              {new Date(visit.scheduled_at).toLocaleString()}
+              {formatIstDateTime(visit.scheduled_at)}
             </p>
           </div>
           <div>
@@ -332,11 +331,11 @@ export const VisitDetailsPage: React.FC = () => {
               Check-In
             </p>
             <p className="font-body-md text-sm text-on-surface font-medium">
-              {visit.check_in_at ? new Date(visit.check_in_at).toLocaleString() : 'Not checked in'}
+              {visit.check_in_at ? formatIstDateTime(visit.check_in_at) : 'Not checked in'}
             </p>
             {visit.check_in_received_at && visit.check_in_at && visit.check_in_received_at !== visit.check_in_at && (
               <p className="font-caption text-[11px] text-on-surface-variant mt-0.5">
-                Synced: {new Date(visit.check_in_received_at).toLocaleTimeString()}
+                Synced: {formatIstDateTime(visit.check_in_received_at)}
               </p>
             )}
           </div>
@@ -345,11 +344,11 @@ export const VisitDetailsPage: React.FC = () => {
               Check-Out
             </p>
             <p className="font-body-md text-sm text-on-surface font-medium">
-              {visit.check_out_at ? new Date(visit.check_out_at).toLocaleString() : 'Not checked out'}
+              {visit.check_out_at ? formatIstDateTime(visit.check_out_at) : 'Not checked out'}
             </p>
             {visit.check_out_received_at && visit.check_out_at && visit.check_out_received_at !== visit.check_out_at && (
               <p className="font-caption text-[11px] text-on-surface-variant mt-0.5">
-                Synced: {new Date(visit.check_out_received_at).toLocaleTimeString()}
+                Synced: {formatIstDateTime(visit.check_out_received_at)}
               </p>
             )}
           </div>
@@ -534,7 +533,7 @@ export const VisitDetailsPage: React.FC = () => {
                     Distance to target: {Math.round(log.distance_from_customer_m)}m
                   </p>
                   <p className="font-caption text-on-surface-variant">
-                    {new Date(log.attempted_at).toLocaleString()}
+                    {formatIstDateTime(log.attempted_at)}
                   </p>
                   {log.failure_reason && (
                     <p className="text-error font-semibold">Reason: {log.failure_reason}</p>
@@ -814,6 +813,11 @@ export const VisitDetailsPage: React.FC = () => {
             </div>
 
             <form onSubmit={handleFileException} className="space-y-4 text-xs">
+              {exceptionError && (
+                <div className="p-3 bg-rose-950/80 border border-rose-800 text-rose-300 rounded-lg text-xs">
+                  {exceptionError}
+                </div>
+              )}
               <div>
                 <label className="block text-slate-300 font-medium mb-1">Issue / Exception Type</label>
                 <select

@@ -414,6 +414,10 @@ fun CollectPaymentScreen(
                                 fieldError = "Enter a valid payment amount."
                                 return@Button
                             }
+                            if (parsedAmount > 9999999999.99) {
+                                fieldError = "Payment amount cannot exceed ₹9,99,99,99,999.99."
+                                return@Button
+                            }
                             if (method == "CHEQUE" && chequeNumber.isBlank()) {
                                 fieldError = "Cheque number is required for cheque payments."
                                 return@Button

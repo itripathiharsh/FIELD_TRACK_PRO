@@ -56,12 +56,19 @@ class PaymentRepository(BaseRepository[Payment]):
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
-    async def list_by_employee(self, employee_id: uuid.UUID) -> Sequence[Payment]:
-        result = await self.session.execute(
+    async def list_by_employee(
+        self, employee_id: uuid.UUID, limit: int | None = None, offset: int | None = None
+    ) -> Sequence[Payment]:
+        stmt = (
             select(Payment)
             .where(Payment.employee_id == employee_id)
-            .order_by(Payment.payment_date.desc())
+            .order_by(Payment.payment_date.desc(), Payment.created_at.desc())
         )
+        if offset is not None:
+            stmt = stmt.offset(offset)
+        if limit is not None:
+            stmt = stmt.limit(limit)
+        result = await self.session.execute(stmt)
         return result.scalars().all()
 
     async def find_by_visit_and_idempotency_key(

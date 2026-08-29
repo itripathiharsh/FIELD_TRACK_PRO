@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, MapPin, Building2, Pencil, Eye } from 'lucide-react';
+import { Plus, MapPin, Building2, Pencil, Eye, AlertTriangle } from 'lucide-react';
 import { DataTable, Column } from '../components/ui/DataTable';
 import { Modal } from '../components/ui/Modal';
 import { PageHeader } from '../components/ui/PageHeader';
@@ -10,7 +10,7 @@ import { Select } from '../components/ui/Select';
 import { EmptyState } from '../components/ui/EmptyState';
 import { ErrorBanner } from '../components/ui/ErrorBanner';
 import { MapPicker } from '../components/ui/MapPicker';
-import { apiClient } from '../api/client';
+import { apiClient, ApiError } from '../api/client';
 import { Area, Customer, Territory } from '../types';
 import { validatePhoneNumber } from '../utils/phoneValidation';
 
@@ -31,6 +31,13 @@ const emptyForm = {
 export const CustomersPage: React.FC = () => {
   const navigate = useNavigate();
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [page, setPage] = useState(1);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [pageSize, setPageSize] = useState(25);
+  const [filterTerritoryId, setFilterTerritoryId] = useState('');
+  const [filterAreaId, setFilterAreaId] = useState('');
+
   const [areas, setAreas] = useState<Area[]>([]);
   const [territories, setTerritories] = useState<Territory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -39,46 +46,205 @@ export const CustomersPage: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isMapPickerOpen, setIsMapPickerOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [initialForm, setInitialForm] = useState<typeof emptyForm | null>(null);
   const [form, setForm] = useState({ ...emptyForm });
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
-  const set = <K extends keyof typeof emptyForm>(key: K, value: string) =>
-    setForm((prev) => ({ ...prev, [key]: value }));
+  // Inline Zone & Area creation state
+  const [isAddingNewZone, setIsAddingNewZone] = useState(false);
+  const [newZoneName, setNewZoneName] = useState('');
+  const [isCreatingZone, setIsCreatingZone] = useState(false);
+  const [zoneCreateError, setZoneCreateError] = useState<string | null>(null);
 
-  const fetchCustomers = useCallback(() => {
-    setIsLoading(true);
-    apiClient
-      .getCustomers()
-      .then((data) => {
-        setCustomers(data);
-        setError(null);
-      })
-      .catch((err: Error) => {
-        setCustomers([]);
-        setError(err.message || 'Unable to load customers');
-      })
-      .finally(() => setIsLoading(false));
-  }, []);
+  const [isAddingNewArea, setIsAddingNewArea] = useState(false);
+  const [newAreaName, setNewAreaName] = useState('');
+  const [isCreatingArea, setIsCreatingArea] = useState(false);
+  const [areaCreateError, setAreaCreateError] = useState<string | null>(null);
+
+  const set = <K extends keyof typeof emptyForm>(key: K, value: string) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+    const fieldMapping: Record<string, string> = {
+      name: 'name',
+      contactPerson: 'contact_person',
+      contactNumber: 'contact_number',
+      address: 'address',
+      latitude: 'latitude',
+      longitude: 'longitude',
+      geofenceRadius: 'geofence_radius_m',
+      territoryId: 'territory_id',
+      areaId: 'area_id',
+      outletCode: 'outlet_code',
+    };
+    const mapped = fieldMapping[key];
+    if (mapped && fieldErrors[mapped]) {
+      setFieldErrors((prev) => {
+        const next = { ...prev };
+        delete next[mapped];
+        return next;
+      });
+    }
+  };
+
+  const isDirty = useMemo(() => {
+    if (!editingId || !initialForm) return true;
+    return (
+      form.name.trim() !== initialForm.name.trim() ||
+      form.contactPerson.trim() !== initialForm.contactPerson.trim() ||
+      form.contactNumber.trim() !== initialForm.contactNumber.trim() ||
+      form.address.trim() !== initialForm.address.trim() ||
+      form.latitude.trim() !== initialForm.latitude.trim() ||
+      form.longitude.trim() !== initialForm.longitude.trim() ||
+      form.geofenceRadius.trim() !== initialForm.geofenceRadius.trim() ||
+      form.territoryId !== initialForm.territoryId ||
+      form.areaId !== initialForm.areaId ||
+      form.outletCode.trim() !== initialForm.outletCode.trim()
+    );
+  }, [editingId, form, initialForm]);
+
+  const isAddressChanged = Boolean(
+    editingId &&
+    initialForm &&
+    form.address.trim() !== initialForm.address.trim() &&
+    form.latitude.trim() === initialForm.latitude.trim() &&
+    form.longitude.trim() === initialForm.longitude.trim()
+  );
+
+  const fetchCustomers = useCallback(
+    (
+      targetPage = page,
+      targetSearch = searchQuery,
+      targetTerritory = filterTerritoryId,
+      targetArea = filterAreaId,
+      targetPageSize = pageSize,
+    ) => {
+      setIsLoading(true);
+      apiClient
+        .getCustomersPaginated({
+          skip: (targetPage - 1) * targetPageSize,
+          limit: targetPageSize,
+          search: targetSearch.trim() || undefined,
+          territory_id: targetTerritory || undefined,
+          area_id: targetArea || undefined,
+        })
+        .then(({ items, total }) => {
+          setCustomers(items);
+          setTotalCount(total);
+          setError(null);
+        })
+        .catch((err: Error) => {
+          setCustomers([]);
+          setTotalCount(0);
+          setError(err.message || 'Unable to load customers');
+        })
+        .finally(() => setIsLoading(false));
+    },
+    [page, pageSize, searchQuery, filterTerritoryId, filterAreaId],
+  );
 
   useEffect(() => {
-    fetchCustomers();
+    const timer = setTimeout(() => {
+      fetchCustomers(page, searchQuery, filterTerritoryId, filterAreaId);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [page, searchQuery, filterTerritoryId, filterAreaId, fetchCustomers]);
+
+  useEffect(() => {
     apiClient.getTerritories().then(setTerritories).catch(() => setTerritories([]));
     apiClient.getAreas().then(setAreas).catch(() => setAreas([]));
-  }, [fetchCustomers]);
+  }, []);
+
+  // Filter out inactive territories for assignment dropdown
+  const activeTerritories = useMemo(
+    () => territories.filter((t) => t.status === 'ACTIVE' || !t.status),
+    [territories]
+  );
 
   const areaOptions = form.territoryId ? areas.filter((a) => a.territory_id === form.territoryId) : [];
 
+  const handleCreateZone = async () => {
+    const name = newZoneName.trim();
+    if (!name) {
+      setZoneCreateError('Zone name cannot be empty.');
+      return;
+    }
+    setZoneCreateError(null);
+    setIsCreatingZone(true);
+    try {
+      const existing = territories.find((t) => t.name.trim().toLowerCase() === name.toLowerCase());
+      if (existing) {
+        set('territoryId', existing.id);
+        set('areaId', '');
+        setIsAddingNewZone(false);
+        setNewZoneName('');
+        return;
+      }
+      const created = await apiClient.createTerritory({ name });
+      setTerritories((prev) => [...prev, created]);
+      set('territoryId', created.id);
+      set('areaId', '');
+      setIsAddingNewZone(false);
+      setNewZoneName('');
+    } catch (err: unknown) {
+      setZoneCreateError(err instanceof Error ? err.message : 'Unable to create zone');
+    } finally {
+      setIsCreatingZone(false);
+    }
+  };
+
+  const handleCreateArea = async () => {
+    const name = newAreaName.trim();
+    if (!name) {
+      setAreaCreateError('Area name cannot be empty.');
+      return;
+    }
+    if (!form.territoryId) {
+      setAreaCreateError('Please select a Zone first.');
+      return;
+    }
+    setAreaCreateError(null);
+    setIsCreatingArea(true);
+    try {
+      const existing = areas.find(
+        (a) => a.territory_id === form.territoryId && a.name.trim().toLowerCase() === name.toLowerCase()
+      );
+      if (existing) {
+        set('areaId', existing.id);
+        setIsAddingNewArea(false);
+        setNewAreaName('');
+        return;
+      }
+      const created = await apiClient.createArea({ name, territory_id: form.territoryId });
+      setAreas((prev) => [...prev, created]);
+      set('areaId', created.id);
+      setIsAddingNewArea(false);
+      setNewAreaName('');
+    } catch (err: unknown) {
+      setAreaCreateError(err instanceof Error ? err.message : 'Unable to create area');
+    } finally {
+      setIsCreatingArea(false);
+    }
+  };
+
   const openCreate = () => {
     setEditingId(null);
+    setInitialForm(null);
     setForm({ ...emptyForm });
+    setFieldErrors({});
     setFormError(null);
+    setIsAddingNewZone(false);
+    setNewZoneName('');
+    setZoneCreateError(null);
+    setIsAddingNewArea(false);
+    setNewAreaName('');
+    setAreaCreateError(null);
     setIsModalOpen(true);
   };
 
   const openEdit = (customer: Customer) => {
     setEditingId(customer.id);
-    setForm({
+    const populated = {
       name: customer.name,
       contactPerson: customer.contact_person ?? '',
       contactNumber: customer.contact_number || '',
@@ -89,8 +255,17 @@ export const CustomersPage: React.FC = () => {
       territoryId: customer.territory_id ?? '',
       areaId: customer.area_id ?? '',
       outletCode: customer.outlet_code ?? customer.dms_code ?? '',
-    });
+    };
+    setForm(populated);
+    setInitialForm(populated);
+    setFieldErrors({});
     setFormError(null);
+    setIsAddingNewZone(false);
+    setNewZoneName('');
+    setZoneCreateError(null);
+    setIsAddingNewArea(false);
+    setNewAreaName('');
+    setAreaCreateError(null);
     setIsModalOpen(true);
   };
 
@@ -103,6 +278,7 @@ export const CustomersPage: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
+    setFieldErrors({});
 
     const latitude = parseFloat(form.latitude);
     const longitude = parseFloat(form.longitude);
@@ -123,6 +299,7 @@ export const CustomersPage: React.FC = () => {
     const phoneError = validatePhoneNumber(form.contactNumber);
     if (phoneError) {
       setFormError(phoneError);
+      setFieldErrors((prev) => ({ ...prev, contact_number: phoneError }));
       return;
     }
 
@@ -142,13 +319,26 @@ export const CustomersPage: React.FC = () => {
 
       if (editingId) {
         await apiClient.updateCustomer(editingId, payload);
+        fetchCustomers(page, searchQuery, filterTerritoryId, filterAreaId);
       } else {
         await apiClient.createCustomer(payload);
+        setPage(1);
+        setSearchQuery('');
+        fetchCustomers(1, '', filterTerritoryId, filterAreaId);
       }
       setIsModalOpen(false);
-      fetchCustomers();
     } catch (err: unknown) {
-      setFormError(err instanceof Error ? err.message : 'Unable to save customer');
+      if (err instanceof ApiError) {
+        if (err.fieldErrors && Object.keys(err.fieldErrors).length > 0) {
+          setFieldErrors(err.fieldErrors);
+        }
+        if (err.code === 'OUTLET_CODE_EXISTS') {
+          setFieldErrors((prev) => ({ ...prev, outlet_code: err.message }));
+        }
+        setFormError(err.message);
+      } else {
+        setFormError(err instanceof Error ? err.message : 'Unable to save customer');
+      }
     } finally {
       setIsSaving(false);
     }
@@ -230,56 +420,117 @@ export const CustomersPage: React.FC = () => {
     {
       header: 'Action',
       accessor: (cust) => (
-        <div className="flex items-center gap-1.5">
-          <Button
-            variant="outline"
-            size="sm"
-            icon={Eye}
-            onClick={(e) => {
-              e.stopPropagation();
-              navigate(`/customers/${cust.id}`);
-            }}
+        <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+          <button
+            onClick={() => navigate(`/customers/${cust.id}`)}
+            className="p-1.5 text-primary hover:bg-surface-container rounded-lg transition-colors cursor-pointer"
+            title="View Details"
           >
-            View
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            icon={Pencil}
-            onClick={(e) => {
-              e.stopPropagation();
-              openEdit(cust);
-            }}
+            <Eye className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => openEdit(cust)}
+            className="p-1.5 text-on-surface-variant hover:text-primary hover:bg-surface-container rounded-lg transition-colors cursor-pointer"
+            title="Edit Customer"
           >
-            Edit
-          </Button>
+            <Pencil className="w-4 h-4" />
+          </button>
         </div>
       ),
     },
   ];
 
   return (
-    <div className="space-y-space-6">
+    <div className="space-y-space-6 max-w-7xl mx-auto">
       <PageHeader
         title="Customer Accounts Directory"
-        subtitle="Geofenced client sites and visit location parameters."
+        subtitle="Manage client outlets, boundary radii, and territory associations."
         actions={
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => navigate('/imports')}>
-              Import Outlets
-            </Button>
-            <Button variant="secondary" size="sm" icon={Plus} onClick={openCreate}>
-              Add Account
-            </Button>
-          </div>
+          <Button variant="secondary" size="md" icon={Plus} onClick={openCreate}>
+            Add Account
+          </Button>
         }
       />
 
-      {error && (
-        <ErrorBanner message={error} onRetry={fetchCustomers} onDismiss={() => setError(null)} />
-      )}
+      {error && <ErrorBanner message={error} />}
 
-      {!isLoading && !error && customers.length === 0 ? (
+      {/* Filter Bar */}
+      <div className="flex flex-wrap items-center gap-space-3 bg-surface p-space-4 rounded-xl border border-surface-container-highest shadow-xs">
+        <div className="w-48">
+          <Select
+            id="territory-filter"
+            value={filterTerritoryId}
+            onChange={(e) => {
+              setFilterTerritoryId(e.target.value);
+              setFilterAreaId('');
+              setPage(1);
+            }}
+          >
+            <option value="">All Zones</option>
+            {territories.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </Select>
+        </div>
+        <div className="w-48">
+          <Select
+            id="area-filter"
+            value={filterAreaId}
+            onChange={(e) => {
+              setFilterAreaId(e.target.value);
+              setPage(1);
+            }}
+            disabled={!filterTerritoryId}
+          >
+            <option value="">All Areas</option>
+            {areas
+              .filter((a) => !filterTerritoryId || a.territory_id === filterTerritoryId)
+              .map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+          </Select>
+        </div>
+        {(filterTerritoryId || filterAreaId || searchQuery) && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setFilterTerritoryId('');
+              setFilterAreaId('');
+              setSearchQuery('');
+              setPage(1);
+            }}
+          >
+            Reset Filters
+          </Button>
+        )}
+
+        {/* Per-page selector */}
+        <div className="flex items-center gap-1.5 ml-auto shrink-0">
+          <span className="font-label-md text-xs text-on-surface-variant uppercase tracking-wider font-semibold">Show:</span>
+          <select
+            value={pageSize}
+            onChange={(e) => {
+              const next = Number(e.target.value);
+              setPageSize(next);
+              setPage(1);
+              fetchCustomers(1, searchQuery, filterTerritoryId, filterAreaId, next);
+            }}
+            className="h-8 bg-surface border border-outline-variant rounded-lg px-2 py-1 text-xs text-primary font-bold focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 transition-all cursor-pointer"
+            aria-label="Rows per page"
+          >
+            {[10, 25, 50, 100, 200].map((opt) => (
+              <option key={opt} value={opt}>{opt} rows</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {customers.length === 0 && !isLoading && !filterTerritoryId && !filterAreaId && !searchQuery ? (
         <EmptyState
           icon={Building2}
           title="No customers added yet"
@@ -295,21 +546,24 @@ export const CustomersPage: React.FC = () => {
           columns={columns}
           data={customers}
           isLoading={isLoading}
-          searchPlaceholder="Search customers by name, address..."
-          searchFilter={(cust, q) =>
-            Boolean(
-              cust.name.toLowerCase().includes(q.toLowerCase()) ||
-              (cust.outlet_code && cust.outlet_code.toLowerCase().includes(q.toLowerCase())) ||
-              (cust.address && cust.address.toLowerCase().includes(q.toLowerCase()))
-            )
-          }
+          searchPlaceholder="Search customers by name, code, address, contact..."
+          serverSide={true}
+          totalCount={totalCount}
+          page={page}
+          pageSize={pageSize}
+          onPageChange={(p) => setPage(p)}
+          onSearchChange={(q) => {
+            setSearchQuery(q);
+            setPage(1);
+          }}
           onRowClick={(cust) => navigate(`/customers/${cust.id}`)}
         />
       )}
 
       <Modal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        onClose={() => !isSaving && setIsModalOpen(false)}
+        disableClose={isSaving}
         title={editingId ? 'Edit Customer Account' : 'Register Customer Account & Geofence'}
         subtitle="Specify client location parameters and radial bounds."
       >
@@ -318,12 +572,19 @@ export const CustomersPage: React.FC = () => {
             {formError}
           </div>
         )}
+        {isAddressChanged && (
+          <div className="mb-space-4 p-space-3 bg-amber-500/10 border border-amber-500/30 rounded-lg text-amber-700 dark:text-amber-300 text-xs flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 shrink-0 text-amber-500" />
+            <span>Address changed — map location coordinates may need updating.</span>
+          </div>
+        )}
         <form onSubmit={handleSubmit} className="space-y-space-4">
           <Input
             label="Company / Account Name"
             type="text"
             required
             value={form.name}
+            error={fieldErrors.name}
             onChange={(e) => set('name', e.target.value)}
             placeholder="Acme Industrial Corp"
           />
@@ -331,6 +592,7 @@ export const CustomersPage: React.FC = () => {
             label="DMS Code (External Key)"
             type="text"
             value={form.outletCode}
+            error={fieldErrors.outlet_code}
             onChange={(e) => set('outletCode', e.target.value)}
             placeholder="e.g. SGRGUS1463"
             helperText="Anchor outlet key for BI and Excel import mapping."
@@ -339,6 +601,7 @@ export const CustomersPage: React.FC = () => {
             label="Contact Person"
             type="text"
             value={form.contactPerson}
+            error={fieldErrors.contact_person}
             onChange={(e) => set('contactPerson', e.target.value)}
             placeholder="Jane Smith"
             helperText="Name of the site contact (optional)."
@@ -349,6 +612,7 @@ export const CustomersPage: React.FC = () => {
             required
             maxLength={20}
             value={form.contactNumber}
+            error={fieldErrors.contact_number}
             onChange={(e) => set('contactNumber', e.target.value)}
             placeholder="+91 98765 43210"
             helperText="Phone number: digits, +, -, spaces, parentheses. Max 20 characters."
@@ -358,6 +622,7 @@ export const CustomersPage: React.FC = () => {
             type="text"
             required
             value={form.address}
+            error={fieldErrors.address}
             onChange={(e) => set('address', e.target.value)}
             placeholder="100 Tech Park Blvd"
           />
@@ -379,6 +644,7 @@ export const CustomersPage: React.FC = () => {
               step="any"
               required
               value={form.latitude}
+              error={fieldErrors.latitude}
               onChange={(e) => set('latitude', e.target.value)}
               placeholder="12.971600"
             />
@@ -388,55 +654,190 @@ export const CustomersPage: React.FC = () => {
               step="any"
               required
               value={form.longitude}
+              error={fieldErrors.longitude}
               onChange={(e) => set('longitude', e.target.value)}
               placeholder="77.594600"
             />
           </div>
           <Input
-            label="Geofence Radius (Meters)"
+            label="Geofence Radius (meters)"
             type="number"
             required
             min={1}
             value={form.geofenceRadius}
+            error={fieldErrors.geofence_radius_m}
             onChange={(e) => set('geofenceRadius', e.target.value)}
-            helperText="Maximum allowed distance from this point at check-in."
+            helperText="Maximum allowed distance in meters from this point at check-in."
           />
-          <Select
-            id="customer-territory"
-            label="Zone"
-            value={form.territoryId}
-            onChange={(e) => {
-              set('territoryId', e.target.value);
-              set('areaId', '');
-            }}
-          >
-            <option value="">-- Unassigned --</option>
-            {territories.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </Select>
-          <Select
-            id="customer-area"
-            label="Area"
-            value={form.areaId}
-            onChange={(e) => set('areaId', e.target.value)}
-            disabled={!form.territoryId}
-            helperText={!form.territoryId ? 'Select a Zone first.' : undefined}
-          >
-            <option value="">-- Unassigned --</option>
-            {areaOptions.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
-          </Select>
+          {/* Zone (Territory) Selection & Quick Create */}
+          <div className="w-full flex flex-col gap-space-1.5">
+            <div className="flex items-center justify-between">
+              <label htmlFor="customer-territory" className="font-label-md text-xs text-on-surface uppercase tracking-wider block font-semibold">
+                Zone
+              </label>
+              {!isAddingNewZone && (
+                <button
+                  type="button"
+                  className="text-xs text-primary font-semibold hover:underline inline-flex items-center gap-1 cursor-pointer"
+                  onClick={() => {
+                    setIsAddingNewZone(true);
+                    setZoneCreateError(null);
+                  }}
+                >
+                  <Plus className="w-3.5 h-3.5" /> Add New Zone
+                </button>
+              )}
+            </div>
+            {isAddingNewZone ? (
+              <div className="p-space-3 bg-surface-container-low rounded-lg border border-outline-variant space-y-2">
+                <div className="flex items-center gap-2">
+                  <div className="flex-1">
+                    <Input
+                      type="text"
+                      placeholder="e.g. Lucknow East"
+                      value={newZoneName}
+                      onChange={(e) => setNewZoneName(e.target.value)}
+                      autoFocus
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    isLoading={isCreatingZone}
+                    onClick={handleCreateZone}
+                  >
+                    Save Zone
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={isCreatingZone}
+                    onClick={() => {
+                      setIsAddingNewZone(false);
+                      setNewZoneName('');
+                      setZoneCreateError(null);
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+                {zoneCreateError && (
+                  <p className="font-caption text-xs text-error font-medium">{zoneCreateError}</p>
+                )}
+              </div>
+            ) : (
+              <Select
+                id="customer-territory"
+                value={form.territoryId}
+                onChange={(e) => {
+                  set('territoryId', e.target.value);
+                  set('areaId', '');
+                }}
+              >
+                <option value="">-- Unassigned --</option>
+                {activeTerritories.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </div>
+
+          {/* Area Selection & Quick Create */}
+          <div className="w-full flex flex-col gap-space-1.5">
+            <div className="flex items-center justify-between">
+              <label htmlFor="customer-area" className="font-label-md text-xs text-on-surface uppercase tracking-wider block font-semibold">
+                Area
+              </label>
+              {form.territoryId && !isAddingNewArea && (
+                <button
+                  type="button"
+                  className="text-xs text-primary font-semibold hover:underline inline-flex items-center gap-1 cursor-pointer"
+                  onClick={() => {
+                    setIsAddingNewArea(true);
+                    setAreaCreateError(null);
+                  }}
+                >
+                  <Plus className="w-3.5 h-3.5" /> Add New Area
+                </button>
+              )}
+            </div>
+            {isAddingNewArea ? (
+              <div className="p-space-3 bg-surface-container-low rounded-lg border border-outline-variant space-y-2">
+                <div className="flex items-center gap-2">
+                  <div className="flex-1">
+                    <Input
+                      type="text"
+                      placeholder="e.g. Hazratganj Market"
+                      value={newAreaName}
+                      onChange={(e) => setNewAreaName(e.target.value)}
+                      autoFocus
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    isLoading={isCreatingArea}
+                    onClick={handleCreateArea}
+                  >
+                    Save Area
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={isCreatingArea}
+                    onClick={() => {
+                      setIsAddingNewArea(false);
+                      setNewAreaName('');
+                      setAreaCreateError(null);
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+                {areaCreateError && (
+                  <p className="font-caption text-xs text-error font-medium">{areaCreateError}</p>
+                )}
+              </div>
+            ) : (
+              <Select
+                id="customer-area"
+                value={form.areaId}
+                onChange={(e) => set('areaId', e.target.value)}
+                disabled={!form.territoryId}
+                helperText={!form.territoryId ? 'Select a Zone first.' : undefined}
+              >
+                <option value="">-- Unassigned --</option>
+                {areaOptions.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </div>
           <div className="pt-space-4 flex justify-end gap-space-3 border-t border-surface-container-highest mt-space-6">
-            <Button type="button" variant="ghost" size="sm" onClick={() => setIsModalOpen(false)}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={isSaving}
+              onClick={() => setIsModalOpen(false)}
+            >
               Cancel
             </Button>
-            <Button type="submit" variant="secondary" size="sm" isLoading={isSaving}>
+            <Button
+              type="submit"
+              variant="secondary"
+              size="sm"
+              isLoading={isSaving}
+              disabled={isSaving || (Boolean(editingId) && !isDirty)}
+            >
               {editingId ? 'Save Changes' : 'Save Account'}
             </Button>
           </div>

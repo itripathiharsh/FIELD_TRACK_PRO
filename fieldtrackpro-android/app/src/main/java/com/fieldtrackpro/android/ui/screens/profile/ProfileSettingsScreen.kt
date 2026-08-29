@@ -123,8 +123,9 @@ fun ProfileSettingsScreen(
                                         .border(1.dp, BrandGold, RoundedCornerShape(4.dp))
                                         .padding(horizontal = 8.dp, vertical = 2.dp)
                                 ) {
+                                    val roleText = tokenManager.getUserRole() ?: "EMPLOYEE"
                                     Text(
-                                        text = tokenManager.getUserRole() ?: "REP",
+                                        text = roleText,
                                         fontFamily = LeagueSpartanFamily,
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 11.sp,

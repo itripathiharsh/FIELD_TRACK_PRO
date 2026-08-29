@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps.auth import CurrentUser, require_role
 from app.database import get_async_session
+from app.exceptions.custom import ResourceNotFoundException
 from app.models.requirement_category import RequirementCategory
 from app.models.user import Role
 from app.models.visit import Visit
@@ -117,13 +118,10 @@ async def get_form(
     """
     visit_result = await session.execute(select(Visit).where(Visit.id == visit_id))
     visit = visit_result.scalar_one_or_none()
+    if visit is None:
+        raise ResourceNotFoundException("Visit not found")
 
-    # Existence check stays inline (a missing visit here falls through to a
-    # 200 with a null form, not a 404 - unlike submit_form above). Only the
-    # ownership comparison itself (P2-1) delegates to the single
-    # authoritative implementation in visit_service.
-    if visit is not None:
-        await assert_visit_access(visit, current_user, session)
+    await assert_visit_access(visit, current_user, session)
 
     form = await requirement_service.get_form_by_visit(visit_id, session)
     if form is None:

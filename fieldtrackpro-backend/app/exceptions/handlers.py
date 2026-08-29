@@ -1,5 +1,5 @@
 import logging
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from app.exceptions.custom import BaseAPIException
@@ -14,10 +14,37 @@ def register_exception_handlers(app: FastAPI) -> None:
             status_code=exc.status_code,
             content={
                 "error": {
-                    "code": exc.error_code,
+                    "code": str(exc.error_code),
                     "message": exc.detail,
+                    "details": exc.details if exc.details is not None else None,
                 }
             },
+        )
+
+    @app.exception_handler(HTTPException)
+    async def http_exception_handler(request: Request, exc: HTTPException):
+        code_map = {
+            400: "BAD_REQUEST",
+            401: "UNAUTHORIZED",
+            403: "FORBIDDEN",
+            404: "RESOURCE_NOT_FOUND",
+            409: "DUPLICATE_RESOURCE",
+            422: "VALIDATION_ERROR",
+            429: "TOO_MANY_REQUESTS",
+            500: "INTERNAL_SERVER_ERROR",
+        }
+        error_code = code_map.get(exc.status_code, f"HTTP_{exc.status_code}")
+        headers = exc.headers if hasattr(exc, "headers") and exc.headers else None
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "error": {
+                    "code": error_code,
+                    "message": str(exc.detail) if exc.detail else "An error occurred",
+                    "details": None,
+                }
+            },
+            headers=headers,
         )
 
     @app.exception_handler(RequestValidationError)
@@ -33,7 +60,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             status_code=422,
             content={
                 "error": {
-                    "code": 422,
+                    "code": "VALIDATION_ERROR",
                     "message": "Invalid request payload or parameters",
                     "details": sanitized_details,
                 }
@@ -47,9 +74,9 @@ def register_exception_handlers(app: FastAPI) -> None:
             status_code=500,
             content={
                 "error": {
-                    "code": 500,
+                    "code": "INTERNAL_SERVER_ERROR",
                     "message": "An internal server error occurred.",
-                    "details": {}
+                    "details": None,
                 }
-            }
+            },
         )

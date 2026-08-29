@@ -115,6 +115,8 @@ class VisitRepository(BaseRepository[Visit]):
 
         if sort_order.lower() == "asc":
             stmt = stmt.order_by(Visit.scheduled_at.asc(), Visit.id.asc())
+        elif sort_order.lower() in ("recent", "updated_desc", "recent_ops"):
+            stmt = stmt.order_by(Visit.updated_at.desc().nullslast(), Visit.scheduled_at.desc(), Visit.id.desc())
         else:
             stmt = stmt.order_by(Visit.scheduled_at.desc(), Visit.id.desc())
 

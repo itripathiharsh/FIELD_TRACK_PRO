@@ -16,7 +16,9 @@ import {
   Compass,
   Crosshair,
   Radio,
+  X,
 } from 'lucide-react';
+
 import { Card } from '../components/ui/Card';
 import { PageHeader } from '../components/ui/PageHeader';
 import { Button } from '../components/ui/Button';
@@ -36,21 +38,37 @@ export const MapPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Live GPS Telemetry state
-  const [currentLocation, setCurrentLocation] = useState<CurrentUserLocation | null>(null);
-  const [gpsStatus, setGpsStatus] = useState<'idle' | 'locating' | 'active' | 'denied' | 'unavailable'>('locating');
-  const [gpsError, setGpsError] = useState<string | null>(null);
-
   // Selection & filter state
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedZoneId, setSelectedZoneId] = useState<string>('ALL');
   const [selectedAreaId, setSelectedAreaId] = useState<string>('ALL');
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>('ALL');
+  
+  // Live GPS Telemetry state
+  const [currentLocation, setCurrentLocation] = useState<CurrentUserLocation | null>(null);
+  const [lastGpsTimestamp, setLastGpsTimestamp] = useState<number | null>(null);
+  const [secondsAgo, setSecondsAgo] = useState<number>(0);
+  const [gpsStatus, setGpsStatus] = useState<'idle' | 'locating' | 'active' | 'stale' | 'denied' | 'unavailable'>('locating');
+  const [gpsError, setGpsError] = useState<string | null>(null);
 
   useEffect(() => {
     loadMapData();
   }, []);
+
+  // Periodic check for stale GPS fix (> 30s)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (lastGpsTimestamp) {
+        const elapsed = Math.floor((Date.now() - lastGpsTimestamp) / 1000);
+        setSecondsAgo(elapsed);
+        if (elapsed > 30 && (gpsStatus === 'active' || gpsStatus === 'stale')) {
+          setGpsStatus('stale');
+        }
+      }
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [lastGpsTimestamp, gpsStatus]);
 
   // Continuous real-time GPS tracking
   useEffect(() => {
@@ -70,6 +88,8 @@ export const MapPage: React.FC = () => {
         accuracy,
         label: 'Your Current Location',
       });
+      setLastGpsTimestamp(Date.now());
+      setSecondsAgo(0);
       setGpsStatus('active');
       setGpsError(null);
     };
@@ -107,13 +127,38 @@ export const MapPage: React.FC = () => {
     try {
       setIsLoading(true);
       setError(null);
-      const [custData, terrData, areaData, empData] = await Promise.all([
-        apiClient.getCustomers({ limit: 200 }).catch(() => [] as Customer[]),
+      let mapPins: any[] = await apiClient.getCustomerMapLocations().catch(() => []);
+      if (!mapPins || mapPins.length === 0) {
+        mapPins = await apiClient.getCustomers({ limit: 500 }).catch(() => []);
+      }
+      const [terrData, areaData, empData] = await Promise.all([
         apiClient.getTerritories().catch(() => [] as Territory[]),
         apiClient.getAreas().catch(() => [] as Area[]),
         apiClient.getEmployees().catch(() => [] as Employee[]),
       ]);
-      setCustomers(Array.isArray(custData) ? custData : []);
+      const mappedCustomers: Customer[] = (Array.isArray(mapPins) ? mapPins : []).map((item: any) => {
+        if (item && item.location !== undefined) {
+          return item as Customer;
+        }
+        return {
+          id: item.id,
+          name: item.name,
+          contact_number: '',
+          contact_person: null,
+          address: '',
+          location: { latitude: item.latitude, longitude: item.longitude },
+          geofence_radius_m: item.geofence_radius_m || 75,
+          location_status: item.location_status || 'VERIFIED',
+          territory_id: item.territory_id || null,
+          territory_name: null,
+          area_id: item.area_id || null,
+          area_name: null,
+          outlet_code: item.outlet_code || null,
+          created_by: '',
+          created_at: '',
+        };
+      });
+      setCustomers(mappedCustomers);
       setTerritories(Array.isArray(terrData) ? terrData : []);
       setAreas(Array.isArray(areaData) ? areaData : []);
       setEmployees(Array.isArray(empData) ? empData : []);
@@ -154,7 +199,7 @@ export const MapPage: React.FC = () => {
     );
   }, []);
 
-  // Valid customers with coordinates
+  // Valid customers with coordinates (including 0,0 per WEB-CUST-017)
   const customersWithLocation = useMemo(() => {
     return (Array.isArray(customers) ? customers : []).filter(
       (c) =>
@@ -164,7 +209,6 @@ export const MapPage: React.FC = () => {
         typeof c.location.longitude === 'number' &&
         !isNaN(c.location.latitude) &&
         !isNaN(c.location.longitude) &&
-        !(c.location.latitude === 0 && c.location.longitude === 0) &&
         c.location.latitude >= -90 &&
         c.location.latitude <= 90 &&
         c.location.longitude >= -180 &&
@@ -296,10 +340,17 @@ export const MapPage: React.FC = () => {
 
   const handleMapError = useCallback((msg: string) => setError(msg), []);
 
+  // Ref for the outlet detail panel so we can scroll it into view on selection
+  const outletDetailRef = React.useRef<HTMLDivElement>(null);
+
   const handleMarkerClick = useCallback(
     (marker: MapMarker) => {
       const customer = customersWithLocation.find((c) => c.id === marker.id);
       setSelectedCustomer(customer || null);
+      // Scroll detail panel into view after state update
+      setTimeout(() => {
+        outletDetailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }, 150);
     },
     [customersWithLocation],
   );
@@ -369,12 +420,17 @@ export const MapPage: React.FC = () => {
         <Card variant="flat" className="p-space-3 bg-surface-container-low border border-surface-container-highest">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-space-2 text-on-surface-variant">
-              <Radio className={`w-4 h-4 ${gpsStatus === 'active' ? 'text-sky-500 animate-pulse' : 'text-outline'}`} />
+              <Radio className={`w-4 h-4 ${gpsStatus === 'active' ? 'text-sky-500 animate-pulse' : gpsStatus === 'stale' ? 'text-amber-500' : 'text-outline'}`} />
               <span className="font-caption text-xs font-semibold uppercase tracking-wider">Live GPS</span>
             </div>
             {gpsStatus === 'active' && (
-              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-sky-100 text-sky-800">
-                Online
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300">
+                GPS Active
+              </span>
+            )}
+            {gpsStatus === 'stale' && (
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                GPS Stale ({secondsAgo}s ago)
               </span>
             )}
           </div>
@@ -382,7 +438,7 @@ export const MapPage: React.FC = () => {
             className="font-headline-md text-sm font-bold text-on-surface mt-1 truncate"
             title={gpsError || (currentLocation ? `Accuracy: ±${Math.round(currentLocation.accuracy || 0)}m` : 'GPS Position')}
           >
-            {gpsStatus === 'active' && currentLocation
+            {(gpsStatus === 'active' || gpsStatus === 'stale') && currentLocation
               ? `${currentLocation.latitude.toFixed(4)}°, ${currentLocation.longitude.toFixed(4)}°`
               : gpsStatus === 'locating'
               ? 'Acquiring GPS...'
@@ -504,7 +560,7 @@ export const MapPage: React.FC = () => {
           subtitle="No customers or territories have valid geographic coordinates. Add location data to see them on the map."
         />
       ) : (
-        <Card className="overflow-hidden p-0 border border-surface-container-highest relative">
+        <Card className="p-0 border border-surface-container-highest relative" style={{ overflow: 'visible' }}>
           {/* Zero-result overlay — shown inside the map card so tiles remain visible */}
           {isFiltered && filteredCustomers.length === 0 && (
             <div
@@ -543,6 +599,7 @@ export const MapPage: React.FC = () => {
 
       {/* Lower Panel: Selected Outlet Details OR Helpful Guide State */}
       {selectedCustomer ? (
+        <div ref={outletDetailRef}>
         <Card
           variant="flat"
           className="border-2 border-secondary-container/60 bg-surface-container-lowest shadow-md p-space-6 animate-in fade-in-50 duration-200"
@@ -577,20 +634,20 @@ export const MapPage: React.FC = () => {
                   <Button
                     variant="secondary"
                     size="sm"
-                    className="flex items-center gap-space-1.5 font-semibold"
+                    className="flex items-center gap-2 font-semibold"
                     title="Open turn-by-turn directions in Google Maps"
                   >
-                    <Navigation className="w-3.5 h-3.5 text-primary" />
+                    <Navigation className="w-3.5 h-3.5 shrink-0" />
                     <span>Navigate (Google Maps)</span>
-                    <ExternalLink className="w-3 h-3 ml-0.5 opacity-75" />
+                    <ExternalLink className="w-3 h-3 shrink-0 opacity-70" />
                   </Button>
                 </a>
               )}
 
               <Link to={`/customers/${selectedCustomer.id}`}>
-                <Button variant="primary" size="sm" className="flex items-center gap-space-1.5">
+                <Button variant="primary" size="sm" className="flex items-center gap-2">
                   <span>View Full Profile</span>
-                  <ExternalLink className="w-3.5 h-3.5" />
+                  <ExternalLink className="w-3.5 h-3.5 shrink-0" />
                 </Button>
               </Link>
 
@@ -598,9 +655,9 @@ export const MapPage: React.FC = () => {
                 variant="outline"
                 size="sm"
                 onClick={handleClearSelection}
-                className="flex items-center gap-space-1.5"
+                className="flex items-center gap-2"
               >
-                <RotateCcw className="w-3.5 h-3.5" />
+                <X className="w-3.5 h-3.5 shrink-0" />
                 Clear Selection
               </Button>
             </div>
@@ -691,6 +748,7 @@ export const MapPage: React.FC = () => {
             </div>
           </div>
         </Card>
+        </div>
       ) : (
         <Card variant="flat" className="border border-surface-container-highest bg-surface-container-low p-space-5">
           <div className="flex items-center gap-space-3">

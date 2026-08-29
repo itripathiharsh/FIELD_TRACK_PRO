@@ -39,4 +39,9 @@ object OfflineSyncScheduler {
         WorkManager.getInstance(context)
             .enqueueUniqueWork(UNIQUE_WORK_NAME, ExistingWorkPolicy.REPLACE, request)
     }
+
+    /** Cancel any pending offline sync worker on logout or session reset. */
+    fun cancelSync(context: Context) {
+        WorkManager.getInstance(context).cancelUniqueWork(UNIQUE_WORK_NAME)
+    }
 }

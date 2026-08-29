@@ -67,6 +67,7 @@ class CheckOutRequest(BaseModel):
     is_mock_location: bool = Field(default=False, description="Flag indicating if location source is fake/mock provider")
     captured_at: datetime = Field(..., description="When the device captured this GPS fix")
     idempotency_key: str | None = None
+    notes: str | None = None
 
 
 class VisitRead(BaseModel):
@@ -93,6 +94,13 @@ class VisitRead(BaseModel):
     employee_name: str
     area_name: str | None = None
     territory_name: str | None = None
+    customer_latitude: float | None = None
+    customer_longitude: float | None = None
+    customer_geofence_radius_m: int | None = None
+    customer_outlet_code: str | None = None
+    customer_contact_number: str | None = None
+    customer_contact_person: str | None = None
+    notes: str | None = None
 
     model_config = {"from_attributes": True}
 

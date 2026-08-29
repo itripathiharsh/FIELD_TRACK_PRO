@@ -56,14 +56,15 @@ import com.fieldtrackpro.android.ui.theme.SuccessGreen
 import com.fieldtrackpro.android.ui.theme.SurfaceSecondary
 import com.fieldtrackpro.android.ui.theme.TextPrimary
 import com.fieldtrackpro.android.ui.theme.TextSecondary
-import com.fieldtrackpro.android.ui.viewmodel.CheckInState
-import com.fieldtrackpro.android.ui.viewmodel.CheckInViewModel
+import com.fieldtrackpro.android.ui.viewmodel.CheckOutState
+import com.fieldtrackpro.android.ui.viewmodel.CheckOutViewModel
+import com.fieldtrackpro.android.utils.CoordinateValidator
 
 @Composable
 fun CheckOutScreen(
     visitId: String,
     customerId: String,
-    viewModel: CheckInViewModel,
+    viewModel: CheckOutViewModel,
     onNavigateBack: () -> Unit,
     onSuccess: () -> Unit
 ) {
@@ -81,7 +82,7 @@ fun CheckOutScreen(
         viewModel.resetState()
     }
 
-    if (state is CheckInState.ActionSuccess) {
+    if (state is CheckOutState.ActionSuccess) {
         LaunchedEffect(state) {
             viewModel.resetState()
             onSuccess()
@@ -114,14 +115,14 @@ fun CheckOutScreen(
             ) {
                 Column(modifier = Modifier.padding(18.dp)) {
                     Text(
-                        text = "Complete Visit & Record Telemetry",
+                        text = "Complete Visit & Check-Out",
                         fontFamily = LeagueSpartanFamily,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         color = BrandNavy
                     )
                     Text(
-                        text = "Provide mandatory check-out coordinates and summary notes.",
+                        text = "Capture concluding GPS coordinates and attach optional visit completion notes.",
                         fontFamily = LibreBaskervilleFamily,
                         fontSize = 13.sp,
                         color = TextSecondary
@@ -141,23 +142,84 @@ fun CheckOutScreen(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    if (state is CheckInState.Error) {
-                        ErrorBanner(message = (state as CheckInState.Error).message)
+                    if (state is CheckOutState.Error) {
+                        ErrorBanner(message = (state as CheckOutState.Error).message)
                         Spacer(modifier = Modifier.height(12.dp))
                     }
 
-                    if (state is CheckInState.GeoRejected) {
-                        ErrorBanner(message = (state as CheckInState.GeoRejected).message)
+                    if (state is CheckOutState.InvalidCoordinates) {
+                        ErrorBanner(message = (state as CheckOutState.InvalidCoordinates).message)
                         Spacer(modifier = Modifier.height(12.dp))
                     }
 
-                    if (state is CheckInState.LowAccuracy) {
-                        ErrorBanner(message = (state as CheckInState.LowAccuracy).message)
+                    if (state is CheckOutState.GeoRejected) {
+                        ErrorBanner(message = (state as CheckOutState.GeoRejected).message)
                         Spacer(modifier = Modifier.height(12.dp))
                     }
 
-                    if (state is CheckInState.StaleLocation) {
-                        ErrorBanner(message = (state as CheckInState.StaleLocation).message)
+                    if (state is CheckOutState.LowAccuracy) {
+                        ErrorBanner(message = (state as CheckOutState.LowAccuracy).message)
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
+
+                    if (state is CheckOutState.StaleLocation) {
+                        ErrorBanner(message = (state as CheckOutState.StaleLocation).message)
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
+
+                    if (state is CheckOutState.Conflict) {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(1.dp, BrandGold, RoundedCornerShape(8.dp)),
+                            shape = RoundedCornerShape(8.dp),
+                            colors = CardDefaults.cardColors(containerColor = BrandGold.copy(alpha = 0.12f))
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text(
+                                    text = "SCHEDULE CONFLICT",
+                                    fontFamily = LeagueSpartanFamily,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.5.sp,
+                                    color = BrandNavy
+                                )
+                                Text(
+                                    text = (state as CheckOutState.Conflict).message,
+                                    fontFamily = LibreBaskervilleFamily,
+                                    fontSize = 12.sp,
+                                    color = TextPrimary
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
+
+                    if (state is CheckOutState.Queued) {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(1.dp, BrandGold, RoundedCornerShape(8.dp)),
+                            shape = RoundedCornerShape(8.dp),
+                            colors = CardDefaults.cardColors(containerColor = BrandGold.copy(alpha = 0.12f))
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text(
+                                    text = "QUEUED FOR SYNC",
+                                    fontFamily = LeagueSpartanFamily,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.5.sp,
+                                    color = BrandNavy
+                                )
+                                Text(
+                                    text = (state as CheckOutState.Queued).message,
+                                    fontFamily = LibreBaskervilleFamily,
+                                    fontSize = 12.sp,
+                                    color = TextPrimary
+                                )
+                            }
+                        }
                         Spacer(modifier = Modifier.height(12.dp))
                     }
 
@@ -167,12 +229,12 @@ fun CheckOutScreen(
                         readOnly = true,
                         label = { 
                             Text(
-                                "Check-Out Latitude",
+                                "Latitude",
                                 fontFamily = LeagueSpartanFamily,
                                 fontWeight = FontWeight.SemiBold
                             ) 
                         },
-                        placeholder = { Text("Capture check-out location above", color = TextSecondary) },
+                        placeholder = { Text("Capture your location above", color = TextSecondary) },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(10.dp),
                         colors = OutlinedTextFieldDefaults.colors(
@@ -193,12 +255,12 @@ fun CheckOutScreen(
                         readOnly = true,
                         label = { 
                             Text(
-                                "Check-Out Longitude",
+                                "Longitude",
                                 fontFamily = LeagueSpartanFamily,
                                 fontWeight = FontWeight.SemiBold
                             ) 
                         },
-                        placeholder = { Text("Capture check-out location above", color = TextSecondary) },
+                        placeholder = { Text("Capture your location above", color = TextSecondary) },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(10.dp),
                         colors = OutlinedTextFieldDefaults.colors(
@@ -211,28 +273,23 @@ fun CheckOutScreen(
                         )
                     )
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
                     OutlinedTextField(
                         value = notes,
                         onValueChange = { notes = it },
                         label = { 
                             Text(
-                                "Visit Outcome / Summary Notes",
+                                "Visit Outcome Notes (Optional)",
                                 fontFamily = LeagueSpartanFamily,
                                 fontWeight = FontWeight.SemiBold
                             ) 
                         },
-                        placeholder = { 
-                            Text(
-                                "Enter customer feedback, order status, or action items...",
-                                fontFamily = LibreBaskervilleFamily,
-                                fontSize = 13.sp,
-                                color = TextSecondary
-                            ) 
-                        },
-                        minLines = 3,
-                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("Enter discussion summary, follow-up items...", color = TextSecondary) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(100.dp),
+                        maxLines = 4,
                         shape = RoundedCornerShape(10.dp),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = TextPrimary,
@@ -266,26 +323,28 @@ fun CheckOutScreen(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    val canSubmit = latText.isNotBlank() && lonText.isNotBlank() && state !is CheckInState.Processing
+                    val parsedLat = CoordinateValidator.parseCoordinate(latText)
+                    val parsedLon = CoordinateValidator.parseCoordinate(lonText)
+                    val canSubmit = CoordinateValidator.isValidCoordinate(parsedLat, parsedLon) && state !is CheckOutState.Processing
 
                     Button(
                         onClick = {
-                            val lat = latText.toDoubleOrNull() ?: 0.0
-                            val lon = lonText.toDoubleOrNull() ?: 0.0
-                            val acc = capturedAccuracyM ?: 10.0
-                            val isMock = capturedIsMock
-                            val ts = capturedAtMillis ?: System.currentTimeMillis()
+                            if (parsedLat != null && parsedLon != null) {
+                                val acc = capturedAccuracyM ?: 10.0
+                                val isMock = capturedIsMock
+                                val ts = capturedAtMillis ?: System.currentTimeMillis()
 
-                            viewModel.executeCheckOut(
-                                visitId = visitId,
-                                lat = lat,
-                                lon = lon,
-                                notes = notes.ifBlank { null },
-                                capturedAtMillis = ts,
-                                accuracyM = acc,
-                                isMock = isMock,
-                                isOfflineMode = isOfflineMode
-                            )
+                                viewModel.executeCheckOut(
+                                    visitId = visitId,
+                                    lat = parsedLat,
+                                    lon = parsedLon,
+                                    notes = notes.ifBlank { null },
+                                    accuracyM = acc,
+                                    isMock = isMock,
+                                    capturedAtMillis = ts,
+                                    isOfflineMode = isOfflineMode
+                                )
+                            }
                         },
                         modifier = Modifier
                             .fillMaxWidth()
@@ -293,20 +352,20 @@ fun CheckOutScreen(
                         shape = RoundedCornerShape(10.dp),
                         enabled = canSubmit,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = SuccessGreen,
+                            containerColor = BrandNavy,
                             contentColor = BrandWhite,
                             disabledContainerColor = BrandLightGray,
                             disabledContentColor = TextSecondary
                         )
                     ) {
-                        if (state is CheckInState.Processing) {
-                            CircularProgressIndicator(color = BrandWhite, modifier = Modifier.size(24.dp))
+                        if (state is CheckOutState.Processing) {
+                            CircularProgressIndicator(color = BrandGold, modifier = Modifier.size(24.dp))
                         } else {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
                                     imageVector = Icons.Default.CheckCircle,
                                     contentDescription = null,
-                                    tint = BrandWhite,
+                                    tint = if (canSubmit) BrandGold else TextSecondary,
                                     modifier = Modifier.size(20.dp)
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
@@ -316,7 +375,7 @@ fun CheckOutScreen(
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 14.sp,
                                     letterSpacing = 0.5.sp,
-                                    color = BrandWhite
+                                    color = if (canSubmit) BrandWhite else TextSecondary
                                 )
                             }
                         }

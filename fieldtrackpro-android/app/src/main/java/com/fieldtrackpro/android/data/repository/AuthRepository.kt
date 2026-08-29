@@ -9,27 +9,24 @@ import com.fieldtrackpro.android.data.model.RefreshRequest
 import com.fieldtrackpro.android.data.model.ResetPasswordRequest
 import com.fieldtrackpro.android.data.model.UserDto
 
+import com.fieldtrackpro.android.data.remote.ApiError
+
 sealed class Resource<T> {
     data class Success<T>(val data: T) : Resource<T>()
-    // isQueued distinguishes "this was saved to the offline queue for later
-    // automatic sync" from a genuine server rejection - both currently
-    // surface through this same Error case (differentiated only by message
-    // text previously), which made them indistinguishable to a UI that
-    // wants to show a calmer, non-alarming treatment for the queued case.
-    data class Error<T>(val message: String, val code: Int? = null, val isQueued: Boolean = false) : Resource<T>()
+    data class Error<T>(
+        val message: String,
+        val code: Int? = null,
+        val errorCode: String? = null,
+        val apiError: ApiError? = null,
+        val isQueued: Boolean = false
+    ) : Resource<T>()
     class Loading<T> : Resource<T>()
 }
 
 /**
  * Authentication repository.
  *
- * FT-024: the login payload now sends `mobile_number`, matching the API. The
- * backend rejects unknown keys, so the previous `mobile` field would fail
- * outright rather than being silently discarded.
- *
- * A failed login leaves NO session behind - the Android counterpart of the
- * FT-001 rule. There is no fabricated user and no guessed role anywhere in
- * this class; identity comes from `/auth/me` or the sign-in does not succeed.
+ * APP-AUTH-001 & APP-AUTH-005: Clean session management and user-friendly error messages.
  */
 class AuthRepository(
     private val authApi: AuthApi,
@@ -48,7 +45,8 @@ class AuthRepository(
             val response = authApi.login(request)
             if (!response.isSuccessful || response.body() == null) {
                 tokenManager.clear()
-                return Resource.Error(messageForStatus(response.code()), response.code())
+                val errBody = response.errorBody()?.string()
+                return Resource.Error(messageForStatus(response.code(), errBody), response.code())
             }
 
             val tokens = response.body()!!
@@ -56,13 +54,13 @@ class AuthRepository(
 
             val meResponse = authApi.getCurrentUser()
             if (!meResponse.isSuccessful || meResponse.body() == null) {
-                // Half a session is no session: discard the tokens.
                 tokenManager.clear()
                 return Resource.Error("Signed in, but the profile could not be loaded.")
             }
 
             val user = meResponse.body()!!
             tokenManager.saveUserProfile(
+                id = user.id,
                 name = user.displayName,
                 email = user.email,
                 role = user.role,
@@ -81,12 +79,6 @@ class AuthRepository(
         }
     }
 
-    /**
-     * Exchange the refresh token for a fresh pair.
-     *
-     * Returns false when the session is genuinely over, in which case stored
-     * credentials are cleared so the app cannot keep retrying a dead token.
-     */
     suspend fun refreshSession(): Boolean {
         val refreshToken = tokenManager.getRefreshToken() ?: return false
         return try {
@@ -104,24 +96,15 @@ class AuthRepository(
         }
     }
 
-    /**
-     * Sign out.
-     *
-     * The refresh token is revoked server-side before local state is cleared,
-     * so the session cannot be resumed from a copied token. Local credentials
-     * are cleared even if the network call fails.
-     */
     suspend fun logout() {
         val refreshToken = tokenManager.getRefreshToken()
         try {
-            // Unregister FCM device token before revoking credentials
             unregisterFcmDeviceToken()
-
             if (refreshToken != null) {
                 authApi.logout(RefreshRequest(refreshToken))
             }
         } catch (e: Exception) {
-            // Best effort: the local session must end regardless.
+            // Best effort
         } finally {
             tokenManager.clear()
         }
@@ -160,7 +143,6 @@ class AuthRepository(
         }
     }
 
-
     suspend fun forgotPassword(email: String): Resource<String> {
         return try {
             val response = authApi.forgotPassword(ForgotPasswordRequest(email))
@@ -180,7 +162,7 @@ class AuthRepository(
             if (response.isSuccessful && response.body() != null) {
                 Resource.Success(response.body()!!.message)
             } else {
-                Resource.Error(if (response.code() == 400) "Invalid or expired code" else "Failed to reset password (${response.code()})")
+                Resource.Error(if (response.code() == 400) "Invalid or expired verification code" else "Failed to reset password (${response.code()})")
             }
         } catch (e: Exception) {
             Resource.Error("Network error: ${e.localizedMessage}")
@@ -189,10 +171,23 @@ class AuthRepository(
 
     fun isLoggedIn(): Boolean = tokenManager.isLoggedIn()
 
-    private fun messageForStatus(code: Int): String = when (code) {
-        401 -> "Incorrect email/mobile or password."
-        403 -> "This account is disabled. Contact your administrator."
-        429 -> "Too many sign-in attempts. Please wait and try again."
-        else -> "Sign-in failed (error $code)."
+    private fun messageForStatus(code: Int, errorBody: String? = null): String {
+        if (!errorBody.isNullOrBlank()) {
+            val lower = errorBody.lowercase()
+            if (lower.contains("disabled") || lower.contains("inactive")) {
+                return "This account is disabled. Contact your administrator."
+            }
+            if (lower.contains("invalid") || lower.contains("credential") || lower.contains("password")) {
+                return "Incorrect email/mobile or password."
+            }
+        }
+        return when (code) {
+            400 -> "Invalid login request. Please verify your credentials."
+            401 -> "Incorrect email/mobile or password."
+            403 -> "This account is disabled. Contact your administrator."
+            429 -> "Too many sign-in attempts. Please wait and try again."
+            500, 502, 503, 504 -> "Server is temporarily unavailable. Please try again shortly."
+            else -> "Sign-in failed (error $code)."
+        }
     }
 }

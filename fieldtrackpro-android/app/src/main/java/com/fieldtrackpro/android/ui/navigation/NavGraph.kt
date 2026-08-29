@@ -12,60 +12,57 @@ import com.fieldtrackpro.android.ui.screens.auth.LoginScreen
 import com.fieldtrackpro.android.ui.screens.collections.CollectPaymentScreen
 import com.fieldtrackpro.android.ui.screens.collections.OutletAccountScreen
 import com.fieldtrackpro.android.ui.screens.dashboard.DashboardScreen
+import com.fieldtrackpro.android.ui.screens.maps.MapScreen
 import com.fieldtrackpro.android.ui.screens.media.AttachmentPreviewScreen
 import com.fieldtrackpro.android.ui.screens.media.MediaUploadScreen
+import com.fieldtrackpro.android.ui.screens.notifications.NotificationsListScreen
 import com.fieldtrackpro.android.ui.screens.profile.ProfileSettingsScreen
+import com.fieldtrackpro.android.ui.screens.requirements.FormFillScreen
+import com.fieldtrackpro.android.ui.screens.requirements.RequirementFormScreen
 import com.fieldtrackpro.android.ui.screens.signature.SignatureScreen
-import com.fieldtrackpro.android.ui.screens.visits.SubmissionSuccessScreen
-import com.fieldtrackpro.android.ui.screens.visits.VisitSummaryScreen
 import com.fieldtrackpro.android.ui.screens.splash.SplashScreen
 import com.fieldtrackpro.android.ui.screens.sync.OfflineQueueScreen
 import com.fieldtrackpro.android.ui.screens.visits.CheckInScreen
 import com.fieldtrackpro.android.ui.screens.visits.CheckOutScreen
+import com.fieldtrackpro.android.ui.screens.visits.SubmissionSuccessScreen
 import com.fieldtrackpro.android.ui.screens.visits.TodayVisitsScreen
-import com.fieldtrackpro.android.ui.screens.maps.MapScreen
-import com.fieldtrackpro.android.ui.screens.notifications.NotificationsListScreen
-import com.fieldtrackpro.android.ui.screens.requirements.RequirementFormScreen
-import com.fieldtrackpro.android.ui.screens.requirements.FormFillScreen
 import com.fieldtrackpro.android.ui.screens.visits.VisitDetailsScreen
+import com.fieldtrackpro.android.ui.screens.visits.VisitSummaryScreen
 import com.fieldtrackpro.android.ui.viewmodel.AuthViewModel
 import com.fieldtrackpro.android.ui.viewmodel.CheckInViewModel
+import com.fieldtrackpro.android.ui.viewmodel.CheckOutViewModel
 import com.fieldtrackpro.android.ui.viewmodel.CollectionViewModel
 import com.fieldtrackpro.android.ui.viewmodel.FormFillViewModel
+import com.fieldtrackpro.android.ui.viewmodel.GeofenceViewModel
 import com.fieldtrackpro.android.ui.viewmodel.MediaViewModel
+import com.fieldtrackpro.android.ui.viewmodel.NotificationViewModel
 import com.fieldtrackpro.android.ui.viewmodel.RequirementViewModel
 import com.fieldtrackpro.android.ui.viewmodel.SignatureViewModel
 import com.fieldtrackpro.android.ui.viewmodel.VisitDetailsViewModel
 import com.fieldtrackpro.android.ui.viewmodel.VisitSummaryViewModel
 import com.fieldtrackpro.android.ui.viewmodel.VisitsViewModel
+import com.fieldtrackpro.android.utils.SessionManager
+import java.net.URLDecoder
 
 @Composable
 fun NavGraph(
     navController: NavHostController,
-    tokenManager: TokenManager,
-    offlineQueueManager: OfflineQueueManager,
     authViewModel: AuthViewModel,
     visitsViewModel: VisitsViewModel,
     visitDetailsViewModel: VisitDetailsViewModel,
     checkInViewModel: CheckInViewModel,
+    checkOutViewModel: CheckOutViewModel,
     mediaViewModel: MediaViewModel,
     requirementViewModel: RequirementViewModel,
     formFillViewModel: FormFillViewModel,
-    geofenceViewModel: com.fieldtrackpro.android.ui.viewmodel.GeofenceViewModel,
-    notificationViewModel: com.fieldtrackpro.android.ui.viewmodel.NotificationViewModel,
+    notificationViewModel: NotificationViewModel,
     signatureViewModel: SignatureViewModel,
     visitSummaryViewModel: VisitSummaryViewModel,
-    collectionViewModel: CollectionViewModel
+    collectionViewModel: CollectionViewModel,
+    geofenceViewModel: GeofenceViewModel,
+    tokenManager: TokenManager,
+    offlineQueueManager: OfflineQueueManager
 ) {
-    // P1-7: every ViewModel above is now a required parameter, owned by
-    // MainActivity's ViewModelStore-backed properties. None of them may be
-    // constructed here with a default-expression value again - Kotlin
-    // re-evaluates a default *expression* (unlike a required argument) on
-    // every recomposition of this call site, which is exactly the bug this
-    // fixes (formFillViewModel/signatureViewModel/visitSummaryViewModel/
-    // collectionViewModel previously had no home in MainActivity at all and
-    // were silently rebuilt - discarding in-progress form/signature state -
-    // on effectively any recomposition, not just a rotation).
     NavHost(
         navController = navController,
         startDestination = Screen.Splash.route
@@ -76,11 +73,17 @@ fun NavGraph(
                 onNavigateToLogin = {
                     navController.navigate(Screen.Login.route) {
                         popUpTo(Screen.Splash.route) { inclusive = true }
+                        launchSingleTop = true
                     }
                 },
                 onNavigateToDashboard = {
+                    val pendingDeepLink = SessionManager.consumePendingDeepLink()
                     navController.navigate(Screen.Dashboard.route) {
                         popUpTo(Screen.Splash.route) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                    if (pendingDeepLink != null && pendingDeepLink.isNotBlank()) {
+                        navController.navigate(Screen.VisitDetails.createRoute(pendingDeepLink))
                     }
                 }
             )
@@ -90,8 +93,13 @@ fun NavGraph(
             LoginScreen(
                 viewModel = authViewModel,
                 onLoginSuccess = {
+                    val pendingDeepLink = SessionManager.consumePendingDeepLink()
                     navController.navigate(Screen.Dashboard.route) {
                         popUpTo(Screen.Login.route) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                    if (pendingDeepLink != null && pendingDeepLink.isNotBlank()) {
+                        navController.navigate(Screen.VisitDetails.createRoute(pendingDeepLink))
                     }
                 }
             )
@@ -122,6 +130,10 @@ fun NavGraph(
             arguments = listOf(navArgument("visitId") { type = NavType.StringType })
         ) { backStackEntry ->
             val visitId = backStackEntry.arguments?.getString("visitId") ?: ""
+            if (visitId.isBlank()) {
+                navController.popBackStack()
+                return@composable
+            }
             VisitDetailsScreen(
                 visitId = visitId,
                 viewModel = visitDetailsViewModel,
@@ -132,12 +144,16 @@ fun NavGraph(
                 onNavigateToOrderCapture = { vId -> navController.navigate(Screen.OrderCapture.createRoute(vId)) },
                 onNavigateToSignature = { vId -> navController.navigate(Screen.Signature.createRoute(vId)) },
                 onNavigateToPreview = { mediaId, fileName, isPhoto ->
-                    navController.navigate(Screen.AttachmentPreview.createRoute(mediaId, fileName, isPhoto))
+                    navController.navigate(
+                        Screen.AttachmentPreview.createRoute(mediaId, fileName, isPhoto)
+                    )
                 },
                 onNavigateToFormFill = { vId, formId -> navController.navigate(Screen.FormFill.createRoute(vId, formId)) },
                 geofenceViewModel = geofenceViewModel,
                 onNavigateToMap = { cId -> navController.navigate(Screen.Map.createRoute(cId)) },
-                onNavigateToAccount = { vId, cId -> navController.navigate(Screen.OutletAccount.createRoute(vId, cId)) }
+                onNavigateToAccount = { vId, cId -> navController.navigate(Screen.OutletAccount.createRoute(vId, cId)) },
+                onNavigateToVisitSummary = { vId -> navController.navigate(Screen.VisitSummary.createRoute(vId)) },
+                onNavigateToRequirementForm = { vId -> navController.navigate(Screen.RequirementForm.createRoute(vId)) }
             )
         }
 
@@ -150,6 +166,10 @@ fun NavGraph(
         ) { backStackEntry ->
             val visitId = backStackEntry.arguments?.getString("visitId") ?: ""
             val customerId = backStackEntry.arguments?.getString("customerId") ?: ""
+            if (visitId.isBlank() || customerId.isBlank()) {
+                navController.popBackStack()
+                return@composable
+            }
             OutletAccountScreen(
                 visitId = visitId,
                 customerId = customerId,
@@ -168,6 +188,10 @@ fun NavGraph(
         ) { backStackEntry ->
             val visitId = backStackEntry.arguments?.getString("visitId") ?: ""
             val customerId = backStackEntry.arguments?.getString("customerId") ?: ""
+            if (visitId.isBlank() || customerId.isBlank()) {
+                navController.popBackStack()
+                return@composable
+            }
             CollectPaymentScreen(
                 visitId = visitId,
                 customerId = customerId,
@@ -189,6 +213,10 @@ fun NavGraph(
         ) { backStackEntry ->
             val visitId = backStackEntry.arguments?.getString("visitId") ?: ""
             val formId = backStackEntry.arguments?.getString("formId") ?: ""
+            if (visitId.isBlank() || formId.isBlank()) {
+                navController.popBackStack()
+                return@composable
+            }
             FormFillScreen(
                 visitId = visitId,
                 formId = formId,
@@ -206,6 +234,10 @@ fun NavGraph(
         ) { backStackEntry ->
             val visitId = backStackEntry.arguments?.getString("visitId") ?: ""
             val customerId = backStackEntry.arguments?.getString("customerId") ?: ""
+            if (visitId.isBlank()) {
+                navController.popBackStack()
+                return@composable
+            }
             CheckInScreen(
                 visitId = visitId,
                 customerId = customerId,
@@ -224,10 +256,14 @@ fun NavGraph(
         ) { backStackEntry ->
             val visitId = backStackEntry.arguments?.getString("visitId") ?: ""
             val customerId = backStackEntry.arguments?.getString("customerId") ?: ""
+            if (visitId.isBlank()) {
+                navController.popBackStack()
+                return@composable
+            }
             CheckOutScreen(
                 visitId = visitId,
                 customerId = customerId,
-                viewModel = checkInViewModel,
+                viewModel = checkOutViewModel,
                 onNavigateBack = { navController.popBackStack() },
                 onSuccess = { navController.popBackStack() }
             )
@@ -238,9 +274,14 @@ fun NavGraph(
             arguments = listOf(navArgument("visitId") { type = NavType.StringType })
         ) { backStackEntry ->
             val visitId = backStackEntry.arguments?.getString("visitId") ?: ""
+            if (visitId.isBlank()) {
+                navController.popBackStack()
+                return@composable
+            }
             MediaUploadScreen(
                 visitId = visitId,
                 viewModel = mediaViewModel,
+                isOrderMode = false,
                 onNavigateBack = { navController.popBackStack() },
                 onPreviewMedia = { mediaId, fileName, isPhoto ->
                     navController.navigate(
@@ -250,22 +291,25 @@ fun NavGraph(
             )
         }
 
-        // P2-B: order capture - same screen/pipeline as MediaUpload, in order mode.
         composable(
             route = Screen.OrderCapture.route,
             arguments = listOf(navArgument("visitId") { type = NavType.StringType })
         ) { backStackEntry ->
             val visitId = backStackEntry.arguments?.getString("visitId") ?: ""
+            if (visitId.isBlank()) {
+                navController.popBackStack()
+                return@composable
+            }
             MediaUploadScreen(
                 visitId = visitId,
                 viewModel = mediaViewModel,
+                isOrderMode = true,
                 onNavigateBack = { navController.popBackStack() },
                 onPreviewMedia = { mediaId, fileName, isPhoto ->
                     navController.navigate(
                         Screen.AttachmentPreview.createRoute(mediaId, fileName, isPhoto)
                     )
-                },
-                isOrderMode = true
+                }
             )
         }
 
@@ -275,11 +319,9 @@ fun NavGraph(
                 authViewModel = authViewModel,
                 onNavigateBack = { navController.popBackStack() },
                 onLogout = {
-                    // P1-8: a geofence registered for the session that's
-                    // ending must not keep running in the background.
-                    geofenceViewModel.stopMonitoring()
                     navController.navigate(Screen.Login.route) {
                         popUpTo(0) { inclusive = true }
+                        launchSingleTop = true
                     }
                 }
             )
@@ -289,6 +331,7 @@ fun NavGraph(
             OfflineQueueScreen(
                 offlineQueueManager = offlineQueueManager,
                 visitsViewModel = visitsViewModel,
+                tokenManager = tokenManager,
                 onNavigateBack = { navController.popBackStack() }
             )
         }
@@ -306,6 +349,10 @@ fun NavGraph(
             arguments = listOf(navArgument("customerId") { type = NavType.StringType })
         ) { backStackEntry ->
             val customerId = backStackEntry.arguments?.getString("customerId") ?: ""
+            if (customerId.isBlank()) {
+                navController.popBackStack()
+                return@composable
+            }
             MapScreen(
                 customerId = customerId,
                 onNavigateBack = { navController.popBackStack() }
@@ -321,11 +368,20 @@ fun NavGraph(
             )
         ) { backStackEntry ->
             val mediaId = backStackEntry.arguments?.getString("mediaId") ?: ""
-            val fileName = backStackEntry.arguments?.getString("fileName") ?: "attachment"
+            val rawFileName = backStackEntry.arguments?.getString("fileName") ?: "attachment"
             val isPhoto = backStackEntry.arguments?.getBoolean("isPhoto") ?: false
+            if (mediaId.isBlank()) {
+                navController.popBackStack()
+                return@composable
+            }
+            val decodedFileName = try {
+                URLDecoder.decode(rawFileName, "UTF-8")
+            } catch (e: Exception) {
+                rawFileName
+            }
             AttachmentPreviewScreen(
                 mediaId = mediaId,
-                fileName = fileName,
+                fileName = decodedFileName,
                 isPhoto = isPhoto,
                 onNavigateBack = { navController.popBackStack() }
             )
@@ -336,11 +392,16 @@ fun NavGraph(
             arguments = listOf(navArgument("visitId") { type = NavType.StringType })
         ) { backStackEntry ->
             val visitId = backStackEntry.arguments?.getString("visitId") ?: ""
+            if (visitId.isBlank()) {
+                navController.popBackStack()
+                return@composable
+            }
             VisitSummaryScreen(
                 visitId = visitId,
                 viewModel = visitSummaryViewModel,
                 onNavigateBack = { navController.popBackStack() },
-                onSubmit = { navController.navigate(Screen.SubmissionSuccess.createRoute(visitId)) },
+                onNavigateToCheckIn = { vId, cId -> navController.navigate(Screen.CheckIn.createRoute(vId, cId)) },
+                onNavigateToCheckOut = { vId, cId -> navController.navigate(Screen.CheckOut.createRoute(vId, cId)) },
                 onCancel = { navController.popBackStack() }
             )
         }
@@ -354,7 +415,8 @@ fun NavGraph(
                 visitId = visitId,
                 onNavigateToDashboard = {
                     navController.navigate(Screen.Dashboard.route) {
-                        popUpTo(Screen.Splash.route) { inclusive = true }
+                        popUpTo(Screen.Dashboard.route) { inclusive = false }
+                        launchSingleTop = true
                     }
                 }
             )
@@ -365,12 +427,16 @@ fun NavGraph(
             arguments = listOf(navArgument("visitId") { type = NavType.StringType })
         ) { backStackEntry ->
             val visitId = backStackEntry.arguments?.getString("visitId") ?: ""
+            if (visitId.isBlank()) {
+                navController.popBackStack()
+                return@composable
+            }
             RequirementFormScreen(
                 visitId = visitId,
                 viewModel = requirementViewModel,
                 onNavigateBack = { navController.popBackStack() },
                 onSubmitSuccess = {
-                    navController.navigate(Screen.SubmissionSuccess.createRoute(visitId))
+                    navController.popBackStack()
                 }
             )
         }
@@ -380,12 +446,16 @@ fun NavGraph(
             arguments = listOf(navArgument("visitId") { type = NavType.StringType })
         ) { backStackEntry ->
             val visitId = backStackEntry.arguments?.getString("visitId") ?: ""
+            if (visitId.isBlank()) {
+                navController.popBackStack()
+                return@composable
+            }
             SignatureScreen(
                 visitId = visitId,
                 viewModel = signatureViewModel,
                 onNavigateBack = { navController.popBackStack() },
                 onComplete = {
-                    navController.navigate(Screen.SubmissionSuccess.createRoute(visitId))
+                    navController.popBackStack()
                 }
             )
         }

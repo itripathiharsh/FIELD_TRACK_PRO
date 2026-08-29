@@ -22,10 +22,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 import androidx.compose.material.icons.filled.AccountBalanceWallet
+import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Inventory
+import androidx.compose.material.icons.filled.LocationOff
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.ReceiptLong
@@ -33,6 +36,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -92,16 +96,75 @@ fun VisitDetailsScreen(
     onNavigateToPreview: (mediaId: String, fileName: String, isPhoto: Boolean) -> Unit = { _, _, _ -> },
     onNavigateToFormFill: (visitId: String, formId: String) -> Unit = { _, _ -> },
     onNavigateToAccount: (visitId: String, customerId: String) -> Unit = { _, _ -> },
+    onNavigateToVisitSummary: (String) -> Unit = {},
+    onNavigateToRequirementForm: (String) -> Unit = {},
     geofenceViewModel: com.fieldtrackpro.android.ui.viewmodel.GeofenceViewModel
 ) {
     val detailState by viewModel.detailState.collectAsState()
+    val geofenceUiState by geofenceViewModel.uiState.collectAsState()
 
     val context = LocalContext.current
     val formRepository = remember { FormTemplateRepository(ApiClient.createFormTemplateApi(TokenManager(context))) }
     var requiredFormSubmission by remember { mutableStateOf<FormSubmissionDto?>(null) }
 
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) {
+        geofenceViewModel.checkPermissions()
+    }
+
     LaunchedEffect(visitId) {
         viewModel.loadVisitDetails(visitId)
+    }
+
+    val currentRequiredFormId = (detailState as? VisitDetailState.Success)?.visit?.requiredFormId
+    LaunchedEffect(visitId, currentRequiredFormId) {
+        requiredFormSubmission = if (currentRequiredFormId != null) {
+            when (val res = formRepository.getSubmissionForVisit(currentRequiredFormId, visitId)) {
+                is Resource.Success -> res.data
+                else -> null
+            }
+        } else {
+            null
+        }
+    }
+
+    val successState = detailState as? VisitDetailState.Success
+    LaunchedEffect(successState?.customer, successState?.visit?.id, successState?.visit?.status) {
+        val v = successState?.visit
+        val cust = successState?.customer
+        if (cust != null && v != null && (v.status == "PENDING" || v.status == "FLAGGED")) {
+            geofenceViewModel.startMonitoring(
+                visitId = v.id,
+                customer = cust,
+                radiusMeters = cust.geofenceRadiusM.toFloat()
+            )
+        } else {
+            geofenceViewModel.stopMonitoring()
+        }
+    }
+
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, successState?.customer, visitId) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                geofenceViewModel.onResume(
+                    customer = successState?.customer,
+                    visitId = visitId,
+                    radiusMeters = successState?.customer?.geofenceRadiusM?.toFloat() ?: 100f
+                )
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    DisposableEffect(visitId) {
+        onDispose {
+            geofenceViewModel.stopMonitoring()
+        }
     }
 
     Scaffold(
@@ -126,18 +189,6 @@ fun VisitDetailsScreen(
                 is VisitDetailState.Success -> {
                     val visit = s.visit
                     val logs = s.geoLogs
-
-                    LaunchedEffect(visit.requiredFormId) {
-                        val formId = visit.requiredFormId
-                        requiredFormSubmission = if (formId != null) {
-                            when (val res = formRepository.getSubmissionForVisit(formId, visit.id)) {
-                                is Resource.Success -> res.data
-                                else -> null
-                            }
-                        } else {
-                            null
-                        }
-                    }
 
                     // Main Customer Card
                     Card(
@@ -176,48 +227,18 @@ fun VisitDetailsScreen(
                             }
                             
                             DetailItem(label = "Customer ID", value = visit.customerId)
-                            DetailItem(label = "Scheduled For", value = visit.scheduledAt)
+                            DetailItem(label = "Scheduled For", value = com.fieldtrackpro.android.utils.DateTimeUtils.formatDisplayDateTime(visit.scheduledAt))
 
                             visit.checkInAt?.let {
-                                DetailItem(label = "Checked In", value = it)
+                                DetailItem(label = "Checked In", value = com.fieldtrackpro.android.utils.DateTimeUtils.formatDisplayDateTime(it))
                             }
                             visit.checkOutAt?.let {
-                                DetailItem(label = "Checked Out", value = it)
+                                DetailItem(label = "Checked Out", value = com.fieldtrackpro.android.utils.DateTimeUtils.formatDisplayDateTime(it))
                             }
                         }
                     }
 
                     Spacer(modifier = Modifier.height(14.dp))
-
-                    val geofenceUiState by geofenceViewModel.uiState.collectAsState()
-
-                    val locationPermissionLauncher = rememberLauncherForActivityResult(
-                        contract = ActivityResultContracts.RequestMultiplePermissions()
-                    ) {
-                        geofenceViewModel.checkPermissions()
-                    }
-
-                    LaunchedEffect(visit.customerId) {
-                        geofenceViewModel.checkPermissions()
-                    }
-
-                    LaunchedEffect(s.customer, visit.id, visit.status) {
-                        if (s.customer != null && (visit.status == "PENDING" || visit.status == "FLAGGED")) {
-                            geofenceViewModel.startMonitoring(
-                                visitId = visit.id,
-                                customer = s.customer,
-                                radiusMeters = s.customer.geofenceRadiusM.toFloat()
-                            )
-                        } else {
-                            geofenceViewModel.stopMonitoring()
-                        }
-                    }
-
-                    DisposableEffect(visit.id) {
-                        onDispose {
-                            geofenceViewModel.stopMonitoring()
-                        }
-                    }
 
                     // Geofence status card
                     GeofenceStatusCard(
@@ -229,43 +250,100 @@ fun VisitDetailsScreen(
                         errorMessage = geofenceUiState.errorMessage,
                         distanceM = geofenceUiState.distanceM,
                         geofenceRadiusM = s.customer?.geofenceRadiusM?.toDouble(),
-                        isLoadingLocation = geofenceUiState.isLoadingLocation
+                        isLoadingLocation = geofenceUiState.isLoadingLocation,
+                        onEnableLocationClick = {
+                            com.fieldtrackpro.android.utils.LocationSettingsHelper.openLocationSettings(context)
+                        },
+                        onRequestPermissionClick = {
+                            locationPermissionLauncher.launch(
+                                arrayOf(
+                                    android.Manifest.permission.ACCESS_FINE_LOCATION,
+                                    android.Manifest.permission.ACCESS_COARSE_LOCATION
+                                )
+                            )
+                        }
                     )
 
                     Spacer(modifier = Modifier.height(16.dp))
 
                     // Primary Action Button (Check-In or Check-Out)
                     if (visit.status == "PENDING" || visit.status == "FLAGGED") {
-                        val canCheckIn = !geofenceUiState.isMonitoring || geofenceUiState.isInside
+                        val isOutside = geofenceUiState.isMonitoring && geofenceUiState.isOutside
+                        val isInside = geofenceUiState.isMonitoring && geofenceUiState.isInside
+                        val isLocating = geofenceUiState.isLoadingLocation
+                        val noPermission = !geofenceUiState.hasPermission
+                        val noLocation = !geofenceUiState.isLocationEnabled
+                        val noConfig = geofenceUiState.status == com.fieldtrackpro.android.ui.viewmodel.GeofenceUiStatus.LOCATION_NOT_CONFIGURED
+
+                        val buttonEnabled = when {
+                            noConfig -> false
+                            isLocating -> false
+                            noPermission -> true // clicks to launch runtime permission dialog
+                            noLocation -> true   // clicks to open system Location Settings
+                            else -> true
+                        }
+
+                        val buttonText = when {
+                            noPermission -> "GRANT PRECISE LOCATION PERMISSION"
+                            noLocation -> "ENABLE LOCATION (OPEN SETTINGS)"
+                            noConfig -> "OUTLET LOCATION NOT CONFIGURED"
+                            isLocating -> "LOCATING OUTLET GPS..."
+                            isInside -> "CHECK-IN GPS VERIFICATION"
+                            isOutside -> "PROCEED TO CHECK-IN (OUTSIDE RADIUS)"
+                            else -> "CHECK-IN GPS VERIFICATION"
+                        }
+
                         Button(
-                            onClick = { onNavigateToCheckIn(visit.id, visit.customerId) },
+                            onClick = {
+                                when {
+                                    noLocation -> {
+                                        com.fieldtrackpro.android.utils.LocationSettingsHelper.openLocationSettings(context)
+                                    }
+                                    noPermission -> {
+                                        locationPermissionLauncher.launch(
+                                            arrayOf(
+                                                android.Manifest.permission.ACCESS_FINE_LOCATION,
+                                                android.Manifest.permission.ACCESS_COARSE_LOCATION
+                                            )
+                                        )
+                                    }
+                                    else -> {
+                                        onNavigateToCheckIn(visit.id, visit.customerId)
+                                    }
+                                }
+                            },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(52.dp),
                             shape = RoundedCornerShape(10.dp),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = if (canCheckIn) BrandNavy else BrandLightGray,
-                                contentColor = if (canCheckIn) BrandWhite else TextSecondary
+                                containerColor = if (isOutside) BrandGold else BrandNavy,
+                                contentColor = BrandWhite,
+                                disabledContainerColor = BrandLightGray,
+                                disabledContentColor = TextSecondary
                             ),
-                            enabled = canCheckIn
+                            enabled = buttonEnabled
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (isLocating) {
+                                CircularProgressIndicator(color = BrandGold, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                                Spacer(modifier = Modifier.width(8.dp))
+                            } else {
                                 Icon(
-                                    imageVector = Icons.Default.LocationOn,
+                                    imageVector = if (noLocation) Icons.Default.LocationOff else Icons.Default.LocationOn,
                                     contentDescription = null,
-                                    tint = if (canCheckIn) BrandGold else TextSecondary,
+                                    tint = if (isOutside) BrandNavy else if (buttonEnabled) BrandGold else TextSecondary,
                                     modifier = Modifier.size(20.dp)
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    if (canCheckIn) "CHECK-IN GPS VERIFICATION" else "OUTSIDE CUSTOMER RADIUS",
-                                    fontFamily = LeagueSpartanFamily,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp,
-                                    letterSpacing = 0.5.sp,
-                                    color = if (canCheckIn) BrandWhite else TextSecondary
-                                )
                             }
+                            Text(
+                                buttonText,
+                                fontFamily = LeagueSpartanFamily,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                letterSpacing = 0.5.sp,
+                                color = if (isOutside) BrandNavy else if (buttonEnabled) BrandWhite else TextSecondary
+                            )
                         }
                     }
 
@@ -361,6 +439,26 @@ fun VisitDetailsScreen(
                         subtitle = "Collections overview, aging & payment receipt",
                         icon = Icons.Default.AccountBalanceWallet,
                         onClick = { onNavigateToAccount(visit.id, visit.customerId) }
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Requirement / Stock Tile
+                    ActionTile(
+                        title = "Requirement / Stock Request",
+                        subtitle = "Capture custom retailer stock requirement & priority",
+                        icon = Icons.Default.Inventory,
+                        onClick = { onNavigateToRequirementForm(visit.id) }
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Visit Summary Tile
+                    ActionTile(
+                        title = "Visit Activity Summary",
+                        subtitle = "Review captured geo logs, signatures & attachments",
+                        icon = Icons.Default.Assessment,
+                        onClick = { onNavigateToVisitSummary(visit.id) }
                     )
 
                     Spacer(modifier = Modifier.height(16.dp))

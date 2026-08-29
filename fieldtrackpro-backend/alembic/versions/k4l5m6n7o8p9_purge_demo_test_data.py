@@ -81,7 +81,8 @@ def upgrade() -> None:
     op.execute("""
         DELETE FROM users 
         WHERE email NOT LIKE '%@sgrgservices.com' 
-          AND email != 'admin@fieldtrack.test';
+          AND email != 'admin@fieldtrack.test'
+          AND id NOT IN (SELECT user_id FROM employees WHERE user_id IS NOT NULL);
     """)
 
     # 4. Clean unused demo territories

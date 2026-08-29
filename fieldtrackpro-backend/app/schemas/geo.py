@@ -1,37 +1,30 @@
 """
-Geo verification schemas: standalone validation requests, responses, and audit logs.
+Geographic request/response schemas.
 """
 from __future__ import annotations
 
 import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
-
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.geo_verification_log import GeoVerificationType
 
-if TYPE_CHECKING:  # pragma: no cover - typing only
+if TYPE_CHECKING:
     from app.models.geo_verification_log import (
         GeoVerificationLog as GeoVerificationLogModel,
     )
 
 
 class LocationVerifyRequest(BaseModel):
-    """Client payload to test coordinate proximity against a customer geofence."""
-
     customer_id: uuid.UUID
     latitude: float = Field(..., ge=-90.0, le=90.0, description="Device latitude")
     longitude: float = Field(..., ge=-180.0, le=180.0, description="Device longitude")
-    accuracy_m: float | None = Field(default=None, ge=0.0, description="GPS horizontal accuracy in meters")
-    is_mock_location: bool = Field(default=False, description="Flag indicating if location source is fake/mock provider")
-
-    model_config = ConfigDict(from_attributes=True)
+    accuracy_m: float = Field(..., ge=0.0, description="GPS horizontal accuracy in meters")
+    is_mock_location: bool = Field(default=False, description="Mock provider flag")
 
 
 class LocationVerifyResponse(BaseModel):
-    """Server decision payload for location verification."""
-
     is_valid: bool
     distance_m: float
     geofence_radius_m: float
@@ -45,11 +38,6 @@ class LocationVerifyResponse(BaseModel):
 class GeoVerificationLogRead(BaseModel):
     """
     Immutable audit log entry.
-
-    FT-031: `verification_type` distinguishes a check-in attempt from a
-    check-out attempt. The device coordinates are exposed so an administrator
-    reviewing a flagged visit can see where the attempt was actually made -
-    which is the entire point of the Flagged Visit Review screen.
     """
 
     id: uuid.UUID
@@ -73,9 +61,6 @@ class GeoVerificationLogRead(BaseModel):
         try:
             latitude, longitude = extract_coords(log.device_location)
         except ValueError:
-            # A log row with an undecodable position is still a real audit
-            # record; report it without coordinates rather than failing the
-            # whole request.
             latitude, longitude = None, None
 
         return cls(
@@ -90,3 +75,10 @@ class GeoVerificationLogRead(BaseModel):
             failure_reason=log.failure_reason,
             idempotency_key=log.idempotency_key,
         )
+
+
+class GeoLogWithContextRead(GeoVerificationLogRead):
+    customer_id: uuid.UUID | None = None
+    customer_name: str | None = None
+    employee_id: uuid.UUID | None = None
+    employee_name: str | None = None

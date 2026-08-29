@@ -34,6 +34,7 @@ export interface Employee {
   user_id: string;
   full_name: string;
   territory_id: string | null;
+  effective_territory_name?: string | null;
   employee_code: string | null;
   working_profile?: string | null;
   cug?: string | null;
@@ -84,6 +85,18 @@ export interface Customer {
   assigned_fos_names?: string[];
   created_by: string;
   created_at: string;
+}
+
+export interface CustomerMapLocation {
+  id: string;
+  name: string;
+  outlet_code: string | null;
+  latitude: number;
+  longitude: number;
+  geofence_radius_m: number;
+  location_status: string;
+  territory_id: string | null;
+  area_id: string | null;
 }
 
 export type TerritoryStatus = 'ACTIVE' | 'INACTIVE';
@@ -973,6 +986,7 @@ export interface DashboardExecutiveKPIs {
   total_visits: number;
   completed_visits: number;
   pending_visits: number;
+  in_progress_visits?: number;
   flagged_visits: number;
   gps_verified_visits: number;
   total_exceptions: number;
@@ -1000,6 +1014,7 @@ export interface EmployeeDayDashboardResponse {
   today_visits_count: number;
   completed_visits_count: number;
   pending_visits_count: number;
+  in_progress_visits_count?: number;
   collections_today_count: number;
   collections_today_amount: string;
   orders_today_count: number;

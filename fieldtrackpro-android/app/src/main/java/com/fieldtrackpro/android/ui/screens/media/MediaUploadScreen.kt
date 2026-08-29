@@ -139,6 +139,15 @@ fun MediaUploadScreen(
         viewModel.loadVisitMedia(visitId)
     }
 
+    LaunchedEffect(state) {
+        if (state is MediaState.UploadSuccess) {
+            orderNote = ""
+            capturedPreviewUri = null
+            cameraUri = null
+            fieldError = null
+        }
+    }
+
     Scaffold(
         topBar = {
             FieldTrackTopAppBar(
@@ -293,6 +302,7 @@ fun MediaUploadScreen(
                             onValueChange = { 
                                 orderNote = it
                                 fieldError = null
+                                viewModel.resetState()
                             },
                             placeholder = { 
                                 Text(
@@ -601,13 +611,18 @@ private fun createTempImageUri(context: android.content.Context): Uri {
  * unchanged; it isn't an image and can't be downsampled this way.
  */
 private fun readBytesForUpload(context: android.content.Context, uri: Uri, mimeType: String): Pair<ByteArray, String>? {
-    if (mimeType.startsWith("image/")) {
-        ImageDownsampler.downsample(context, uri)?.let { return it to "image/jpeg" }
+    if (uri == Uri.EMPTY || uri.toString().isBlank()) return null
+    return try {
+        if (mimeType.startsWith("image/")) {
+            ImageDownsampler.downsample(context, uri)?.let { return it to "image/jpeg" }
+        }
+        val inputStream = context.contentResolver.openInputStream(uri)
+        val bytes = inputStream?.readBytes()
+        inputStream?.close()
+        bytes?.takeIf { it.isNotEmpty() }?.let { it to mimeType }
+    } catch (e: Exception) {
+        null
     }
-    val inputStream = context.contentResolver.openInputStream(uri)
-    val bytes = inputStream?.readBytes()
-    inputStream?.close()
-    return bytes?.takeIf { it.isNotEmpty() }?.let { it to mimeType }
 }
 
 private fun uploadFile(
@@ -637,11 +652,30 @@ private fun uploadOrder(
     note: String?
 ) {
     try {
-        val (bytes, resolvedMimeType) = readBytesForUpload(context, uri, mimeType)
-            ?: return viewModel.reportError("Could not read the selected file.")
-        val fileName = uri.lastPathSegment ?: "order_${System.currentTimeMillis()}"
+        val isTextOnly = uri == Uri.EMPTY || uri.toString().isBlank()
+        val (bytes, resolvedMimeType) = if (isTextOnly) {
+            val noteBytes = (note ?: "").trim().toByteArray(Charsets.UTF_8)
+            if (noteBytes.isEmpty()) {
+                return viewModel.reportError("Please enter an order note or attach a photo.")
+            }
+            noteBytes to "text/plain"
+        } else {
+            readBytesForUpload(context, uri, mimeType) ?: run {
+                val noteBytes = (note ?: "").trim().toByteArray(Charsets.UTF_8)
+                if (noteBytes.isNotEmpty()) {
+                    noteBytes to "text/plain"
+                } else {
+                    return viewModel.reportError("Could not read the selected file.")
+                }
+            }
+        }
+        val fileName = if (resolvedMimeType == "text/plain") {
+            "order_${System.currentTimeMillis()}.txt"
+        } else {
+            uri.lastPathSegment ?: "order_${System.currentTimeMillis()}.jpg"
+        }
         viewModel.captureOrder(visitId, fileName, resolvedMimeType, bytes, note)
     } catch (e: Exception) {
-        viewModel.reportError(e.localizedMessage ?: "Could not read the selected file.")
+        viewModel.reportError(e.localizedMessage ?: "Could not process order.")
     }
 }

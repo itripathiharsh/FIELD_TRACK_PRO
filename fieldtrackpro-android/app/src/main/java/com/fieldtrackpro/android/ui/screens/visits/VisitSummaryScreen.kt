@@ -48,7 +48,8 @@ fun VisitSummaryScreen(
     visitId: String,
     viewModel: VisitSummaryViewModel,
     onNavigateBack: () -> Unit,
-    onSubmit: () -> Unit,
+    onNavigateToCheckIn: (visitId: String, customerId: String) -> Unit,
+    onNavigateToCheckOut: (visitId: String, customerId: String) -> Unit,
     onCancel: () -> Unit
 ) {
     val state by viewModel.summaryState.collectAsState()
@@ -223,16 +224,46 @@ fun VisitSummaryScreen(
 
                     Spacer(modifier = Modifier.height(24.dp))
 
-                    Button(
-                        onClick = onSubmit,
-                        modifier = Modifier.fillMaxWidth().height(50.dp),
-                        shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = FieldTrackNavy,
-                            contentColor = SurfaceWhite
-                        )
-                    ) {
-                        Text("SUBMIT VISIT", fontWeight = FontWeight.Bold, color = SurfaceWhite)
+                    when (visit.status) {
+                        "IN_PROGRESS" -> {
+                            Button(
+                                onClick = { onNavigateToCheckOut(visit.id, visit.customerId) },
+                                modifier = Modifier.fillMaxWidth().height(50.dp),
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = SuccessGreen,
+                                    contentColor = SurfaceWhite
+                                )
+                            ) {
+                                Text("PROCEED TO CHECK-OUT (COMPLETE VISIT)", fontWeight = FontWeight.Bold, color = SurfaceWhite)
+                            }
+                        }
+                        "COMPLETED" -> {
+                            Button(
+                                onClick = onCancel,
+                                modifier = Modifier.fillMaxWidth().height(50.dp),
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = SuccessGreen,
+                                    contentColor = SurfaceWhite
+                                )
+                            ) {
+                                Text("VISIT IS COMPLETED ✓", fontWeight = FontWeight.Bold, color = SurfaceWhite)
+                            }
+                        }
+                        else -> {
+                            Button(
+                                onClick = { onNavigateToCheckIn(visit.id, visit.customerId) },
+                                modifier = Modifier.fillMaxWidth().height(50.dp),
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = FieldTrackNavy,
+                                    contentColor = SurfaceWhite
+                                )
+                            ) {
+                                Text("PROCEED TO CHECK-IN", fontWeight = FontWeight.Bold, color = SurfaceWhite)
+                            }
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(12.dp))
@@ -246,7 +277,7 @@ fun VisitSummaryScreen(
                             contentColor = SurfaceWhite
                         )
                     ) {
-                        Text("CANCEL", fontWeight = FontWeight.Bold, color = SurfaceWhite)
+                        Text("BACK TO VISIT", fontWeight = FontWeight.Bold, color = SurfaceWhite)
                     }
                 }
             }

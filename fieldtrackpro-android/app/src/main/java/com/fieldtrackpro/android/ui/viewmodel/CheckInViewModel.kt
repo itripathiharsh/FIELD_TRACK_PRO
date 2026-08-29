@@ -10,6 +10,7 @@ import com.fieldtrackpro.android.data.model.VisitDto
 import com.fieldtrackpro.android.data.remote.ApiClient
 import com.fieldtrackpro.android.data.repository.Resource
 import com.fieldtrackpro.android.data.repository.VisitRepository
+import com.fieldtrackpro.android.utils.CoordinateValidator
 import com.fieldtrackpro.android.workers.OfflineSyncScheduler
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -26,10 +27,17 @@ sealed class CheckInState {
     data class GeoRejected(val message: String) : CheckInState()
     data class LowAccuracy(val message: String) : CheckInState()
     data class StaleLocation(val message: String) : CheckInState()
+    data class InvalidCoordinates(val message: String) : CheckInState()
     data class Conflict(val message: String) : CheckInState()
     data class Error(val message: String) : CheckInState()
 }
 
+/**
+ * Isolated ViewModel for Visit Check-In.
+ *
+ * APP-ATT-001: Focuses solely on Check-In; Check-Out state is maintained in CheckOutViewModel.
+ * APP-ATT-004: Validates GPS coordinates before dispatch; rejects (0,0) and invalid ranges.
+ */
 class CheckInViewModel(
     application: Application,
     tokenManager: TokenManager,
@@ -50,10 +58,23 @@ class CheckInViewModel(
         _state.value = CheckInState.Idle
     }
 
-    fun verifyLocationPreflight(customerId: String, lat: Double, lon: Double) {
+    fun verifyLocationPreflight(
+        customerId: String,
+        lat: Double?,
+        lon: Double?,
+        accuracyM: Double? = 10.0,
+        isMock: Boolean = false
+    ) {
+        if (!CoordinateValidator.isValidCoordinate(lat, lon)) {
+            _state.value = CheckInState.InvalidCoordinates(
+                "Invalid GPS coordinates. Please capture a fresh location fix."
+            )
+            return
+        }
+
         viewModelScope.launch {
             _state.value = CheckInState.Processing
-            when (val res = repository.verifyLocation(customerId, lat, lon)) {
+            when (val res = repository.verifyLocation(customerId, lat!!, lon!!, accuracyM ?: 10.0, isMock)) {
                 is Resource.Success -> _state.value = CheckInState.VerifySuccess(res.data)
                 is Resource.Error -> _state.value = parseError(res.message, res.code)
                 else -> {}
@@ -63,20 +84,34 @@ class CheckInViewModel(
 
     fun executeCheckIn(
         visitId: String,
-        lat: Double,
-        lon: Double,
+        lat: Double?,
+        lon: Double?,
         capturedAtMillis: Long,
         accuracyM: Double? = null,
         isMock: Boolean = false,
         isOfflineMode: Boolean = false,
     ) {
+        if (!CoordinateValidator.isValidCoordinate(lat, lon)) {
+            _state.value = CheckInState.InvalidCoordinates(
+                "Invalid GPS coordinates. Please capture a fresh location fix."
+            )
+            return
+        }
+
+        if (accuracyM == null || accuracyM < 0.0) {
+            _state.value = CheckInState.LowAccuracy(
+                "Location accuracy unavailable. Please capture a fresh location fix."
+            )
+            return
+        }
+
         viewModelScope.launch {
             _state.value = CheckInState.Processing
             when (
                 val res = repository.checkIn(
-                    visitId, lat, lon,
+                    visitId, lat!!, lon!!,
                     capturedAtMillis = capturedAtMillis,
-                    accuracyM = accuracyM ?: 15.0,
+                    accuracyM = accuracyM,
                     isMock = isMock,
                     isOfflineMode = isOfflineMode,
                 )
@@ -86,42 +121,6 @@ class CheckInViewModel(
                     if (res.isQueued) {
                         OfflineSyncScheduler.scheduleSync(getApplication())
                         _state.value = CheckInState.Queued("Check-in saved. It will sync automatically when network returns.")
-                    } else {
-                        _state.value = parseError(res.message, res.code)
-                    }
-                }
-                else -> {}
-            }
-        }
-    }
-
-    fun executeCheckOut(
-        visitId: String,
-        lat: Double,
-        lon: Double,
-        notes: String?,
-        capturedAtMillis: Long,
-        accuracyM: Double? = null,
-        isMock: Boolean = false,
-        isOfflineMode: Boolean = false,
-    ) {
-        viewModelScope.launch {
-            _state.value = CheckInState.Processing
-            when (
-                val res = repository.checkOut(
-                    visitId, lat, lon,
-                    capturedAtMillis = capturedAtMillis,
-                    accuracyM = accuracyM ?: 15.0,
-                    isMock = isMock,
-                    notes = notes,
-                    isOfflineMode = isOfflineMode,
-                )
-            ) {
-                is Resource.Success -> _state.value = CheckInState.ActionSuccess(res.data, "Check-out verified. Visit completed!")
-                is Resource.Error -> {
-                    if (res.isQueued) {
-                        OfflineSyncScheduler.scheduleSync(getApplication())
-                        _state.value = CheckInState.Queued("Check-out saved. It will sync automatically when network returns.")
                     } else {
                         _state.value = parseError(res.message, res.code)
                     }

@@ -10,6 +10,7 @@ import android.os.Bundle
 import android.os.Looper
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeout
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -24,42 +25,32 @@ data class LocationResult(
     val timestamp: Long
 ) {
     /**
-     * P1-9: age of this fix, so a caller can judge freshness. No hard
-     * staleness cutoff is enforced anywhere in this codebase yet - see
-     * LocationCaptureService.MAX_ACCURACY_THRESHOLD_M's doc comment for why
-     * a freshness threshold specifically was deliberately NOT invented here.
+     * Age of this fix in milliseconds.
      */
     fun ageMillis(nowMillis: Long = System.currentTimeMillis()): Long = nowMillis - timestamp
 
-    /** True when [accuracy] exceeds LocationCaptureService.MAX_ACCURACY_THRESHOLD_M. */
+    /** True when [accuracy] is within acceptable threshold. */
     val isAccuracyAcceptable: Boolean
         get() = accuracy <= LocationCaptureService.MAX_ACCURACY_THRESHOLD_M
 }
 
 class LocationPermissionDeniedException(message: String = "Location permission not granted. Enable permission in settings.") : SecurityException(message)
 class LocationServicesDisabledException(message: String = "Location services are disabled. Please turn on GPS.") : Exception(message)
-class LocationUnavailableException(message: String = "Unable to determine location. Move to open sky and try again.") : Exception(message)
+class LocationUnavailableException(message: String = "Unable to determine location within timeout. Move to open sky and try again.") : Exception(message)
 
 /**
  * Service for capturing device location using Android's standard LocationManager.
  *
- * Phase 4 Section 2: "Event-based location capture at check-in and check-out,
- * not a continuously updating live feed."
- *
- * Uses Android's built-in LocationManager (no Google Play Services required),
- * making it compatible with MapLibre and devices without Google Play.
+ * APP-ATT-001: Strict GPS freshness enforcement (<= 30s) for attendance capture.
+ * APP-ATT-002: Guaranteed listener unregistration across success, timeout, and cancellation.
+ * APP-ATT-004: Explicit handling of fine vs coarse permissions.
  */
 class LocationCaptureService(private val context: Context) {
 
     companion object {
-        /**
-         * P1-9: mirrors GeoVerificationService.MAX_ACCURACY_THRESHOLD_M on
-         * the backend exactly (app/services/geo_verification_service.py),
-         * so the client warns about a fix the server will reject anyway,
-         * instead of only finding out after a round trip. Reused, not
-         * invented - the server remains authoritative regardless.
-         */
         const val MAX_ACCURACY_THRESHOLD_M = 100.0f
+        const val LOCATION_TIMEOUT_MS = 30_000L
+        const val MAX_FRESHNESS_MS = 30_000L // 30 seconds maximum age for attendance fixes
 
         /**
          * Calculates geodesic distance between two points in meters using Haversine formula.
@@ -83,12 +74,19 @@ class LocationCaptureService(private val context: Context) {
         context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
 
     /**
-     * Check if location permissions are granted.
+     * Check if precise (fine) location permission is granted.
      */
-    fun hasLocationPermission(): Boolean {
+    fun hasFineLocationPermission(): Boolean {
         return ContextCompat.checkSelfPermission(
             context, Manifest.permission.ACCESS_FINE_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED ||
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    /**
+     * Check if any location permission (fine or coarse) is granted.
+     */
+    fun hasLocationPermission(): Boolean {
+        return hasFineLocationPermission() ||
             ContextCompat.checkSelfPermission(
                 context, Manifest.permission.ACCESS_COARSE_LOCATION
             ) == PackageManager.PERMISSION_GRANTED
@@ -103,16 +101,39 @@ class LocationCaptureService(private val context: Context) {
     }
 
     /**
-     * Capture the current device location.
+     * Capture the current device location with a timeout.
+     *
+     * APP-ATT-001: Rejects any location older than 30 seconds.
+     * APP-ATT-002: Guaranteed listener unregistration.
      *
      * @return LocationResult with coordinates and metadata
      * @throws LocationPermissionDeniedException if location permission not granted
      * @throws LocationServicesDisabledException if location services are disabled
-     * @throws LocationUnavailableException if location unavailable
+     * @throws LocationUnavailableException if location unavailable or timed out
      */
-    suspend fun getCurrentLocation(): LocationResult = suspendCancellableCoroutine { cont ->
-        if (!hasLocationPermission()) {
-            cont.resumeWithException(LocationPermissionDeniedException())
+    suspend fun getCurrentLocation(timeoutMs: Long = LOCATION_TIMEOUT_MS): LocationResult {
+        return try {
+            withTimeout(timeoutMs) {
+                getCurrentLocationInternal()
+            }
+        } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+            // Check if fallback last-known location is available and strictly fresh (<= 30s)
+            val fallback = getLastLocationInternal()
+            if (fallback != null && fallback.ageMillis() <= MAX_FRESHNESS_MS) {
+                fallback
+            } else {
+                throw LocationUnavailableException("GPS location capture timed out (${timeoutMs / 1000}s). Move to an open area and tap retry.")
+            }
+        }
+    }
+
+    private suspend fun getCurrentLocationInternal(): LocationResult = suspendCancellableCoroutine { cont ->
+        if (!hasFineLocationPermission()) {
+            if (hasLocationPermission()) {
+                cont.resumeWithException(LocationPermissionDeniedException("Precise location is required for attendance."))
+            } else {
+                cont.resumeWithException(LocationPermissionDeniedException("Location permission not granted. Enable permission in settings."))
+            }
             return@suspendCancellableCoroutine
         }
 
@@ -123,17 +144,19 @@ class LocationCaptureService(private val context: Context) {
 
         val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
         var locationReceived = false
+        val registeredListeners = mutableListOf<LocationListener>()
 
         for (provider in providers) {
             if (!locationManager.isProviderEnabled(provider)) continue
 
-            // Try getting last known location first if it's fresh (< 60 seconds)
+            // Try getting last known location first only if it's strictly fresh (<= 30 seconds)
             try {
                 val lastLocation = locationManager.getLastKnownLocation(provider)
                 if (lastLocation != null && !locationReceived) {
                     val ageMs = System.currentTimeMillis() - lastLocation.time
-                    if (ageMs < 60000L) {
+                    if (ageMs <= MAX_FRESHNESS_MS) {
                         locationReceived = true
+                        cleanupListeners(registeredListeners)
                         cont.resume(lastLocation.toLocationResult())
                         return@suspendCancellableCoroutine
                     }
@@ -142,12 +165,12 @@ class LocationCaptureService(private val context: Context) {
                 // Permission issue, continue
             }
 
-            // Request fresh location
+            // Request fresh asynchronous location
             val listener = object : LocationListener {
                 override fun onLocationChanged(location: Location) {
                     if (!locationReceived) {
                         locationReceived = true
-                        locationManager.removeUpdates(this)
+                        cleanupListeners(registeredListeners)
                         if (cont.isActive) {
                             cont.resume(location.toLocationResult())
                         }
@@ -156,15 +179,11 @@ class LocationCaptureService(private val context: Context) {
 
                 @Deprecated("Deprecated in API 29")
                 override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
-
                 override fun onProviderEnabled(provider: String) {}
-
-                override fun onProviderDisabled(provider: String) {
-                    if (!locationReceived) {
-                        locationManager.removeUpdates(this)
-                    }
-                }
+                override fun onProviderDisabled(provider: String) {}
             }
+
+            registeredListeners.add(listener)
 
             try {
                 locationManager.requestLocationUpdates(
@@ -180,18 +199,16 @@ class LocationCaptureService(private val context: Context) {
         }
 
         cont.invokeOnCancellation {
-            // Clean up listeners on cancellation
+            cleanupListeners(registeredListeners)
         }
+    }
 
-        if (!locationReceived) {
-            if (cont.isActive) {
-                // Fallback to last known location if available before throwing
-                val fallback = getLastLocationInternal()
-                if (fallback != null) {
-                    cont.resume(fallback)
-                } else {
-                    cont.resumeWithException(LocationUnavailableException())
-                }
+    fun cleanupListeners(listeners: List<LocationListener>) {
+        for (l in listeners) {
+            try {
+                locationManager.removeUpdates(l)
+            } catch (e: Exception) {
+                // Ignore removal failure
             }
         }
     }
@@ -213,24 +230,10 @@ class LocationCaptureService(private val context: Context) {
     }
 
     /**
-     * Get the last known location (may be null).
+     * Get the last known location only if fresh.
      */
     suspend fun getLastLocation(): LocationResult? {
-        if (!hasLocationPermission()) return null
-
-        val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
-
-        for (provider in providers) {
-            try {
-                if (locationManager.isProviderEnabled(provider)) {
-                    val location = locationManager.getLastKnownLocation(provider)
-                    if (location != null) return location.toLocationResult()
-                }
-            } catch (e: SecurityException) {
-                // Permission issue, continue
-            }
-        }
-        return null
+        return getLastLocationInternal()
     }
 
     private fun Location.toLocationResult(): LocationResult = LocationResult(

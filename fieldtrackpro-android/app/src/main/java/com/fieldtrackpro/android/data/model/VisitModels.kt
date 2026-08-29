@@ -42,7 +42,14 @@ data class VisitDto(
     @SerializedName("customer_address") val customerAddress: String? = null,
     @SerializedName("employee_name") val employeeName: String? = null,
     @SerializedName("area_name") val areaName: String? = null,
-    @SerializedName("territory_name") val territoryName: String? = null
+    @SerializedName("territory_name") val territoryName: String? = null,
+    @SerializedName("customer_latitude") val customerLatitude: Double? = null,
+    @SerializedName("customer_longitude") val customerLongitude: Double? = null,
+    @SerializedName("customer_geofence_radius_m") val customerGeofenceRadiusM: Int? = null,
+    @SerializedName("customer_outlet_code") val customerOutletCode: String? = null,
+    @SerializedName("customer_contact_number") val customerContactNumber: String? = null,
+    @SerializedName("customer_contact_person") val customerContactPerson: String? = null,
+    @SerializedName("notes") val notes: String? = null
 ) {
     val isPending: Boolean get() = status == "PENDING"
     val isInProgress: Boolean get() = status == "IN_PROGRESS"
@@ -53,12 +60,28 @@ data class VisitDto(
 
     /** Check-out is offered once the visit is under way or flagged for review. */
     val canCheckOut: Boolean get() = status == "IN_PROGRESS" || status == "FLAGGED"
+
+    /**
+     * Converts inline visit customer summary into CustomerDto without requiring secondary network requests.
+     */
+    fun toCustomerSummaryDto(): CustomerDto = CustomerDto(
+        id = customerId,
+        name = customerName ?: "Outlet #${customerId.take(8)}",
+        contactNumber = customerContactNumber,
+        contactPerson = customerContactPerson,
+        address = customerAddress,
+        location = if (customerLatitude != null && customerLongitude != null) GeoPointDto(customerLatitude, customerLongitude) else null,
+        geofenceRadiusM = customerGeofenceRadiusM ?: 75,
+        outletCode = customerOutletCode,
+        areaName = areaName,
+        territoryName = territoryName
+    )
 }
 
 data class CheckInRequest(
     val latitude: Double,
     val longitude: Double,
-    @SerializedName("accuracy_m") val accuracyM: Double? = null,
+    @SerializedName("accuracy_m") val accuracyM: Double,
     @SerializedName("is_mock_location") val isMockLocation: Boolean = false,
     /**
      * When the device's GPS sensor actually captured this fix, ISO-8601 UTC.
@@ -76,17 +99,18 @@ data class CheckInRequest(
 data class CheckOutRequest(
     val latitude: Double,
     val longitude: Double,
-    @SerializedName("accuracy_m") val accuracyM: Double? = null,
+    @SerializedName("accuracy_m") val accuracyM: Double,
     @SerializedName("is_mock_location") val isMockLocation: Boolean = false,
     @SerializedName("captured_at") val capturedAt: String,
-    @SerializedName("idempotency_key") val idempotencyKey: String? = null
+    @SerializedName("idempotency_key") val idempotencyKey: String? = null,
+    @SerializedName("notes") val notes: String? = null
 )
 
 data class LocationVerifyRequest(
     @SerializedName("customer_id") val customerId: String,
     val latitude: Double,
     val longitude: Double,
-    @SerializedName("accuracy_m") val accuracyM: Double? = null,
+    @SerializedName("accuracy_m") val accuracyM: Double,
     @SerializedName("is_mock_location") val isMockLocation: Boolean = false
 )
 

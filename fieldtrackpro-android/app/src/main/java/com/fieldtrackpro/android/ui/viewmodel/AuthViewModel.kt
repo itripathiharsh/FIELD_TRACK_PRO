@@ -21,6 +21,12 @@ sealed class AuthState {
     data class ResetPasswordSuccess(val message: String) : AuthState()
 }
 
+/**
+ * Authentication ViewModel.
+ *
+ * APP-AUTH-004: Double-tap / concurrent submission protection.
+ * APP-AUTH-005: Formats user-friendly error messages.
+ */
 class AuthViewModel(
     private val tokenManager: TokenManager
 ) : ViewModel() {
@@ -33,7 +39,15 @@ class AuthViewModel(
     private val _authState = MutableStateFlow<AuthState>(AuthState.Idle)
     val authState: StateFlow<AuthState> = _authState.asStateFlow()
 
+    private var lastSubmitTimestamp = 0L
+
     fun login(identity: String, pass: String) {
+        val now = System.currentTimeMillis()
+        if (_authState.value is AuthState.Loading || (now - lastSubmitTimestamp < 800L)) {
+            return
+        }
+        lastSubmitTimestamp = now
+
         viewModelScope.launch {
             _authState.value = AuthState.Loading
             when (val result = authRepository.login(identity, pass)) {
@@ -56,6 +70,7 @@ class AuthViewModel(
     }
 
     fun forgotPassword(email: String) {
+        if (_authState.value is AuthState.Loading) return
         viewModelScope.launch {
             _authState.value = AuthState.Loading
             when (val result = authRepository.forgotPassword(email)) {
@@ -67,6 +82,7 @@ class AuthViewModel(
     }
 
     fun resetPassword(email: String, otp: String, newPassword: String) {
+        if (_authState.value is AuthState.Loading) return
         viewModelScope.launch {
             _authState.value = AuthState.Loading
             when (val result = authRepository.resetPassword(email, otp, newPassword)) {

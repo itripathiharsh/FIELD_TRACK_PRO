@@ -6,14 +6,14 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps.auth import CurrentUser, require_role
 from app.database import get_async_session
 from app.models.user import Role
 from app.schemas.account import AccountSummary
-from app.schemas.customer import CustomerCreate, CustomerRead, CustomerUpdate
+from app.schemas.customer import CustomerCreate, CustomerMapLocation, CustomerRead, CustomerUpdate
 from app.schemas.invoice import InvoiceRead
 from app.schemas.media import OrderRead
 from app.services import account_service, customer_service, invoice_service, media_service
@@ -37,8 +37,10 @@ async def create_customer(
 
 @router.get("", response_model=list[CustomerRead], dependencies=[AnyAuth])
 async def list_customers(
+    response: Response,
     current_user: CurrentUser,
     session: DbSession,
+    search: str | None = Query(default=None, description="Search by name, outlet/DMS code, address, or contact"),
     territory_id: uuid.UUID | None = Query(default=None),
     area_id: uuid.UUID | None = Query(default=None),
     skip: int = Query(default=0, ge=0),
@@ -49,9 +51,43 @@ async def list_customers(
     server-side to outlets they have at least one visit assigned to (see
     customer_service.list_customers) - never the client-supplied
     territory_id/area_id alone.
+    Returns X-Total-Count header for scalable server-side pagination.
     """
-    customers = await customer_service.list_customers(session, current_user, territory_id, skip, limit, area_id)
+    customers, total_count = await customer_service.list_customers(
+        session, current_user, territory_id, skip, limit, area_id, search
+    )
+    response.headers["X-Total-Count"] = str(total_count)
     return [CustomerRead.from_model(c) for c in customers]
+
+
+@router.get("/map-locations", response_model=list[CustomerMapLocation], dependencies=[AnyAuth])
+async def list_customer_map_locations(
+    session: DbSession,
+    territory_id: uuid.UUID | None = Query(default=None),
+    area_id: uuid.UUID | None = Query(default=None),
+):
+    """
+    Dedicated lightweight geo-coordinates endpoint for maps (WEB-CUST-002).
+    Returns coordinates, radius, and status for all active customer map markers.
+    """
+    customers = await customer_service.list_customer_map_locations(session, territory_id, area_id)
+    out = []
+    for c in customers:
+        lat, lng = customer_service.extract_coords(c.location)
+        out.append(
+            CustomerMapLocation(
+                id=c.id,
+                name=c.name,
+                outlet_code=c.outlet_code,
+                latitude=lat,
+                longitude=lng,
+                geofence_radius_m=c.geofence_radius_m or 75,
+                location_status=getattr(c, "location_status", "VERIFIED") or "VERIFIED",
+                territory_id=c.territory_id,
+                area_id=c.area_id,
+            )
+        )
+    return out
 
 
 @router.get("/{customer_id}", response_model=CustomerRead, dependencies=[AnyAuth])

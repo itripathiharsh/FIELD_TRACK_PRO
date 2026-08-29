@@ -40,8 +40,11 @@ class NotificationViewModel(tokenManager: TokenManager) : ViewModel() {
     fun markAsRead(notificationId: String) {
         viewModelScope.launch {
             repository.markAsRead(notificationId)
-            // Reload notifications after marking as read
             loadNotifications()
         }
+    }
+
+    fun resetState() {
+        _state.value = NotificationState.Idle
     }
 }

@@ -18,6 +18,7 @@ router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
 DbSession = Annotated[AsyncSession, Depends(get_async_session)]
 AdminOnly = Depends(require_role(Role.ADMIN))
+EmployeeOnly = Depends(require_role(Role.EMPLOYEE))
 AnyAuth = Depends(require_role(Role.ADMIN, Role.EMPLOYEE))
 
 
@@ -54,7 +55,7 @@ async def get_dashboard_summary(
     )
 
 
-@router.get("/my-day", response_model=EmployeeDayDashboardResponse, dependencies=[AnyAuth])
+@router.get("/my-day", response_model=EmployeeDayDashboardResponse, dependencies=[EmployeeOnly])
 async def get_my_day_dashboard(
     current_user: CurrentUser,
     session: DbSession,

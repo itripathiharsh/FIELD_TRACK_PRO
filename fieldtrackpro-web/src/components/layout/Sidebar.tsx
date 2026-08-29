@@ -3,10 +3,10 @@ import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard,
   Users,
-  Map,
   Building2,
   CalendarCheck,
-  MapPin,
+  Globe2,
+  Satellite,
   FileText,
   BarChart3,
   Settings,
@@ -27,17 +27,17 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => 
   const isEmployee = user?.role === 'EMPLOYEE';
 
   const navItems = [
-    { name: 'Dashboard', path: '/', icon: LayoutDashboard, roles: ['ADMIN', 'MANAGER', 'EMPLOYEE'] },
-    { name: 'Employees', path: '/employees', icon: Users, roles: ['ADMIN', 'MANAGER'] },
-    { name: 'Territories', path: '/territories', icon: Map, roles: ['ADMIN', 'MANAGER'] },
-    { name: 'Customers', path: '/customers', icon: Building2, roles: ['ADMIN', 'MANAGER'] },
-    { name: 'Visits', path: '/visits', icon: CalendarCheck, roles: ['ADMIN', 'MANAGER', 'EMPLOYEE'] },
-    { name: 'Map', path: '/map', icon: MapPin, roles: ['ADMIN', 'MANAGER'] },
-    { name: 'Geo Logs', path: '/geo-logs', icon: MapPin, roles: ['ADMIN', 'MANAGER'] },
-    { name: 'Requirement Forms', path: '/forms', icon: FileText, roles: ['ADMIN', 'MANAGER'] },
-    { name: 'Payment Collections', path: '/payments', icon: Wallet, roles: ['ADMIN', 'MANAGER'] },
-    { name: 'Excel / MIS Import', path: '/imports', icon: UploadCloud, roles: ['ADMIN', 'MANAGER'] },
-    { name: 'Reports & Collections', path: '/reports', icon: BarChart3, roles: ['ADMIN', 'MANAGER'] },
+    { name: 'Dashboard',            path: '/',          icon: LayoutDashboard, roles: ['ADMIN', 'MANAGER', 'EMPLOYEE'] },
+    { name: 'Employees',            path: '/employees', icon: Users,           roles: ['ADMIN', 'MANAGER'] },
+    { name: 'Territories',          path: '/territories', icon: Globe2,        roles: ['ADMIN', 'MANAGER'] },
+    { name: 'Customers',            path: '/customers', icon: Building2,       roles: ['ADMIN', 'MANAGER'] },
+    { name: 'Visits',               path: '/visits',    icon: CalendarCheck,   roles: ['ADMIN', 'MANAGER', 'EMPLOYEE'] },
+    { name: 'Map',                  path: '/map',       icon: Globe2,          roles: ['ADMIN', 'MANAGER'] },
+    { name: 'Geo Logs',             path: '/geo-logs',  icon: Satellite,       roles: ['ADMIN', 'MANAGER'] },
+    { name: 'Requirement Forms',    path: '/forms',     icon: FileText,        roles: ['ADMIN', 'MANAGER'] },
+    { name: 'Payment Collections',  path: '/payments',  icon: Wallet,          roles: ['ADMIN', 'MANAGER'] },
+    { name: 'Excel / MIS Import',   path: '/imports',   icon: UploadCloud,     roles: ['ADMIN', 'MANAGER'] },
+    { name: 'Reports & Collections',path: '/reports',   icon: BarChart3,       roles: ['ADMIN', 'MANAGER'] },
   ];
 
   const visibleNavItems = navItems.filter((item) => {
@@ -113,7 +113,17 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => 
             </NavLink>
           )}
 
-          <div className="flex items-center gap-space-2 px-space-3 py-space-2 bg-surface-container-low rounded-lg border border-outline-variant">
+          <NavLink
+            to="/profile"
+            onClick={onClose}
+            className={({ isActive }) =>
+              `flex items-center gap-space-2 px-space-3 py-space-2 rounded-lg border transition-colors ${
+                isActive
+                  ? 'bg-primary-container text-secondary-container border-secondary-container'
+                  : 'bg-surface-container-low hover:bg-surface-container border-outline-variant'
+              }`
+            }
+          >
             <div className="w-8 h-8 rounded-full bg-primary-fixed text-on-primary-fixed flex items-center justify-center font-headline-sm text-headline-sm uppercase shrink-0">
               {user?.email?.charAt(0).toUpperCase() || 'U'}
             </div>
@@ -121,7 +131,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => 
               <p className="font-label-md text-label-md text-on-surface truncate">{user?.full_name || user?.email?.split('@')[0] || 'User'}</p>
               <p className="text-[11px] text-on-surface-variant font-caption truncate">{user?.email}</p>
             </div>
-          </div>
+          </NavLink>
 
           <button
             onClick={() => void logout()}

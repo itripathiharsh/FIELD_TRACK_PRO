@@ -1,3 +1,6 @@
+from typing import Any
+
+
 class BaseAPIException(Exception):
     """Base exception class for API errors."""
 
@@ -8,11 +11,13 @@ class BaseAPIException(Exception):
         error_code: str = "API_ERROR",
         # legacy alias
         message: str | None = None,
+        details: Any = None,
     ):
         self.detail = detail or message or "An error occurred"
         self.message = self.detail   # backwards-compat
         self.status_code = status_code
         self.error_code = error_code
+        self.details = details
         super().__init__(self.detail)
 
 

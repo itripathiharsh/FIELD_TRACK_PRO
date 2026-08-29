@@ -25,29 +25,9 @@ import { ErrorBanner } from '../components/ui/ErrorBanner';
 import { EmptyState } from '../components/ui/EmptyState';
 import { FieldTrackMap, MapMarker, TerritoryCircle } from '../components/maps/FieldTrackMap';
 import { apiClient } from '../api/client';
-import { Territory, Employee, Customer, Area } from '../types';
+import { Territory, Employee, Customer, Area, CustomerMapLocation } from '../types';
 
-/**
- * Haversine formula to calculate distance in kilometers between two lat/lng points.
- */
-function calculateDistanceKm(
-  lat1: number,
-  lon1: number,
-  lat2: number,
-  lon2: number,
-): number {
-  const R = 6371; // Earth radius in km
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLon = ((lon2 - lon1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
+import { calculateHaversineDistanceKm } from '../utils/geo';
 
 export const TerritoryDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -92,17 +72,36 @@ export const TerritoryDetailPage: React.FC = () => {
       const terr = await apiClient.getTerritoryById(id);
       setTerritory(terr);
 
-      const [emps, custs, zoneAreas] = await Promise.all([
+      const [emps, custLocations, zoneAreas, custs] = await Promise.all([
         apiClient.getEmployees().catch(() => [] as Employee[]),
-        apiClient.getCustomers().catch(() => [] as Customer[]),
+        apiClient.getCustomerMapLocations({ territory_id: id }).catch(() => [] as CustomerMapLocation[]),
         apiClient.getAreas(id).catch(() => [] as Area[]),
+        apiClient.getCustomers().catch(() => [] as Customer[]),
       ]);
 
       setAllEmployees(emps);
       setAssignedEmployees(emps.filter((e) => e.territory_id === id));
-
       setAllCustomers(custs);
-      setAssignedCustomers(custs.filter((c) => c.territory_id === id));
+
+      const mappedTerritoryCustomers: Customer[] = (Array.isArray(custLocations) ? custLocations : []).map((loc) => ({
+        id: loc.id,
+        name: loc.name,
+        contact_number: '',
+        contact_person: null,
+        address: '',
+        location: { latitude: loc.latitude, longitude: loc.longitude },
+        geofence_radius_m: loc.geofence_radius_m || 75,
+        location_status: (loc.location_status as Customer['location_status']) || 'VERIFIED',
+        territory_id: loc.territory_id || id,
+        territory_name: terr.name,
+        area_id: loc.area_id || null,
+        area_name: null,
+        outlet_code: loc.outlet_code || null,
+        created_by: '',
+        created_at: '',
+      }));
+
+      setAssignedCustomers(mappedTerritoryCustomers);
       setAreas(zoneAreas);
       setError(null);
     } catch (err) {
@@ -362,9 +361,8 @@ export const TerritoryDetailPage: React.FC = () => {
   assignedCustomers.forEach((cust) => {
     if (
       cust.location &&
-      cust.location.latitude &&
-      cust.location.longitude &&
-      !(cust.location.latitude === 0 && cust.location.longitude === 0)
+      cust.location.latitude != null &&
+      cust.location.longitude != null
     ) {
       mapMarkers.push({
         id: cust.id,
@@ -720,17 +718,16 @@ export const TerritoryDetailPage: React.FC = () => {
                 if (
                   hasGeo &&
                   cust.location &&
-                  cust.location.latitude &&
-                  cust.location.longitude &&
-                  !(cust.location.latitude === 0 && cust.location.longitude === 0)
+                  cust.location.latitude != null &&
+                  cust.location.longitude != null
                 ) {
-                  distKm = calculateDistanceKm(
+                  distKm = calculateHaversineDistanceKm(
                     territory.center_latitude!,
                     territory.center_longitude!,
                     cust.location.latitude,
                     cust.location.longitude,
                   );
-                  isInside = distKm <= territory.radius_km!;
+                  isInside = distKm != null && distKm <= territory.radius_km!;
                 }
 
                 return (

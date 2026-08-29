@@ -406,7 +406,6 @@ export const ImportWizardPage: React.FC = () => {
                         <th className="px-space-4 py-space-2.5 font-bold text-primary">Emp Code</th>
                         <th className="px-space-4 py-space-2.5 font-bold text-primary">Full Name</th>
                         <th className="px-space-4 py-space-2.5 font-bold text-primary">Role</th>
-                        <th className="px-space-4 py-space-2.5 font-bold text-primary">CUG</th>
                       </>
                     ) : (
                       <>
@@ -428,7 +427,6 @@ export const ImportWizardPage: React.FC = () => {
                           <td className="px-space-4 py-space-2.5 font-mono font-bold text-primary">{row.employee_code || '—'}</td>
                           <td className="px-space-4 py-space-2.5 font-semibold text-on-surface">{row.full_name || '—'}</td>
                           <td className="px-space-4 py-space-2.5 text-on-surface-variant">{row.working_profile || 'FOS'}</td>
-                          <td className="px-space-4 py-space-2.5 font-mono text-on-surface-variant">{row.cug || '—'}</td>
                         </>
                       ) : (
                         <>

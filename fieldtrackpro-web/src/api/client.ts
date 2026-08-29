@@ -5,6 +5,7 @@ import {
   BusinessBIDashboard,
   CollectionsOverviewResponse,
   Customer,
+  CustomerMapLocation,
   Employee,
   EmployeeAreaAssignment,
   EmployeeActivity,
@@ -65,12 +66,28 @@ const LEGACY_REFRESH_TOKEN_KEY = 'fieldtrack_refresh_token';
 export class ApiError extends Error {
   readonly status: number;
   readonly code?: string;
+  readonly details?: any;
+  readonly fieldErrors?: Record<string, string>;
 
-  constructor(message: string, status: number, code?: string) {
+  constructor(message: string, status: number, code?: string, details?: any) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
+    this.details = details;
+
+    // Extract field-specific validation errors from FastAPI/Pydantic details array:
+    // details: [{ loc: ['body', 'contact_number'], msg: '...', type: '...' }]
+    if (Array.isArray(details)) {
+      const fe: Record<string, string> = {};
+      for (const item of details) {
+        if (Array.isArray(item.loc) && item.loc.length > 0 && item.msg) {
+          const field = String(item.loc[item.loc.length - 1]);
+          fe[field] = item.msg.replace(/^Value error,\s*/i, '');
+        }
+      }
+      this.fieldErrors = fe;
+    }
   }
 }
 
@@ -146,19 +163,26 @@ export class ApiClient {
   private async parseError(response: Response): Promise<ApiError> {
     let message = response.statusText || `Request failed (${response.status})`;
     let code: string | undefined;
+    let details: any = undefined;
     try {
       const body = await response.json();
-      // Backend error envelope: { error: { code, message } }
-      if (body?.error?.message) {
-        message = body.error.message;
+      // Backend error envelope: { error: { code, message, details } }
+      if (body?.error) {
+        if (body.error.message) message = body.error.message;
         code = typeof body.error.code === 'string' ? body.error.code : undefined;
-      } else if (typeof body?.detail === 'string') {
-        message = body.detail;
+        details = body.error.details;
+      } else if (body?.detail) {
+        if (typeof body.detail === 'string') {
+          message = body.detail;
+        } else if (Array.isArray(body.detail)) {
+          details = body.detail;
+          message = 'Validation failed. Please check the highlighted fields.';
+        }
       }
     } catch {
       // Non-JSON body; keep the status text.
     }
-    return new ApiError(message, response.status, code);
+    return new ApiError(message, response.status, code, details);
   }
 
   /**
@@ -254,6 +278,59 @@ export class ApiClient {
     const data = (await response.json()) as T;
     const total = totalHeader ? parseInt(totalHeader, 10) : (Array.isArray(data) ? data.length : 0);
     return { data, total };
+  }
+
+  /**
+   * Perform a request that expects a binary/blob response (e.g. file exports, PDFs, images),
+   * transparently refreshing the access token once on 401.
+   *
+   * WEB-H-1: Prevents export and download failures caused by expired access tokens.
+   */
+  async requestBlob(
+    endpoint: string,
+    options: RequestInit = {},
+    allowRefresh = true,
+  ): Promise<Blob> {
+    const headers: Record<string, string> = {
+      ...this.authHeader(),
+      ...((options.headers as Record<string, string>) || {}),
+    };
+
+    let response: Response;
+    try {
+      response = await fetch(this.url(endpoint), {
+        credentials: 'include',
+        ...options,
+        headers,
+      });
+    } catch {
+      throw new ApiError(
+        'Unable to reach the FieldTrack Pro API. Check your connection and try again.',
+        0,
+        'NETWORK_ERROR',
+      );
+    }
+
+    if (response.status === 401 && allowRefresh) {
+      const refreshed = await this.tryRefresh();
+      if (refreshed) {
+        return this.requestBlob(endpoint, options, false);
+      }
+    }
+
+    if (!response.ok) {
+      throw await this.parseError(response);
+    }
+
+    return response.blob();
+  }
+
+  async requestBlobObjectUrl(
+    endpoint: string,
+    options: RequestInit = {},
+  ): Promise<string> {
+    const blob = await this.requestBlob(endpoint, options);
+    return URL.createObjectURL(blob);
   }
 
   /** Exchange the HttpOnly refresh token cookie for a new pair. Returns false if not possible. */
@@ -383,6 +460,34 @@ export class ApiClient {
     return this.request<Employee[]>('/api/v1/employees');
   }
 
+  async getEmployeesPaginated(params?: {
+    skip?: number;
+    limit?: number;
+    search?: string;
+    territory_id?: string;
+    area_id?: string;
+    is_active?: boolean;
+    role?: string;
+    working_profile?: string;
+  }): Promise<{ items: Employee[]; total: number }> {
+    const searchParams = new URLSearchParams();
+    if (params) {
+      if (params.search) searchParams.set('search', params.search);
+      if (params.territory_id) searchParams.set('territory_id', params.territory_id);
+      if (params.area_id) searchParams.set('area_id', params.area_id);
+      if (params.skip !== undefined) searchParams.set('skip', String(params.skip));
+      if (params.limit !== undefined) searchParams.set('limit', String(params.limit));
+      if (params.is_active !== undefined) searchParams.set('is_active', String(params.is_active));
+      if (params.role) searchParams.set('role', params.role);
+      if (params.working_profile) searchParams.set('working_profile', params.working_profile);
+    }
+    const query = searchParams.toString();
+    const { data, total } = await this.requestWithTotal<Employee[]>(
+      `/api/v1/employees${query ? `?${query}` : ''}`,
+    );
+    return { items: data, total };
+  }
+
   async getEmployeeById(id: string): Promise<Employee> {
     return this.request<Employee>(`/api/v1/employees/${id}`);
   }
@@ -413,6 +518,10 @@ export class ApiClient {
     full_name: string;
     territory_id?: string | null;
     employee_code?: string | null;
+    working_profile?: string | null;
+    cug?: string | null;
+    date_of_birth?: string | null;
+    address?: string | null;
   }): Promise<Employee> {
     return this.request<Employee>('/api/v1/employees/register', {
       method: 'POST',
@@ -422,7 +531,18 @@ export class ApiClient {
 
   async updateEmployee(
     id: string,
-    data: { full_name?: string; territory_id?: string | null; employee_code?: string | null; email?: string },
+    data: Partial<{
+      full_name: string;
+      territory_id: string | null;
+      employee_code: string | null;
+      email: string;
+      mobile_number: string | null;
+      working_profile: string | null;
+      cug: string | null;
+      date_of_birth: string | null;
+      address: string | null;
+      must_change_password: boolean;
+    }>,
   ): Promise<Employee> {
     return this.request<Employee>(`/api/v1/employees/${id}`, {
       method: 'PATCH',
@@ -473,6 +593,26 @@ export class ApiClient {
     );
   }
 
+  // -- geo verification logs -------------------------------------------------
+
+  async getGeoLogsPaginated(params?: {
+    skip?: number;
+    limit?: number;
+    visit_id?: string;
+  }): Promise<{ items: GeoVerificationLog[]; total: number }> {
+    const searchParams = new URLSearchParams();
+    if (params) {
+      if (params.skip !== undefined) searchParams.set('skip', String(params.skip));
+      if (params.limit !== undefined) searchParams.set('limit', String(params.limit));
+      if (params.visit_id) searchParams.set('visit_id', params.visit_id);
+    }
+    const query = searchParams.toString();
+    const { data, total } = await this.requestWithTotal<GeoVerificationLog[]>(
+      `/api/v1/geo/logs${query ? `?${query}` : ''}`,
+    );
+    return { items: data, total };
+  }
+
   async getUserById(userId: string): Promise<User> {
     return this.request<User>(`/api/v1/users/${userId}`);
   }
@@ -482,6 +622,7 @@ export class ApiClient {
   async getCustomers(params?: {
     territory_id?: string;
     area_id?: string;
+    search?: string;
     skip?: number;
     limit?: number;
   }): Promise<Customer[]> {
@@ -494,6 +635,28 @@ export class ApiClient {
         ).toString()
       : '?limit=200';
     return this.request<Customer[]>(`/api/v1/customers${query}`);
+  }
+
+  async getCustomersPaginated(params?: {
+    territory_id?: string;
+    area_id?: string;
+    search?: string;
+    skip?: number;
+    limit?: number;
+  }): Promise<{ items: Customer[]; total: number }> {
+    const searchParams = new URLSearchParams();
+    if (params) {
+      if (params.search) searchParams.set('search', params.search);
+      if (params.territory_id) searchParams.set('territory_id', params.territory_id);
+      if (params.area_id) searchParams.set('area_id', params.area_id);
+      if (params.skip !== undefined) searchParams.set('skip', String(params.skip));
+      if (params.limit !== undefined) searchParams.set('limit', String(params.limit));
+    }
+    const query = searchParams.toString();
+    const { data, total } = await this.requestWithTotal<Customer[]>(
+      `/api/v1/customers${query ? `?${query}` : ''}`,
+    );
+    return { items: data, total };
   }
 
   async getCustomerById(id: string): Promise<Customer> {
@@ -539,10 +702,19 @@ export class ApiClient {
     });
   }
 
+  async getCustomerMapLocations(params: { territory_id?: string; area_id?: string } = {}): Promise<CustomerMapLocation[]> {
+    const searchParams = new URLSearchParams();
+    if (params.territory_id) searchParams.set('territory_id', params.territory_id);
+    if (params.area_id) searchParams.set('area_id', params.area_id);
+    const qs = searchParams.toString();
+    return this.request<CustomerMapLocation[]>(`/api/v1/customers/map-locations${qs ? `?${qs}` : ''}`);
+  }
+
   // -- territories -----------------------------------------------------------
 
-  async getTerritories(): Promise<Territory[]> {
-    return this.request<Territory[]>('/api/v1/territories');
+  async getTerritories(params: { status?: string } = {}): Promise<Territory[]> {
+    const qs = params.status ? `?status=${encodeURIComponent(params.status)}` : '';
+    return this.request<Territory[]>(`/api/v1/territories${qs}`);
   }
 
   async getTerritoryById(id: string): Promise<Territory> {
@@ -732,7 +904,7 @@ export class ApiClient {
     data: {
       latitude: number;
       longitude: number;
-      accuracy_m?: number;
+      accuracy_m: number;
       is_mock_location?: boolean;
       // When the device actually captured this GPS fix - required by the
       // backend's freshness check (rejects fixes older than 24h).
@@ -751,7 +923,7 @@ export class ApiClient {
     data: {
       latitude: number;
       longitude: number;
-      accuracy_m?: number;
+      accuracy_m: number;
       is_mock_location?: boolean;
       captured_at: string;
       idempotency_key?: string;
@@ -799,14 +971,7 @@ export class ApiClient {
    * containing the metadata text instead of the photo.
    */
   async getMediaObjectUrl(mediaId: string): Promise<string> {
-    const metaResponse = await fetch(this.url(`/api/v1/media/${mediaId}/download`), {
-      headers: this.authHeader(),
-    });
-    if (!metaResponse.ok) {
-      throw await this.parseError(metaResponse);
-    }
-    const { download_url } = (await metaResponse.json()) as { download_url: string };
-
+    const { download_url } = await this.request<{ download_url: string }>(`/api/v1/media/${mediaId}/download`);
     const fileResponse = await fetch(download_url);
     if (!fileResponse.ok) {
       throw new Error(`Failed to download media file (${fileResponse.status})`);
@@ -895,7 +1060,7 @@ export class ApiClient {
             .map(([k, v]) => [k, String(v)]),
         ).toString()
       : '';
-    return this.request<EmployeeMasterReportRow[]>(`/api/v1/reports/employees/master${q}`);
+    return this.request<EmployeeMasterReportRow[]>(`/api/v1/reports/employees-master${q}`);
   }
 
   async getOutletsReport(params?: {
@@ -972,7 +1137,7 @@ export class ApiClient {
             .map(([k, v]) => [k, String(v)]),
         ).toString()
       : '';
-    return this.request<VisitDetailedReportRow[]>(`/api/v1/reports/visits${q}`);
+    return this.request<VisitDetailedReportRow[]>(`/api/v1/reports/visits-detailed${q}`);
   }
 
   async getMonthlyPeriods(): Promise<MonthlyReportingPeriod[]> {
@@ -1006,11 +1171,7 @@ export class ApiClient {
             .map(([k, v]) => [k, String(v)]),
         ).toString()
       : '';
-    const res = await fetch(this.url(`/api/v1/reports/overview/export${q}`), {
-      headers: this.authHeader(),
-    });
-    if (!res.ok) throw await this.parseError(res);
-    return URL.createObjectURL(await res.blob());
+    return this.requestBlobObjectUrl(`/api/v1/reports/overview/export${q}`);
   }
 
   async exportBusinessSummaryExcelObjectUrl(
@@ -1027,11 +1188,7 @@ export class ApiClient {
     if (employee_id && employee_id !== 'ALL') params.set('employee_id', employee_id);
     if (month && month !== 'ALL') params.set('month', month);
     const q = params.toString();
-    const res = await fetch(this.url(`/api/v1/reports/business-summary/export${q ? `?${q}` : ''}`), {
-      headers: this.authHeader(),
-    });
-    if (!res.ok) throw await this.parseError(res);
-    return URL.createObjectURL(await res.blob());
+    return this.requestBlobObjectUrl(`/api/v1/reports/business-summary/export${q ? `?${q}` : ''}`);
   }
 
   async exportEmployeesMasterExcelObjectUrl(params?: {
@@ -1048,11 +1205,7 @@ export class ApiClient {
             .map(([k, v]) => [k, String(v)]),
         ).toString()
       : '';
-    const res = await fetch(this.url(`/api/v1/reports/employees/master/export${q}`), {
-      headers: this.authHeader(),
-    });
-    if (!res.ok) throw await this.parseError(res);
-    return URL.createObjectURL(await res.blob());
+    return this.requestBlobObjectUrl(`/api/v1/reports/employees-master/export${q}`);
   }
 
   async exportOutletsExcelObjectUrl(params?: {
@@ -1070,11 +1223,7 @@ export class ApiClient {
             .map(([k, v]) => [k, String(v)]),
         ).toString()
       : '';
-    const res = await fetch(this.url(`/api/v1/reports/outlets/export${q}`), {
-      headers: this.authHeader(),
-    });
-    if (!res.ok) throw await this.parseError(res);
-    return URL.createObjectURL(await res.blob());
+    return this.requestBlobObjectUrl(`/api/v1/reports/outlets/export${q}`);
   }
 
   async exportOutstandingExcelObjectUrl(params?: {
@@ -1094,11 +1243,7 @@ export class ApiClient {
             .map(([k, v]) => [k, String(v)]),
         ).toString()
       : '';
-    const res = await fetch(this.url(`/api/v1/reports/outstanding/export${q}`), {
-      headers: this.authHeader(),
-    });
-    if (!res.ok) throw await this.parseError(res);
-    return URL.createObjectURL(await res.blob());
+    return this.requestBlobObjectUrl(`/api/v1/reports/outstanding/export${q}`);
   }
 
   async exportCollectionsExcelObjectUrl(params?: {
@@ -1117,11 +1262,7 @@ export class ApiClient {
             .map(([k, v]) => [k, String(v)]),
         ).toString()
       : '';
-    const res = await fetch(this.url(`/api/v1/reports/collections/export${q}`), {
-      headers: this.authHeader(),
-    });
-    if (!res.ok) throw await this.parseError(res);
-    return URL.createObjectURL(await res.blob());
+    return this.requestBlobObjectUrl(`/api/v1/reports/collections/export${q}`);
   }
 
   async exportVisitsDetailedExcelObjectUrl(params?: {
@@ -1139,11 +1280,7 @@ export class ApiClient {
             .map(([k, v]) => [k, String(v)]),
         ).toString()
       : '';
-    const res = await fetch(this.url(`/api/v1/reports/visits/export${q}`), {
-      headers: this.authHeader(),
-    });
-    if (!res.ok) throw await this.parseError(res);
-    return URL.createObjectURL(await res.blob());
+    return this.requestBlobObjectUrl(`/api/v1/reports/visits-detailed/export${q}`);
   }
 
 
@@ -1239,13 +1376,7 @@ export class ApiClient {
 
   /** Mirrors getMediaObjectUrl's two-step fetch: metadata JSON, then the real file bytes. */
   async getPaymentProofObjectUrl(proofId: string): Promise<string> {
-    const metaResponse = await fetch(this.url(`/api/v1/payments/proofs/${proofId}/download`), {
-      headers: this.authHeader(),
-    });
-    if (!metaResponse.ok) {
-      throw await this.parseError(metaResponse);
-    }
-    const { download_url } = (await metaResponse.json()) as { download_url: string };
+    const { download_url } = await this.request<{ download_url: string }>(`/api/v1/payments/proofs/${proofId}/download`);
     const fileResponse = await fetch(download_url);
     if (!fileResponse.ok) {
       throw new Error(`Failed to download payment proof (${fileResponse.status})`);
@@ -1459,13 +1590,7 @@ export class ApiClient {
    * see FT-015). Returns an object URL the caller must revoke after use.
    */
   async getSubmissionPdfObjectUrl(submissionId: string): Promise<string> {
-    const response = await fetch(this.url(`/api/v1/form-submissions/${submissionId}/pdf`), {
-      headers: this.authHeader(),
-    });
-    if (!response.ok) {
-      throw await this.parseError(response);
-    }
-    return URL.createObjectURL(await response.blob());
+    return this.requestBlobObjectUrl(`/api/v1/form-submissions/${submissionId}/pdf`);
   }
 
   // -- Excel/MIS import --------------------------------------------------------
@@ -1517,23 +1642,11 @@ export class ApiClient {
 
   /** Mirrors getSubmissionPdfObjectUrl's authorized-blob-fetch pattern for a CSV download. */
   async getImportErrorsCsvObjectUrl(batchId: string): Promise<string> {
-    const response = await fetch(this.url(`/api/v1/imports/${batchId}/errors.csv`), {
-      headers: this.authHeader(),
-    });
-    if (!response.ok) {
-      throw await this.parseError(response);
-    }
-    return URL.createObjectURL(await response.blob());
+    return this.requestBlobObjectUrl(`/api/v1/imports/${batchId}/errors.csv`);
   }
 
   async getImportCredentialsExcelObjectUrl(batchId: string): Promise<string> {
-    const response = await fetch(this.url(`/api/v1/imports/${batchId}/credentials.xlsx`), {
-      headers: this.authHeader(),
-    });
-    if (!response.ok) {
-      throw await this.parseError(response);
-    }
-    return URL.createObjectURL(await response.blob());
+    return this.requestBlobObjectUrl(`/api/v1/imports/${batchId}/credentials.xlsx`);
   }
 
   async getFOSMappings(): Promise<FOSEmployeeMappingRead[]> {

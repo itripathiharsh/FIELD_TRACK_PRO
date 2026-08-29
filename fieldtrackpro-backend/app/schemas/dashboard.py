@@ -16,6 +16,7 @@ class DashboardExecutiveKPIs(BaseModel):
     total_visits: int
     completed_visits: int
     pending_visits: int
+    in_progress_visits: int = 0
     flagged_visits: int
     gps_verified_visits: int
     total_exceptions: int
@@ -43,6 +44,7 @@ class EmployeeDayDashboardResponse(BaseModel):
     today_visits_count: int
     completed_visits_count: int
     pending_visits_count: int
+    in_progress_visits_count: int = 0
     collections_today_count: int
     collections_today_amount: Decimal
     orders_today_count: int

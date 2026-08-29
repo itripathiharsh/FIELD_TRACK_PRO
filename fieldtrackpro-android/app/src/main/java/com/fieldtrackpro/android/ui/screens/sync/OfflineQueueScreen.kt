@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fieldtrackpro.android.data.local.ConflictType
 import com.fieldtrackpro.android.data.local.OfflineQueueManager
+import com.fieldtrackpro.android.data.local.TokenManager
 import com.fieldtrackpro.android.ui.components.EmptyState
 import com.fieldtrackpro.android.ui.components.FieldTrackTopAppBar
 import com.fieldtrackpro.android.ui.components.StatusBadge
@@ -63,9 +64,11 @@ private fun ConflictType.displayLabel(): String = when (this) {
 fun OfflineQueueScreen(
     offlineQueueManager: OfflineQueueManager,
     visitsViewModel: VisitsViewModel,
+    tokenManager: TokenManager? = null,
     onNavigateBack: () -> Unit
 ) {
-    var queueItems by remember { mutableStateOf(offlineQueueManager.getQueue()) }
+    val currentUserId = tokenManager?.getUserId()
+    var queueItems by remember { mutableStateOf(offlineQueueManager.getQueueForUser(currentUserId)) }
     var conflicts by remember { mutableStateOf(offlineQueueManager.getConflicts()) }
     var syncNotice by remember { mutableStateOf("") }
     val dateFormat = remember { SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()) }
@@ -130,7 +133,7 @@ fun OfflineQueueScreen(
                             onClick = {
                                 visitsViewModel.syncOfflineQueue { count ->
                                     syncNotice = "Synced $count pending action(s) to backend!"
-                                    queueItems = offlineQueueManager.getQueue()
+                                    queueItems = offlineQueueManager.getQueueForUser(currentUserId)
                                     conflicts = offlineQueueManager.getConflicts()
                                 }
                             },
@@ -284,7 +287,7 @@ fun OfflineQueueScreen(
                                     onClick = {
                                         offlineQueueManager.removeAction(conflict.pendingAction.id)
                                         offlineQueueManager.removeConflict(conflict.id)
-                                        queueItems = offlineQueueManager.getQueue()
+                                        queueItems = offlineQueueManager.getQueueForUser(currentUserId)
                                         conflicts = offlineQueueManager.getConflicts()
                                     },
                                     shape = RoundedCornerShape(8.dp)

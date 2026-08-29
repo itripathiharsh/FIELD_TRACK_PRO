@@ -25,6 +25,7 @@ import com.fieldtrackpro.android.ui.navigation.Screen
 import com.fieldtrackpro.android.ui.theme.FieldTrackProTheme
 import com.fieldtrackpro.android.ui.viewmodel.AuthViewModel
 import com.fieldtrackpro.android.ui.viewmodel.CheckInViewModel
+import com.fieldtrackpro.android.ui.viewmodel.CheckOutViewModel
 import com.fieldtrackpro.android.ui.viewmodel.CollectionViewModel
 import com.fieldtrackpro.android.ui.viewmodel.FormFillViewModel
 import com.fieldtrackpro.android.ui.viewmodel.GeofenceViewModel
@@ -35,15 +36,15 @@ import com.fieldtrackpro.android.ui.viewmodel.SignatureViewModel
 import com.fieldtrackpro.android.ui.viewmodel.VisitDetailsViewModel
 import com.fieldtrackpro.android.ui.viewmodel.VisitSummaryViewModel
 import com.fieldtrackpro.android.ui.viewmodel.VisitsViewModel
+import com.fieldtrackpro.android.utils.SessionManager
 import com.fieldtrackpro.android.workers.NotificationSyncScheduler
 import com.fieldtrackpro.android.workers.OfflineSyncScheduler
+import kotlinx.coroutines.flow.collectLatest
 
 class MainActivity : ComponentActivity() {
 
     private val tokenManager by lazy { TokenManager(applicationContext) }
     private val offlineQueueManager by lazy { OfflineQueueManager(applicationContext) }
-
-    private var pendingNotificationVisitId: String? = null
 
     private val requestNotificationPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
@@ -63,6 +64,9 @@ class MainActivity : ComponentActivity() {
     }
     private val checkInViewModel by viewModels<CheckInViewModel> {
         viewModelFactory { initializer { CheckInViewModel(application, tokenManager, offlineQueueManager) } }
+    }
+    private val checkOutViewModel by viewModels<CheckOutViewModel> {
+        viewModelFactory { initializer { CheckOutViewModel(application, tokenManager, offlineQueueManager) } }
     }
     private val mediaViewModel by viewModels<MediaViewModel> {
         viewModelFactory { initializer { MediaViewModel(application, tokenManager) } }
@@ -118,12 +122,14 @@ class MainActivity : ComponentActivity() {
                 ) {
                     val navController = rememberNavController()
 
-                    LaunchedEffect(pendingNotificationVisitId) {
-                        pendingNotificationVisitId?.let { visitId ->
-                            if (tokenManager.isLoggedIn()) {
-                                navController.navigate(Screen.VisitDetails.createRoute(visitId))
+                    // Global session expiration & logout guard (User A -> User B isolation)
+                    LaunchedEffect(Unit) {
+                        SessionManager.sessionExpiredEvent.collectLatest {
+                            clearAllUserScopedState()
+                            navController.navigate(Screen.Login.route) {
+                                popUpTo(0) { inclusive = true }
+                                launchSingleTop = true
                             }
-                            pendingNotificationVisitId = null
                         }
                     }
 
@@ -135,6 +141,7 @@ class MainActivity : ComponentActivity() {
                         visitsViewModel = visitsViewModel,
                         visitDetailsViewModel = visitDetailsViewModel,
                         checkInViewModel = checkInViewModel,
+                        checkOutViewModel = checkOutViewModel,
                         mediaViewModel = mediaViewModel,
                         requirementViewModel = requirementViewModel,
                         geofenceViewModel = geofenceViewModel,
@@ -162,8 +169,26 @@ class MainActivity : ComponentActivity() {
             ?: intent?.extras?.getString("visit_id")
 
         if (!visitId.isNullOrBlank()) {
-            pendingNotificationVisitId = visitId
+            SessionManager.setPendingDeepLink(visitId)
         }
     }
 
+    private fun clearAllUserScopedState() {
+        OfflineSyncScheduler.cancelSync(applicationContext)
+        NotificationSyncScheduler.cancelAll(applicationContext)
+        geofenceViewModel.stopMonitoring()
+        visitsViewModel.clearState()
+        visitDetailsViewModel.clearState()
+        checkInViewModel.resetState()
+        checkOutViewModel.resetState()
+        mediaViewModel.resetState()
+        requirementViewModel.reset()
+        formFillViewModel.resetState()
+        signatureViewModel.resetState()
+        visitSummaryViewModel.resetState()
+        collectionViewModel.resetState()
+        notificationViewModel.resetState()
+        authViewModel.resetAuthState()
+        tokenManager.clear()
+    }
 }

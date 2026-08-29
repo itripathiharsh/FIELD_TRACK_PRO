@@ -38,6 +38,7 @@ import {
   Territory,
   Area,
   DashboardSummaryResponse,
+  EmployeeDayDashboardResponse,
   FieldException,
   BusinessSummaryRow,
 } from '../types';
@@ -67,6 +68,7 @@ export const DashboardPage: React.FC = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [dashboardBI, setDashboardBI] = useState<DashboardSummaryResponse | null>(null);
+  const [dayDashboard, setDayDashboard] = useState<EmployeeDayDashboardResponse | null>(null);
   const [exceptions, setExceptions] = useState<FieldException[]>([]);
 
   // Drilldown Modal State
@@ -112,42 +114,55 @@ export const DashboardPage: React.FC = () => {
     const ageingParam = selectedAgeingBucket !== 'ALL' ? selectedAgeingBucket : undefined;
     const monthParam = selectedMonth !== 'ALL' ? selectedMonth : undefined;
 
-    const visitsPromise = isAdmin ? apiClient.getVisits() : apiClient.getMyTodayVisits();
-    const customersPromise = apiClient.getCustomers().catch(() => [] as Customer[]);
-    const employeesPromise = isAdmin
-      ? apiClient.getEmployees().catch(() => [] as Employee[])
-      : Promise.resolve([] as Employee[]);
+    if (isAdmin) {
+      // Admin dashboard uses dashboardBI as authoritative single source of truth for KPIs & exceptions
+      const visitsPromise = apiClient.getVisits();
 
-    const biPromise = isAdmin
-      ? apiClient
-          .getDashboardSummary({
-            brand: brandParam,
-            zone_id: zoneParam,
-            area_id: areaParam,
-            employee_id: employeeParam,
-            ageing_bucket: ageingParam,
-            month: monthParam,
-          })
-          .catch(() => null)
-      : Promise.resolve(null);
+      const biPromise = apiClient
+        .getDashboardSummary({
+          brand: brandParam,
+          zone_id: zoneParam,
+          area_id: areaParam,
+          employee_id: employeeParam,
+          ageing_bucket: ageingParam,
+          month: monthParam,
+        })
+        .catch(() => null);
 
-    const exceptionsPromise = isAdmin
-      ? apiClient.getFieldExceptions({ limit: 10 }).catch(() => [] as FieldException[])
-      : Promise.resolve([] as FieldException[]);
+      // Kept only for fallback in test environments where /dashboard/summary is unmocked
+      const customersPromise = apiClient.getCustomers().catch(() => [] as Customer[]);
+      const employeesPromise = apiClient.getEmployees().catch(() => [] as Employee[]);
 
-    Promise.all([visitsPromise, customersPromise, employeesPromise, biPromise, exceptionsPromise])
-      .then(([vList, cList, eList, biData, excList]) => {
-        setVisits(vList || []);
-        setCustomers(cList || []);
-        setEmployees(eList || []);
-        setDashboardBI(biData);
-        setExceptions(excList || []);
-      })
-      .catch((err: Error) => {
-        setVisits([]);
-        setError(err.message || 'Unable to load dashboard data');
-      })
-      .finally(() => setIsLoading(false));
+      Promise.all([visitsPromise, biPromise, customersPromise, employeesPromise])
+        .then(([vList, biData, cList, eList]) => {
+          setVisits(vList || []);
+          setDashboardBI(biData);
+          setCustomers(cList || []);
+          setEmployees(eList || []);
+          setExceptions(biData?.recent_exceptions || []);
+        })
+        .catch((err: Error) => {
+          setError(err.message || 'Unable to load dashboard data');
+        })
+        .finally(() => setIsLoading(false));
+    } else {
+      // Employee dashboard uses employee-scoped "My Day" endpoint with IST boundaries
+      const visitsPromise = apiClient.getMyTodayVisits().catch(() => [] as Visit[]);
+      const dayPromise = apiClient.getEmployeeDayDashboard().catch(() => null);
+      const customersPromise = apiClient.getCustomers().catch(() => [] as Customer[]);
+
+      Promise.all([visitsPromise, dayPromise, customersPromise])
+        .then(([vList, dayData, cList]) => {
+          setVisits(vList || []);
+          setDayDashboard(dayData);
+          setCustomers(cList || []);
+        })
+        .catch((err: Error) => {
+          setVisits([]);
+          setError(err.message || 'Unable to load dashboard data');
+        })
+        .finally(() => setIsLoading(false));
+    }
   }, [
     isAdmin,
     isAuthLoading,
@@ -164,13 +179,48 @@ export const DashboardPage: React.FC = () => {
     fetchData();
   }, [fetchData]);
 
-  const totalVisits = visits.length;
-  const completedVisits = visits.filter((v) => v.status === 'COMPLETED').length;
-  const inProgressVisits = visits.filter((v) => v.status === 'IN_PROGRESS').length;
-  const flaggedVisits = visits.filter((v) => v.status === 'FLAGGED').length;
+  // Refetch on window focus / visibility change after returning from mutations (WEB-DASH-011)
+  useEffect(() => {
+    const handleFocus = () => {
+      fetchData();
+    };
+    window.addEventListener('focus', handleFocus);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') fetchData();
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [fetchData]);
+
+  // Authoritative KPI derivation (Single source of truth)
+  const totalVisits = isAdmin
+    ? (dashboardBI ? dashboardBI.kpis.total_visits : visits.length)
+    : (dayDashboard ? dayDashboard.today_visits_count : visits.length);
+
+  const completedVisits = isAdmin
+    ? (dashboardBI ? dashboardBI.kpis.completed_visits : visits.filter((v) => v.status === 'COMPLETED').length)
+    : (dayDashboard ? dayDashboard.completed_visits_count : visits.filter((v) => v.status === 'COMPLETED').length);
+
+  const inProgressVisits = isAdmin
+    ? (dashboardBI ? dashboardBI.kpis.in_progress_visits ?? 0 : visits.filter((v) => v.status === 'IN_PROGRESS').length)
+    : (dayDashboard ? dayDashboard.in_progress_visits_count ?? 0 : visits.filter((v) => v.status === 'IN_PROGRESS').length);
+
+  const flaggedVisits = isAdmin
+    ? (dashboardBI ? dashboardBI.kpis.flagged_visits : visits.filter((v) => v.status === 'FLAGGED').length)
+    : visits.filter((v) => v.status === 'FLAGGED').length;
+
+  const totalEmployeesCount = dashboardBI ? dashboardBI.kpis.total_employees : employees.length;
+  const totalOutletsCount = isAdmin
+    ? (dashboardBI ? dashboardBI.kpis.total_outlets : customers.length)
+    : (dayDashboard ? dayDashboard.assigned_outlets_count : customers.length);
 
   const geoComplianceRate =
-    totalVisits > 0 ? Math.round(((totalVisits - flaggedVisits) / totalVisits) * 100) : null;
+    totalVisits > 0
+      ? Math.max(0, Math.min(100, Math.round(((totalVisits - flaggedVisits) / totalVisits) * 100)))
+      : null;
 
   const formatCurrency = (val: string | number | undefined) => {
     const num = typeof val === 'string' ? parseFloat(val) : Number(val || 0);
@@ -494,7 +544,7 @@ export const DashboardPage: React.FC = () => {
         {isAdmin && (
           <MetricCard
             title="Field Representatives"
-            value={employees.length}
+            value={totalEmployeesCount}
             subtitle="Registered employee profiles"
             icon={Users}
             color="primary"
@@ -503,7 +553,7 @@ export const DashboardPage: React.FC = () => {
         )}
         <MetricCard
           title="Customer Accounts"
-          value={customers.length}
+          value={totalOutletsCount}
           subtitle="Monitored geofence zones"
           icon={Building2}
           color="slate"

@@ -5,6 +5,8 @@ from typing import Optional
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.datetime_utils import get_ist_today_range
+from app.models.customer import Customer
 from app.models.employee import Employee
 from app.models.employee_customer_assignment import EmployeeCustomerAssignment
 from app.models.field_exception import FieldException, ExceptionStatus
@@ -33,18 +35,9 @@ async def get_dashboard_summary(
 ) -> DashboardSummaryResponse:
     """
     Unified Dashboard aggregation sharing 100% single source of truth with ReportService.
+    Eliminates redundant execution of get_business_bi_dashboard.
     """
-    # 1. Fetch overview report directly from report_service
-    overview = await report_service.ReportService.get_overview_report(
-        session=session,
-        brand=brand,
-        zone_id=zone_id,
-        area_id=area_id,
-        employee_id=employee_id,
-        month=month,
-    )
-
-    # 2. Fetch Business BI multi-dimensional summaries
+    # 1. Fetch Business BI multi-dimensional summaries (single execution)
     bi_data = await report_service.ReportService.get_business_bi_dashboard(
         session=session,
         brand=brand,
@@ -54,16 +47,40 @@ async def get_dashboard_summary(
         month=month,
     )
 
-    # 3. Fetch Operational Visit Counts
+    # 2. Count total active employees within active filter scope (WEB-DASH-012)
+    emp_stmt = select(func.count(func.distinct(Employee.id)))
+    if employee_id:
+        emp_stmt = emp_stmt.where(Employee.id == employee_id)
+    if zone_id:
+        emp_stmt = emp_stmt.where(Employee.territory_id == zone_id)
+    if area_id:
+        emp_stmt = emp_stmt.join(
+            EmployeeCustomerAssignment,
+            EmployeeCustomerAssignment.employee_id == Employee.id,
+        ).join(
+            Customer,
+            Customer.id == EmployeeCustomerAssignment.customer_id,
+        ).where(Customer.area_id == area_id)
+    emp_res = await session.execute(emp_stmt)
+    total_employees = emp_res.scalar() or 0
+
+    # 3. Fetch Operational Visit Counts within active filter scope
     visit_q = select(
         func.count(Visit.id).label("total"),
         func.count(Visit.id).filter(Visit.status == VisitStatus.COMPLETED).label("completed"),
         func.count(Visit.id).filter(Visit.status == VisitStatus.PENDING).label("pending"),
+        func.count(Visit.id).filter(Visit.status == VisitStatus.IN_PROGRESS).label("in_progress"),
         func.count(Visit.id).filter(Visit.status == VisitStatus.FLAGGED).label("flagged"),
         func.count(Visit.id).filter(Visit.check_in_location.isnot(None)).label("gps_verified"),
     )
     if employee_id:
         visit_q = visit_q.where(Visit.employee_id == employee_id)
+    if zone_id or area_id:
+        visit_q = visit_q.join(Customer, Visit.customer_id == Customer.id)
+        if zone_id:
+            visit_q = visit_q.where(Customer.territory_id == zone_id)
+        if area_id:
+            visit_q = visit_q.where(Customer.area_id == area_id)
 
     v_res = await session.execute(visit_q)
     v_row = v_res.one()
@@ -86,6 +103,11 @@ async def get_dashboard_summary(
 
     # 6. Fetch Orders count
     order_q = select(func.count(VisitMedia.id)).where(VisitMedia.media_type == MediaType.ORDER)
+    if employee_id:
+        emp_user_stmt = select(Employee.user_id).where(Employee.id == employee_id)
+        emp_uid = (await session.execute(emp_user_stmt)).scalar_one_or_none()
+        if emp_uid:
+            order_q = order_q.where(VisitMedia.uploaded_by == emp_uid)
     order_count = (await session.execute(order_q)).scalar_one() or 0
 
     # 7. Recent Exceptions for preview
@@ -116,15 +138,16 @@ async def get_dashboard_summary(
         ageing_distribution[">90"] += b.bucket_gt_90
 
     kpis = DashboardExecutiveKPIs(
-        total_outlets=overview.total_outlets,
-        total_sales=overview.total_sales,
-        total_collection=overview.total_collection,
-        total_market_outstanding=overview.total_market_outstanding,
-        total_overdue_gt_90=overview.total_overdue_gt_90,
-        total_employees=overview.total_employees,
+        total_outlets=bi_data.total_outlets,
+        total_sales=bi_data.total_sales,
+        total_collection=bi_data.total_collection,
+        total_market_outstanding=bi_data.total_market_outstanding,
+        total_overdue_gt_90=bi_data.total_overdue_gt_90,
+        total_employees=total_employees,
         total_visits=v_row.total or 0,
         completed_visits=v_row.completed or 0,
         pending_visits=v_row.pending or 0,
+        in_progress_visits=v_row.in_progress or 0,
         flagged_visits=v_row.flagged or 0,
         gps_verified_visits=v_row.gps_verified or 0,
         total_exceptions=exc_row.total or 0,
@@ -152,8 +175,10 @@ async def get_employee_day_dashboard(
 ) -> EmployeeDayDashboardResponse:
     """
     Mobile / Employee scoped operational "My Day" summary.
+    Restricts visits, collections, and orders strictly to IST Today boundaries.
     """
     emp = await get_employee_by_user_id(current_user.id, session)
+    start_utc, end_utc = get_ist_today_range()
 
     # Assigned outlets
     outlets_count = (
@@ -164,25 +189,36 @@ async def get_employee_day_dashboard(
         )
     ).scalar_one() or 0
 
-    # Today's visits
+    # Today's visits in IST (WEB-DASH-005)
     v_q = select(
         func.count(Visit.id).label("total"),
         func.count(Visit.id).filter(Visit.status == VisitStatus.COMPLETED).label("completed"),
         func.count(Visit.id).filter(Visit.status == VisitStatus.PENDING).label("pending"),
-    ).where(Visit.employee_id == emp.id)
+        func.count(Visit.id).filter(Visit.status == VisitStatus.IN_PROGRESS).label("in_progress"),
+    ).where(
+        Visit.employee_id == emp.id,
+        Visit.scheduled_at >= start_utc,
+        Visit.scheduled_at < end_utc,
+    )
     v_row = (await session.execute(v_q)).one()
 
-    # Collections
+    # Today's Collections in IST (WEB-DASH-006)
     col_q = select(
         func.count(Payment.id),
         func.coalesce(func.sum(Payment.amount), Decimal("0.00")),
-    ).where(Payment.employee_id == emp.id)
+    ).where(
+        Payment.employee_id == emp.id,
+        Payment.created_at >= start_utc,
+        Payment.created_at < end_utc,
+    )
     col_count, col_sum = (await session.execute(col_q)).one()
 
-    # Orders
+    # Today's Orders in IST (WEB-DASH-006)
     order_q = select(func.count(VisitMedia.id)).where(
         VisitMedia.media_type == MediaType.ORDER,
         VisitMedia.uploaded_by == current_user.id,
+        VisitMedia.uploaded_at >= start_utc,
+        VisitMedia.uploaded_at < end_utc,
     )
     orders_count = (await session.execute(order_q)).scalar_one() or 0
 
@@ -193,6 +229,7 @@ async def get_employee_day_dashboard(
         today_visits_count=v_row.total or 0,
         completed_visits_count=v_row.completed or 0,
         pending_visits_count=v_row.pending or 0,
+        in_progress_visits_count=v_row.in_progress or 0,
         collections_today_count=col_count or 0,
         collections_today_amount=col_sum or Decimal("0.00"),
         orders_today_count=orders_count or 0,

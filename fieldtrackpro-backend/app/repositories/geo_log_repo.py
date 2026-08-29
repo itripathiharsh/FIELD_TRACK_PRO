@@ -4,8 +4,9 @@ GeoVerificationLog repository — insert-only, no updates.
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.geo_verification_log import GeoVerificationLog
@@ -17,18 +18,6 @@ class GeoLogRepository(BaseRepository[GeoVerificationLog]):
         super().__init__(GeoVerificationLog, session)
 
     async def list_by_visit(self, visit_id: uuid.UUID) -> list[GeoVerificationLog]:
-        """
-        Return every verification attempt for a visit, newest first.
-
-        FT-005: ``visit_service.get_visit_geo_logs`` called this method but it
-        was never implemented, so every read of the audit trail raised
-        ``AttributeError`` and returned HTTP 500. The geo audit - the system's
-        anti-fraud evidence - could not be viewed by anyone.
-
-        Ordering is deterministic: ``attempted_at`` descending, with ``id`` as a
-        tie-breaker so rows written inside the same transaction (identical
-        ``now()``) always come back in a stable order.
-        """
         result = await self.session.execute(
             select(GeoVerificationLog)
             .where(GeoVerificationLog.visit_id == visit_id)
@@ -39,6 +28,42 @@ class GeoLogRepository(BaseRepository[GeoVerificationLog]):
         )
         return list(result.scalars().all())
 
+    async def list_paginated(
+        self,
+        skip: int = 0,
+        limit: int = 50,
+        visit_id: uuid.UUID | None = None,
+    ) -> tuple[list[tuple[GeoVerificationLog, uuid.UUID | None, str | None, uuid.UUID | None, str | None]], int]:
+        from app.models.visit import Visit
+        from app.models.customer import Customer
+        from app.models.employee import Employee
+
+        count_stmt = select(func.count(GeoVerificationLog.id))
+        if visit_id is not None:
+            count_stmt = count_stmt.where(GeoVerificationLog.visit_id == visit_id)
+        total_count = (await self.session.execute(count_stmt)).scalar_one()
+
+        stmt = (
+            select(
+                GeoVerificationLog,
+                Visit.customer_id,
+                Customer.name.label("customer_name"),
+                Visit.employee_id,
+                Employee.full_name.label("employee_name"),
+            )
+            .join(Visit, Visit.id == GeoVerificationLog.visit_id)
+            .outerjoin(Customer, Customer.id == Visit.customer_id)
+            .outerjoin(Employee, Employee.id == Visit.employee_id)
+            .order_by(GeoVerificationLog.attempted_at.desc(), GeoVerificationLog.id.desc())
+            .offset(skip)
+            .limit(limit)
+        )
+        if visit_id is not None:
+            stmt = stmt.where(GeoVerificationLog.visit_id == visit_id)
+
+        result = await self.session.execute(stmt)
+        return list(result.all()), total_count
+
     async def count_failed_for_visit(self, visit_id: uuid.UUID) -> int:
         return await self.count(
             GeoVerificationLog.visit_id == visit_id,
@@ -46,11 +71,8 @@ class GeoLogRepository(BaseRepository[GeoVerificationLog]):
         )
 
     async def count_failed_by_visit_ids(self, visit_ids: list[uuid.UUID]) -> dict[uuid.UUID, int]:
-        """Batched form of count_failed_for_visit - one query for an employee's
-        whole activity feed instead of one query per visit."""
         if not visit_ids:
             return {}
-        from sqlalchemy import func
 
         result = await self.session.execute(
             select(GeoVerificationLog.visit_id, func.count())
@@ -59,12 +81,15 @@ class GeoLogRepository(BaseRepository[GeoVerificationLog]):
         )
         return {vid: cnt for vid, cnt in result.all()}
 
-    async def idempotency_key_exists(self, visit_id: uuid.UUID, key: str) -> bool:
+    async def get_by_idempotency_key(self, visit_id: uuid.UUID, key: str) -> GeoVerificationLog | None:
+        """Lookup any existing log for (visit_id, key) regardless of is_valid."""
         result = await self.session.execute(
             select(GeoVerificationLog).where(
                 GeoVerificationLog.visit_id == visit_id,
                 GeoVerificationLog.idempotency_key == key,
-                GeoVerificationLog.is_valid.is_(True),
             )
         )
-        return result.scalar_one_or_none() is not None
+        return result.scalar_one_or_none()
+
+    async def idempotency_key_exists(self, visit_id: uuid.UUID, key: str) -> bool:
+        return (await self.get_by_idempotency_key(visit_id, key)) is not None

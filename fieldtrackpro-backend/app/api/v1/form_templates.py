@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Sequence
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -390,7 +390,7 @@ async def _require_visit_access(visit_id: uuid.UUID, current_user: User, session
     await assert_visit_access(visit, current_user, session)
 
 
-@router.post("/form-submissions", response_model=SubmissionRead)
+@router.post("/form-submissions", response_model=SubmissionRead, status_code=status.HTTP_201_CREATED)
 async def create_submission(data: SubmissionCreate, session: AsyncSession = Depends(get_async_session), current_user: CurrentUser = None):
     await _require_visit_access(data.visit_id, current_user, session)
     submission = await form_template_service.create_or_update_submission(

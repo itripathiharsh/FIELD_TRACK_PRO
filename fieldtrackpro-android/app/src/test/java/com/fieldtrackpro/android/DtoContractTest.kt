@@ -89,10 +89,10 @@ class DtoContractTest {
         """.trimIndent()
         val customer = gson.fromJson(json, CustomerDto::class.java)
         assertNotNull("Location should not be null", customer.location)
-        assertEquals(12.9716, customer.location.latitude, 0.0001)
-        assertEquals(77.5946, customer.location.longitude, 0.0001)
-        assertEquals(12.9716, customer.latitude, 0.0001)
-        assertEquals(77.5946, customer.longitude, 0.0001)
+        assertEquals(12.9716, customer.location!!.latitude, 0.0001)
+        assertEquals(77.5946, customer.location!!.longitude, 0.0001)
+        assertEquals(12.9716, customer.latitude!!, 0.0001)
+        assertEquals(77.5946, customer.longitude!!, 0.0001)
     }
 
     @Test
@@ -109,6 +109,8 @@ class DtoContractTest {
         """.trimIndent()
         val customer = gson.fromJson(json, CustomerDto::class.java)
         assertNull("Location should be null", customer.location)
+        assertNull("Latitude should be null when location is null", customer.latitude)
+        assertNull("Longitude should be null when location is null", customer.longitude)
     }
 
     @Test

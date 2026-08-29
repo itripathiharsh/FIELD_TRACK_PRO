@@ -10,7 +10,7 @@ import base64
 import pytest
 from httpx import AsyncClient
 
-from tests.integration.conftest import create_visit, requires_db
+from tests.integration.conftest import create_visit, requires_db, iso_in
 
 pytestmark = [requires_db, pytest.mark.integration, pytest.mark.asyncio]
 
@@ -298,10 +298,12 @@ async def test_replace_rejects_a_signature_id_from_a_different_visit(
     visit_a = await create_visit(
         client, admin_headers, seeded_world["customer_id"],
         seeded_world["employee_id"], created_visits,
+        scheduled_at=iso_in(1.0),
     )
     visit_b = await create_visit(
         client, admin_headers, seeded_world["customer_id"],
         seeded_world["employee_id"], created_visits,
+        scheduled_at=iso_in(3.0),
     )
     sig_a = await client.post(
         f"/api/v1/visits/{visit_a}/signatures",

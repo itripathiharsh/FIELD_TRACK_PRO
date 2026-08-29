@@ -17,12 +17,10 @@ import androidx.security.crypto.MasterKey
  * Storage is now EncryptedSharedPreferences with an AES-256-GCM master key held
  * in the Android Keystore, so the key material never leaves hardware-backed
  * storage and the file is unreadable outside the app.
- *
- * Requires `androidx.security:security-crypto` (declared in app/build.gradle.kts).
  */
-class TokenManager(context: Context) {
+open class TokenManager(context: Context? = null) {
 
-    private val prefs: SharedPreferences = createPreferences(context)
+    private val prefs: SharedPreferences? = context?.let { createPreferences(it) }
 
     companion object {
         private const val TAG = "TokenManager"
@@ -31,6 +29,7 @@ class TokenManager(context: Context) {
 
         private const val KEY_ACCESS_TOKEN = "access_token"
         private const val KEY_REFRESH_TOKEN = "refresh_token"
+        private const val KEY_USER_ID = "user_id"
         private const val KEY_USER_NAME = "user_name"
         private const val KEY_USER_EMAIL = "user_email"
         private const val KEY_USER_ROLE = "user_role"
@@ -52,9 +51,6 @@ class TokenManager(context: Context) {
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
             )
 
-            // One-time migration: destroy any plaintext credentials written by
-            // the previous build. Tokens are deliberately NOT copied across -
-            // they must be assumed compromised, so the user signs in again.
             val legacy = context.getSharedPreferences(LEGACY_PREFS_NAME, Context.MODE_PRIVATE)
             if (legacy.contains(KEY_ACCESS_TOKEN) || legacy.contains(KEY_REFRESH_TOKEN)) {
                 Log.i(TAG, "Clearing legacy plaintext credential store (FT-027)")
@@ -65,72 +61,68 @@ class TokenManager(context: Context) {
         }
     }
 
-    fun saveTokens(accessToken: String, refreshToken: String) {
-        prefs.edit()
-            .putString(KEY_ACCESS_TOKEN, accessToken)
-            .putString(KEY_REFRESH_TOKEN, refreshToken)
-            .apply()
+    open fun saveTokens(accessToken: String, refreshToken: String) {
+        prefs?.edit()
+            ?.putString(KEY_ACCESS_TOKEN, accessToken)
+            ?.putString(KEY_REFRESH_TOKEN, refreshToken)
+            ?.apply()
     }
 
-    fun getAccessToken(): String? = prefs.getString(KEY_ACCESS_TOKEN, null)?.ifBlank { null }
+    open fun getAccessToken(): String? = prefs?.getString(KEY_ACCESS_TOKEN, null)?.ifBlank { null }
 
-    fun getRefreshToken(): String? = prefs.getString(KEY_REFRESH_TOKEN, null)?.ifBlank { null }
+    open fun getRefreshToken(): String? = prefs?.getString(KEY_REFRESH_TOKEN, null)?.ifBlank { null }
 
-    fun saveUserProfile(
+    open fun saveUserProfile(
         name: String,
         email: String?,
         role: String,
+        id: String? = null,
         phone: String? = null,
         employeeCode: String? = null,
         territoryName: String? = null
     ) {
-        prefs.edit()
-            .putString(KEY_USER_NAME, name)
-            .putString(KEY_USER_EMAIL, email ?: "")
-            .putString(KEY_USER_ROLE, role)
-            .putString(KEY_USER_PHONE, phone ?: "")
-            .putString(KEY_EMPLOYEE_CODE, employeeCode ?: "")
-            .putString(KEY_TERRITORY_NAME, territoryName ?: "")
-            .apply()
+        prefs?.edit()
+            ?.putString(KEY_USER_ID, id ?: "")
+            ?.putString(KEY_USER_NAME, name)
+            ?.putString(KEY_USER_EMAIL, email ?: "")
+            ?.putString(KEY_USER_ROLE, role)
+            ?.putString(KEY_USER_PHONE, phone ?: "")
+            ?.putString(KEY_EMPLOYEE_CODE, employeeCode ?: "")
+            ?.putString(KEY_TERRITORY_NAME, territoryName ?: "")
+            ?.apply()
     }
 
-    fun getUserName(): String? = prefs.getString(KEY_USER_NAME, null)?.ifBlank { null }
+    open fun getUserId(): String? = prefs?.getString(KEY_USER_ID, null)?.ifBlank { null }
 
-    fun getUserEmail(): String? = prefs.getString(KEY_USER_EMAIL, null)?.ifBlank { null }
+    open fun getUserName(): String? = prefs?.getString(KEY_USER_NAME, null)?.ifBlank { null }
 
-    fun getUserPhone(): String? = prefs.getString(KEY_USER_PHONE, null)?.ifBlank { null }
+    open fun getUserEmail(): String? = prefs?.getString(KEY_USER_EMAIL, null)?.ifBlank { null }
 
-    fun getEmployeeCode(): String? = prefs.getString(KEY_EMPLOYEE_CODE, null)?.ifBlank { null }
+    open fun getUserPhone(): String? = prefs?.getString(KEY_USER_PHONE, null)?.ifBlank { null }
 
-    fun getTerritoryName(): String? = prefs.getString(KEY_TERRITORY_NAME, null)?.ifBlank { null }
+    open fun getEmployeeCode(): String? = prefs?.getString(KEY_EMPLOYEE_CODE, null)?.ifBlank { null }
 
-    /**
-     * The signed-in user's role, or null when unknown.
-     *
-     * Deliberately NOT defaulted to "EMPLOYEE": inventing a role client-side is
-     * the same class of defect as FT-001 on the web. The server decides, and an
-     * absent value means "not signed in".
-     */
-    fun getUserRole(): String? = prefs.getString(KEY_USER_ROLE, null)?.ifBlank { null }
+    open fun getTerritoryName(): String? = prefs?.getString(KEY_TERRITORY_NAME, null)?.ifBlank { null }
 
-    fun saveFcmToken(token: String) {
-        prefs.edit().putString(KEY_FCM_TOKEN, token).apply()
+    open fun getUserRole(): String? = prefs?.getString(KEY_USER_ROLE, null)?.ifBlank { null }
+
+    open fun saveFcmToken(token: String) {
+        prefs?.edit()?.putString(KEY_FCM_TOKEN, token)?.apply()
     }
 
-    fun getFcmToken(): String? = prefs.getString(KEY_FCM_TOKEN, null)?.ifBlank { null }
+    open fun getFcmToken(): String? = prefs?.getString(KEY_FCM_TOKEN, null)?.ifBlank { null }
 
-    fun clearFcmToken() {
-        prefs.edit().remove(KEY_FCM_TOKEN).apply()
+    open fun clearFcmToken() {
+        prefs?.edit()?.remove(KEY_FCM_TOKEN)?.apply()
     }
 
-    fun clear() {
-        // Keep FCM device token so the next logged-in user can register it
+    open fun clear() {
         val fcmToken = getFcmToken()
-        prefs.edit().clear().apply()
+        prefs?.edit()?.clear()?.apply()
         if (fcmToken != null) {
             saveFcmToken(fcmToken)
         }
     }
 
-    fun isLoggedIn(): Boolean = getAccessToken() != null
+    open fun isLoggedIn(): Boolean = getAccessToken() != null
 }

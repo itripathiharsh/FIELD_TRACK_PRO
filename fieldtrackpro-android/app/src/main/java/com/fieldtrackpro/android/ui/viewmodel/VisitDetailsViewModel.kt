@@ -8,7 +8,6 @@ import com.fieldtrackpro.android.data.model.CustomerDto
 import com.fieldtrackpro.android.data.model.GeoVerificationLogDto
 import com.fieldtrackpro.android.data.model.VisitDto
 import com.fieldtrackpro.android.data.remote.ApiClient
-import com.fieldtrackpro.android.data.repository.CustomerRepository
 import com.fieldtrackpro.android.data.repository.Resource
 import com.fieldtrackpro.android.data.repository.VisitRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,6 +25,12 @@ sealed class VisitDetailState {
     data class Error(val message: String) : VisitDetailState()
 }
 
+/**
+ * ViewModel for Visit Details Screen.
+ *
+ * APP-CUST-004 / 005 / 019: Eliminates duplicate/N+1 customer API fetches by using
+ * the denormalized customer summary and coordinates provided directly within VisitDto.
+ */
 class VisitDetailsViewModel(
     tokenManager: TokenManager,
     offlineQueueManager: OfflineQueueManager
@@ -35,9 +40,9 @@ class VisitDetailsViewModel(
         visitApi = ApiClient.createVisitApi(tokenManager),
         customerApi = ApiClient.createCustomerApi(tokenManager),
         geoApi = ApiClient.createGeoApi(tokenManager),
-        offlineQueueManager = offlineQueueManager
+        offlineQueueManager = offlineQueueManager,
+        tokenManager = tokenManager
     )
-    private val customerRepository = CustomerRepository(ApiClient.createCustomerApi(tokenManager))
 
     private val _detailState = MutableStateFlow<VisitDetailState>(VisitDetailState.Loading)
     val detailState: StateFlow<VisitDetailState> = _detailState.asStateFlow()
@@ -50,11 +55,8 @@ class VisitDetailsViewModel(
                     val logsRes = repository.getVisitGeoLogs(visitId)
                     val logs = if (logsRes is Resource.Success) logsRes.data else emptyList()
 
-                    // Fetch customer data for geofence setup
-                    val customer = when (val custRes = customerRepository.getCustomerById(visitRes.data.customerId)) {
-                        is Resource.Success -> custRes.data
-                        else -> null
-                    }
+                    // APP-CUST-004: Reuse customer summary directly from the visit payload
+                    val customer = visitRes.data.toCustomerSummaryDto()
 
                     _detailState.value = VisitDetailState.Success(visitRes.data, logs, customer)
                 }
@@ -62,5 +64,9 @@ class VisitDetailsViewModel(
                 else -> {}
             }
         }
+    }
+
+    fun clearState() {
+        _detailState.value = VisitDetailState.Loading
     }
 }

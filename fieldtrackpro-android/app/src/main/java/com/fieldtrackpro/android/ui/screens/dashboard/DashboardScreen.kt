@@ -18,8 +18,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
-import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
@@ -35,10 +33,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -49,7 +49,6 @@ import com.fieldtrackpro.android.ui.components.FieldTrackTopAppBar
 import com.fieldtrackpro.android.ui.components.LoadingScreen
 import com.fieldtrackpro.android.ui.components.OfflineSyncBanner
 import com.fieldtrackpro.android.ui.components.StatusBadge
-import com.fieldtrackpro.android.ui.theme.BrandBlack
 import com.fieldtrackpro.android.ui.theme.BrandGold
 import com.fieldtrackpro.android.ui.theme.BrandGoldDark
 import com.fieldtrackpro.android.ui.theme.BrandLightGray
@@ -60,10 +59,11 @@ import com.fieldtrackpro.android.ui.theme.LeagueSpartanFamily
 import com.fieldtrackpro.android.ui.theme.LibreBaskervilleFamily
 import com.fieldtrackpro.android.ui.theme.SuccessGreen
 import com.fieldtrackpro.android.ui.theme.SurfaceSecondary
-import com.fieldtrackpro.android.ui.theme.TextPrimary
 import com.fieldtrackpro.android.ui.theme.TextSecondary
+import com.fieldtrackpro.android.ui.viewmodel.DashboardState
 import com.fieldtrackpro.android.ui.viewmodel.VisitsState
 import com.fieldtrackpro.android.ui.viewmodel.VisitsViewModel
+import com.fieldtrackpro.android.utils.DateTimeUtils
 
 @Composable
 fun DashboardScreen(
@@ -76,10 +76,16 @@ fun DashboardScreen(
     onNavigateToNotifications: () -> Unit
 ) {
     val visitsState by visitsViewModel.visitsState.collectAsState()
+    val dashboardState by visitsViewModel.dashboardState.collectAsState()
     val pendingOfflineCount by visitsViewModel.pendingOfflineCount.collectAsState()
 
+    fun refreshAll() {
+        visitsViewModel.loadVisits(refresh = true)
+        visitsViewModel.loadDashboardSummary()
+    }
+
     LaunchedEffect(Unit) {
-        visitsViewModel.loadVisits()
+        refreshAll()
     }
 
     Scaffold(
@@ -87,7 +93,7 @@ fun DashboardScreen(
             FieldTrackTopAppBar(
                 title = "FieldTrack Pro",
                 actions = {
-                    IconButton(onClick = { visitsViewModel.loadVisits() }) {
+                    IconButton(onClick = { refreshAll() }) {
                         Icon(
                             imageVector = Icons.Default.Refresh,
                             contentDescription = "Refresh",
@@ -146,7 +152,9 @@ fun DashboardScreen(
                             )
                         }
 
-                        // Role badge
+                        // Role badge — uses authoritative role or safe generic indicator (Finding 8)
+                        val userRole = tokenManager.getUserRole()
+                        val displayRole = if (!userRole.isNullOrBlank()) userRole else "EMPLOYEE"
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(6.dp))
@@ -155,7 +163,7 @@ fun DashboardScreen(
                                 .padding(horizontal = 10.dp, vertical = 4.dp)
                         ) {
                             Text(
-                                text = tokenManager.getUserRole() ?: "REP",
+                                text = displayRole,
                                 fontFamily = LeagueSpartanFamily,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 11.sp,
@@ -189,10 +197,23 @@ fun DashboardScreen(
                 }
                 is VisitsState.Success -> {
                     val visits = state.visits
-                    val pendingCount = visits.count { it.status == "PENDING" }
-                    val inProgressCount = visits.count { it.status == "IN_PROGRESS" }
-                    val completedCount = visits.count { it.status == "COMPLETED" }
-                    val flaggedCount = visits.count { it.status == "FLAGGED" }
+
+                    // APP-NAV-003: Backend aggregate KPIs as single source of truth when available
+                    val (pendingCount, inProgressCount, completedCount, flaggedCount, missedCount) = when (val dState = dashboardState) {
+                        is DashboardState.Success -> {
+                            val k = dState.summary.kpis
+                            listOf(k.pendingVisits, k.inProgressVisits, k.completedVisits, k.flaggedVisits, k.missedVisits)
+                        }
+                        else -> {
+                            listOf(
+                                visits.count { it.status == "PENDING" },
+                                visits.count { it.status == "IN_PROGRESS" },
+                                visits.count { it.status == "COMPLETED" },
+                                visits.count { it.status == "FLAGGED" },
+                                visits.count { it.status == "MISSED" }
+                            )
+                        }
+                    }
 
                     // Metric Cards Grid
                     Row(
@@ -226,8 +247,8 @@ fun DashboardScreen(
                             modifier = Modifier.weight(1f)
                         )
                         MetricCard(
-                            title = "FLAGGED",
-                            value = flaggedCount.toString(),
+                            title = if (missedCount > 0) "MISSED / FLAGGED" else "FLAGGED",
+                            value = if (missedCount > 0) "$flaggedCount / $missedCount" else flaggedCount.toString(),
                             accentColor = ErrorRed,
                             modifier = Modifier.weight(1f)
                         )
@@ -334,7 +355,7 @@ fun DashboardScreen(
                                     )
                                     Spacer(modifier = Modifier.height(3.dp))
                                     Text(
-                                        text = "Scheduled: ${visit.scheduledAt}",
+                                        text = "Scheduled: ${DateTimeUtils.formatDisplayDateTime(visit.scheduledAt)}",
                                         fontFamily = LibreBaskervilleFamily,
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.Normal,

@@ -419,7 +419,10 @@ fun SignatureScreen(
                                     }
                                 }
 
-                                if (allOk) onComplete()
+                                if (allOk) {
+                                    android.widget.Toast.makeText(context, "Signatures recorded successfully ✓", android.widget.Toast.LENGTH_SHORT).show()
+                                    onComplete()
+                                }
                             }
                         },
                         modifier = Modifier
@@ -436,7 +439,7 @@ fun SignatureScreen(
                             CircularProgressIndicator(color = BrandGold, modifier = Modifier.size(24.dp))
                         } else {
                             Text(
-                                "SUBMIT SIGN-OFF & COMPLETE",
+                                "SAVE SIGNATURES",
                                 fontFamily = LeagueSpartanFamily,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 14.sp,

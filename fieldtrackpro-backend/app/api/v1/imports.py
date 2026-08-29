@@ -14,11 +14,12 @@ from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from fastapi.responses import StreamingResponse, Response
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps.auth import CurrentUser, require_role
 from app.database import get_async_session
+from app.exceptions.custom import ResourceNotFoundException
 from app.models.user import Role, User
 from app.models.employee import Employee
 from app.models.fos_mapping import FOSEmployeeMapping
@@ -120,6 +121,11 @@ async def set_fos_mapping(
 ):
     """Create or update a mapping between a raw source FOS string and an Employee."""
     norm_name = payload.raw_fos_name.strip()
+    if payload.employee_id:
+        emp_res = await session.execute(select(Employee).where(Employee.id == payload.employee_id))
+        if not emp_res.scalar_one_or_none():
+            raise ResourceNotFoundException("Employee not found")
+
     res = await session.execute(
         select(FOSEmployeeMapping).where(func.lower(FOSEmployeeMapping.raw_fos_name) == func.lower(norm_name))
     )

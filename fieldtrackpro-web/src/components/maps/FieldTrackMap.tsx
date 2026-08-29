@@ -97,8 +97,7 @@ export function isValidCoordinate(lat?: number | null, lng?: number | null): boo
     lat >= -90 &&
     lat <= 90 &&
     lng >= -180 &&
-    lng <= 180 &&
-    !(lat === 0 && lng === 0)
+    lng <= 180
   );
 }
 
@@ -296,6 +295,16 @@ function ensureMarkerStylesInjected() {
       border-radius: 8px !important;
       box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 8px 10px -6px rgba(0, 0, 0, 0.1) !important;
     }
+    .maplibregl-popup {
+      z-index: 100 !important;
+    }
+    .maplibregl-popup-anchor-bottom .maplibregl-popup-tip {
+      border-top-color: #ffffff !important;
+    }
+    .fieldtrack-map-selected-popup .maplibregl-popup-content {
+      border: 1.5px solid #fbbf24;
+      background: #ffffff;
+    }
   `;
   document.head.appendChild(style);
 }
@@ -420,7 +429,16 @@ export function FieldTrackMap({
           console.warn('MapLibre notice:', msg);
           return;
         }
-        handleMapError(`Map loading failed: ${msg}`);
+        if (
+          msg.includes('401') ||
+          msg.includes('403') ||
+          msg.toLowerCase().includes('unauthorized') ||
+          msg.toLowerCase().includes('forbidden')
+        ) {
+          handleMapError('Basemap authentication failed. Check configured tile provider or VITE_MAPLIBRE_TILE_URL.');
+          return;
+        }
+        handleMapError(`Basemap unavailable: ${msg}`);
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Failed to initialize map';
@@ -450,31 +468,39 @@ export function FieldTrackMap({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [centerLat, centerLng, zoom]);
 
-  // Responsive resize observer to prevent broken layout on dimension changes
+  // Responsive resize observer & modal animation handlers
   useEffect(() => {
     if (!mapContainer.current || typeof ResizeObserver === 'undefined') return;
     const ro = new ResizeObserver(() => {
       map.current?.resize();
     });
     ro.observe(mapContainer.current);
-    return () => ro.disconnect();
+
+    const t1 = setTimeout(() => map.current?.resize(), 100);
+    const t2 = setTimeout(() => map.current?.resize(), 300);
+
+    return () => {
+      ro.disconnect();
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
   }, []);
 
   // Compute marker signature for stable autoFitBounds triggering
-  const currentMarkersSignature = [
-    markers.map((m) => m.id).sort().join(','),
-    currentLocation ? `${currentLocation.latitude.toFixed(3)},${currentLocation.longitude.toFixed(3)}` : 'noloc',
-  ].join('|');
+  // NOTE: currentLocation intentionally excluded — browser IP-GPS may be far from customer sites
+  // and would cause the map to zoom out globally to fit both Africa and Lucknow.
+  const currentMarkersSignature = markers.map((m) => m.id).sort().join(',');
 
   // Auto-fit bounding box on style load or when dataset/filters change, NOT on selection!
   useEffect(() => {
     if (!map.current || !isStyleLoaded || !autoFitBounds) return;
 
     if (lastFittedSignatureRef.current === currentMarkersSignature) {
-      return; // Skip re-fitting bounds if markers and location have not changed
+      return; // Skip re-fitting bounds if markers have not changed
     }
 
-    const bounds = getBoundsForMarkersAndCircles(markers, territoryCircles, currentLocation);
+    // Only fit to customer markers + territory circles (NOT employee GPS location)
+    const bounds = getBoundsForMarkersAndCircles(markers, territoryCircles);
     if (bounds) {
       lastFittedSignatureRef.current = currentMarkersSignature;
       const [sw, ne] = bounds;
@@ -492,7 +518,7 @@ export function FieldTrackMap({
         });
       }
     }
-  }, [currentMarkersSignature, territoryCircles, autoFitBounds, isStyleLoaded, markers, currentLocation]);
+  }, [currentMarkersSignature, territoryCircles, autoFitBounds, isStyleLoaded, markers]);
 
   // Render Territory Circles
   useEffect(() => {
@@ -716,10 +742,16 @@ export function FieldTrackMap({
     if (!map.current || !isStyleLoaded) return;
 
     try {
+      // Always close any currently open popup first for a clean transition
+      if (popupRef.current) {
+        popupRef.current.remove();
+        popupRef.current = null;
+      }
+
       if (selectedMarkerId) {
         const marker = markersRef.current.find((m) => m.id === selectedMarkerId);
         if (marker && isValidCoordinate(marker.latitude, marker.longitude)) {
-          // Smoothly center the map on the selected customer without jarring zoom
+          // Smoothly fly to the newly selected customer
           map.current.flyTo({
             center: [marker.longitude, marker.latitude],
             zoom: Math.max(map.current.getZoom(), 13),
@@ -727,11 +759,7 @@ export function FieldTrackMap({
             essential: true,
           });
 
-          // Show interactive popup anchored at marker
-          if (popupRef.current) {
-            popupRef.current.remove();
-          }
-
+          // Build and show popup after fly animation starts
           const popupContainer = document.createElement('div');
           popupContainer.className = 'font-sans p-1 min-w-[180px]';
           popupContainer.innerHTML = `
@@ -742,19 +770,16 @@ export function FieldTrackMap({
           `;
 
           popupRef.current = new maplibregl.Popup({
-            offset: 24,
+            offset: [0, -36],
             closeButton: true,
             closeOnClick: false,
+            anchor: 'bottom',
+            maxWidth: '260px',
             className: 'fieldtrack-map-selected-popup',
           })
             .setLngLat([marker.longitude, marker.latitude])
             .setDOMContent(popupContainer)
             .addTo(map.current);
-        }
-      } else {
-        if (popupRef.current) {
-          popupRef.current.remove();
-          popupRef.current = null;
         }
       }
     } catch (e) {
@@ -781,7 +806,7 @@ export function FieldTrackMap({
   }
 
   return (
-    <div style={{ position: 'relative', height }}>
+    <div style={{ position: 'relative', height, overflow: 'visible' }}>
       {isLoading && (
         <div
           style={{
@@ -810,7 +835,6 @@ export function FieldTrackMap({
           width: '100%',
           height: '100%',
           borderRadius: '8px',
-          overflow: 'hidden',
           cursor: onMapClick ? 'crosshair' : 'grab',
         }}
       />

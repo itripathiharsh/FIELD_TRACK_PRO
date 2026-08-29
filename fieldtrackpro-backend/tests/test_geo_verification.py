@@ -207,6 +207,7 @@ async def test_geo_verify_endpoint_valid_request(client: AsyncClient):
             "customer_id": "00000000-0000-0000-0000-000000000000",
             "latitude": 12.9716,
             "longitude": 77.5946,
+            "accuracy_m": 10.0,
         },
         headers=employee_headers(),
     )

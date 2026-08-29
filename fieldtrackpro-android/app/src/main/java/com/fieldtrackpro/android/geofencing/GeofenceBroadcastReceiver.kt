@@ -7,6 +7,8 @@ import android.util.Log
 import com.google.android.gms.location.Geofence
 import com.google.android.gms.location.GeofenceStatusCodes
 import com.google.android.gms.location.GeofencingEvent
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  * BroadcastReceiver for geofence transition events.
@@ -68,14 +70,24 @@ enum class GeofenceState {
     OUTSIDE,
 }
 
+/**
+ * APP-PERF-001: Thread-safe geofence state holder.
+ * Uses ConcurrentHashMap and CopyOnWriteArrayList to prevent ConcurrentModificationExceptions
+ * across broadcast receiver threads and UI coroutines.
+ */
 object GeofenceStateHolder {
-    private val states = mutableMapOf<String, GeofenceState>()
-
-    private val listeners = mutableListOf<(String, GeofenceState) -> Unit>()
+    private val states = ConcurrentHashMap<String, GeofenceState>()
+    private val listeners = CopyOnWriteArrayList<(String, GeofenceState) -> Unit>()
 
     fun updateState(geofenceId: String, state: GeofenceState) {
         states[geofenceId] = state
-        listeners.forEach { it(geofenceId, state) }
+        for (listener in listeners) {
+            try {
+                listener(geofenceId, state)
+            } catch (e: Exception) {
+                Log.e("GeofenceStateHolder", "Error notifying geofence listener: ${e.message}")
+            }
+        }
     }
 
     fun getState(geofenceId: String): GeofenceState {
@@ -83,7 +95,9 @@ object GeofenceStateHolder {
     }
 
     fun addListener(listener: (String, GeofenceState) -> Unit) {
-        listeners.add(listener)
+        if (!listeners.contains(listener)) {
+            listeners.add(listener)
+        }
     }
 
     fun removeListener(listener: (String, GeofenceState) -> Unit) {
@@ -92,5 +106,6 @@ object GeofenceStateHolder {
 
     fun clear() {
         states.clear()
+        listeners.clear()
     }
 }

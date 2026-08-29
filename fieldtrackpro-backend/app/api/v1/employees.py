@@ -6,7 +6,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps.auth import CurrentUser, require_role
@@ -44,22 +44,34 @@ async def get_my_profile(current_user: CurrentUser, session: DbSession):
 
 @router.get("", response_model=list[EmployeeReadWithUser], dependencies=[AdminOnly])
 async def list_employees(
+    response: Response,
     session: DbSession,
     territory_id: uuid.UUID | None = Query(default=None),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, le=200),
+    search: str | None = Query(default=None, description="Search across full name, code, email, mobile, CUG"),
+    is_active: bool | None = Query(default=None),
+    role: str | None = Query(default=None),
+    working_profile: str | None = Query(default=None),
+    area_id: uuid.UUID | None = Query(default=None),
 ):
     """
-    Admin: list employee profiles.
-
-    FT-073: returns the linked account (`user`) alongside the profile. The
-    previous `EmployeeRead` omitted it, so the admin table's Role and Contact
-    columns were permanently blank - the data was already eager-loaded by
-    `list_with_user()` and then discarded during serialisation. Using the same
-    model as the detail endpoint also keeps one entity from changing shape
-    depending on how it was fetched. No additional query is introduced.
+    Admin: list employee profiles with server-side pagination, search, and filtering.
+    Returns X-Total-Count header for scalable frontend pagination.
     """
-    return await employee_service.list_employees(session, territory_id, skip, limit)
+    employees, total_count = await employee_service.list_employees(
+        session=session,
+        territory_id=territory_id,
+        skip=skip,
+        limit=limit,
+        search=search,
+        is_active=is_active,
+        role=role,
+        working_profile=working_profile,
+        area_id=area_id,
+    )
+    response.headers["X-Total-Count"] = str(total_count)
+    return [EmployeeReadWithUser.model_validate(e) for e in employees]
 
 
 @router.get("/{employee_id}", response_model=EmployeeReadWithUser, dependencies=[AdminOnly])

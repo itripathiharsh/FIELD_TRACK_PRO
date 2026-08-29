@@ -17,7 +17,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 
 
 class LocationIn(BaseModel):
-    """GeoJSON-like lat/lng input."""
+    """GeoJSON-like lat/lng input. (0,0) is valid coordinates."""
 
     latitude: float
     longitude: float
@@ -56,6 +56,24 @@ class CustomerCreate(BaseModel):
     outlet_code: str | None = Field(default=None, max_length=50)
     location_status: str | None = Field(default="MISSING")
 
+    @field_validator("address")
+    @classmethod
+    def validate_address(cls, v: str | None) -> str:
+        if v is not None:
+            stripped = v.strip()
+            if v != "" and not stripped:
+                raise ValueError("Address cannot be empty or whitespace only")
+            return stripped
+        return ""
+
+    @field_validator("outlet_code")
+    @classmethod
+    def normalize_outlet_code(cls, v: str | None) -> str | None:
+        if v is not None:
+            stripped = v.strip().upper()
+            return stripped if stripped else None
+        return None
+
     @model_validator(mode="after")
     def validate_location_presence(self) -> "CustomerCreate":
         if self.location is None and not self.auto_geocode and not self.outlet_code:
@@ -79,6 +97,37 @@ class CustomerUpdate(BaseModel):
     area_id: uuid.UUID | None = None
     outlet_code: str | None = Field(default=None, max_length=50)
     location_status: str | None = Field(default=None)
+
+    @field_validator("address")
+    @classmethod
+    def validate_address(cls, v: str | None) -> str | None:
+        if v is not None:
+            stripped = v.strip()
+            if not stripped:
+                raise ValueError("Address cannot be empty or whitespace only")
+            return stripped
+        return v
+
+    @field_validator("outlet_code")
+    @classmethod
+    def normalize_outlet_code(cls, v: str | None) -> str | None:
+        if v is not None:
+            stripped = v.strip().upper()
+            return stripped if stripped else None
+        return None
+
+
+class CustomerMapLocation(BaseModel):
+    """Lightweight map pin projection."""
+    id: uuid.UUID
+    name: str
+    outlet_code: str | None = None
+    latitude: float
+    longitude: float
+    geofence_radius_m: int = 75
+    location_status: str = "VERIFIED"
+    territory_id: uuid.UUID | None = None
+    area_id: uuid.UUID | None = None
 
 
 class CustomerRead(BaseModel):
@@ -112,8 +161,8 @@ class CustomerRead(BaseModel):
         location_out: LocationOut | None = None
         if customer.location is not None:
             latitude, longitude = extract_coords(customer.location)
-            if latitude != 0.0 or longitude != 0.0:
-                location_out = LocationOut(latitude=latitude, longitude=longitude)
+            # WEB-CUST-017: (0,0) is valid geographic coordinates; only NULL is missing
+            location_out = LocationOut(latitude=latitude, longitude=longitude)
 
         cust_dict = getattr(customer, "__dict__", {})
         area_obj = cust_dict.get("area")

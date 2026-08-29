@@ -58,6 +58,7 @@ import com.fieldtrackpro.android.ui.theme.TextPrimary
 import com.fieldtrackpro.android.ui.theme.TextSecondary
 import com.fieldtrackpro.android.ui.viewmodel.CheckInState
 import com.fieldtrackpro.android.ui.viewmodel.CheckInViewModel
+import com.fieldtrackpro.android.utils.CoordinateValidator
 
 @Composable
 fun CheckInScreen(
@@ -142,6 +143,11 @@ fun CheckInScreen(
 
                     if (state is CheckInState.Error) {
                         ErrorBanner(message = (state as CheckInState.Error).message)
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
+
+                    if (state is CheckInState.InvalidCoordinates) {
+                        ErrorBanner(message = (state as CheckInState.InvalidCoordinates).message)
                         Spacer(modifier = Modifier.height(12.dp))
                     }
 
@@ -233,7 +239,7 @@ fun CheckInScreen(
                         ) {
                             Column(modifier = Modifier.padding(12.dp)) {
                                 Text(
-                                    text = if (ver.isValid) "PROXIMITY VERIFIED PASS" else "OUTSIDE GEOFENCE RADIUS",
+                                    text = if (ver.isValid) "PROXIMITY VERIFIED PASS" else "OUTSIDE GEOFENCE RADIUS (WARNING)",
                                     fontFamily = LeagueSpartanFamily,
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold,
@@ -241,7 +247,7 @@ fun CheckInScreen(
                                     color = if (ver.isValid) SuccessGreen else BrandNavy
                                 )
                                 Text(
-                                    text = "Distance to customer: ${String.format("%.1f", ver.distanceM)}m (Max allowed: ${ver.geofenceRadiusM}m)",
+                                    text = "Distance to customer: ${ver.distanceM.toInt()}m (geofence radius: ${ver.geofenceRadiusM.toInt()}m)${if (!ver.isValid) " - You may still attempt check-in; server will evaluate." else ""}",
                                     fontFamily = LibreBaskervilleFamily,
                                     fontSize = 12.sp,
                                     color = TextPrimary
@@ -323,25 +329,27 @@ fun CheckInScreen(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    val canSubmit = latText.isNotBlank() && lonText.isNotBlank() && state !is CheckInState.Processing
+                    val parsedLat = CoordinateValidator.parseCoordinate(latText)
+                    val parsedLon = CoordinateValidator.parseCoordinate(lonText)
+                    val canSubmit = CoordinateValidator.isValidCoordinate(parsedLat, parsedLon) && state !is CheckInState.Processing
 
                     Button(
                         onClick = {
-                            val lat = latText.toDoubleOrNull() ?: 0.0
-                            val lon = lonText.toDoubleOrNull() ?: 0.0
-                            val acc = capturedAccuracyM ?: 10.0
-                            val isMock = capturedIsMock
-                            val ts = capturedAtMillis ?: System.currentTimeMillis()
+                            if (parsedLat != null && parsedLon != null) {
+                                val acc = capturedAccuracyM ?: 10.0
+                                val isMock = capturedIsMock
+                                val ts = capturedAtMillis ?: System.currentTimeMillis()
 
-                            viewModel.executeCheckIn(
-                                visitId = visitId,
-                                lat = lat,
-                                lon = lon,
-                                accuracyM = acc,
-                                isMock = isMock,
-                                capturedAtMillis = ts,
-                                isOfflineMode = isOfflineMode
-                            )
+                                viewModel.executeCheckIn(
+                                    visitId = visitId,
+                                    lat = parsedLat,
+                                    lon = parsedLon,
+                                    accuracyM = acc,
+                                    isMock = isMock,
+                                    capturedAtMillis = ts,
+                                    isOfflineMode = isOfflineMode
+                                )
+                            }
                         },
                         modifier = Modifier
                             .fillMaxWidth()

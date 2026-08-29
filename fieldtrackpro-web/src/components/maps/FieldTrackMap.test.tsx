@@ -135,18 +135,18 @@ describe('FieldTrackMap', () => {
 
     it('validates coordinates accurately with isValidCoordinate', () => {
         expect(isValidCoordinate(12.9716, 77.5946)).toBe(true);
-        expect(isValidCoordinate(0, 0)).toBe(false); // Null Island rejected
+        expect(isValidCoordinate(0, 0)).toBe(true); // 0,0 is a valid coordinate pair per WEB-MAP-005
         expect(isValidCoordinate(null, 77.5)).toBe(false);
         expect(isValidCoordinate(95, 77.5)).toBe(false);
         expect(isValidCoordinate(12.5, 190)).toBe(false);
     });
 
-    it('filters out markers at Null Island', () => {
-        const markersWithNullIsland: MapMarker[] = [
+    it('renders markers at valid coordinates', () => {
+        const markersWithZero: MapMarker[] = [
             ...mockMarkers,
-            { id: 'null', latitude: 0, longitude: 0, label: 'Null Island' },
+            { id: 'zero', latitude: 0, longitude: 0, label: 'Zero Location' },
         ];
-        render(<FieldTrackMap markers={markersWithNullIsland} />);
+        render(<FieldTrackMap markers={markersWithZero} />);
         expect(true).toBe(true);
     });
 
@@ -203,9 +203,9 @@ describe('FieldTrackMap', () => {
 
     it('returns null bounds when all coordinates are empty or invalid', () => {
         const bounds = getBoundsForMarkersAndCircles(
-            [{ id: 'invalid', latitude: 0, longitude: 0 }],
-            [{ id: 't_invalid', centerLat: 0, centerLng: 0, radiusKm: 0 }],
-            { latitude: 0, longitude: 0 }
+            [{ id: 'invalid', latitude: NaN, longitude: NaN }],
+            [{ id: 't_invalid', centerLat: NaN, centerLng: NaN, radiusKm: 0 }],
+            { latitude: NaN, longitude: NaN }
         );
         expect(bounds).toBeNull();
     });

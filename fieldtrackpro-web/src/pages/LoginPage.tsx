@@ -29,12 +29,21 @@ export const LoginPage: React.FC = () => {
     try {
       const user = await login(identity.trim(), password);
       navigate(user.role === 'ADMIN' ? '/' : '/visits', { replace: true });
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : 'Authentication failed. Please check your credentials.',
-      );
+    } catch (err: any) {
+      if (
+        err?.code === 'AUTH_ACCOUNT_DISABLED' ||
+        err?.message?.toLowerCase().includes('account is disabled') ||
+        err?.message?.toLowerCase().includes('account disabled') ||
+        err?.message?.toLowerCase().includes('deactivated')
+      ) {
+        setError('Your account has been deactivated. Please contact your administrator.');
+      } else {
+        setError(
+          err instanceof Error
+            ? err.message
+            : 'Authentication failed. Please check your credentials.',
+        );
+      }
     } finally {
       setIsSubmitting(false);
     }

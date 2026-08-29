@@ -27,18 +27,25 @@ class OfflineSyncWorker(
     override suspend fun doWork(): Result {
         return try {
             val tokenManager = TokenManager(applicationContext)
+            val activeUserId = tokenManager.getUserId()
+            if (!tokenManager.isLoggedIn() || activeUserId.isNullOrBlank()) {
+                // No active user session - nothing to sync safely
+                return Result.success()
+            }
+
             val offlineQueueManager = OfflineQueueManager(applicationContext)
             val repository = VisitRepository(
                 visitApi = ApiClient.createVisitApi(tokenManager),
                 customerApi = ApiClient.createCustomerApi(tokenManager),
                 geoApi = ApiClient.createGeoApi(tokenManager),
                 offlineQueueManager = offlineQueueManager,
+                tokenManager = tokenManager
             )
             // A conflict is a legitimate, already-recorded outcome (surfaced
             // to the user on the Offline Queue screen), not a worker failure
             // - retrying it wouldn't change anything. Only a genuine
             // exception below is worth WorkManager's own retry/backoff.
-            repository.syncOfflineQueue()
+            repository.syncOfflineQueue(activeUserId = activeUserId)
             Result.success()
         } catch (e: Exception) {
             Result.retry()

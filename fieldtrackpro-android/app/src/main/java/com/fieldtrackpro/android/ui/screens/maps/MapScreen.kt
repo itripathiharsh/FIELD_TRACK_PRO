@@ -156,9 +156,12 @@ fun MapScreen(
         }
     }
 
-    // Lifecycle-bound live location listener for real-time salesperson GPS tracking
-    DisposableEffect(hasPermission) {
+    // APP-ATT-017: Lifecycle-bound live location updates for real-time tracking with background battery conservation
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(hasPermission, lifecycleOwner) {
         val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+        var isListening = false
+
         val listener = object : LocationListener {
             override fun onLocationChanged(loc: Location) {
                 deviceLocation = LocationResult(
@@ -173,7 +176,8 @@ fun MapScreen(
             override fun onProviderDisabled(provider: String) {}
         }
 
-        if (hasPermission && locationManager != null) {
+        fun startListening() {
+            if (!hasPermission || locationManager == null || isListening) return
             try {
                 // Get last known location immediately
                 val lastGps = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
@@ -211,15 +215,36 @@ fun MapScreen(
                         Looper.getMainLooper()
                     )
                 }
+                isListening = true
             } catch (e: SecurityException) {
                 // Ignore permission issue
             }
         }
 
-        onDispose {
+        fun stopListening() {
+            if (!isListening) return
             try {
                 locationManager?.removeUpdates(listener)
+                isListening = false
             } catch (e: Exception) {}
+        }
+
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            when (event) {
+                androidx.lifecycle.Lifecycle.Event.ON_START,
+                androidx.lifecycle.Lifecycle.Event.ON_RESUME -> startListening()
+                androidx.lifecycle.Lifecycle.Event.ON_PAUSE,
+                androidx.lifecycle.Lifecycle.Event.ON_STOP -> stopListening()
+                else -> {}
+            }
+        }
+
+        lifecycleOwner.lifecycle.addObserver(observer)
+        startListening()
+
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            stopListening()
         }
     }
 
@@ -320,7 +345,7 @@ fun MapScreen(
                     val lng = cust.longitude
                     val coordinatesValid = NavigationHelper.isValidCoordinate(lat, lng)
 
-                    if (!coordinatesValid) {
+                    if (!coordinatesValid || lat == null || lng == null) {
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
@@ -334,13 +359,13 @@ fun MapScreen(
                             ) {
                                 Column(modifier = Modifier.padding(20.dp)) {
                                     Text(
-                                        text = "Invalid Location",
+                                        text = "No GPS data available",
                                         style = MaterialTheme.typography.titleLarge,
                                         color = FieldTrackNavy
                                     )
                                     Spacer(modifier = Modifier.height(8.dp))
                                     Text(
-                                        text = "This customer does not have valid coordinates. Please update the customer record.",
+                                        text = "Customer location is not configured. Coordinates are missing or invalid for this outlet.",
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = TextMuted
                                     )
@@ -348,13 +373,16 @@ fun MapScreen(
                             }
                         }
                     } else {
+                        val validLat = lat!!
+                        val validLng = lng!!
+
                         // Dynamic Geodesic Distance
                         val distanceM = if (deviceLocation != null) {
                             LocationCaptureService.calculateDistanceM(
                                 deviceLocation!!.latitude,
                                 deviceLocation!!.longitude,
-                                lat,
-                                lng
+                                validLat,
+                                validLng
                             )
                         } else null
 
@@ -366,8 +394,8 @@ fun MapScreen(
                             // ==================== EXPANDED FULLSCREEN MAP ====================
                             Box(modifier = Modifier.fillMaxSize()) {
                                 MapLibreMapView(
-                                    customerLat = lat,
-                                    customerLng = lng,
+                                    customerLat = validLat,
+                                    customerLng = validLng,
                                     customerName = cust.name,
                                     customerId = cust.id,
                                     geofenceRadiusM = cust.geofenceRadiusM,
@@ -445,7 +473,7 @@ fun MapScreen(
                                     ) {
                                         Button(
                                             onClick = {
-                                                NavigationHelper.navigateToCustomer(context, lat, lng, cust.name)
+                                                NavigationHelper.navigateToCustomer(context, validLat, validLng, cust.name)
                                             },
                                             modifier = Modifier
                                                 .fillMaxWidth()
@@ -492,8 +520,8 @@ fun MapScreen(
                                         .background(SurfaceWhite)
                                 ) {
                                     MapLibreMapView(
-                                        customerLat = lat,
-                                        customerLng = lng,
+                                        customerLat = validLat,
+                                        customerLng = validLng,
                                         customerName = cust.name,
                                         customerId = cust.id,
                                         geofenceRadiusM = cust.geofenceRadiusM,
@@ -685,7 +713,7 @@ fun MapScreen(
                                 Box(modifier = Modifier.padding(16.dp)) {
                                     Button(
                                         onClick = {
-                                            NavigationHelper.navigateToCustomer(context, lat, lng, cust.name)
+                                            NavigationHelper.navigateToCustomer(context, validLat, validLng, cust.name)
                                         },
                                         modifier = Modifier
                                             .fillMaxWidth()

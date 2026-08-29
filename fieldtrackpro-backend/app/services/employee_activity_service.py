@@ -81,20 +81,26 @@ async def get_employee_activity(employee_id: uuid.UUID, session: AsyncSession) -
         for v in visits
     ]
 
-    payment_repo = PaymentRepository(session)
-    all_payments = await payment_repo.list_by_employee(employee_id)
-    collections_total = len(all_payments)
-    collections_pending = sum(1 for p in all_payments if p.status == PaymentStatus.PENDING_VERIFICATION)
-    collections_verified = sum(1 for p in all_payments if p.status == PaymentStatus.VERIFIED)
-    collections_rejected = sum(1 for p in all_payments if p.status == PaymentStatus.REJECTED)
-    verified_amount_row = await session.execute(
-        select(func.coalesce(func.sum(Payment.amount), 0)).where(
-            Payment.employee_id == employee_id, Payment.status == PaymentStatus.VERIFIED
+    # SQL aggregated payment stats
+    agg_res = await session.execute(
+        select(
+            Payment.status,
+            func.count(Payment.id).label("cnt"),
+            func.coalesce(func.sum(Payment.amount), Decimal(0)).label("total_amt"),
         )
+        .where(Payment.employee_id == employee_id)
+        .group_by(Payment.status)
     )
-    collections_verified_amount: Decimal = verified_amount_row.scalar_one()
+    status_counts = {r[0]: (r[1], r[2]) for r in agg_res.all()}
 
-    display_payments = all_payments[:DISPLAY_LIMIT]
+    collections_total = sum(c[0] for c in status_counts.values())
+    collections_pending = status_counts.get(PaymentStatus.PENDING_VERIFICATION, (0, Decimal(0)))[0]
+    collections_verified = status_counts.get(PaymentStatus.VERIFIED, (0, Decimal(0)))[0]
+    collections_rejected = status_counts.get(PaymentStatus.REJECTED, (0, Decimal(0)))[0]
+    collections_verified_amount: Decimal = status_counts.get(PaymentStatus.VERIFIED, (0, Decimal(0)))[1]
+
+    payment_repo = PaymentRepository(session)
+    display_payments = await payment_repo.list_by_employee(employee_id, limit=DISPLAY_LIMIT)
     customer_ids = {p.customer_id for p in display_payments}
     customer_names: dict[uuid.UUID, str] = {}
     if customer_ids:

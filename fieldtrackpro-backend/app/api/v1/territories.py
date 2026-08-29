@@ -6,7 +6,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps.auth import require_role
@@ -28,8 +28,11 @@ async def create_territory(data: TerritoryCreate, session: DbSession):
 
 
 @router.get("", response_model=list[TerritoryRead], dependencies=[AnyAuth])
-async def list_territories(session: DbSession):
-    return await territory_service.list_territories(session)
+async def list_territories(
+    session: DbSession,
+    status: str | None = Query(default=None, description="Filter by status (ACTIVE / INACTIVE)"),
+):
+    return await territory_service.list_territories(session, status=status)
 
 
 @router.get("/{territory_id}", response_model=TerritoryRead, dependencies=[AnyAuth])

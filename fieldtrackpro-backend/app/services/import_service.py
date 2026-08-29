@@ -51,6 +51,7 @@ MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024
 # ---------------------------------------------------------------------------
 TARGET_FIELDS: dict[str, dict[str, Any]] = {
     # Geographic hierarchy
+    "territory_name":               {"label": "Territory Name",            "required": False, "aliases": ["territory", "territory name", "territory_name"]},
     "zone_name":                    {"label": "Zone / Territory",          "required": False, "aliases": ["zone", "zone_name", "territory", "region", "town", "district"]},
     "area_name":                    {"label": "Area",                      "required": False, "aliases": ["area", "area_name", "locality", "sub-zone", "market area", "location"]},
     
@@ -80,11 +81,6 @@ TARGET_FIELDS: dict[str, dict[str, Any]] = {
     "outlet_longitude":             {"label": "Outlet Longitude",          "required": False, "aliases": ["longitude", "lng", "long"]},
     "outlet_geofence_radius":       {"label": "Geofence Radius (m)",       "required": False, "aliases": ["geofence radius", "radius", "radius_m"]},
     "fos_name":                     {"label": "FOS Name / Sales Rep",      "required": False, "aliases": ["fos_name", "fos name", "fos", "assigned fos", "sales rep name", "sales rep", "rep name", "sales executive", "executive"]},
-    
-    # Geographic hierarchy
-    "territory_name":               {"label": "Territory Name",            "required": False, "aliases": ["territory", "territory name", "territory_name"]},
-    "zone_name":                    {"label": "Zone / Territory",          "required": False, "aliases": ["zone", "zone_name", "region", "town", "district"]},
-    "area_name":                    {"label": "Area",                      "required": False, "aliases": ["area", "area_name", "locality", "sub-zone", "market area", "location"]},
 
     # Financial / Business BI
     "brand":                        {"label": "Brand Name",                "required": False, "aliases": ["brand name", "division", "product line"]},
@@ -386,31 +382,6 @@ async def create_import_batch(
     workbook = openpyxl.load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
     sheet = workbook[sheet_name] if sheet_name and sheet_name in workbook.sheetnames else workbook.active
 
-    # Fetch existing reference caches
-    emp_res = await session.execute(select(Employee))
-    all_employees = emp_res.scalars().all()
-    emp_by_code = {e.employee_code.lower(): e for e in all_employees if e.employee_code}
-    emp_by_name = {e.full_name.strip().lower(): e for e in all_employees if e.full_name}
-
-    fos_map_res = await session.execute(select(FOSEmployeeMapping))
-    all_fos_mappings = fos_map_res.scalars().all()
-    fos_map = {m.raw_fos_name.strip().lower(): m.employee_id for m in all_fos_mappings}
-    if fos_mapping_overrides:
-        for k, v in fos_mapping_overrides.items():
-            fos_map[k.strip().lower()] = v
-
-    cust_res = await session.execute(select(Customer))
-    all_customers = cust_res.scalars().all()
-    cust_by_code = {c.outlet_code.lower(): c for c in all_customers if c.outlet_code}
-
-    terr_res = await session.execute(select(Territory))
-    all_territories = terr_res.scalars().all()
-    terr_by_name = {t.name.strip().lower(): t for t in all_territories if t.name}
-
-    area_res = await session.execute(select(Area))
-    all_areas = area_res.scalars().all()
-    area_by_name_and_terr = {(a.name.strip().lower(), a.territory_id): a for a in all_areas if a.name}
-
     all_sheet_rows = list(sheet.iter_rows(values_only=True))
     workbook.close()
 
@@ -426,6 +397,78 @@ async def create_import_batch(
             col_index_to_target[idx] = target
 
     detected_type = detect_sheet_type(list(column_mapping.values()))
+
+    # Collect targeted lookup keys from the file rows
+    needed_emp_codes: set[str] = set()
+    needed_fos_names: set[str] = set()
+    needed_dms_codes: set[str] = set()
+    needed_zone_names: set[str] = set()
+    needed_area_names: set[str] = set()
+
+    for row in data_rows:
+        for idx, target in col_index_to_target.items():
+            if idx < len(row) and row[idx] is not None:
+                val = str(row[idx]).strip()
+                if not val:
+                    continue
+                if target == "employee_code":
+                    needed_emp_codes.add(val.lower())
+                elif target == "fos_name":
+                    needed_fos_names.add(val.lower())
+                elif target == "dms_code":
+                    needed_dms_codes.add(val.lower())
+                elif target == "zone_name":
+                    needed_zone_names.add(val.lower())
+                elif target == "area_name":
+                    needed_area_names.add(val.lower())
+
+    # Targeted lookups bounded by file content
+    emp_by_code: dict[str, Employee] = {}
+    emp_by_name: dict[str, Employee] = {}
+    if needed_emp_codes or needed_fos_names:
+        emp_query = select(Employee)
+        emp_conds = []
+        if needed_emp_codes:
+            emp_conds.append(func.lower(Employee.employee_code).in_(list(needed_emp_codes)))
+        if needed_fos_names:
+            emp_conds.append(func.lower(Employee.full_name).in_(list(needed_fos_names)))
+        emp_res = await session.execute(emp_query.where(or_(*emp_conds)))
+        for e in emp_res.scalars().all():
+            if e.employee_code:
+                emp_by_code[e.employee_code.lower()] = e
+            if e.full_name:
+                emp_by_name[e.full_name.strip().lower()] = e
+
+    fos_map: dict[str, uuid.UUID] = {}
+    if needed_fos_names:
+        fos_map_res = await session.execute(
+            select(FOSEmployeeMapping).where(func.lower(FOSEmployeeMapping.raw_fos_name).in_(list(needed_fos_names)))
+        )
+        fos_map = {m.raw_fos_name.strip().lower(): m.employee_id for m in fos_map_res.scalars().all()}
+    if fos_mapping_overrides:
+        for k, v in fos_mapping_overrides.items():
+            fos_map[k.strip().lower()] = v
+
+    cust_by_code: dict[str, Customer] = {}
+    if needed_dms_codes:
+        cust_res = await session.execute(
+            select(Customer).where(func.lower(Customer.outlet_code).in_(list(needed_dms_codes)))
+        )
+        cust_by_code = {c.outlet_code.lower(): c for c in cust_res.scalars().all() if c.outlet_code}
+
+    terr_by_name: dict[str, Territory] = {}
+    if needed_zone_names:
+        terr_res = await session.execute(
+            select(Territory).where(func.lower(Territory.name).in_(list(needed_zone_names)))
+        )
+        terr_by_name = {t.name.strip().lower(): t for t in terr_res.scalars().all() if t.name}
+
+    area_by_name_and_terr: dict[tuple[str, uuid.UUID | None], Area] = {}
+    if needed_area_names:
+        area_res = await session.execute(
+            select(Area).where(func.lower(Area.name).in_(list(needed_area_names)))
+        )
+        area_by_name_and_terr = {(a.name.strip().lower(), a.territory_id): a for a in area_res.scalars().all() if a.name}
 
     plan_rows: list[dict] = []
     error_report: list[dict] = []
@@ -624,21 +667,61 @@ async def commit_import_batch(
     today = date.today()
 
     try:
-        # Load caches
-        emp_res = await session.execute(select(Employee))
-        emp_by_code = {e.employee_code.lower(): e for e in emp_res.scalars().all() if e.employee_code}
+        # Collect targeted lookup keys from validated plan rows
+        needed_emp_codes: set[str] = set()
+        needed_emails: set[str] = set()
+        needed_dms_codes: set[str] = set()
+        needed_zone_names: set[str] = set()
+        needed_area_names: set[str] = set()
 
-        user_res = await session.execute(select(User))
-        user_by_email = {u.email.lower(): u for u in user_res.scalars().all() if u.email}
+        for row in plan_rows:
+            if row.get("type") == "employee":
+                if row.get("employee_code"):
+                    needed_emp_codes.add(str(row["employee_code"]).lower())
+                if row.get("email"):
+                    needed_emails.add(str(row["email"]).lower())
+            elif row.get("type") == "outlet_bi":
+                if row.get("dms_code"):
+                    needed_dms_codes.add(str(row["dms_code"]).lower())
+                if row.get("zone_name"):
+                    needed_zone_names.add(str(row["zone_name"]).strip().lower())
+                if row.get("area_name"):
+                    needed_area_names.add(str(row["area_name"]).strip().lower())
 
-        terr_res = await session.execute(select(Territory))
-        terr_by_name = {t.name.strip().lower(): t for t in terr_res.scalars().all() if t.name}
+        emp_by_code: dict[str, Employee] = {}
+        if needed_emp_codes:
+            emp_res = await session.execute(
+                select(Employee).where(func.lower(Employee.employee_code).in_(list(needed_emp_codes)))
+            )
+            emp_by_code = {e.employee_code.lower(): e for e in emp_res.scalars().all() if e.employee_code}
 
-        area_res = await session.execute(select(Area))
-        area_cache = {(a.name.strip().lower(), a.territory_id): a for a in area_res.scalars().all() if a.name}
+        user_by_email: dict[str, User] = {}
+        if needed_emails:
+            user_res = await session.execute(
+                select(User).where(func.lower(User.email).in_(list(needed_emails)))
+            )
+            user_by_email = {u.email.lower(): u for u in user_res.scalars().all() if u.email}
 
-        cust_res = await session.execute(select(Customer))
-        cust_by_code = {c.outlet_code.lower(): c for c in cust_res.scalars().all() if c.outlet_code}
+        terr_by_name: dict[str, Territory] = {}
+        if needed_zone_names:
+            terr_res = await session.execute(
+                select(Territory).where(func.lower(Territory.name).in_(list(needed_zone_names)))
+            )
+            terr_by_name = {t.name.strip().lower(): t for t in terr_res.scalars().all() if t.name}
+
+        area_cache: dict[tuple[str, uuid.UUID | None], Area] = {}
+        if needed_area_names:
+            area_res = await session.execute(
+                select(Area).where(func.lower(Area.name).in_(list(needed_area_names)))
+            )
+            area_cache = {(a.name.strip().lower(), a.territory_id): a for a in area_res.scalars().all() if a.name}
+
+        cust_by_code: dict[str, Customer] = {}
+        if needed_dms_codes:
+            cust_res = await session.execute(
+                select(Customer).where(func.lower(Customer.outlet_code).in_(list(needed_dms_codes)))
+            )
+            cust_by_code = {c.outlet_code.lower(): c for c in cust_res.scalars().all() if c.outlet_code}
 
         credentials_sheet_data: list[dict] = []
 

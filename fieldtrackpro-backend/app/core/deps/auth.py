@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import decode_access_token
 from app.database import get_async_session
+from app.exceptions.custom import ForbiddenException, UnauthorizedException
 from app.models.user import Role, User
 
 _bearer = HTTPBearer(auto_error=True)
@@ -23,19 +24,14 @@ async def _get_user_from_token(
     credentials: Annotated[HTTPAuthorizationCredentials, Depends(_bearer)],
     session: Annotated[AsyncSession, Depends(get_async_session)],
 ) -> User:
-    """Decode JWT and load User from DB.  Raises 401 on any failure."""
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
+    """Decode JWT and load User from DB. Raises 401 on any failure."""
     try:
         payload = decode_access_token(credentials.credentials)
         user_id: str = payload.get("sub")
         if user_id is None:
-            raise credentials_exception
+            raise UnauthorizedException("Could not validate credentials")
     except JWTError:
-        raise credentials_exception
+        raise UnauthorizedException("Could not validate credentials")
 
     from sqlalchemy import select
 
@@ -43,10 +39,10 @@ async def _get_user_from_token(
         result = await session.execute(select(User).where(User.id == uuid.UUID(user_id)))
         user = result.scalar_one_or_none()
     except Exception:
-        raise credentials_exception
+        raise UnauthorizedException("Could not validate credentials")
 
     if user is None or not user.is_active:
-        raise credentials_exception
+        raise UnauthorizedException("Could not validate credentials")
 
     return user
 
@@ -63,10 +59,7 @@ def require_role(*roles: Role):
 
     async def _check(current_user: CurrentUser) -> User:
         if current_user.role not in roles:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions",
-            )
+            raise ForbiddenException("Insufficient permissions")
         return current_user
 
     return _check

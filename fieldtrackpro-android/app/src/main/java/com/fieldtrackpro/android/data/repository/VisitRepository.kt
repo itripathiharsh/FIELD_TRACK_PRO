@@ -1,26 +1,40 @@
 package com.fieldtrackpro.android.data.repository
 
 import com.fieldtrackpro.android.data.api.CustomerApi
+import com.fieldtrackpro.android.data.api.DashboardApi
 import com.fieldtrackpro.android.data.api.GeoApi
 import com.fieldtrackpro.android.data.api.VisitApi
 import com.fieldtrackpro.android.data.local.ConflictType
 import com.fieldtrackpro.android.data.local.OfflineQueueManager
 import com.fieldtrackpro.android.data.local.PendingAction
 import com.fieldtrackpro.android.data.local.SyncConflict
+import com.fieldtrackpro.android.data.local.TokenManager
 import com.fieldtrackpro.android.data.model.CheckInRequest
 import com.fieldtrackpro.android.data.model.CheckOutRequest
+import com.fieldtrackpro.android.data.model.DashboardSummaryDto
+import com.fieldtrackpro.android.data.model.EmployeeDayDashboardDto
 import com.fieldtrackpro.android.data.model.GeoVerificationLogDto
 import com.fieldtrackpro.android.data.model.LocationVerifyRequest
 import com.fieldtrackpro.android.data.model.LocationVerifyResponse
 import com.fieldtrackpro.android.data.model.SyncResult
 import com.fieldtrackpro.android.data.model.VisitDto
 import java.time.Instant
+import java.util.UUID
 
+/**
+ * Visit repository for managing visit lifecycle, geo verification, offline sync, and dashboard summaries.
+ *
+ * APP-CUST-001 / APP-CUST-002: Eliminated N+1 sequential customer queries; VisitDto contains customer details inline.
+ * APP-API-002: Offline queue pauses on 401 and preserves queued actions without deletion.
+ * APP-NAV-003: Integrated backend dashboard summary aggregates.
+ */
 class VisitRepository(
     private val visitApi: VisitApi,
     private val customerApi: CustomerApi,
     private val geoApi: GeoApi,
-    private val offlineQueueManager: OfflineQueueManager
+    private val offlineQueueManager: OfflineQueueManager,
+    private val dashboardApi: DashboardApi? = null,
+    private val tokenManager: TokenManager? = null
 ) {
     suspend fun getVisits(
         status: String? = null,
@@ -36,20 +50,7 @@ class VisitRepository(
                 limit = limit
             )
             if (response.isSuccessful && response.body() != null) {
-                val rawVisits = response.body()!!
-                // Enrich visit with customer name/address if available
-                val enrichedVisits = rawVisits.map { visit ->
-                    try {
-                        val custResp = customerApi.getCustomerById(visit.customerId)
-                        if (custResp.isSuccessful && custResp.body() != null) {
-                            val cust = custResp.body()!!
-                            visit.copy(customerName = cust.name, customerAddress = cust.address)
-                        } else visit
-                    } catch (e: Exception) {
-                        visit
-                    }
-                }
-                Resource.Success(enrichedVisits)
+                Resource.Success(response.body()!!)
             } else {
                 Resource.Error("Failed to fetch visits (${response.code()})", response.code())
             }
@@ -72,19 +73,7 @@ class VisitRepository(
                 limit = limit
             )
             if (response.isSuccessful && response.body() != null) {
-                val rawVisits = response.body()!!
-                val enrichedVisits = rawVisits.map { visit ->
-                    try {
-                        val custResp = customerApi.getCustomerById(visit.customerId)
-                        if (custResp.isSuccessful && custResp.body() != null) {
-                            val cust = custResp.body()!!
-                            visit.copy(customerName = cust.name, customerAddress = cust.address)
-                        } else visit
-                    } catch (e: Exception) {
-                        visit
-                    }
-                }
-                Resource.Success(enrichedVisits)
+                Resource.Success(response.body()!!)
             } else {
                 Resource.Error("Failed to fetch today's visits (${response.code()})", response.code())
             }
@@ -97,19 +86,37 @@ class VisitRepository(
         return try {
             val response = visitApi.getVisitById(visitId)
             if (response.isSuccessful && response.body() != null) {
-                var visit = response.body()!!
-                try {
-                    val custResp = customerApi.getCustomerById(visit.customerId)
-                    if (custResp.isSuccessful && custResp.body() != null) {
-                        val cust = custResp.body()!!
-                        visit = visit.copy(customerName = cust.name, customerAddress = cust.address)
-                    }
-                } catch (e: Exception) {
-                    // non-fatal customer detail enrichment
-                }
-                Resource.Success(visit)
+                Resource.Success(response.body()!!)
             } else {
                 Resource.Error("Visit not found (${response.code()})", response.code())
+            }
+        } catch (e: Exception) {
+            Resource.Error("Network error: ${e.localizedMessage ?: "Unable to connect"}")
+        }
+    }
+
+    suspend fun getDashboardSummary(): Resource<DashboardSummaryDto> {
+        if (dashboardApi == null) return Resource.Error("Dashboard API not initialized")
+        return try {
+            val response = dashboardApi.getDashboardSummary(month = "LIVE")
+            if (response.isSuccessful && response.body() != null) {
+                Resource.Success(response.body()!!)
+            } else {
+                Resource.Error("Failed to fetch dashboard summary (${response.code()})", response.code())
+            }
+        } catch (e: Exception) {
+            Resource.Error("Network error: ${e.localizedMessage ?: "Unable to connect"}")
+        }
+    }
+
+    suspend fun getMyDayDashboard(): Resource<EmployeeDayDashboardDto> {
+        if (dashboardApi == null) return Resource.Error("Dashboard API not initialized")
+        return try {
+            val response = dashboardApi.getMyDayDashboard()
+            if (response.isSuccessful && response.body() != null) {
+                Resource.Success(response.body()!!)
+            } else {
+                Resource.Error("Failed to fetch my day dashboard (${response.code()})", response.code())
             }
         } catch (e: Exception) {
             Resource.Error("Network error: ${e.localizedMessage ?: "Unable to connect"}")
@@ -121,20 +128,25 @@ class VisitRepository(
         latitude: Double,
         longitude: Double,
         capturedAtMillis: Long,
-        accuracyM: Double? = 15.0,
+        accuracyM: Double,
         isMock: Boolean = false,
         isOfflineMode: Boolean = false,
-        idempotencyKey: String? = null,
         skipEnqueueOnFailure: Boolean = false,
+        idempotencyKey: String? = null,
     ): Resource<VisitDto> {
+        val currentUserId = tokenManager?.getUserId()
+        val key = idempotencyKey ?: UUID.randomUUID().toString()
         if (isOfflineMode) {
             offlineQueueManager.enqueueAction(
                 PendingAction(
+                    userId = currentUserId,
                     visitId = visitId,
                     actionType = "CHECK_IN",
                     latitude = latitude,
                     longitude = longitude,
                     timestamp = capturedAtMillis,
+                    accuracyM = accuracyM,
+                    isMockLocation = isMock
                 )
             )
             return Resource.Error("Network offline. Action queued for sync.", isQueued = true)
@@ -147,7 +159,7 @@ class VisitRepository(
                 accuracyM = accuracyM,
                 isMockLocation = isMock,
                 capturedAt = Instant.ofEpochMilli(capturedAtMillis).toString(),
-                idempotencyKey = idempotencyKey,
+                idempotencyKey = key,
             )
             val response = visitApi.checkIn(visitId, req)
             if (response.isSuccessful && response.body() != null) {
@@ -157,19 +169,17 @@ class VisitRepository(
                 Resource.Error("Check-in rejected (${response.code()}): $errBody", response.code())
             }
         } catch (e: Exception) {
-            // Queue action automatically if network call fails - unless this
-            // call is itself a retry of an already-queued action (see
-            // syncOfflineQueue), in which case that action is still sitting
-            // in the queue and re-enqueueing here would create a duplicate
-            // that accumulates on every failed retry.
             if (!skipEnqueueOnFailure) {
                 offlineQueueManager.enqueueAction(
                     PendingAction(
+                        userId = currentUserId,
                         visitId = visitId,
                         actionType = "CHECK_IN",
                         latitude = latitude,
                         longitude = longitude,
                         timestamp = capturedAtMillis,
+                        accuracyM = accuracyM,
+                        isMockLocation = isMock
                     )
                 )
             }
@@ -182,22 +192,27 @@ class VisitRepository(
         latitude: Double,
         longitude: Double,
         capturedAtMillis: Long,
-        accuracyM: Double? = 15.0,
+        accuracyM: Double,
         isMock: Boolean = false,
         notes: String? = null,
         isOfflineMode: Boolean = false,
         skipEnqueueOnFailure: Boolean = false,
         idempotencyKey: String? = null,
     ): Resource<VisitDto> {
+        val currentUserId = tokenManager?.getUserId()
+        val key = idempotencyKey ?: UUID.randomUUID().toString()
         if (isOfflineMode) {
             offlineQueueManager.enqueueAction(
                 PendingAction(
+                    userId = currentUserId,
                     visitId = visitId,
                     actionType = "CHECK_OUT",
                     latitude = latitude,
                     longitude = longitude,
                     timestamp = capturedAtMillis,
-                    notes = notes
+                    notes = notes,
+                    accuracyM = accuracyM,
+                    isMockLocation = isMock
                 )
             )
             return Resource.Error("Network offline. Action queued for sync.", isQueued = true)
@@ -210,7 +225,8 @@ class VisitRepository(
                 accuracyM = accuracyM,
                 isMockLocation = isMock,
                 capturedAt = Instant.ofEpochMilli(capturedAtMillis).toString(),
-                idempotencyKey = idempotencyKey,
+                idempotencyKey = key,
+                notes = notes,
             )
             val response = visitApi.checkOut(visitId, req)
             if (response.isSuccessful && response.body() != null) {
@@ -223,12 +239,15 @@ class VisitRepository(
             if (!skipEnqueueOnFailure) {
                 offlineQueueManager.enqueueAction(
                     PendingAction(
+                        userId = currentUserId,
                         visitId = visitId,
                         actionType = "CHECK_OUT",
                         latitude = latitude,
                         longitude = longitude,
                         timestamp = capturedAtMillis,
-                        notes = notes
+                        notes = notes,
+                        accuracyM = accuracyM,
+                        isMockLocation = isMock
                     )
                 )
             }
@@ -236,12 +255,20 @@ class VisitRepository(
         }
     }
 
-    suspend fun verifyLocation(customerId: String, latitude: Double, longitude: Double): Resource<LocationVerifyResponse> {
+    suspend fun verifyLocation(
+        customerId: String,
+        latitude: Double,
+        longitude: Double,
+        accuracyM: Double = 10.0,
+        isMockLocation: Boolean = false
+    ): Resource<LocationVerifyResponse> {
         return try {
             val req = LocationVerifyRequest(
                 customerId = customerId,
                 latitude = latitude,
-                longitude = longitude
+                longitude = longitude,
+                accuracyM = accuracyM,
+                isMockLocation = isMockLocation
             )
             val response = geoApi.verifyLocation(req)
             if (response.isSuccessful && response.body() != null) {
@@ -268,42 +295,53 @@ class VisitRepository(
     }
 
     /**
-     * Sync offline queue with conflict detection.
+     * Sync offline queue with conflict detection and user isolation.
      *
-     * Returns a [SyncResult] containing the number of successful syncs and
-     * any conflicts that were detected.
+     * APP-API-002:
+     * - When a 401 is received, pauses sync immediately and leaves all queued actions intact.
+     * - User Isolation: Actions belonging to a different user are skipped and preserved for when that user logs in.
+     * - Returns a [SyncResult] containing synced count and detected conflicts.
      */
-    suspend fun syncOfflineQueue(): SyncResult {
+    suspend fun syncOfflineQueue(activeUserId: String? = tokenManager?.getUserId()): SyncResult {
+        val effectiveUserId = activeUserId ?: tokenManager?.getUserId()
+        if (effectiveUserId.isNullOrBlank()) {
+            // Unauthenticated: cannot sync actions without an active user session
+            return SyncResult(syncedCount = 0, conflicts = emptyList())
+        }
+
         val queue = offlineQueueManager.getQueue()
         var syncedCount = 0
         val conflicts = mutableListOf<SyncConflict>()
 
         for (action in queue) {
+            // User Isolation: If action is tagged with a userId that does NOT match the active session, skip it
+            if (action.userId != null && action.userId != effectiveUserId) {
+                continue
+            }
+
             // Check current visit status before attempting sync
             val visitStatus = getVisitById(action.visitId)
+            if (visitStatus is Resource.Error && visitStatus.code == 401) {
+                // 401 Auth expired: pause synchronization immediately without modifying queue
+                return SyncResult(syncedCount = syncedCount, conflicts = conflicts)
+            }
+
             if (visitStatus is Resource.Success) {
                 val visit = visitStatus.data
                 val conflict = detectConflict(action, visit.status)
                 if (conflict != null) {
-                    offlineQueueManager.addConflict(conflict)
+                    offlineQueueManager.saveConflict(conflict)
                     conflicts.add(conflict)
                     continue
                 }
             }
 
-            // action.id is stable across retries of this same queued item, so
-            // it doubles as the idempotency key: the backend enforces
-            // uniqueness per visit on it, making a replayed check-in safe.
-            // skipEnqueueOnFailure=true because `action` already represents
-            // this pending work in the queue - re-enqueueing on a failed
-            // retry would add a duplicate on top of the original.
-            // action.timestamp is the ORIGINAL GPS capture time (see
-            // PendingAction), not "now" - the server's freshness check must
-            // see how old the fix genuinely was, not when this retry happened.
             val res = if (action.actionType == "CHECK_IN") {
                 checkIn(
                     action.visitId, action.latitude, action.longitude,
                     capturedAtMillis = action.timestamp,
+                    accuracyM = action.accuracyM ?: 0.0,
+                    isMock = action.isMockLocation,
                     isOfflineMode = false,
                     idempotencyKey = action.id,
                     skipEnqueueOnFailure = true,
@@ -312,6 +350,8 @@ class VisitRepository(
                 checkOut(
                     action.visitId, action.latitude, action.longitude,
                     capturedAtMillis = action.timestamp,
+                    accuracyM = action.accuracyM ?: 0.0,
+                    isMock = action.isMockLocation,
                     notes = action.notes,
                     isOfflineMode = false,
                     idempotencyKey = action.id,
@@ -325,9 +365,13 @@ class VisitRepository(
                     syncedCount++
                 }
                 is Resource.Error -> {
+                    if (res.code == 401) {
+                        // 401 Auth expired: pause synchronization, preserve remaining queue items
+                        return SyncResult(syncedCount = syncedCount, conflicts = conflicts)
+                    }
                     val conflict = detectConflictFromError(action, res.message, res.code)
                     if (conflict != null) {
-                        offlineQueueManager.addConflict(conflict)
+                        offlineQueueManager.saveConflict(conflict)
                         conflicts.add(conflict)
                     }
                 }
@@ -345,13 +389,6 @@ class VisitRepository(
         Companion.detectConflictFromError(action, errorMessage, errorCode)
 
     companion object {
-        /**
-         * Pure conflict-detection logic, exposed here (rather than left as a
-         * private instance method) specifically so tests can exercise the
-         * real production logic directly instead of hand-copying a
-         * duplicate of it - the ConflictDetectionTest.kt anti-pattern this
-         * project has previously been criticized for.
-         */
         fun detectConflict(action: PendingAction, serverStatus: String?): SyncConflict? {
             if (serverStatus == null) return null
             return when {
@@ -386,11 +423,6 @@ class VisitRepository(
         fun detectConflictFromError(action: PendingAction, errorMessage: String?, errorCode: Int?): SyncConflict? {
             if (errorMessage == null) return null
             return when {
-                // A queued action that, once finally synced, fails the server's
-                // normal business rejection (outside geofence, stale fix, poor
-                // accuracy, mock provider) - not a transport/auth problem, so it
-                // must not just sit in the queue retrying forever with no
-                // visibility; the rep needs to see and resolve this specifically.
                 errorCode == 422 && errorMessage.contains("GEO_VERIFICATION_FAILED", ignoreCase = true) -> SyncConflict(
                     pendingAction = action,
                     conflictType = ConflictType.GEO_VALIDATION_FAILED,
@@ -420,5 +452,3 @@ class VisitRepository(
         }
     }
 }
-
-

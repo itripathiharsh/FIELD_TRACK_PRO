@@ -7,6 +7,7 @@ and produces an unhandled 500).
 """
 from __future__ import annotations
 
+import uuid
 import pytest
 from httpx import AsyncClient
 
@@ -169,3 +170,75 @@ async def test_customer_update_persists(
     row = db.fetch_one("SELECT name, geofence_radius_m FROM customers WHERE id = %s", (cid,))
     assert row["name"] == f"{TEST_MARKER}After Update"
     assert row["geofence_radius_m"] == 150
+
+
+async def test_create_customer_duplicate_outlet_code_returns_409_conflict(
+    client: AsyncClient, admin_headers, created_customers
+):
+    code = f"DMS_TEST_{TEST_MARKER[:6]}"
+    resp1 = await client.post(
+        "/api/v1/customers",
+        json={
+            "name": f"{TEST_MARKER} First With Code",
+            "contact_number": "+919876500015",
+            "address": "17 Integration Way",
+            "location": {"latitude": 12.97, "longitude": 77.59},
+            "outlet_code": code,
+        },
+        headers=admin_headers,
+    )
+    assert resp1.status_code == 201
+    created_customers.append(resp1.json()["id"])
+
+    # Second insert with the identical outlet_code must return 409 Conflict, not 500
+    resp2 = await client.post(
+        "/api/v1/customers",
+        json={
+            "name": f"{TEST_MARKER} Second With Code",
+            "contact_number": "+919876500016",
+            "address": "18 Integration Way",
+            "location": {"latitude": 12.97, "longitude": 77.59},
+            "outlet_code": code,
+        },
+        headers=admin_headers,
+    )
+    assert resp2.status_code == 409, resp2.text
+    body = resp2.json()
+    assert "already exists" in body["error"]["message"].lower()
+    assert body["error"]["code"] == "OUTLET_CODE_EXISTS"
+
+
+async def test_list_customers_server_side_pagination_and_search(
+    client: AsyncClient, admin_headers, created_customers
+):
+    unique_keyword = f"UniqueSearch_{uuid.uuid4().hex[:6]}"
+    for i in range(3):
+        resp = await client.post(
+            "/api/v1/customers",
+            json={
+                "name": f"{TEST_MARKER} {unique_keyword} Co {i}",
+                "contact_number": f"+91987650002{i}",
+                "address": f"{i} Integration Way",
+                "location": {"latitude": 12.97, "longitude": 77.59},
+                "outlet_code": f"DMS_{unique_keyword}_{i}",
+            },
+            headers=admin_headers,
+        )
+        assert resp.status_code == 201
+        created_customers.append(resp.json()["id"])
+
+    # Query with search keyword
+    list_resp = await client.get(
+        f"/api/v1/customers?search={unique_keyword}&skip=0&limit=2",
+        headers=admin_headers,
+    )
+    assert list_resp.status_code == 200
+    assert "X-Total-Count" in list_resp.headers
+    assert int(list_resp.headers["X-Total-Count"]) == 3
+    items = list_resp.json()
+    assert len(items) == 2
+    # Verify created_at DESC ordering: newest customer (Co 2) comes first
+    assert unique_keyword in items[0]["name"]
+    assert "Co 2" in items[0]["name"]
+
+

@@ -33,7 +33,7 @@ class PaymentCreate(BaseModel):
 
     visit_id: uuid.UUID
     invoice_id: uuid.UUID | None = None
-    amount: Decimal = Field(gt=0)
+    amount: Decimal = Field(gt=0, le=Decimal("9999999999.99"), max_digits=12, decimal_places=2)
     payment_method: PaymentMethod
     payment_date: date
     cheque_number: str | None = Field(default=None, max_length=50)

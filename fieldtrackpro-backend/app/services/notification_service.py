@@ -10,6 +10,7 @@ from typing import Sequence
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.exceptions.custom import ForbiddenException, ResourceNotFoundException
 from app.models.notification import Notification, NotificationType
 
 logger = logging.getLogger("fieldtrackpro")
@@ -45,15 +46,16 @@ class NotificationService:
     ) -> None:
         """Mark a notification as read. Only the owner can mark it."""
         result = await session.execute(
-            select(Notification).where(
-                Notification.id == notification_id,
-                Notification.user_id == user_id,
-            )
+            select(Notification).where(Notification.id == notification_id)
         )
         notification = result.scalar_one_or_none()
-        if notification is not None:
-            notification.is_read = True
-            await session.commit()
+        if notification is None:
+            raise ResourceNotFoundException("Notification not found")
+        if notification.user_id != user_id:
+            raise ForbiddenException("Cannot mark another user's notification as read")
+
+        notification.is_read = True
+        await session.commit()
 
     async def create_notification(
         self,

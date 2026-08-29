@@ -35,7 +35,8 @@ class VisitSummaryViewModel(
         visitApi = ApiClient.createVisitApi(tokenManager),
         customerApi = ApiClient.createCustomerApi(tokenManager),
         geoApi = ApiClient.createGeoApi(tokenManager),
-        offlineQueueManager = offlineQueueManager
+        offlineQueueManager = offlineQueueManager,
+        tokenManager = tokenManager
     )
     private val mediaRepository = MediaRepository(ApiClient.createMediaApi(tokenManager))
 
@@ -70,5 +71,9 @@ class VisitSummaryViewModel(
                 else -> {}
             }
         }
+    }
+
+    fun resetState() {
+        _summaryState.value = VisitSummaryState.Loading
     }
 }

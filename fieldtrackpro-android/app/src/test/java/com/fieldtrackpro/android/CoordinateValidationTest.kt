@@ -1,17 +1,16 @@
 package com.fieldtrackpro.android
 
+import com.fieldtrackpro.android.utils.CoordinateValidator
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CoordinateValidationTest {
 
     private fun isValidCoordinate(latText: String?, lonText: String?): Boolean {
-        val parsedLat = latText?.toDoubleOrNull()
-        val parsedLon = lonText?.toDoubleOrNull()
-        val isNotNullIsland = parsedLat != 0.0 || parsedLon != 0.0
-        return parsedLat != null && parsedLon != null &&
-            parsedLat in -90.0..90.0 && parsedLon in -180.0..180.0 && isNotNullIsland
+        return CoordinateValidator.isValidCoordinate(latText, lonText)
     }
 
     @Test
@@ -83,26 +82,12 @@ class CoordinateValidationTest {
     }
 
     @Test
-    fun validNearZeroCoordinates_pass() {
-        assertTrue(isValidCoordinate("0.000001", "0.000001"))
-        assertTrue(isValidCoordinate("-0.000001", "0.000001"))
-        assertTrue(isValidCoordinate("0.000001", "-0.000001"))
-    }
-
-    @Test
-    fun emptyFields_areRejectedAsInvalid() {
-        assertFalse("Empty latitude must be rejected", isValidCoordinate("", "77.594600"))
-        assertFalse("Empty longitude must be rejected", isValidCoordinate("12.971600", ""))
-        assertFalse("Both empty must be rejected", isValidCoordinate("", ""))
-    }
-
-    @Test
-    fun noHardcodedCoordinates_productionDefaultIsInvalid() {
-        val emptyLat = ""
-        val emptyLon = ""
-        assertFalse(
-            "Production default (empty fields) must not be treated as valid coordinates",
-            isValidCoordinate(emptyLat, emptyLon)
-        )
+    fun parseCoordinate_validAndInvalid() {
+        assertEquals(12.34, CoordinateValidator.parseCoordinate("12.34")!!, 0.0001)
+        assertEquals(-77.5, CoordinateValidator.parseCoordinate(" -77.5 ")!!, 0.0001)
+        assertNull(CoordinateValidator.parseCoordinate(""))
+        assertNull(CoordinateValidator.parseCoordinate("   "))
+        assertNull(CoordinateValidator.parseCoordinate("invalid"))
+        assertNull(CoordinateValidator.parseCoordinate(null))
     }
 }

@@ -3,7 +3,7 @@ import enum
 import uuid
 from typing import Any, Optional
 from datetime import datetime
-from sqlalchemy import ForeignKey, Enum, DateTime, func, Boolean
+from sqlalchemy import ForeignKey, Enum, DateTime, func, Boolean, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from geoalchemy2 import Geography
 from app.database import Base
@@ -31,6 +31,7 @@ class Visit(Base):
     check_out_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     check_out_location: Mapped[Optional[Any]] = mapped_column(Geography(geometry_type="POINT", srid=4326), nullable=True)
     check_out_received_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    notes: Mapped[Optional[str]] = mapped_column(String(2000), nullable=True)
     synced: Mapped[bool] = mapped_column(Boolean, default=False)
     created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -89,3 +90,35 @@ class Visit(Base):
     @property
     def territory_name(self) -> Optional[str]:
         return self.customer.territory.name if self.customer and self.customer.territory else None
+
+    @property
+    def customer_latitude(self) -> Optional[float]:
+        if self.customer and self.customer.location:
+            from app.services.customer_service import extract_coords
+            lat, _ = extract_coords(self.customer.location)
+            return lat
+        return None
+
+    @property
+    def customer_longitude(self) -> Optional[float]:
+        if self.customer and self.customer.location:
+            from app.services.customer_service import extract_coords
+            _, lng = extract_coords(self.customer.location)
+            return lng
+        return None
+
+    @property
+    def customer_geofence_radius_m(self) -> Optional[int]:
+        return self.customer.geofence_radius_m if self.customer else None
+
+    @property
+    def customer_outlet_code(self) -> Optional[str]:
+        return self.customer.outlet_code if self.customer else None
+
+    @property
+    def customer_contact_number(self) -> Optional[str]:
+        return self.customer.contact_number if self.customer else None
+
+    @property
+    def customer_contact_person(self) -> Optional[str]:
+        return self.customer.contact_person if self.customer else None

@@ -26,14 +26,17 @@ object NavigationHelper {
      * @param label Location label (shown in fallback)
      * @return true if navigation was launched, false if no maps app available
      */
-    fun navigateToCustomer(context: Context, lat: Double, lng: Double, label: String): Boolean {
+    fun navigateToCustomer(context: Context, lat: Double?, lng: Double?, label: String): Boolean {
         // Validate coordinates before constructing URI
         if (!isValidCoordinate(lat, lng)) {
             return false
         }
 
+        val validLat = lat!!
+        val validLng = lng!!
+
         // Primary: Google Maps navigation intent
-        val navigationUri = Uri.parse("google.navigation:q=$lat,$lng")
+        val navigationUri = Uri.parse("google.navigation:q=$validLat,$validLng")
         val navigationIntent = Intent(Intent.ACTION_VIEW, navigationUri).apply {
             setPackage("com.google.android.apps.maps")
         }
@@ -48,7 +51,7 @@ object NavigationHelper {
         }
 
         // Fallback: generic geo: URI
-        val fallbackUri = Uri.parse("geo:$lat,$lng?q=$lat,$lng(${Uri.encode(label)})")
+        val fallbackUri = Uri.parse("geo:$validLat,$validLng?q=$validLat,$validLng(${Uri.encode(label)})")
         val fallbackIntent = Intent(Intent.ACTION_VIEW, fallbackUri)
 
         try {
@@ -62,7 +65,7 @@ object NavigationHelper {
 
         // Final Fallback: Web browser
         try {
-            val webUri = Uri.parse("https://maps.google.com/?q=$lat,$lng")
+            val webUri = Uri.parse("https://maps.google.com/?q=$validLat,$validLng")
             val webIntent = Intent(Intent.ACTION_VIEW, webUri)
             context.startActivity(webIntent)
             return true
@@ -74,18 +77,15 @@ object NavigationHelper {
     /**
      * Validate that coordinates are within valid ranges and not (0,0).
      */
-    fun isValidCoordinate(lat: Double, lng: Double): Boolean {
-        if (lat < -90.0 || lat > 90.0) return false
-        if (lng < -180.0 || lng > 180.0) return false
-        // Reject Null Island
-        if (lat == 0.0 && lng == 0.0) return false
-        return true
+    fun isValidCoordinate(lat: Double?, lng: Double?): Boolean {
+        return CoordinateValidator.isValidCoordinate(lat, lng)
     }
 
     /**
      * Format coordinates for display.
      */
-    fun formatCoordinates(lat: Double, lng: Double): String {
+    fun formatCoordinates(lat: Double?, lng: Double?): String {
+        if (lat == null || lng == null) return "N/A"
         return "${String.format("%.6f", lat)}, ${String.format("%.6f", lng)}"
     }
 }

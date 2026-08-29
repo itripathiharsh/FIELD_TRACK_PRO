@@ -20,7 +20,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy import event
 
-from tests.integration.conftest import create_visit, requires_db
+from tests.integration.conftest import create_visit, requires_db, iso_in
 
 pytestmark = [requires_db, pytest.mark.integration, pytest.mark.asyncio]
 
@@ -311,7 +311,7 @@ async def test_cannot_delete_question_with_recorded_answers(
         json={"form_id": setup["form_id"], "visit_id": visit_id, "answers": [{"question_id": setup["question_id"], "answer_value": "good"}]},
         headers=employee_headers,
     )
-    assert resp.status_code == 200, resp.text
+    assert resp.status_code in (200, 201), resp.text
 
     await client.post(f"/api/v1/form-templates/{setup['form_id']}/unpublish", headers=admin_headers)
     resp = await client.delete(f"/api/v1/questions/{setup['question_id']}", headers=admin_headers)
@@ -542,7 +542,7 @@ async def test_admin_can_still_draft_save_against_unpublished_form(
         json={"form_id": setup["form_id"], "visit_id": visit_id, "answers": []},
         headers=admin_headers,
     )
-    assert resp.status_code == 200, resp.text
+    assert resp.status_code in (200, 201), resp.text
 
 
 # ---------------------------------------------------------------------------
@@ -574,7 +574,7 @@ async def test_submission_requires_visit_ownership(
         json={"form_id": setup["form_id"], "visit_id": visit_id, "answers": []},
         headers=employee_headers,
     )
-    assert resp.status_code == 200, resp.text
+    assert resp.status_code in (200, 201), resp.text
 
 
 async def test_admin_can_submit_for_any_visit(
@@ -590,7 +590,7 @@ async def test_admin_can_submit_for_any_visit(
         json={"form_id": setup["form_id"], "visit_id": visit_id, "answers": []},
         headers=admin_headers,
     )
-    assert resp.status_code == 200, resp.text
+    assert resp.status_code in (200, 201), resp.text
 
 
 async def test_draft_save_then_submit_persists_answers(
@@ -607,7 +607,7 @@ async def test_draft_save_then_submit_persists_answers(
         json={"form_id": setup["form_id"], "visit_id": visit_id, "answers": [{"question_id": setup["question_id"], "answer_value": "good"}]},
         headers=employee_headers,
     )
-    assert draft.status_code == 200, draft.text
+    assert draft.status_code in (200, 201), draft.text
     submission_id = draft.json()["id"]
     assert draft.json()["status"] == "DRAFT"
 
@@ -708,7 +708,7 @@ async def test_cannot_submit_to_unpublished_form(
         json={"form_id": setup["form_id"], "visit_id": visit_id, "answers": [{"question_id": setup["question_id"], "answer_value": "good"}]},
         headers=employee_headers,
     )
-    assert resp.status_code == 200, resp.text
+    assert resp.status_code in (200, 201), resp.text
     submission_id = resp.json()["id"]
 
     await client.post(f"/api/v1/form-templates/{setup['form_id']}/unpublish", headers=admin_headers)
@@ -865,9 +865,10 @@ async def test_list_submissions_pagination(
     await client.post(f"/api/v1/form-templates/{setup['form_id']}/publish", headers=admin_headers)
 
     submission_ids = []
-    for _ in range(3):
+    for i in range(3):
         visit_id = await create_visit(
             client, admin_headers, seeded_world["customer_id"], seeded_world["employee_id"], created_visits,
+            scheduled_at=iso_in(1.0 + i * 2.0),
         )
         resp = await client.post(
             "/api/v1/form-submissions",
@@ -933,9 +934,10 @@ async def test_list_submissions_does_not_n_plus_one(
     setup = await build_publishable_form(client, admin_headers, created_forms)
     await client.post(f"/api/v1/form-templates/{setup['form_id']}/publish", headers=admin_headers)
 
-    for _ in range(6):
+    for i in range(6):
         visit_id = await create_visit(
             client, admin_headers, seeded_world["customer_id"], seeded_world["employee_id"], created_visits,
+            scheduled_at=iso_in(1.0 + i * 2.0),
         )
         await client.post(
             "/api/v1/form-submissions",

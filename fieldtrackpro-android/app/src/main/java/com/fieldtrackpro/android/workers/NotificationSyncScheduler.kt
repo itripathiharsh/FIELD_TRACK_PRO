@@ -44,4 +44,10 @@ object NotificationSyncScheduler {
             oneTimeRequest
         )
     }
+
+    fun cancelAll(context: Context) {
+        val workManager = WorkManager.getInstance(context)
+        workManager.cancelUniqueWork(PERIODIC_WORK_NAME)
+        workManager.cancelUniqueWork(ONE_TIME_WORK_NAME)
+    }
 }

@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps.auth import CurrentUser
 from app.database import get_async_session
-from app.exceptions.custom import BaseAPIException
+from app.exceptions.custom import BaseAPIException, ForbiddenException
 from app.schemas.media import MediaRead
 from app.services import media_service
 from app.services.storage.local_provider import verify_local_media_signature
@@ -82,12 +82,9 @@ async def download_local_media_file(key: str, expires: int, sig: str):
     caused this endpoint to 401 against the *other* route on first attempt).
     """
     if not verify_local_media_signature(key, expires, sig):
-        raise HTTPException(status_code=403, detail="Invalid or expired download link")
+        raise ForbiddenException("Invalid or expired download link")
 
-    try:
-        file_bytes = await storage_service.download(key)
-    except BaseAPIException as exc:
-        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    file_bytes = await storage_service.download(key)
 
     content_type = mimetypes.guess_type(key)[0] or "application/octet-stream"
     return Response(content=file_bytes, media_type=content_type)

@@ -40,7 +40,7 @@ class EmployeeVisitReportRow(BaseModel):
 class EmployeeMasterReportRow(BaseModel):
     """Full employee master row for management reporting."""
     employee_id: uuid.UUID
-    employee_code: str
+    employee_code: Optional[str] = None
     full_name: str
     email: Optional[str] = None
     phone_number: Optional[str] = None

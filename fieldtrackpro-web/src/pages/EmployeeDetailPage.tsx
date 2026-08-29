@@ -67,6 +67,11 @@ export const EmployeeDetailPage: React.FC = () => {
   const [editFullName, setEditFullName] = useState('');
   const [editEmployeeCode, setEditEmployeeCode] = useState('');
   const [editEmail, setEditEmail] = useState('');
+  const [editMobile, setEditMobile] = useState('');
+  const [editWorkingProfile, setEditWorkingProfile] = useState('');
+  const [editDob, setEditDob] = useState('');
+  const [editAddress, setEditAddress] = useState('');
+  const [editFieldErrors, setEditFieldErrors] = useState<Record<string, string>>({});
   const [editProfileError, setEditProfileError] = useState<string | null>(null);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
 
@@ -138,6 +143,11 @@ export const EmployeeDetailPage: React.FC = () => {
     setEditFullName(employee.full_name);
     setEditEmployeeCode(employee.employee_code || '');
     setEditEmail(employee.user?.email || '');
+    setEditMobile(employee.user?.mobile_number || '');
+    setEditWorkingProfile(employee.working_profile || '');
+    setEditDob(employee.date_of_birth ? String(employee.date_of_birth) : '');
+    setEditAddress(employee.address || '');
+    setEditFieldErrors({});
     setEditProfileError(null);
     setIsEditProfileOpen(true);
   };
@@ -145,16 +155,24 @@ export const EmployeeDetailPage: React.FC = () => {
   const handleSaveProfile = async () => {
     if (!id || !employee) return;
     setEditProfileError(null);
+    setEditFieldErrors({});
     setIsSavingProfile(true);
     try {
       await apiClient.updateEmployee(id, {
         full_name: editFullName.trim() || undefined,
-        employee_code: editEmployeeCode.trim() || null,
+        employee_code: editEmployeeCode.trim().toUpperCase() || null,
         email: editEmail.trim() || undefined,
+        mobile_number: editMobile.trim() || null,
+        working_profile: editWorkingProfile.trim() || null,
+        date_of_birth: editDob.trim() || null,
+        address: editAddress.trim() || null,
       });
       setIsEditProfileOpen(false);
       await load();
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.fieldErrors) {
+        setEditFieldErrors(err.fieldErrors);
+      }
       setEditProfileError(err instanceof Error ? err.message : 'Failed to update employee profile');
     } finally {
       setIsSavingProfile(false);
@@ -547,39 +565,98 @@ export const EmployeeDetailPage: React.FC = () => {
         </div>
       </Modal>
 
-      <Modal isOpen={isEditProfileOpen} onClose={() => setIsEditProfileOpen(false)} title="Edit Employee Profile" size="md">
+      <Modal
+        isOpen={isEditProfileOpen}
+        onClose={() => !isSavingProfile && setIsEditProfileOpen(false)}
+        disableClose={isSavingProfile}
+        title="Edit Employee Profile"
+        size="md"
+      >
         <div className="space-y-space-4">
           {editProfileError && <ErrorBanner message={editProfileError} />}
-          
+
+          {employee && editEmail.trim().toLowerCase() !== (employee.user?.email || '').toLowerCase() && (
+            <div className="p-space-3 bg-amber-500/10 border border-amber-500/30 rounded-lg text-amber-700 dark:text-amber-300 text-xs">
+              <strong>Warning:</strong> Changing email will sign this user out of other sessions.
+            </div>
+          )}
+
           <Input
             label="Full Name"
             value={editFullName}
+            error={editFieldErrors.full_name}
             onChange={(e) => setEditFullName(e.target.value)}
             required
           />
-          
+
+          <div className="grid grid-cols-2 gap-space-3">
+            <Input
+              label="Email"
+              type="email"
+              value={editEmail}
+              error={editFieldErrors.email}
+              onChange={(e) => setEditEmail(e.target.value)}
+            />
+            <Input
+              label="Mobile Phone"
+              type="tel"
+              value={editMobile}
+              error={editFieldErrors.mobile_number}
+              onChange={(e) => setEditMobile(e.target.value)}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-space-3">
+            <Input
+              label="Employee Code"
+              value={editEmployeeCode}
+              error={editFieldErrors.employee_code}
+              onChange={(e) => setEditEmployeeCode(e.target.value)}
+              helperText="Uppercase unique code."
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-space-3">
+            <Input
+              label="Working Profile"
+              value={editWorkingProfile}
+              onChange={(e) => setEditWorkingProfile(e.target.value)}
+              placeholder="e.g. FIELD_REP"
+            />
+            <Input
+              label="Date of Birth"
+              type="date"
+              value={editDob}
+              onChange={(e) => setEditDob(e.target.value)}
+            />
+          </div>
+
           <Input
-            label="Email"
-            type="email"
-            value={editEmail}
-            onChange={(e) => setEditEmail(e.target.value)}
-            helperText="Changing an email will revoke the user's current session."
-          />
-          
-          <Input
-            label="Employee Code"
-            value={editEmployeeCode}
-            onChange={(e) => setEditEmployeeCode(e.target.value)}
+            label="Address"
+            value={editAddress}
+            onChange={(e) => setEditAddress(e.target.value)}
+            placeholder="Residential / office address"
           />
 
-          <Button
-            variant="primary"
-            className="w-full"
-            isLoading={isSavingProfile}
-            onClick={() => void handleSaveProfile()}
-          >
-            Save Changes
-          </Button>
+          <div className="pt-space-4 flex justify-end gap-space-3 border-t border-surface-container-highest">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={isSavingProfile}
+              onClick={() => setIsEditProfileOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              isLoading={isSavingProfile}
+              onClick={() => void handleSaveProfile()}
+            >
+              Save Changes
+            </Button>
+          </div>
         </div>
       </Modal>
     </div>

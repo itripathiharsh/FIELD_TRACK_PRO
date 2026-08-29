@@ -255,15 +255,8 @@ async def get_my_today_visits(
     employee = await get_employee_by_user_id(current_user.id, session)
     repo = VisitRepository(session)
 
-    # Calculate Today's boundaries in IST (+05:30)
-    tz_offset = timezone(timedelta(hours=5, minutes=30))
-    now_local = datetime.now(tz_offset)
-    start_local = datetime(now_local.year, now_local.month, now_local.day, 0, 0, 0, tzinfo=tz_offset)
-    end_local = start_local + timedelta(days=1)
-
-    # Convert to UTC for database comparison
-    start_utc = start_local.astimezone(timezone.utc)
-    end_utc = end_local.astimezone(timezone.utc)
+    from app.core.datetime_utils import get_ist_today_range
+    start_utc, end_utc = get_ist_today_range()
 
     return await repo.list_filtered_paginated(
         employee_id=employee.id,
@@ -287,15 +280,28 @@ async def check_in(
 
     visit = await get_visit_for_user(visit_id, current_user, session)
 
-    # Idempotency: if key matches a previous successful check-in, return current visit
+    # Idempotency: if key matches any previous check-in attempt, replay the exact outcome
     if data.idempotency_key:
         geo_repo = GeoLogRepository(session)
-        if await geo_repo.idempotency_key_exists(visit.id, data.idempotency_key):
+        existing_log = await geo_repo.get_by_idempotency_key(visit.id, data.idempotency_key)
+        if existing_log is not None:
+            if not existing_log.is_valid:
+                raise BaseAPIException(
+                    status_code=422,
+                    detail=f"Check-in failed: {existing_log.failure_reason}",
+                    error_code="GEO_VERIFICATION_FAILED",
+                )
             return visit
 
     assert_valid_transition(visit.status, VisitStatus.IN_PROGRESS)
 
     customer = await get_customer(visit.customer_id, session)
+    if customer.location is None:
+        raise BaseAPIException(
+            status_code=422,
+            detail="Outlet location is not configured.",
+            error_code="OUTLET_LOCATION_NOT_CONFIGURED",
+        )
 
     # FT-004: PostGIS measures the distance from the stored geography.
     geo_res = await verify_device_against_customer(
@@ -322,7 +328,7 @@ async def check_in(
     await geo_repo.add(log)
 
     if not geo_res.is_valid:
-        # Check if failure threshold reached â€” auto-flag visit
+        # Check if failure threshold reached — auto-flag visit
         fail_count = await geo_repo.count_failed_for_visit(visit.id)
         if fail_count >= GEO_FAILURE_THRESHOLD and visit.status in (VisitStatus.PENDING, VisitStatus.IN_PROGRESS):
             visit.status = VisitStatus.FLAGGED
@@ -354,15 +360,49 @@ async def check_out(
 
     visit = await get_visit_for_user(visit_id, current_user, session)
 
-    # Idempotency: if key matches a previous successful check-out, return current visit
+    # Idempotency: if key matches any previous check-out attempt, replay the exact outcome
     if data.idempotency_key:
         geo_repo = GeoLogRepository(session)
-        if await geo_repo.idempotency_key_exists(visit.id, data.idempotency_key):
+        existing_log = await geo_repo.get_by_idempotency_key(visit.id, data.idempotency_key)
+        if existing_log is not None:
+            if not existing_log.is_valid:
+                raise BaseAPIException(
+                    status_code=422,
+                    detail=f"Check-out failed: {existing_log.failure_reason}",
+                    error_code="GEO_VERIFICATION_FAILED",
+                )
             return visit
+
+    if visit.status == VisitStatus.COMPLETED:
+        return visit
+
+    if visit.status != VisitStatus.IN_PROGRESS:
+        raise BaseAPIException(
+            status_code=400,
+            detail="Check-in is required before checking out",
+            error_code="CHECKIN_REQUIRED",
+        )
 
     assert_valid_transition(visit.status, VisitStatus.COMPLETED)
 
+    check_out_time = data.captured_at if data.captured_at else datetime.now(tz=timezone.utc)
+    if visit.check_in_at is not None:
+        cin = visit.check_in_at if visit.check_in_at.tzinfo else visit.check_in_at.replace(tzinfo=timezone.utc)
+        cout = check_out_time if check_out_time.tzinfo else check_out_time.replace(tzinfo=timezone.utc)
+        if cout < cin:
+            raise BaseAPIException(
+                status_code=422,
+                detail="Check-out time cannot be earlier than check-in time",
+                error_code="INVALID_VISIT_DURATION",
+            )
+
     customer = await get_customer(visit.customer_id, session)
+    if customer.location is None:
+        raise BaseAPIException(
+            status_code=422,
+            detail="Outlet location is not configured.",
+            error_code="OUTLET_LOCATION_NOT_CONFIGURED",
+        )
 
     # FT-004: identical geofence rules as check-in, same PostGIS distance.
     geo_res = await verify_device_against_customer(
@@ -403,6 +443,8 @@ async def check_out(
     visit.check_out_at = data.captured_at if data.captured_at else datetime.now(tz=timezone.utc)
     visit.check_out_received_at = datetime.now(tz=timezone.utc)
     visit.check_out_location = f"SRID=4326;POINT({data.longitude} {data.latitude})"
+    if data.notes is not None:
+        visit.notes = data.notes
     session.add(visit)
     await session.commit()
     repo = VisitRepository(session)
@@ -603,5 +645,25 @@ async def update_visit_required_form(
     await session.commit()
     repo = VisitRepository(session)
     return await repo.get_full(visit.id)
+
+
+async def find_stale_in_progress_visits(
+    session: AsyncSession, threshold_hours: int = 24
+) -> list[Visit]:
+    """
+    WEB-EMP-026: Identify IN_PROGRESS visits that have remained in progress beyond threshold_hours.
+    Provides the isolated query/service helper needed to identify stale visits without prematurely
+    deciding terminal state.
+    """
+    from datetime import datetime, timezone, timedelta
+    cutoff = datetime.now(tz=timezone.utc) - timedelta(hours=threshold_hours)
+    result = await session.execute(
+        select(Visit).where(
+            Visit.status == VisitStatus.IN_PROGRESS,
+            Visit.check_in_at < cutoff,
+        )
+    )
+    return list(result.scalars().all())
+
 
 

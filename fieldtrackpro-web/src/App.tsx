@@ -48,7 +48,7 @@ const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, isAuthenticated, isLoading } = useAuth();
   if (isLoading) return <AuthLoadingFallback />;
   if (!isAuthenticated) return <Navigate to="/login" replace />;
-  if (user?.role === 'EMPLOYEE') return <Navigate to="/" replace />;
+  if (user?.role !== 'ADMIN') return <Navigate to="/" replace />;
   return <>{children}</>;
 };
 

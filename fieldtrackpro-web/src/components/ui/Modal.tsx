@@ -7,6 +7,7 @@ interface ModalProps {
   title: string;
   subtitle?: string;
   size?: 'sm' | 'md' | 'lg' | 'xl';
+  disableClose?: boolean;
   children: React.ReactNode;
 }
 
@@ -16,19 +17,20 @@ export const Modal: React.FC<ModalProps> = ({
   title,
   subtitle,
   size = 'md',
+  disableClose = false,
   children,
 }) => {
   const titleId = useId();
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
+      if (e.key === 'Escape' && isOpen && !disableClose) {
         onClose();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, disableClose]);
 
   if (!isOpen) return null;
 
@@ -42,7 +44,9 @@ export const Modal: React.FC<ModalProps> = ({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-space-4 bg-primary/40 backdrop-blur-xs transition-opacity duration-200"
-      onClick={onClose}
+      onClick={() => {
+        if (!disableClose) onClose();
+      }}
     >
       <div
         role="dialog"
@@ -57,8 +61,11 @@ export const Modal: React.FC<ModalProps> = ({
             {subtitle && <p className="font-caption text-xs text-on-surface-variant mt-0.5">{subtitle}</p>}
           </div>
           <button
-            onClick={onClose}
-            className="text-on-surface-variant hover:text-on-surface p-space-1.5 rounded-lg hover:bg-surface-container transition-colors cursor-pointer focus:outline-none focus:ring-1 focus:ring-primary-container"
+            onClick={() => {
+              if (!disableClose) onClose();
+            }}
+            disabled={disableClose}
+            className="text-on-surface-variant hover:text-on-surface p-space-1.5 rounded-lg hover:bg-surface-container transition-colors cursor-pointer focus:outline-none focus:ring-1 focus:ring-primary-container disabled:opacity-40 disabled:cursor-not-allowed"
             aria-label="Close modal"
           >
             <X className="w-5 h-5" />

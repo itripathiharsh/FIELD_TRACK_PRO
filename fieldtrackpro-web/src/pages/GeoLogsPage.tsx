@@ -6,11 +6,13 @@ import { PageHeader } from '../components/ui/PageHeader';
 import { ErrorBanner } from '../components/ui/ErrorBanner';
 import { EmptyState } from '../components/ui/EmptyState';
 import { apiClient } from '../api/client';
-import { GeoVerificationLog, Visit } from '../types';
+import { GeoVerificationLog } from '../types';
 
-/** A geo log paired with the visit it belongs to, for display context. */
 interface GeoLogRow extends GeoVerificationLog {
   customer_id?: string;
+  customer_name?: string;
+  employee_id?: string;
+  employee_name?: string;
 }
 
 export const GeoLogsPage: React.FC = () => {
@@ -18,34 +20,34 @@ export const GeoLogsPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(() => {
+  const [page, setPage] = useState(1);
+  const pageSize = 25;
+  const [totalCount, setTotalCount] = useState(0);
+
+  const load = useCallback((targetPage = page) => {
     setIsLoading(true);
     setError(null);
 
     apiClient
-      .getVisits()
-      .then(async (visits: Visit[]) => {
-        const results = await Promise.all(
-          visits.map(async (v) => {
-            const entries = await apiClient.getVisitGeoLogs(v.id);
-            return entries.map((entry) => ({ ...entry, customer_id: v.customer_id }));
-          }),
-        );
-        setLogs(results.flat());
+      .getGeoLogsPaginated({
+        skip: (targetPage - 1) * pageSize,
+        limit: pageSize,
+      })
+      .then(({ items, total }) => {
+        setLogs(items as GeoLogRow[]);
+        setTotalCount(total);
       })
       .catch((err: Error) => {
-        // FT-005: the geo-logs endpoint used to return 500, and this page
-        // swallowed it and rendered "No records found" - indistinguishable
-        // from a genuinely empty audit trail. Failures are now reported.
         setLogs([]);
+        setTotalCount(0);
         setError(err.message || 'Unable to load geo verification logs');
       })
       .finally(() => setIsLoading(false));
-  }, []);
+  }, [page, pageSize]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    load(page);
+  }, [page, load]);
 
   const columns: Column<GeoLogRow>[] = [
     {
@@ -62,10 +64,18 @@ export const GeoLogsPage: React.FC = () => {
       ),
     },
     {
+      header: 'Customer / Outlet',
+      accessor: (log) => (
+        <span className="font-caption text-xs text-on-surface font-medium">
+          {log.customer_name || (log.customer_id ? `ID: ${log.customer_id.substring(0, 8)}...` : '—')}
+        </span>
+      ),
+    },
+    {
       header: 'GPS Coordinates',
       accessor: (log) => (
         <div className="font-caption text-xs text-on-surface font-mono">
-          {log.latitude !== null && log.longitude !== null ? (
+          {log.latitude !== null && log.latitude !== undefined && log.longitude !== null && log.longitude !== undefined ? (
             <p>
               {log.latitude.toFixed(6)}, {log.longitude.toFixed(6)}
             </p>
@@ -76,7 +86,7 @@ export const GeoLogsPage: React.FC = () => {
       ),
     },
     {
-      header: 'Distance to Target',
+      header: 'Distance (Meters)',
       accessor: (log) => (
         <span className="font-caption text-xs text-on-surface">
           {Math.round(log.distance_from_customer_m)} meters
@@ -113,10 +123,10 @@ export const GeoLogsPage: React.FC = () => {
     <div className="space-y-space-6 font-body-md text-on-surface">
       <PageHeader
         title="Master Geo Verification Audit Logs"
-        subtitle="Audit log of all location verification attempts and mock location detection events."
+        subtitle="Audit log of all location verification attempts and mock location detection events with server-side pagination."
       />
 
-      {error && <ErrorBanner message={error} onRetry={load} onDismiss={() => setError(null)} />}
+      {error && <ErrorBanner message={error} onRetry={() => load(page)} onDismiss={() => setError(null)} />}
 
       {!isLoading && !error && logs.length === 0 ? (
         <EmptyState
@@ -129,14 +139,12 @@ export const GeoLogsPage: React.FC = () => {
           columns={columns}
           data={logs}
           isLoading={isLoading}
-          searchPlaceholder="Search logs by verification type, visit ID, failure reason..."
-          searchFilter={(log, q) =>
-            Boolean(
-              log.verification_type.toLowerCase().includes(q.toLowerCase()) ||
-                log.visit_id.toLowerCase().includes(q.toLowerCase()) ||
-                (log.failure_reason && log.failure_reason.toLowerCase().includes(q.toLowerCase())),
-            )
-          }
+          serverSide={true}
+          totalCount={totalCount}
+          page={page}
+          pageSize={pageSize}
+          onPageChange={(p) => setPage(p)}
+          searchPlaceholder="Search logs..."
         />
       )}
     </div>

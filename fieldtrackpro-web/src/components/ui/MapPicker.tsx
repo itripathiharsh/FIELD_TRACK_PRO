@@ -28,8 +28,12 @@ export const MapPicker: React.FC<MapPickerProps> = ({
   outletAddress = '',
   onConfirm,
 }) => {
-  const [lat, setLat] = useState<number>(initialLat && !isNaN(initialLat) ? initialLat : DEFAULT_LAT);
-  const [lng, setLng] = useState<number>(initialLng && !isNaN(initialLng) ? initialLng : DEFAULT_LNG);
+  const [lat, setLat] = useState<number>(
+    initialLat !== null && initialLat !== undefined && !isNaN(initialLat) ? initialLat : DEFAULT_LAT
+  );
+  const [lng, setLng] = useState<number>(
+    initialLng !== null && initialLng !== undefined && !isNaN(initialLng) ? initialLng : DEFAULT_LNG
+  );
   const [radius, setRadius] = useState<number>(initialRadius || 75);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
@@ -37,7 +41,14 @@ export const MapPicker: React.FC<MapPickerProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      if (initialLat && initialLng && !isNaN(initialLat) && !isNaN(initialLng)) {
+      if (
+        initialLat !== null &&
+        initialLat !== undefined &&
+        initialLng !== null &&
+        initialLng !== undefined &&
+        !isNaN(initialLat) &&
+        !isNaN(initialLng)
+      ) {
         setLat(initialLat);
         setLng(initialLng);
       } else {

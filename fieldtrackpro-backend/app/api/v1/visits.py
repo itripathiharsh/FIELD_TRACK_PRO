@@ -55,7 +55,7 @@ async def list_visits(
     area_id: uuid.UUID | None = Query(default=None),
     from_date: datetime | None = Query(default=None, description="Scheduled on or after"),
     to_date: datetime | None = Query(default=None, description="Scheduled on or before"),
-    sort_order: str = Query(default="desc", pattern="^(asc|desc|ASC|DESC)$"),
+    sort_order: str = Query(default="desc", pattern="^(asc|desc|recent|updated_desc|ASC|DESC|RECENT|UPDATED_DESC)$"),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, le=200),
 ):

@@ -17,7 +17,7 @@ import { Card } from '../components/ui/Card';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { ENV } from '../config/env';
 import { apiClient } from '../api/client';
-import { Employee, Territory, Area, Customer } from '../types';
+import { Employee, Territory, Area } from '../types';
 
 type SettingsTab =
   | 'organization'
@@ -37,9 +37,8 @@ export const SettingsPage: React.FC = () => {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [territories, setTerritories] = useState<Territory[]>([]);
   const [areas, setAreas] = useState<Area[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [customerTotal, setCustomerTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
-  void isLoading;
 
   useEffect(() => {
     loadSettingsData();
@@ -48,12 +47,12 @@ export const SettingsPage: React.FC = () => {
   const loadSettingsData = async () => {
     try {
       setIsLoading(true);
-      const [healthData, empData, terrData, areaData, custData] = await Promise.all([
+      const [healthData, empData, terrData, areaData, custPaginated] = await Promise.all([
         apiClient.getHealth().catch((err) => ({ status: 'OFFLINE', error: err.message })),
         apiClient.getEmployees().catch(() => [] as Employee[]),
         apiClient.getTerritories().catch(() => [] as Territory[]),
         apiClient.getAreas().catch(() => [] as Area[]),
-        apiClient.getCustomers({ limit: 500 }).catch(() => [] as Customer[]),
+        apiClient.getCustomersPaginated({ skip: 0, limit: 1 }).catch(() => ({ items: [], total: 0 })),
       ]);
 
       if ('status' in healthData && healthData.status === 'UP') {
@@ -71,9 +70,10 @@ export const SettingsPage: React.FC = () => {
       setEmployees(Array.isArray(empData) ? empData : []);
       setTerritories(Array.isArray(terrData) ? terrData : []);
       setAreas(Array.isArray(areaData) ? areaData : []);
-      setCustomers(Array.isArray(custData) ? custData : []);
+      setCustomerTotal(custPaginated?.total || 0);
     } catch {
       setHealth('offline');
+      setHealthDetail('Configuration load error');
     } finally {
       setIsLoading(false);
     }
@@ -109,6 +109,16 @@ export const SettingsPage: React.FC = () => {
       <PageHeader
         title="Admin Settings & Enterprise Controls"
         subtitle="Manage business configuration, operational thresholds, access policies, and system diagnostics."
+        actions={
+          <button
+            onClick={loadSettingsData}
+            disabled={isLoading}
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-surface-container-highest text-xs font-semibold hover:bg-surface-container transition-colors disabled:opacity-50 text-on-surface"
+          >
+            <Activity className={`w-3.5 h-3.5 text-primary ${isLoading ? 'animate-spin' : ''}`} />
+            {isLoading ? 'Loading...' : 'Refresh'}
+          </button>
+        }
       />
 
       {/* Brand Navigation Tabs */}
@@ -354,7 +364,7 @@ export const SettingsPage: React.FC = () => {
                 Retail Outlets Under Coverage
               </dt>
               <dd className="font-headline-sm text-base font-bold text-primary">
-                {customers.length} Genuine Client Outlets
+                {customerTotal} Genuine Client Outlets
               </dd>
               <p className="font-caption text-xs text-on-surface-variant mt-1">
                 Catalog of active retail counters with assigned DMS codes.

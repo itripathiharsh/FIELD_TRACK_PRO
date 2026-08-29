@@ -1,6 +1,7 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
+import { ErrorBoundary } from '../ui/ErrorBoundary';
 import { useAuth } from '../../context/AuthContext';
 
 interface LayoutProps {
@@ -34,9 +35,14 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
       {/* Main Content Area */}
       <div className="flex-1 ml-0 md:ml-[240px] flex flex-col min-h-screen min-w-0">
         <Header onMobileMenuToggle={() => setIsMobileMenuOpen(!isMobileMenuOpen)} />
-        <main className="p-space-4 md:p-space-8 flex-1 max-w-[1440px] w-full mx-auto">{children}</main>
+        <main className="p-space-4 md:p-space-8 flex-1 max-w-[1440px] w-full mx-auto">
+          <ErrorBoundary inline>
+            {children}
+          </ErrorBoundary>
+        </main>
       </div>
     </div>
   );
 };
+
 

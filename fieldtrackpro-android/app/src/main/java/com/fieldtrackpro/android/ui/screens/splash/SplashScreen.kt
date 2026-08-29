@@ -23,6 +23,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fieldtrackpro.android.data.local.TokenManager
+import com.fieldtrackpro.android.data.remote.ApiClient
+import com.fieldtrackpro.android.data.repository.AuthRepository
 import com.fieldtrackpro.android.ui.theme.BrandGold
 import com.fieldtrackpro.android.ui.theme.BrandNavy
 import com.fieldtrackpro.android.ui.theme.BrandWhite
@@ -30,6 +32,14 @@ import com.fieldtrackpro.android.ui.theme.LeagueSpartanFamily
 import com.fieldtrackpro.android.ui.theme.LibreBaskervilleFamily
 import kotlinx.coroutines.delay
 
+/**
+ * Splash Screen.
+ *
+ * APP-AUTH-002:
+ * - Checks session viability on cold start.
+ * - If tokens are present, validates or refreshes session via AuthRepository.
+ * - Routes to Dashboard only if session is confirmed valid; routes to Login if stale/missing.
+ */
 @Composable
 fun SplashScreen(
     tokenManager: TokenManager,
@@ -37,8 +47,25 @@ fun SplashScreen(
     onNavigateToDashboard: () -> Unit
 ) {
     LaunchedEffect(Unit) {
-        delay(1200)
-        if (tokenManager.isLoggedIn()) {
+        val hasSession = if (!tokenManager.isLoggedIn()) {
+            false
+        } else {
+            // Attempt to refresh/verify session
+            val authRepo = AuthRepository(
+                authApi = ApiClient.createAuthApi(tokenManager),
+                tokenManager = tokenManager
+            )
+            // If refreshToken exists, verify or refresh
+            if (tokenManager.getRefreshToken() != null) {
+                authRepo.refreshSession()
+            } else {
+                tokenManager.isLoggedIn()
+            }
+        }
+
+        delay(800)
+
+        if (hasSession) {
             onNavigateToDashboard()
         } else {
             onNavigateToLogin()

@@ -32,9 +32,12 @@ from app.services.employee_service import get_employee
 async def _resolve_effective_assignment(
     employee_id: uuid.UUID, session: AsyncSession, as_of: date | None = None
 ) -> EmployeeTerritoryAssignment | None:
-    """The single history row in effect on `as_of` (default today), or None
+    """The single history row in effect on `as_of` (default today in IST), or None
     if the employee has no assignment history yet (legacy fallback case)."""
-    as_of = as_of or date.today()
+    if as_of is None:
+        from app.core.datetime_utils import get_ist_today_range
+        start_dt, _ = get_ist_today_range()
+        as_of = start_dt.date()
 
     temp_result = await session.execute(
         select(EmployeeTerritoryAssignment)
@@ -68,7 +71,7 @@ async def get_effective_territory_id(
     employee_id: uuid.UUID, session: AsyncSession, as_of: date | None = None
 ) -> uuid.UUID | None:
     """The territory an employee is actually working as of `as_of` (default
-    today) - a temporary assignment active on that date wins, else the most
+    today in IST) - a temporary assignment active on that date wins, else the most
     recent permanent assignment effective by then, else the legacy
     Employee.territory_id pointer for employees never reassigned via this
     feature."""
@@ -123,6 +126,19 @@ async def create_assignment(
                 detail="end_date must not be set for a permanent assignment",
                 error_code="ASSIGNMENT_INVALID_DATES",
             )
+        perm_overlap = await session.execute(
+            select(EmployeeTerritoryAssignment).where(
+                EmployeeTerritoryAssignment.employee_id == employee_id,
+                EmployeeTerritoryAssignment.assignment_type == AssignmentType.PERMANENT,
+                EmployeeTerritoryAssignment.start_date == data.start_date,
+            )
+        )
+        if perm_overlap.scalars().first() is not None:
+            raise BaseAPIException(
+                status_code=409,
+                detail="This employee already has a permanent assignment starting on this date",
+                error_code="ASSIGNMENT_DUPLICATE_PERMANENT",
+            )
 
     assignment = EmployeeTerritoryAssignment(
         employee_id=employee_id,
@@ -148,6 +164,8 @@ async def create_assignment(
         if employee is not None:
             employee.territory_id = data.territory_id
             session.add(employee)
+        from app.services.employee_area_service import prune_invalid_area_assignments
+        await prune_invalid_area_assignments(employee_id, session)
 
     await session.commit()
     await session.refresh(assignment)

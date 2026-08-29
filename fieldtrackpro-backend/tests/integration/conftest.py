@@ -219,6 +219,12 @@ def _purge_test_artifacts() -> None:
             (f"{TEST_MARKER}%",),
         )
         cur.execute(
+            "DELETE FROM field_exceptions WHERE customer_id IN ("
+            "  SELECT id FROM customers WHERE name LIKE %s) OR employee_id IN ("
+            "  SELECT id FROM employees WHERE employee_code LIKE %s)",
+            (f"{TEST_MARKER}%", f"{TEST_MARKER}%"),
+        )
+        cur.execute(
             "DELETE FROM visits WHERE employee_id IN ("
             "  SELECT id FROM employees WHERE employee_code LIKE %s)",
             (f"{TEST_MARKER}%",),

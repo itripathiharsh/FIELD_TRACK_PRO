@@ -16,7 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.ExperimentalMaterialApi
 import androidx.compose.material.icons.Icons
@@ -29,6 +29,7 @@ import androidx.compose.material.pullrefresh.pullRefresh
 import androidx.compose.material.pullrefresh.rememberPullRefreshState
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -51,7 +52,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -60,7 +60,6 @@ import com.fieldtrackpro.android.ui.components.EmptyState
 import com.fieldtrackpro.android.ui.components.FieldTrackTopAppBar
 import com.fieldtrackpro.android.ui.components.LoadingScreen
 import com.fieldtrackpro.android.ui.components.StatusBadge
-import com.fieldtrackpro.android.ui.theme.BrandBlack
 import com.fieldtrackpro.android.ui.theme.BrandGold
 import com.fieldtrackpro.android.ui.theme.BrandGoldDark
 import com.fieldtrackpro.android.ui.theme.BrandLightGray
@@ -89,30 +88,25 @@ fun TodayVisitsScreen(
     val searchQuery by viewModel.searchQuery.collectAsState()
     var isRefreshing by remember { mutableStateOf(false) }
 
-    val filterOptions = listOf("ALL", "PENDING", "IN_PROGRESS", "COMPLETED", "FLAGGED")
+    val filterOptions = listOf("ALL", "PENDING", "IN_PROGRESS", "COMPLETED", "FLAGGED", "MISSED")
 
     LaunchedEffect(Unit) {
-        viewModel.loadVisits()
+        viewModel.loadVisits(refresh = true)
     }
 
     val pullRefreshState = rememberPullRefreshState(
         refreshing = isRefreshing,
         onRefresh = {
             isRefreshing = true
-            viewModel.loadVisits()
-        }
-    )
-
-    LaunchedEffect(state) {
-        if (state !is VisitsState.Loading) {
+            viewModel.setTab(selectedTab)
             isRefreshing = false
         }
-    }
+    )
 
     Scaffold(
         topBar = {
             FieldTrackTopAppBar(
-                title = if (selectedTab == VisitTab.TODAY) "Today's Schedule" else "All Assigned Visits",
+                title = "Field Visit Telemetry",
                 onBackClick = onNavigateBack
             )
         }
@@ -123,7 +117,7 @@ fun TodayVisitsScreen(
                 .background(SurfaceSecondary)
                 .padding(innerPadding)
         ) {
-            // Tabs: [ Today's Visits ] [ All Visits ] with Gold Accent Indicator
+            // Tab Row
             TabRow(
                 selectedTabIndex = if (selectedTab == VisitTab.TODAY) 0 else 1,
                 containerColor = BrandWhite,
@@ -131,23 +125,22 @@ fun TodayVisitsScreen(
                 indicator = { tabPositions ->
                     TabRowDefaults.SecondaryIndicator(
                         modifier = Modifier.tabIndicatorOffset(tabPositions[if (selectedTab == VisitTab.TODAY) 0 else 1]),
-                        height = 3.dp,
-                        color = BrandGold
+                        color = BrandGold,
+                        height = 3.dp
                     )
-                },
-                modifier = Modifier.border(1.dp, BrandLightGray)
+                }
             ) {
                 Tab(
                     selected = selectedTab == VisitTab.TODAY,
                     onClick = { viewModel.setTab(VisitTab.TODAY) },
                     text = {
                         Text(
-                            text = "TODAY'S VISITS",
+                            text = "TODAY'S SCHEDULE",
                             fontFamily = LeagueSpartanFamily,
-                            fontSize = 14.sp,
-                            fontWeight = if (selectedTab == VisitTab.TODAY) FontWeight.Bold else FontWeight.SemiBold,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
                             letterSpacing = 0.5.sp,
-                            color = if (selectedTab == VisitTab.TODAY) BrandNavy else BrandNavy.copy(alpha = 0.65f)
+                            color = if (selectedTab == VisitTab.TODAY) BrandNavy else TextSecondary
                         )
                     }
                 )
@@ -156,12 +149,12 @@ fun TodayVisitsScreen(
                     onClick = { viewModel.setTab(VisitTab.ALL) },
                     text = {
                         Text(
-                            text = "ALL VISITS",
+                            text = "ALL ASSIGNED VISITS",
                             fontFamily = LeagueSpartanFamily,
-                            fontSize = 14.sp,
-                            fontWeight = if (selectedTab == VisitTab.ALL) FontWeight.Bold else FontWeight.SemiBold,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
                             letterSpacing = 0.5.sp,
-                            color = if (selectedTab == VisitTab.ALL) BrandNavy else BrandNavy.copy(alpha = 0.65f)
+                            color = if (selectedTab == VisitTab.ALL) BrandNavy else TextSecondary
                         )
                     }
                 )
@@ -172,26 +165,24 @@ fun TodayVisitsScreen(
                     .fillMaxSize()
                     .padding(horizontal = 16.dp, vertical = 12.dp)
             ) {
-                // Search Bar with Gold Focus Border
+                // Search Field
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { viewModel.setSearchQuery(it) },
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = { 
+                    placeholder = {
                         Text(
-                            "Search customer, code, or area...",
-                            fontFamily = LeagueSpartanFamily,
-                            fontWeight = FontWeight.Medium,
-                            fontSize = 14.sp,
+                            "Search customer, outlet or code...",
+                            fontFamily = LibreBaskervilleFamily,
+                            fontSize = 13.sp,
                             color = TextSubtle
-                        ) 
+                        )
                     },
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.Default.Search,
                             contentDescription = "Search",
-                            tint = BrandNavy,
-                            modifier = Modifier.size(20.dp)
+                            tint = TextSecondary,
+                            modifier = Modifier.size(18.dp)
                         )
                     },
                     trailingIcon = {
@@ -206,15 +197,18 @@ fun TodayVisitsScreen(
                             }
                         }
                     },
-                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp),
                     shape = RoundedCornerShape(10.dp),
+                    singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = BrandWhite,
-                        unfocusedContainerColor = BrandWhite,
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
                         focusedBorderColor = BrandGold,
                         unfocusedBorderColor = BrandLightGray,
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary
+                        focusedContainerColor = BrandWhite,
+                        unfocusedContainerColor = BrandWhite
                     )
                 )
 
@@ -225,27 +219,22 @@ fun TodayVisitsScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    items(filterOptions) { filter ->
-                        val isSelected = (selectedStatus == filter) || (selectedStatus == null && filter == "ALL")
+                    items(filterOptions.size) { index ->
+                        val status = filterOptions[index]
+                        val isSelected = (selectedStatus == null && status == "ALL") || selectedStatus == status
                         FilterChip(
                             selected = isSelected,
-                            onClick = { viewModel.setStatusFilter(filter) },
-                            label = { 
+                            onClick = { viewModel.setStatusFilter(status) },
+                            label = {
                                 Text(
-                                    filter.replace("_", " "),
+                                    text = status.replace("_", " "),
                                     fontFamily = LeagueSpartanFamily,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
-                                    fontSize = 13.sp,
-                                    letterSpacing = 0.4.sp
-                                ) 
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.5.sp
+                                )
                             },
                             shape = RoundedCornerShape(8.dp),
-                            border = FilterChipDefaults.filterChipBorder(
-                                enabled = true,
-                                selected = isSelected,
-                                borderColor = if (isSelected) BrandGold else BrandLightGray,
-                                selectedBorderColor = BrandGold
-                            ),
                             colors = FilterChipDefaults.filterChipColors(
                                 containerColor = BrandWhite,
                                 selectedContainerColor = BrandNavy,
@@ -261,7 +250,7 @@ fun TodayVisitsScreen(
                 // Count Header
                 when (val s = state) {
                     is VisitsState.Success -> {
-                        val count = s.visits.size
+                        val count = s.totalCount
                         val label = if (s.isTodayTab) "TODAY'S SCHEDULE" else "ASSIGNED VISITS"
                         Row(
                             modifier = Modifier
@@ -311,11 +300,34 @@ fun TodayVisitsScreen(
                                     modifier = Modifier.fillMaxSize(),
                                     verticalArrangement = Arrangement.spacedBy(10.dp)
                                 ) {
-                                    items(visits) { visit ->
+                                    itemsIndexed(visits) { index, visit ->
                                         CompactVisitCard(
                                             visit = visit,
                                             onClick = { onNavigateToVisitDetails(visit.id) }
                                         )
+
+                                        if (s.hasMore && index == visits.size - 1) {
+                                            LaunchedEffect(visits.size) {
+                                                viewModel.loadNextPage()
+                                            }
+                                        }
+                                    }
+
+                                    if (s.hasMore) {
+                                        item {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(8.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                CircularProgressIndicator(
+                                                    color = BrandGold,
+                                                    modifier = Modifier.size(20.dp),
+                                                    strokeWidth = 2.dp
+                                                )
+                                            }
+                                        }
                                     }
                                 }
 
@@ -348,62 +360,62 @@ fun CompactVisitCard(
         colors = CardDefaults.cardColors(containerColor = BrandWhite),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+        Row(
+            modifier = Modifier
+                .padding(14.dp)
+                .fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = visit.customerName ?: "Outlet #${visit.customerId.take(8)}",
+                    text = visit.customerName ?: "Customer #${visit.customerId.take(8)}",
                     fontFamily = LeagueSpartanFamily,
-                    fontSize = 16.sp,
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
-                    color = BrandNavy,
-                    modifier = Modifier.weight(1f)
+                    color = BrandNavy
                 )
-                StatusBadge(status = visit.status)
-            }
-
-            Spacer(modifier = Modifier.height(6.dp))
-
-            val areaContext = listOfNotNull(visit.areaName, visit.territoryName).joinToString(", ")
-            if (areaContext.isNotEmpty()) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.LocationOn,
-                        contentDescription = "Location",
-                        tint = BrandGoldDark,
-                        modifier = Modifier.size(15.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = areaContext,
-                        fontFamily = LibreBaskervilleFamily,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Normal,
-                        color = TextPrimary
-                    )
+                val address = visit.customerAddress
+                if (!address.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.LocationOn,
+                            contentDescription = null,
+                            tint = BrandGoldDark,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text(
+                            text = address,
+                            fontFamily = LibreBaskervilleFamily,
+                            fontSize = 12.sp,
+                            color = TextSecondary,
+                            maxLines = 1
+                        )
+                    }
                 }
                 Spacer(modifier = Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Schedule,
+                        contentDescription = null,
+                        tint = TextSecondary,
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Spacer(modifier = Modifier.width(3.dp))
+                    Text(
+                        text = "Scheduled: ${com.fieldtrackpro.android.utils.DateTimeUtils.formatDisplayDateTime(visit.scheduledAt)}",
+                        fontFamily = LibreBaskervilleFamily,
+                        fontSize = 12.sp,
+                        color = TextSecondary
+                    )
+                }
             }
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.Schedule,
-                    contentDescription = "Scheduled Time",
-                    tint = TextSecondary,
-                    modifier = Modifier.size(14.dp)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = "Scheduled: ${visit.scheduledAt}",
-                    fontFamily = LibreBaskervilleFamily,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Normal,
-                    color = TextSecondary
-                )
-            }
+            Spacer(modifier = Modifier.width(10.dp))
+            StatusBadge(status = visit.status)
         }
     }
 }
+
+private fun String?.isNull_or_empty(): Boolean = this == null || this.trim().isEmpty()

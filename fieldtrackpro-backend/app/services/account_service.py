@@ -24,7 +24,7 @@ from app.repositories.payment_repo import PaymentRepository
 from app.repositories.visit_repo import VisitRepository
 from app.schemas.account import AccountSummary, BrandSummary
 from app.schemas.invoice import InvoiceRead
-from app.services.aging_service import AgingStatus
+from app.services.aging_service import AgingStatus, compute_invoice_aging
 from app.services.customer_service import assert_employee_can_view_customer, get_customer
 from app.services.invoice_service import list_invoices_for_customer, to_invoice_read
 from app.services.payment_service import to_payment_read
@@ -50,11 +50,41 @@ async def get_account_summary(
     today = today or date.today()
 
     invoices = await list_invoices_for_customer(customer_id, session)
-    invoice_reads: list[InvoiceRead] = [await to_invoice_read(inv, session, today) for inv in invoices]
-
     payment_repo = PaymentRepository(session)
     payments = await payment_repo.list_by_customer(customer_id)
     verified_payments = [p for p in payments if p.status == PaymentStatus.VERIFIED]
+
+    # Map verified paid amount per invoice without extra N+1 SQL queries
+    paid_by_invoice: dict[uuid.UUID, Decimal] = defaultdict(Decimal)
+    for p in verified_payments:
+        if p.invoice_id:
+            paid_by_invoice[p.invoice_id] += p.amount
+
+    invoice_reads: list[InvoiceRead] = []
+    for inv in invoices:
+        paid = paid_by_invoice.get(inv.id, Decimal("0"))
+        aging = compute_invoice_aging(inv.invoice_date, inv.amount, paid, today)
+        invoice_reads.append(
+            InvoiceRead(
+                id=inv.id,
+                customer_id=inv.customer_id,
+                invoice_number=inv.invoice_number,
+                invoice_date=inv.invoice_date,
+                due_date=inv.due_date,
+                amount=inv.amount,
+                brand=inv.brand,
+                source=inv.source,
+                source_reference=inv.source_reference,
+                created_by=inv.created_by,
+                created_at=inv.created_at,
+                verified_paid_amount=paid,
+                remaining_amount=aging.remaining_amount,
+                days_outstanding=aging.days_outstanding,
+                payment_status=aging.payment_status,
+                aging_status=aging.aging_status,
+                mis_bucket=aging.mis_bucket,
+            )
+        )
 
     total_invoiced = sum((inv.amount for inv in invoice_reads), Decimal("0"))
     total_paid = sum((p.amount for p in verified_payments), Decimal("0"))

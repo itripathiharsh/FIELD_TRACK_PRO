@@ -930,78 +930,6 @@ export const ReportsPage: React.FC = () => {
         </div>
       )}
 
-      {/* TAB 3: OUTSTANDING & AGEING */}
-      {activeTab === 'outstanding' && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Market Outstanding &amp; Ageing Buckets</CardTitle>
-            <CardSubtitle>Accounts with open balances grouped across 7 overdue intervals</CardSubtitle>
-          </CardHeader>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead className="bg-surface-container-low text-on-surface-variant font-label-md uppercase text-[10px] tracking-wider border-b border-surface-container-highest">
-                <tr>
-                  <th className="px-3 py-2 text-left font-bold text-primary">Brand</th>
-                  <th className="px-3 py-2 text-left font-bold text-primary">DMS Code</th>
-                  <th className="px-3 py-2 text-left font-bold text-primary">Outlet Name</th>
-                  <th className="px-3 py-2 text-left font-bold text-primary">Zone</th>
-                  <th className="px-3 py-2 text-left font-bold text-primary">FOS</th>
-                  <th className="px-3 py-2 text-right font-bold text-primary">Market OS</th>
-                  <th className="px-3 py-2 text-right font-bold text-primary">&lt;15d</th>
-                  <th className="px-3 py-2 text-right font-bold text-primary">15-30d</th>
-                  <th className="px-3 py-2 text-right font-bold text-primary">30-45d</th>
-                  <th className="px-3 py-2 text-right font-bold text-primary">45-60d</th>
-                  <th className="px-3 py-2 text-right font-bold text-primary">60-75d</th>
-                  <th className="px-3 py-2 text-right font-bold text-primary">75-90d</th>
-                  <th className="px-3 py-2 text-right font-bold text-primary">&gt;90d</th>
-                  <th className="px-3 py-2 text-center font-bold text-primary">Severity</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-surface-container-highest font-body-md">
-                {outstandingList.length === 0 ? (
-                  <tr>
-                    <td colSpan={14} className="text-center py-8 text-on-surface-variant font-caption">
-                      No outstanding accounts found matching the current filters.
-                    </td>
-                  </tr>
-                ) : (
-                  outstandingList.map((r, i) => (
-                    <tr key={i} className="hover:bg-surface-container-low/70 transition-colors">
-                      <td className="px-3 py-2 font-headline-sm text-xs font-bold text-primary">{r.brand}</td>
-                      <td className="px-3 py-2 font-mono text-xs text-primary font-semibold">{r.dms_code || '-'}</td>
-                      <td className="px-3 py-2 font-semibold text-on-surface">{r.outlet_name}</td>
-                      <td className="px-3 py-2 text-on-surface-variant font-caption">{r.zone_name}</td>
-                      <td className="px-3 py-2 text-on-surface-variant font-caption">{r.fos_name}</td>
-                      <td className="px-3 py-2 text-right font-headline-sm text-xs font-bold text-primary">{formatCurrency(r.market_outstanding)}</td>
-                      <td className="px-3 py-2 text-right font-headline-sm text-xs text-on-surface-variant">{formatCurrency(r.bucket_lt_15)}</td>
-                      <td className="px-3 py-2 text-right font-headline-sm text-xs text-on-surface-variant">{formatCurrency(r.bucket_15_30)}</td>
-                      <td className="px-3 py-2 text-right font-headline-sm text-xs text-on-surface-variant">{formatCurrency(r.bucket_30_45)}</td>
-                      <td className="px-3 py-2 text-right font-headline-sm text-xs text-on-surface-variant">{formatCurrency(r.bucket_45_60)}</td>
-                      <td className="px-3 py-2 text-right font-headline-sm text-xs text-on-surface">{formatCurrency(r.bucket_60_75)}</td>
-                      <td className="px-3 py-2 text-right font-headline-sm text-xs text-on-surface">{formatCurrency(r.bucket_75_90)}</td>
-                      <td className="px-3 py-2 text-right font-headline-sm text-xs font-bold text-error">{formatCurrency(r.bucket_gt_90)}</td>
-                      <td className="px-3 py-2 text-center">
-                        <span
-                          className={`inline-block px-2 py-0.5 rounded-full font-label-md text-[10px] uppercase tracking-wider font-semibold border ${
-                            r.highest_overdue_bucket.includes('Critical')
-                              ? 'bg-error-container text-on-error-container border-error'
-                              : r.highest_overdue_bucket.includes('Severe')
-                              ? 'bg-secondary-fixed text-on-secondary-fixed border-secondary-fixed-dim'
-                              : 'bg-surface-container text-on-surface-variant border-outline-variant'
-                          }`}
-                        >
-                          {r.highest_overdue_bucket}
-                        </span>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      )}
-
       {/* TAB 2: COLLECTIONS WORKBENCH */}
       {activeTab === 'collections_workbench' && (
         <CollectionsOverviewPage hideHeader />
@@ -1108,7 +1036,7 @@ export const ReportsPage: React.FC = () => {
       {activeTab === 'outlets' && (
         <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h3 className="font-headline-sm text-sm font-bold text-primary">Outlets Master Directory (359 Outlets)</h3>
+            <h3 className="font-headline-sm text-sm font-bold text-primary">Outlets Master Directory ({outletsList.length} Outlets)</h3>
             <div className="flex items-center gap-2">
               <Button
                 variant="outline"
@@ -1124,7 +1052,7 @@ export const ReportsPage: React.FC = () => {
           <Card>
             <CardHeader>
               <CardTitle>Outlets Master Directory</CardTitle>
-              <CardSubtitle>Complete directory of 359 client outlets with coordinates and financial totals</CardSubtitle>
+              <CardSubtitle>Directory of {outletsList.length} client outlets with coordinates and financial totals</CardSubtitle>
             </CardHeader>
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
