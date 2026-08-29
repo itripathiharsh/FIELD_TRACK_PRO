@@ -29,11 +29,11 @@ def run() -> None:
         admin_id = "d97a16ca-ebd7-4f83-a0a0-8649a872e8a2"
         pw_hash = hash_password(ADMIN_PASSWORD)
         conn.execute(
-            text(
-                "INSERT INTO users (id, email, password_hash, role, is_active, created_at, updated_at) "
-                "VALUES (:id, 'admin@fieldtrack.test', :pw, 'ADMIN', true, now(), now()) "
-                "ON CONFLICT (id) DO UPDATE SET password_hash = EXCLUDED.password_hash, is_active = true, updated_at = now()"
-            ),
+            text("""
+                INSERT INTO users (id, email, password_hash, role, is_active, created_at, updated_at)
+                VALUES (:id, 'admin@fieldtrack.test', :pw, 'ADMIN', true, now(), now())
+                ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash, is_active = true, updated_at = now()
+            """),
             {"id": admin_id, "pw": pw_hash},
         )
 
@@ -44,26 +44,30 @@ def run() -> None:
             text("""
                 INSERT INTO users (id, email, mobile_number, password_hash, role, is_active, created_at, updated_at)
                 VALUES (:id, 'imharshofficial322@gmail.com', '9565249244', :pw, 'EMPLOYEE', true, now(), now())
-                ON CONFLICT (id) DO UPDATE SET 
-                    email = 'imharshofficial322@gmail.com',
+                ON CONFLICT (email) DO UPDATE SET 
+                    mobile_number = EXCLUDED.mobile_number,
                     password_hash = EXCLUDED.password_hash,
+                    role = 'EMPLOYEE',
                     is_active = true,
                     updated_at = now();
             """),
             {"id": harsh_user_id, "pw": harsh_pw_hash}
         )
 
-        # Check if Harsh employee row exists
-        harsh_emp = conn.execute(text("SELECT id FROM employees WHERE user_id = :uid"), {"uid": harsh_user_id}).first()
-        if not harsh_emp:
-            conn.execute(text("""
-                INSERT INTO employees (
-                    id, user_id, full_name, employee_code, working_profile, cug, date_of_birth, address, must_change_password
-                ) VALUES (
-                    :id, :uid, 'Harsh Tripathi', 'HARSH01', 'Sales Specialist', '9565249244', '1995-08-15', 'Lucknow, Uttar Pradesh', false
-                )
-                ON CONFLICT (employee_code) DO NOTHING;
-            """), {"id": harsh_user_id, "uid": harsh_user_id})
+        # Fetch the actual user id for Harsh
+        actual_user = conn.execute(text("SELECT id FROM users WHERE email = 'imharshofficial322@gmail.com'")).first()
+        if actual_user:
+            uid = actual_user[0]
+            harsh_emp = conn.execute(text("SELECT id FROM employees WHERE user_id = :uid"), {"uid": uid}).first()
+            if not harsh_emp:
+                conn.execute(text("""
+                    INSERT INTO employees (
+                        id, user_id, full_name, employee_code, working_profile, cug, date_of_birth, address, must_change_password
+                    ) VALUES (
+                        :id, :uid, 'Harsh Tripathi', 'HARSH01', 'Sales Specialist', '9565249244', '1995-08-15', 'Lucknow, Uttar Pradesh', false
+                    )
+                    ON CONFLICT (employee_code) DO NOTHING;
+                """), {"id": uid, "uid": uid})
 
     # 3. Trigger standard idempotent import
     from scripts.import_sgrg_data import run as run_sgrg_import
