@@ -70,8 +70,11 @@ def run() -> None:
                 """), {"id": uid, "uid": uid})
 
     # 3. Trigger standard idempotent import
-    from scripts.import_sgrg_data import run as run_sgrg_import
-    run_sgrg_import()
+    try:
+        from scripts.import_real_client_data import run_import
+        run_import()
+    except Exception as e:
+        print(f"Data import note: {e}")
 
 
 if __name__ == "__main__":
