@@ -90,6 +90,7 @@ class Settings(BaseSettings):
     sms_template_id: str | None = None
     twilio_account_sid: str | None = None
     twilio_auth_token: str | None = None
+    allow_mock_communications: bool = False
     # Organization Profile & Identity
     organization_name: str = "SGRG Services Private Limited"
     organization_hub: str = "Kanpur Central, Uttar Pradesh"
@@ -196,7 +197,7 @@ class Settings(BaseSettings):
         Production hardening: In production, mock SMS provider and unconfigured SMTP
         are rejected at startup to prevent silent communication failures or leaks.
         """
-        if self.environment == "production":
+        if self.environment == "production" and not self.allow_mock_communications:
             if (self.sms_provider or "").strip().lower() == "mock":
                 raise ValueError(
                     "SMS_PROVIDER cannot be 'mock' when ENVIRONMENT=production. "
