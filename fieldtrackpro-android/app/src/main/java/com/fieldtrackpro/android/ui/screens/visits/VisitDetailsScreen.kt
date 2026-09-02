@@ -68,6 +68,7 @@ import com.fieldtrackpro.android.ui.components.FieldTrackTopAppBar
 import com.fieldtrackpro.android.ui.components.GeofenceStatusCard
 import com.fieldtrackpro.android.ui.components.LoadingScreen
 import com.fieldtrackpro.android.ui.components.StatusBadge
+import com.fieldtrackpro.android.ui.screens.customers.SuggestLocationDialog
 import com.fieldtrackpro.android.ui.theme.BrandBlack
 import com.fieldtrackpro.android.ui.theme.BrandGold
 import com.fieldtrackpro.android.ui.theme.BrandLightGray
@@ -106,6 +107,7 @@ fun VisitDetailsScreen(
     val context = LocalContext.current
     val formRepository = remember { FormTemplateRepository(ApiClient.createFormTemplateApi(TokenManager(context))) }
     var requiredFormSubmission by remember { mutableStateOf<FormSubmissionDto?>(null) }
+    var showSuggestLocationDialog by remember { mutableStateOf(false) }
 
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -216,6 +218,60 @@ fun VisitDetailsScreen(
                                 StatusBadge(status = visit.status)
                             }
 
+                            if (visit.isAdHoc) {
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(androidx.compose.ui.graphics.Color(0xFFFEF3C7))
+                                        .border(1.dp, androidx.compose.ui.graphics.Color(0xFFFCD34D), RoundedCornerShape(8.dp))
+                                        .padding(10.dp)
+                                ) {
+                                    Column {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "AD-HOC VISIT",
+                                                fontFamily = LeagueSpartanFamily,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 12.sp,
+                                                color = androidx.compose.ui.graphics.Color(0xFF92400E)
+                                            )
+                                            Text(
+                                                text = "GPS Verified",
+                                                fontFamily = LeagueSpartanFamily,
+                                                fontWeight = FontWeight.SemiBold,
+                                                fontSize = 11.sp,
+                                                color = androidx.compose.ui.graphics.Color(0xFFB45309)
+                                            )
+                                        }
+                                        visit.adhocReason?.let { reason ->
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Text(
+                                                text = "Reason: $reason",
+                                                fontFamily = LibreBaskervilleFamily,
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = androidx.compose.ui.graphics.Color(0xFF78350F)
+                                            )
+                                        }
+                                        visit.adhocNotes?.takeIf { it.isNotBlank() }?.let { notes ->
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Text(
+                                                text = "Note: $notes",
+                                                fontFamily = LibreBaskervilleFamily,
+                                                fontSize = 12.sp,
+                                                color = androidx.compose.ui.graphics.Color(0xFF92400E)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
                             Spacer(modifier = Modifier.height(14.dp))
 
                             val areaContext = listOfNotNull(visit.areaName, visit.territoryName).joinToString(", ")
@@ -263,6 +319,18 @@ fun VisitDetailsScreen(
                             )
                         }
                     )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedButton(
+                        onClick = { showSuggestLocationDialog = true },
+                        modifier = Modifier.fillMaxWidth().height(42.dp),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(Icons.Default.LocationOn, contentDescription = null, modifier = Modifier.size(16.dp), tint = BrandNavy)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Suggest Correct GPS Location", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = BrandNavy)
+                    }
 
                     Spacer(modifier = Modifier.height(16.dp))
 
@@ -433,10 +501,10 @@ fun VisitDetailsScreen(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Outlet Account Tile
+                    // Financial Overview & Payments Tile
                     ActionTile(
-                        title = "Outlet Account & Payments",
-                        subtitle = "Collections overview, aging & payment receipt",
+                        title = "Financial Overview & Payments",
+                        subtitle = "Outstanding balance, brand aging & payment history",
                         icon = Icons.Default.AccountBalanceWallet,
                         onClick = { onNavigateToAccount(visit.id, visit.customerId) }
                     )
@@ -535,6 +603,19 @@ fun VisitDetailsScreen(
                                 }
                             }
                         }
+                    }
+
+                    if (showSuggestLocationDialog && s.customer != null) {
+                        SuggestLocationDialog(
+                            customerId = s.customer.id,
+                            customerName = s.customer.name,
+                            currentLatitude = s.customer.latitude,
+                            currentLongitude = s.customer.longitude,
+                            onDismiss = { showSuggestLocationDialog = false },
+                            onProposalSubmitted = {
+                                showSuggestLocationDialog = false
+                            }
+                        )
                     }
                 }
             }

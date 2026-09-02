@@ -3,6 +3,7 @@ Visit request/response schemas.
 """
 from __future__ import annotations
 
+import enum
 import uuid
 from datetime import datetime
 from typing import Optional
@@ -10,8 +11,17 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 from app.models.form_template import FormStatus
-from app.models.visit import VisitStatus
+from app.models.visit import VisitStatus, VisitType
 from app.schemas.customer import LocationIn
+
+
+class AdHocReason(str, enum.Enum):
+    PAYMENT_FOLLOW_UP = "Payment Follow-up"
+    CHEQUE_BOUNCE = "Cheque Bounce"
+    CUSTOMER_REQUESTED = "Customer Requested"
+    URGENT_COLLECTION = "Urgent Collection"
+    NEW_BUSINESS_OPPORTUNITY = "New Business Opportunity"
+    OTHER = "Other"
 
 
 class VisitCreate(BaseModel):
@@ -22,6 +32,17 @@ class VisitCreate(BaseModel):
     # every visit requires one. Must reference a PUBLISHED template
     # (enforced in visit_service) - a draft isn't ready for employees to
     # see, and an archived one is no longer meant for new work.
+    required_form_id: uuid.UUID | None = None
+    visit_type: VisitType = VisitType.PLANNED
+    adhoc_reason: str | None = None
+    adhoc_notes: str | None = None
+
+
+class AdHocVisitCreate(BaseModel):
+    customer_id: uuid.UUID
+    adhoc_reason: str = Field(..., min_length=1, max_length=100, description="Reason for the ad-hoc / off-beat visit")
+    adhoc_notes: str | None = Field(default=None, max_length=500, description="Optional notes for ad-hoc visit")
+    scheduled_at: datetime | None = None
     required_form_id: uuid.UUID | None = None
 
 
@@ -76,6 +97,9 @@ class VisitRead(BaseModel):
     employee_id: uuid.UUID
     scheduled_at: datetime
     status: VisitStatus
+    visit_type: VisitType = VisitType.PLANNED
+    adhoc_reason: str | None = None
+    adhoc_notes: str | None = None
     check_in_at: datetime | None
     check_in_received_at: datetime | None = None
     check_out_at: datetime | None
@@ -102,7 +126,8 @@ class VisitRead(BaseModel):
     customer_contact_person: str | None = None
     notes: str | None = None
 
-    model_config = {"from_attributes": True}
+    class Config:
+        from_attributes = True
 
 
 class VisitStatusUpdate(BaseModel):

@@ -20,13 +20,14 @@ from app.database import Base
 
 class MonthlyPeriodStatus(str, enum.Enum):
     OPEN = "OPEN"
+    PENDING_CLOSE = "PENDING_CLOSE"
     FINALIZED = "FINALIZED"
 
 
 class MonthlyReportingPeriod(Base):
     """
     Tracks monthly reporting periods and historical snapshot finalization state.
-    Once finalized, historical snapshots for that month cannot be overwritten.
+    Once finalized, historical snapshots and financial transactions for that month cannot be modified.
     """
 
     __tablename__ = "monthly_reporting_periods"
@@ -50,10 +51,16 @@ class MonthlyReportingPeriod(Base):
     total_market_os: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=Decimal("0.00"), server_default="0.00", nullable=False)
     total_overdue_gt_90: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=Decimal("0.00"), server_default="0.00", nullable=False)
 
+    opened_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     finalized_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     finalized_by: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
+    reopened_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    reopened_by: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    reopen_reason: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

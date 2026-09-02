@@ -14,6 +14,9 @@ import {
   Layers,
   X,
   Edit2,
+  Clock,
+  Compass,
+  ExternalLink,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardSubtitle } from '../components/ui/Card';
 import { PageHeader } from '../components/ui/PageHeader';
@@ -27,7 +30,7 @@ import { Select } from '../components/ui/Select';
 import { Input } from '../components/ui/Input';
 
 import { apiClient } from '../api/client';
-import { Area, AssignmentType, Employee, EmployeeActivity, EmployeeAreaAssignment, Territory, TerritoryAssignmentHistory } from '../types';
+import { Area, AssignmentType, Employee, EmployeeActivity, EmployeeAreaAssignment, EmployeeWorkdayResponse, Territory, TerritoryAssignmentHistory } from '../types';
 
 const formatCurrency = (value: string): string => `₹${Number(value).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 
@@ -74,6 +77,28 @@ export const EmployeeDetailPage: React.FC = () => {
   const [editFieldErrors, setEditFieldErrors] = useState<Record<string, string>>({});
   const [editProfileError, setEditProfileError] = useState<string | null>(null);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+
+  // Workday & Daily Field Session state
+  const [selectedWorkDate, setSelectedWorkDate] = useState<string>(new Date().toISOString().slice(0, 10));
+  const [workdayData, setWorkdayData] = useState<EmployeeWorkdayResponse | null>(null);
+  const [isWorkdayLoading, setIsWorkdayLoading] = useState<boolean>(false);
+
+  const loadWorkday = useCallback(async (targetDate: string) => {
+    if (!id) return;
+    try {
+      setIsWorkdayLoading(true);
+      const res = await apiClient.getEmployeeWorkday(id, targetDate);
+      setWorkdayData(res);
+    } catch {
+      setWorkdayData(null);
+    } finally {
+      setIsWorkdayLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    loadWorkday(selectedWorkDate);
+  }, [loadWorkday, selectedWorkDate]);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -264,6 +289,187 @@ export const EmployeeDetailPage: React.FC = () => {
         </div>
       </Card>
 
+      {/* Daily Workday & Field Session Card */}
+      <Card className="space-y-space-4">
+        <CardHeader className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <Clock className="w-5 h-5 text-primary" />
+              <CardTitle>Daily Workday & Field Session</CardTitle>
+            </div>
+            <CardSubtitle>Start Day, End Day, GPS fixes, and field metrics for selected date.</CardSubtitle>
+          </div>
+          <div className="flex items-center gap-2">
+            <Input
+              type="date"
+              value={selectedWorkDate}
+              onChange={(e) => setSelectedWorkDate(e.target.value)}
+              className="w-auto text-sm py-1.5"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSelectedWorkDate(new Date().toISOString().slice(0, 10))}
+            >
+              Today
+            </Button>
+          </div>
+        </CardHeader>
+
+        {isWorkdayLoading ? (
+          <div className="p-space-6 text-center text-on-surface-variant text-sm">
+            Loading workday session...
+          </div>
+        ) : !workdayData?.session ? (
+          <div className="p-space-4 rounded-lg bg-surface-container-low border border-surface-container-highest flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500">
+                <Clock className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="font-semibold text-sm">Workday Not Started</p>
+                <p className="text-xs text-on-surface-variant">No work session recorded for {selectedWorkDate}.</p>
+              </div>
+            </div>
+            {workdayData?.summary && (
+              <div className="flex items-center gap-6 text-xs text-on-surface-variant">
+                <span>Visits: <strong>{workdayData.summary.total_visits}</strong> ({workdayData.summary.planned_visits} planned, {workdayData.summary.adhoc_visits} ad-hoc)</span>
+                <span>Collections: <strong>{formatCurrency(workdayData.summary.collections_total_amount)}</strong></span>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-space-4">
+            {/* Status Banner */}
+            <div className={`p-space-3 rounded-lg border flex items-center justify-between ${
+              workdayData.session.status === 'COMPLETED'
+                ? 'bg-emerald-50/50 border-emerald-200 text-emerald-900 dark:bg-emerald-950/20 dark:border-emerald-800 dark:text-emerald-300'
+                : 'bg-amber-50/50 border-amber-200 text-amber-900 dark:bg-amber-950/20 dark:border-amber-800 dark:text-amber-300'
+            }`}>
+              <div className="flex items-center gap-2">
+                <span className={`w-2.5 h-2.5 rounded-full ${
+                  workdayData.session.status === 'COMPLETED' ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'
+                }`} />
+                <span className="font-bold text-xs uppercase tracking-wider">
+                  Workday {workdayData.session.status}
+                </span>
+              </div>
+              <span className="text-xs font-medium">
+                {workdayData.session.start_time && new Date(workdayData.session.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                {workdayData.session.end_time && ` — ${new Date(workdayData.session.end_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+              </span>
+            </div>
+
+            {/* GPS & Timing Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-space-4">
+              {/* Start Day Card */}
+              <div className="p-space-4 rounded-lg bg-surface-container-low border border-surface-container-highest space-y-space-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold uppercase tracking-wider text-primary flex items-center gap-1.5">
+                    <Compass className="w-3.5 h-3.5" /> Start Day Fix
+                  </span>
+                  <span className="text-xs font-mono text-on-surface-variant">
+                    {workdayData.session.start_time ? new Date(workdayData.session.start_time).toLocaleTimeString() : '—'}
+                  </span>
+                </div>
+                {workdayData.session.start_latitude != null && workdayData.session.start_longitude != null ? (
+                  <div className="space-y-1">
+                    <p className="text-xs text-on-surface font-mono">
+                      {workdayData.session.start_latitude.toFixed(6)}, {workdayData.session.start_longitude.toFixed(6)}
+                      {workdayData.session.start_accuracy_meters != null && (
+                        <span className="text-on-surface-variant ml-2 font-sans text-[11px]">
+                          (±{Math.round(workdayData.session.start_accuracy_meters)}m)
+                        </span>
+                      )}
+                    </p>
+                    <a
+                      href={`https://www.google.com/maps/search/?api=1&query=${workdayData.session.start_latitude},${workdayData.session.start_longitude}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-xs text-primary hover:underline font-medium mt-1"
+                    >
+                      <ExternalLink className="w-3 h-3" /> View Location on Map
+                    </a>
+                  </div>
+                ) : (
+                  <p className="text-xs text-on-surface-variant">No GPS coordinates recorded.</p>
+                )}
+                {workdayData.session.start_notes && (
+                  <p className="text-xs text-on-surface-variant italic pt-1 border-t border-surface-container-highest">
+                    &quot;{workdayData.session.start_notes}&quot;
+                  </p>
+                )}
+              </div>
+
+              {/* End Day Card */}
+              <div className="p-space-4 rounded-lg bg-surface-container-low border border-surface-container-highest space-y-space-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold uppercase tracking-wider text-primary flex items-center gap-1.5">
+                    <Compass className="w-3.5 h-3.5" /> End Day Fix
+                  </span>
+                  <span className="text-xs font-mono text-on-surface-variant">
+                    {workdayData.session.end_time ? new Date(workdayData.session.end_time).toLocaleTimeString() : 'In Progress...'}
+                  </span>
+                </div>
+                {workdayData.session.end_latitude != null && workdayData.session.end_longitude != null ? (
+                  <div className="space-y-1">
+                    <p className="text-xs text-on-surface font-mono">
+                      {workdayData.session.end_latitude.toFixed(6)}, {workdayData.session.end_longitude.toFixed(6)}
+                      {workdayData.session.end_accuracy_meters != null && (
+                        <span className="text-on-surface-variant ml-2 font-sans text-[11px]">
+                          (±{Math.round(workdayData.session.end_accuracy_meters)}m)
+                        </span>
+                      )}
+                    </p>
+                    <a
+                      href={`https://www.google.com/maps/search/?api=1&query=${workdayData.session.end_latitude},${workdayData.session.end_longitude}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-xs text-primary hover:underline font-medium mt-1"
+                    >
+                      <ExternalLink className="w-3 h-3" /> View Location on Map
+                    </a>
+                  </div>
+                ) : (
+                  <p className="text-xs text-on-surface-variant">
+                    {workdayData.session.status === 'COMPLETED' ? 'No GPS coordinates recorded.' : 'Awaiting employee End Day submission.'}
+                  </p>
+                )}
+                {workdayData.session.end_notes && (
+                  <p className="text-xs text-on-surface-variant italic pt-1 border-t border-surface-container-highest">
+                    &quot;{workdayData.session.end_notes}&quot;
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Daily Operational Metrics */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-space-3 pt-2">
+              <div className="p-space-3 rounded-lg bg-surface-container-low border border-surface-container-highest">
+                <span className="text-[11px] uppercase tracking-wider text-on-surface-variant font-semibold">Total Visits</span>
+                <p className="text-base font-bold text-on-surface mt-0.5">{workdayData.summary.total_visits}</p>
+                <span className="text-[10px] text-on-surface-variant">{workdayData.summary.planned_visits} planned · {workdayData.summary.adhoc_visits} ad-hoc</span>
+              </div>
+              <div className="p-space-3 rounded-lg bg-surface-container-low border border-surface-container-highest">
+                <span className="text-[11px] uppercase tracking-wider text-on-surface-variant font-semibold">Completed Visits</span>
+                <p className="text-base font-bold text-emerald-600 mt-0.5">{workdayData.summary.completed_visits}</p>
+                <span className="text-[10px] text-on-surface-variant">{workdayData.summary.missed_visits} missed · {workdayData.summary.flagged_visits} flagged</span>
+              </div>
+              <div className="p-space-3 rounded-lg bg-surface-container-low border border-surface-container-highest">
+                <span className="text-[11px] uppercase tracking-wider text-on-surface-variant font-semibold">Total Collection</span>
+                <p className="text-base font-bold text-on-surface mt-0.5">{formatCurrency(workdayData.summary.collections_total_amount)}</p>
+                <span className="text-[10px] text-on-surface-variant">{workdayData.summary.collections_count} collection(s)</span>
+              </div>
+              <div className="p-space-3 rounded-lg bg-surface-container-low border border-surface-container-highest">
+                <span className="text-[11px] uppercase tracking-wider text-on-surface-variant font-semibold">Verified Collection</span>
+                <p className="text-base font-bold text-primary mt-0.5">{formatCurrency(workdayData.summary.collections_verified_amount)}</p>
+                <span className="text-[10px] text-emerald-600 font-medium">Verified by Accounts</span>
+              </div>
+            </div>
+          </div>
+        )}
+      </Card>
+
       {/* P2-C: Employee Activity */}
       <Card className="space-y-space-4">
         <CardHeader>
@@ -278,7 +484,13 @@ export const EmployeeDetailPage: React.FC = () => {
         ) : (
           <div className="space-y-space-6">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-space-4">
-              <MetricCard title="Visits" value={activity.visits_total} icon={CalendarCheck} color="primary" subtitle={`${activity.visits_completed} completed · ${activity.visits_missed} missed · ${activity.visits_flagged} flagged`} />
+              <MetricCard
+                title="Visits"
+                value={activity.visits_total}
+                icon={CalendarCheck}
+                color="primary"
+                subtitle={`${activity.visits_planned ?? (activity.visits_total - (activity.visits_adhoc ?? 0))} planned · ${activity.visits_adhoc ?? 0} ad-hoc · ${activity.visits_completed} completed`}
+              />
               <MetricCard title="Collections" value={activity.collections_total} icon={Wallet} color="secondary" subtitle={`${activity.collections_verified} verified (${formatCurrency(activity.collections_verified_amount)}) · ${activity.collections_pending} pending`} />
               <MetricCard title="Orders Captured" value={activity.orders_total} icon={PackagePlus} color="slate" />
               <MetricCard title="Rejected Collections" value={activity.collections_rejected} icon={Wallet} color={activity.collections_rejected > 0 ? 'rose' : 'slate'} />
@@ -296,6 +508,7 @@ export const EmployeeDetailPage: React.FC = () => {
                     <thead className="bg-surface-container-low text-on-surface-variant text-xs uppercase tracking-wider border-b border-surface-container-highest">
                       <tr>
                         <th className="px-space-3 py-space-2 font-bold text-primary">Outlet</th>
+                        <th className="px-space-3 py-space-2 font-bold text-primary">Type</th>
                         <th className="px-space-3 py-space-2 font-bold text-primary">Scheduled</th>
                         <th className="px-space-3 py-space-2 font-bold text-primary">Duration</th>
                         <th className="px-space-3 py-space-2 font-bold text-primary">Geo Failures</th>
@@ -308,6 +521,17 @@ export const EmployeeDetailPage: React.FC = () => {
                           <td className="px-space-3 py-space-2">
                             {v.customer_name}
                             {v.outlet_code && <span className="text-xs text-on-surface-variant font-mono ml-1">({v.outlet_code})</span>}
+                          </td>
+                          <td className="px-space-3 py-space-2">
+                            {v.visit_type === 'AD_HOC' ? (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                                AD-HOC
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-800 border border-slate-300">
+                                PLANNED
+                              </span>
+                            )}
                           </td>
                           <td className="px-space-3 py-space-2 text-on-surface-variant">{new Date(v.scheduled_at).toLocaleString()}</td>
                           <td className="px-space-3 py-space-2 text-on-surface-variant">{v.duration_minutes != null ? `${v.duration_minutes} min` : '—'}</td>

@@ -31,6 +31,9 @@ class OutletFinancialSnapshot(Base):
         ForeignKey("customers.id", ondelete="CASCADE"), index=True
     )
     brand: Mapped[str] = mapped_column(String(100), index=True)
+    brand_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("brands.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
     snapshot_date: Mapped[date] = mapped_column(Date, index=True)
 
     sales: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=Decimal("0.00"))
@@ -54,6 +57,7 @@ class OutletFinancialSnapshot(Base):
     )
 
     customer: Mapped["Customer"] = relationship(back_populates="financial_snapshots")
+    brand_rel: Mapped[Optional["Brand"]] = relationship()
 
     __table_args__ = (
         UniqueConstraint("customer_id", "brand", "snapshot_date", name="uq_customer_brand_snapshot_date"),

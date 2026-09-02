@@ -217,8 +217,13 @@ function ensureMarkerStylesInjected() {
       0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7); }
       70% { transform: scale(1.05); box-shadow: 0 0 0 8px rgba(245, 158, 11, 0); }
       100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+    .ft-marker-wrapper {
+      position: relative;
+      cursor: pointer;
+      pointer-events: auto;
+      user-select: none;
     }
-    .ft-customer-pin {
+    .ft-customer-pin-inner {
       position: relative;
       display: flex;
       align-items: center;
@@ -229,25 +234,46 @@ function ensureMarkerStylesInjected() {
       transform: rotate(-45deg);
       cursor: pointer;
       box-shadow: 0 3px 8px rgba(0,0,0,0.3);
-      transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+      transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
       background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
       border: 2px solid #ffffff;
     }
-    .ft-customer-pin.is-selected {
+    .ft-marker-wrapper:hover .ft-customer-pin-inner {
+      transform: rotate(-45deg) scale(1.1);
+      box-shadow: 0 6px 14px rgba(0,0,0,0.35);
+    }
+    .ft-marker-wrapper.is-selected .ft-customer-pin-inner {
       background: linear-gradient(135deg, #ffa515 0%, #ea580c 100%);
       border: 3px solid #14213D;
       animation: ft-pulse-ring 2s infinite;
-      z-index: 100;
       transform: rotate(-45deg) scale(1.2);
     }
-    .ft-customer-pin svg {
+    .ft-customer-pin-inner svg {
       transform: rotate(45deg);
-      width: 16px;
-      height: 16px;
+      width: 15px;
+      height: 15px;
       color: #ffffff;
       fill: none;
       stroke: currentColor;
       stroke-width: 2;
+    }
+    .ft-cluster-badge {
+      position: absolute;
+      top: -6px;
+      right: -6px;
+      background: #14213D;
+      color: #ffffff;
+      border: 2px solid #ffffff;
+      font-size: 10px;
+      font-weight: 800;
+      font-family: inherit;
+      padding: 1px 5px;
+      border-radius: 10px;
+      min-width: 18px;
+      text-align: center;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+      z-index: 10;
+      line-height: 14px;
     }
     .ft-employee-marker-container {
       position: relative;
@@ -591,64 +617,133 @@ export function FieldTrackMap({
 
     try {
       const validMarkers = markers.filter((m) => isValidCoordinate(m.latitude, m.longitude));
-      const currentMarkerIds = new Set(validMarkers.map((m) => m.id));
+
+      // Group markers by identical/near-identical coordinates for clean stacking
+      const clusterMap = new Map<string, { key: string; lat: number; lng: number; items: MapMarker[] }>();
+      validMarkers.forEach((m) => {
+        const key = `${m.latitude.toFixed(5)},${m.longitude.toFixed(5)}`;
+        let grp = clusterMap.get(key);
+        if (!grp) {
+          grp = { key, lat: m.latitude, lng: m.longitude, items: [] };
+          clusterMap.set(key, grp);
+        }
+        grp.items.push(m);
+      });
+
+      const currentClusterKeys = new Set(clusterMap.keys());
 
       // 1. Remove markers that are no longer in the dataset
-      activeMarkersRef.current.forEach((markerInstance, id) => {
-        if (!currentMarkerIds.has(id)) {
+      activeMarkersRef.current.forEach((markerInstance, key) => {
+        if (!currentClusterKeys.has(key)) {
           markerInstance.remove();
-          activeMarkersRef.current.delete(id);
+          activeMarkersRef.current.delete(key);
         }
       });
 
       // 2. Create or update markers
-      validMarkers.forEach((marker) => {
-        const isSelected = marker.id === selectedMarkerId;
-        let markerInstance = activeMarkersRef.current.get(marker.id);
+      clusterMap.forEach((group, key) => {
+        const isCluster = group.items.length > 1;
+        const isSelected = group.items.some((m) => m.id === selectedMarkerId);
+        const primaryMarker = group.items.find((m) => m.id === selectedMarkerId) || group.items[0];
+
+        let markerInstance = activeMarkersRef.current.get(key);
 
         if (!markerInstance) {
           // Build custom SVG Pin DOM Element
           const el = document.createElement('div');
-          el.className = `ft-customer-pin ${isSelected ? 'is-selected' : ''}`;
-          el.setAttribute('data-testid', `marker-${marker.id}`);
-          el.setAttribute('title', marker.label || 'Customer Outlet');
+          el.className = `ft-marker-wrapper ${isSelected ? 'is-selected' : ''}`;
+          el.setAttribute('data-testid', isCluster ? `marker-cluster-${key}` : `marker-${primaryMarker.id}`);
+          el.setAttribute(
+            'title',
+            isCluster
+              ? `${group.items.length} Outlets at this location`
+              : primaryMarker.label || 'Customer Outlet',
+          );
           el.setAttribute('tabindex', '0');
           el.setAttribute('role', 'button');
-          el.setAttribute('aria-label', `Outlet: ${marker.label || marker.id}`);
+          el.setAttribute(
+            'aria-label',
+            isCluster
+              ? `Cluster of ${group.items.length} outlets`
+              : `Outlet: ${primaryMarker.label || primaryMarker.id}`,
+          );
 
-          // Shop / Building Icon SVG
+          // Shop / Building Icon SVG with optional cluster count badge
           el.innerHTML = `
-            <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
-              <polyline points="9 22 9 12 15 12 15 22"></polyline>
-            </svg>
+            <div class="ft-customer-pin-inner">
+              <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                <polyline points="9 22 9 12 15 12 15 22"></polyline>
+              </svg>
+            </div>
+            ${isCluster ? `<div class="ft-cluster-badge">${group.items.length}</div>` : ''}
           `;
 
           const popupContent = document.createElement('div');
           popupContent.className = 'font-sans text-xs';
-          popupContent.innerHTML = `
-            <div style="font-weight: 700; color: #0f172a; font-size: 13px; margin-bottom: 2px;">${escapeHtml(marker.label || 'Customer Outlet')}</div>
-            ${marker.outletCode ? `<div style="font-size: 11px; color: #64748b; margin-bottom: 2px;">Code: <strong>${escapeHtml(marker.outletCode)}</strong></div>` : ''}
-            <div style="font-size: 10px; color: #94a3b8;">${marker.latitude.toFixed(4)}°, ${marker.longitude.toFixed(4)}°</div>
-            <div style="margin-top: 6px; font-size: 10px; font-weight: 600; color: #d97706; text-transform: uppercase; letter-spacing: 0.5px;">Click to inspect outlet</div>
-          `;
+
+          if (isCluster) {
+            popupContent.innerHTML = `
+              <div style="font-weight: 700; color: #0f172a; font-size: 12px; margin-bottom: 2px; display: flex; align-items: center; justify-content: space-between; gap: 6px;">
+                <span>📍 Stacked Outlets (${group.items.length})</span>
+                <span style="font-size: 10px; font-weight: normal; color: #64748b;">${group.lat.toFixed(4)}°, ${group.lng.toFixed(4)}°</span>
+              </div>
+              <div style="font-size: 11px; color: #64748b; margin-bottom: 6px;">Multiple outlets share this registered location:</div>
+              <div style="max-height: 150px; overflow-y: auto; padding-right: 2px;" class="space-y-1">
+                ${group.items
+                  .map(
+                    (item) => `
+                  <div style="padding: 4px 6px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 4px;">
+                    <div style="min-width: 0; flex: 1;">
+                      <div style="font-weight: 600; font-size: 11px; color: #0f172a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(item.label || 'Outlet')}</div>
+                      ${item.outletCode ? `<div style="font-size: 9px; color: #64748b;">Code: <strong>${escapeHtml(item.outletCode)}</strong></div>` : ''}
+                    </div>
+                    <button data-select-outlet="${item.id}" style="padding: 2px 6px; background: #ffa515; color: #14213D; font-size: 10px; font-weight: 700; border: none; border-radius: 3px; cursor: pointer; flex-shrink: 0;">
+                      Inspect
+                    </button>
+                  </div>
+                `,
+                  )
+                  .join('')}
+              </div>
+            `;
+          } else {
+            popupContent.innerHTML = `
+              <div style="font-weight: 700; color: #0f172a; font-size: 13px; margin-bottom: 2px;">${escapeHtml(primaryMarker.label || 'Customer Outlet')}</div>
+              ${primaryMarker.outletCode ? `<div style="font-size: 11px; color: #64748b; margin-bottom: 2px;">Code: <strong>${escapeHtml(primaryMarker.outletCode)}</strong></div>` : ''}
+              <div style="font-size: 10px; color: #94a3b8;">${primaryMarker.latitude.toFixed(4)}°, ${primaryMarker.longitude.toFixed(4)}°</div>
+              <div style="margin-top: 6px; font-size: 10px; font-weight: 600; color: #d97706; text-transform: uppercase; letter-spacing: 0.5px;">Click to inspect outlet</div>
+            `;
+          }
+
+          popupContent.addEventListener('click', (e: Event) => {
+            const target = (e.target as HTMLElement).closest('[data-select-outlet]');
+            if (target) {
+              const outletId = target.getAttribute('data-select-outlet');
+              const found = group.items.find((m) => m.id === outletId);
+              if (found) {
+                e.stopPropagation();
+                onMarkerClickRef.current?.(found);
+              }
+            }
+          });
 
           const popup = new maplibregl.Popup({
             offset: 16,
-            closeButton: false,
+            closeButton: isCluster,
             className: 'fieldtrack-outlet-hover-popup',
           }).setDOMContent(popupContent);
 
           const handleClick = (e: Event) => {
             e.stopPropagation();
-            onMarkerClickRef.current?.(marker);
+            onMarkerClickRef.current?.(primaryMarker);
           };
 
           el.addEventListener('click', handleClick);
           el.addEventListener('keydown', (e: KeyboardEvent) => {
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault();
-              onMarkerClickRef.current?.(marker);
+              onMarkerClickRef.current?.(primaryMarker);
             }
           });
 
@@ -656,14 +751,14 @@ export function FieldTrackMap({
             element: el,
             anchor: 'bottom',
           })
-            .setLngLat([marker.longitude, marker.latitude])
+            .setLngLat([group.lng, group.lat])
             .setPopup(popup)
             .addTo(map.current!);
 
-          activeMarkersRef.current.set(marker.id, markerInstance);
+          activeMarkersRef.current.set(key, markerInstance);
         } else {
           // Update position and selected state of existing marker
-          markerInstance.setLngLat([marker.longitude, marker.latitude]);
+          markerInstance.setLngLat([group.lng, group.lat]);
           const el = markerInstance.getElement();
           if (isSelected) {
             el.classList.add('is-selected');

@@ -57,4 +57,32 @@ class AuthContractTest {
         assertTrue("Should NOT contain 'mobile' field", !json.contains("\"mobile\""))
         assertTrue("Should NOT contain 'full_name' field", !json.contains("\"full_name\""))
     }
+
+    @Test
+    fun forgotPasswordRequest_identifier_serializesCorrectly() {
+        val request = com.fieldtrackpro.android.data.model.ForgotPasswordRequest(identifier = "9876543210")
+        val json = gson.toJson(request)
+        assertTrue("Should contain identifier", json.contains("\"identifier\":\"9876543210\""))
+    }
+
+    @Test
+    fun verifyOtpRequest_serializesCorrectly() {
+        val request = com.fieldtrackpro.android.data.model.VerifyOtpRequest(identifier = "user@example.com", otp = "123456")
+        val json = gson.toJson(request)
+        assertTrue("Should contain identifier", json.contains("\"identifier\":\"user@example.com\""))
+        assertTrue("Should contain otp", json.contains("\"otp\":\"123456\""))
+    }
+
+    @Test
+    fun resetPasswordRequest_serializesCorrectly() {
+        val request = com.fieldtrackpro.android.data.model.ResetPasswordRequest(
+            identifier = "user@example.com",
+            otp = "123456",
+            newPassword = "NewPassword123!"
+        )
+        val json = gson.toJson(request)
+        assertTrue("Should contain identifier", json.contains("\"identifier\":\"user@example.com\""))
+        assertTrue("Should contain otp", json.contains("\"otp\":\"123456\""))
+        assertTrue("Should contain new_password", json.contains("\"new_password\":\"NewPassword123!\""))
+    }
 }

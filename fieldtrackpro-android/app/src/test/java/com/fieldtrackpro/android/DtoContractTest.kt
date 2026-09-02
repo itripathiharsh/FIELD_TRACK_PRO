@@ -303,4 +303,96 @@ class DtoContractTest {
         val json = gson.toJson(request)
         assertTrue("Should contain idempotency_key", json.contains("\"idempotency_key\":\"action-uuid-123\""))
     }
+
+    @Test
+    fun paymentCreateRequest_withBrandAllocations_serializesCorrectly() {
+        val request = com.fieldtrackpro.android.data.model.PaymentCreateRequest(
+            visitId = "visit-123",
+            amount = "80000.00",
+            paymentMethod = "ONLINE",
+            paymentDate = "2026-08-30",
+            utrReference = "UTR99999",
+            allocations = listOf(
+                com.fieldtrackpro.android.data.model.BrandAllocationInput("USHA", 50000.0),
+                com.fieldtrackpro.android.data.model.BrandAllocationInput("Zebronics", 30000.0)
+            )
+        )
+        val json = gson.toJson(request)
+        assertTrue("Should contain allocations array", json.contains("\"allocations\":["))
+        assertTrue("Should contain USHA allocation", json.contains("\"brand\":\"USHA\""))
+        assertTrue("Should contain 50000.0 amount", json.contains("\"amount\":50000.0"))
+    }
+
+    @Test
+    fun paymentDto_withBrandAllocations_deserializesCorrectly() {
+        val json = """
+            {
+                "id": "pay-123",
+                "visit_id": "v-123",
+                "customer_id": "c-123",
+                "employee_id": "e-123",
+                "amount": "80000.00",
+                "payment_method": "ONLINE",
+                "payment_date": "2026-08-30",
+                "status": "PENDING_VERIFICATION",
+                "created_at": "2026-08-30T10:00:00Z",
+                "allocations": [
+                    {
+                        "id": "a-1",
+                        "payment_id": "pay-123",
+                        "brand": "USHA",
+                        "allocated_amount": "50000.00"
+                    },
+                    {
+                        "id": "a-2",
+                        "payment_id": "pay-123",
+                        "brand": "Zebronics",
+                        "allocated_amount": "30000.00"
+                    }
+                ]
+            }
+        """.trimIndent()
+        val dto = gson.fromJson(json, com.fieldtrackpro.android.data.model.PaymentDto::class.java)
+        assertEquals("pay-123", dto.id)
+        assertEquals(2, dto.allocations.size)
+        assertEquals("USHA", dto.allocations[0].brand)
+        assertEquals("50000.00", dto.allocations[0].allocatedAmount)
+        assertEquals("Zebronics", dto.allocations[1].brand)
+        assertEquals("30000.00", dto.allocations[1].allocatedAmount)
+    }
+
+    @Test
+    fun adHocVisitCreateRequest_serializesCorrectly() {
+        val request = com.fieldtrackpro.android.data.model.AdHocVisitCreateRequest(
+            customerId = "cust-456",
+            adhocReason = "Payment Follow-up",
+            adhocNotes = "Urgent cheque collection"
+        )
+        val json = gson.toJson(request)
+        assertTrue("Should contain customer_id", json.contains("\"customer_id\":\"cust-456\""))
+        assertTrue("Should contain adhoc_reason", json.contains("\"adhoc_reason\":\"Payment Follow-up\""))
+        assertTrue("Should contain adhoc_notes", json.contains("\"adhoc_notes\":\"Urgent cheque collection\""))
+    }
+
+    @Test
+    fun visitDto_withAdHocFields_deserializesCorrectly() {
+        val json = """
+            {
+                "id": "v-adhoc-1",
+                "customer_id": "c-1",
+                "employee_id": "e-1",
+                "scheduled_at": "2026-08-30T10:00:00Z",
+                "status": "PENDING",
+                "visit_type": "AD_HOC",
+                "adhoc_reason": "Customer Requested",
+                "adhoc_notes": "Urgent on-site demo requested by store owner"
+            }
+        """.trimIndent()
+        val dto = gson.fromJson(json, VisitDto::class.java)
+        assertEquals("v-adhoc-1", dto.id)
+        assertEquals("AD_HOC", dto.visitType)
+        assertTrue(dto.isAdHoc)
+        assertEquals("Customer Requested", dto.adhocReason)
+        assertEquals("Urgent on-site demo requested by store owner", dto.adhocNotes)
+    }
 }

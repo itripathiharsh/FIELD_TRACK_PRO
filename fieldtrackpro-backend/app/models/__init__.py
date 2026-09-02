@@ -38,9 +38,15 @@ from app.models.field_exception import FieldException, ExceptionType, ExceptionS
 from app.models.login_attempt import LoginAttempt
 from app.models.password_reset import PasswordResetToken
 from app.models.user_device import UserDevice
+from app.models.customer_location_proposal import CustomerLocationProposal, LocationProposalStatus
+from app.models.customer_brand import CustomerBrand
+from app.models.brand import Brand
+from app.models.customer_requirement import CustomerRequirement
+from app.models.employee_work_session import EmployeeWorkSession, WorkSessionStatus
 
 __all__ = [
     "Base",
+    "Brand",
     "User",
     "Role",
     "Territory",
@@ -93,4 +99,10 @@ __all__ = [
     "LoginAttempt",
     "PasswordResetToken",
     "UserDevice",
+    "CustomerLocationProposal",
+    "LocationProposalStatus",
+    "CustomerBrand",
+    "CustomerRequirement",
+    "EmployeeWorkSession",
+    "WorkSessionStatus",
 ]

@@ -1,5 +1,6 @@
 package com.fieldtrackpro.android.data.api
 
+import com.fieldtrackpro.android.data.model.AdHocVisitCreateRequest
 import com.fieldtrackpro.android.data.model.CheckInRequest
 import com.fieldtrackpro.android.data.model.CheckOutRequest
 import com.fieldtrackpro.android.data.model.GeoVerificationLogDto
@@ -32,6 +33,11 @@ interface VisitApi {
     @GET("api/v1/visits/{visit_id}")
     suspend fun getVisitById(
         @Path("visit_id") visitId: String
+    ): Response<VisitDto>
+
+    @POST("api/v1/visits/ad-hoc")
+    suspend fun createAdHocVisit(
+        @Body request: AdHocVisitCreateRequest
     ): Response<VisitDto>
 
     @POST("api/v1/visits/{visit_id}/check-in")

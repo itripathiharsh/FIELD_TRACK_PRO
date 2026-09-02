@@ -25,7 +25,13 @@ from app.schemas.reports import (
     CollectionReportRow,
     VisitDetailedReportRow,
 )
-from app.schemas.financial_snapshot import BusinessBIDashboard, MonthlyPeriodRead
+from app.schemas.financial_snapshot import (
+    BusinessBIDashboard,
+    MonthlyPeriodRead,
+    MonthlyPeriodReviewSummary,
+    ReopenMonthlyPeriodRequest,
+)
+from app.services import period_service
 from app.services.report_service import report_service
 
 router = APIRouter(tags=["Reports"], dependencies=[Depends(require_role(Role.ADMIN))])
@@ -505,8 +511,42 @@ async def get_monthly_periods(
     current_user: CurrentUser = None,
     session=Depends(get_async_session),
 ) -> list[MonthlyPeriodRead]:
-    """Lists all historical and current monthly reporting periods."""
-    return await report_service.get_monthly_periods(session)
+    """Lists all historical and current monthly reporting periods with automatic month rollover."""
+    periods = await period_service.ensure_monthly_periods_synced(session)
+    return [
+        MonthlyPeriodRead(
+            id=p.id,
+            period_year=p.period_year,
+            period_month=p.period_month,
+            period_name=p.period_name,
+            status=p.status.value if hasattr(p.status, "value") else str(p.status),
+            snapshot_count=p.snapshot_count,
+            total_outlets=p.total_outlets,
+            total_sales=p.total_sales,
+            total_collection=p.total_collection,
+            total_market_os=p.total_market_os,
+            total_overdue_gt_90=p.total_overdue_gt_90,
+            opened_at=p.opened_at,
+            finalized_at=p.finalized_at,
+            finalized_by=p.finalized_by,
+            reopened_at=p.reopened_at,
+            reopened_by=p.reopened_by,
+            reopen_reason=p.reopen_reason,
+            created_at=p.created_at,
+            updated_at=p.updated_at,
+        )
+        for p in periods
+    ]
+
+
+@router.get("/reports/monthly-periods/{period_id}/review", response_model=MonthlyPeriodReviewSummary)
+async def get_monthly_period_review(
+    period_id: uuid.UUID,
+    current_user: CurrentUser = None,
+    session=Depends(get_async_session),
+) -> MonthlyPeriodReviewSummary:
+    """Pre-closing operational and financial summary for Admin review."""
+    return await period_service.get_monthly_period_review(period_id, session)
 
 
 @router.post("/reports/monthly-periods/{period_id}/finalize", response_model=MonthlyPeriodRead)
@@ -515,18 +555,20 @@ async def finalize_monthly_period(
     current_user: CurrentUser = None,
     session=Depends(get_async_session),
 ) -> MonthlyPeriodRead:
-    """Finalizes a monthly reporting period and locks historical data."""
-    return await report_service.finalize_monthly_period(session, period_id, current_user.id)
+    """Finalizes a monthly reporting period and locks financial transactions."""
+    return await period_service.finalize_monthly_period(period_id, current_user.id, session)
 
 
 @router.post("/reports/monthly-periods/{period_id}/reopen", response_model=MonthlyPeriodRead)
 async def reopen_monthly_period(
     period_id: uuid.UUID,
+    payload: Optional[ReopenMonthlyPeriodRequest] = None,
     current_user: CurrentUser = None,
     session=Depends(get_async_session),
 ) -> MonthlyPeriodRead:
-    """Reopens a finalized monthly reporting period."""
-    return await report_service.reopen_monthly_period(session, period_id)
+    """Reopens a finalized monthly reporting period with mandatory reason tracking."""
+    reason = payload.reason if payload else "Administrative adjustment"
+    return await period_service.reopen_monthly_period(period_id, current_user.id, reason, session)
 
 
 # ---------------------------------------------------------------------------
@@ -576,7 +618,7 @@ async def geo_verification_report(
 
 @router.get("/reports/business-summary", response_model=BusinessBIDashboard)
 async def get_business_summary_report(
-    brand: Optional[str] = Query(default=None, description="Filter by brand (e.g., Usha, VU, ZBR)"),
+    brand: Optional[str] = Query(default=None, description="Filter by brand (e.g., USHA, VU, Zebronics)"),
     zone_id: Optional[uuid.UUID] = Query(default=None, description="Filter by Zone / Territory ID"),
     area_id: Optional[uuid.UUID] = Query(default=None, description="Filter by Area ID"),
     employee_id: Optional[uuid.UUID] = Query(default=None, description="Filter by assigned Employee ID"),

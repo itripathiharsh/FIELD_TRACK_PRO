@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, MapPin, Building2, Pencil, Eye, AlertTriangle } from 'lucide-react';
+import { Plus, MapPin, Building2, Pencil, Eye, AlertTriangle, Clock, ShieldCheck } from 'lucide-react';
 import { DataTable, Column } from '../components/ui/DataTable';
 import { Modal } from '../components/ui/Modal';
 import { PageHeader } from '../components/ui/PageHeader';
@@ -10,6 +10,8 @@ import { Select } from '../components/ui/Select';
 import { EmptyState } from '../components/ui/EmptyState';
 import { ErrorBanner } from '../components/ui/ErrorBanner';
 import { MapPicker } from '../components/ui/MapPicker';
+import { LocationApprovalsQueue } from '../components/customers/LocationApprovalsQueue';
+import { BrandSelect } from '../components/ui/BrandSelect';
 import { apiClient, ApiError } from '../api/client';
 import { Area, Customer, Territory } from '../types';
 import { validatePhoneNumber } from '../utils/phoneValidation';
@@ -19,6 +21,7 @@ const emptyForm = {
   name: '',
   contactPerson: '',
   contactNumber: '',
+  gstNumber: '',
   address: '',
   latitude: '',
   longitude: '',
@@ -26,10 +29,14 @@ const emptyForm = {
   territoryId: '',
   areaId: '',
   outletCode: '',
+  brands: '',
 };
 
 export const CustomersPage: React.FC = () => {
   const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState<'directory' | 'approvals'>('directory');
+  const [pendingProposalsCount, setPendingProposalsCount] = useState(0);
+
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [page, setPage] = useState(1);
@@ -63,12 +70,22 @@ export const CustomersPage: React.FC = () => {
   const [isCreatingArea, setIsCreatingArea] = useState(false);
   const [areaCreateError, setAreaCreateError] = useState<string | null>(null);
 
+  const fetchPendingProposalsCount = useCallback(async () => {
+    try {
+      const pendingList = await apiClient.getLocationProposals({ status: 'PENDING', limit: 100 });
+      setPendingProposalsCount(pendingList.length);
+    } catch {
+      // Non-blocking
+    }
+  }, []);
+
   const set = <K extends keyof typeof emptyForm>(key: K, value: string) => {
     setForm((prev) => ({ ...prev, [key]: value }));
     const fieldMapping: Record<string, string> = {
       name: 'name',
       contactPerson: 'contact_person',
       contactNumber: 'contact_number',
+      gstNumber: 'gst_number',
       address: 'address',
       latitude: 'latitude',
       longitude: 'longitude',
@@ -76,6 +93,7 @@ export const CustomersPage: React.FC = () => {
       territoryId: 'territory_id',
       areaId: 'area_id',
       outletCode: 'outlet_code',
+      brands: 'brands',
     };
     const mapped = fieldMapping[key];
     if (mapped && fieldErrors[mapped]) {
@@ -248,6 +266,7 @@ export const CustomersPage: React.FC = () => {
       name: customer.name,
       contactPerson: customer.contact_person ?? '',
       contactNumber: customer.contact_number || '',
+      gstNumber: customer.gst_number || '',
       address: customer.address || '',
       latitude: customer.location?.latitude != null ? String(customer.location.latitude) : '',
       longitude: customer.location?.longitude != null ? String(customer.location.longitude) : '',
@@ -255,6 +274,7 @@ export const CustomersPage: React.FC = () => {
       territoryId: customer.territory_id ?? '',
       areaId: customer.area_id ?? '',
       outletCode: customer.outlet_code ?? customer.dms_code ?? '',
+      brands: customer.brands ? customer.brands.join(', ') : '',
     };
     setForm(populated);
     setInitialForm(populated);
@@ -305,16 +325,22 @@ export const CustomersPage: React.FC = () => {
 
     setIsSaving(true);
     try {
+      const parsedBrands = form.brands
+        ? form.brands.split(',').map((b) => b.trim()).filter(Boolean)
+        : [];
+
       const payload = {
         name: form.name.trim(),
         contact_person: form.contactPerson.trim() || null,
         contact_number: form.contactNumber.trim(),
+        gst_number: form.gstNumber.trim() || null,
         address: form.address.trim(),
         location: { latitude, longitude },
         geofence_radius_m: radius,
         territory_id: form.territoryId || null,
         area_id: form.areaId || null,
         outlet_code: form.outletCode.trim() || null,
+        brands: parsedBrands,
       };
 
       if (editingId) {
@@ -327,6 +353,7 @@ export const CustomersPage: React.FC = () => {
         fetchCustomers(1, '', filterTerritoryId, filterAreaId);
       }
       setIsModalOpen(false);
+      fetchPendingProposalsCount();
     } catch (err: unknown) {
       if (err instanceof ApiError) {
         if (err.fieldErrors && Object.keys(err.fieldErrors).length > 0) {
@@ -362,8 +389,54 @@ export const CustomersPage: React.FC = () => {
               Contact: {cust.contact_person || '—'}
             </p>
           </div>
+          {cust.gst_number && (
+            <p className="font-mono text-[11px] text-on-surface-variant mt-0.5">
+              GST: <span className="font-semibold text-on-surface">{cust.gst_number}</span>
+            </p>
+          )}
         </div>
       ),
+    },
+    {
+      header: 'Status & Brands',
+      accessor: (cust) => {
+        const st = cust.location_status || 'MISSING';
+        return (
+          <div className="space-y-1.5 font-caption text-xs">
+            <div>
+              {st === 'VERIFIED' && (
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-900 border border-emerald-300">
+                  <ShieldCheck className="w-3 h-3" /> VERIFIED
+                </span>
+              )}
+              {st === 'PENDING_APPROVAL' && (
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300">
+                  <Clock className="w-3 h-3" /> PENDING APPROVAL
+                </span>
+              )}
+              {st === 'NEEDS_REVIEW' && (
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded bg-orange-100 text-orange-900 border border-orange-300">
+                  <AlertTriangle className="w-3 h-3" /> NEEDS REVIEW
+                </span>
+              )}
+              {st === 'MISSING' && (
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-300">
+                  MISSING
+                </span>
+              )}
+            </div>
+            {cust.brands && cust.brands.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {cust.brands.map((b) => (
+                  <span key={b} className="text-[10px] font-semibold bg-primary/10 text-primary px-1.5 py-0.5 rounded border border-primary/20">
+                    {b}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      },
     },
     {
       header: 'Zone / Area',
@@ -444,7 +517,7 @@ export const CustomersPage: React.FC = () => {
     <div className="space-y-space-6 max-w-7xl mx-auto">
       <PageHeader
         title="Customer Accounts Directory"
-        subtitle="Manage client outlets, boundary radii, and territory associations."
+        subtitle="Manage client outlets, brand portfolios, location verification, and territory associations."
         actions={
           <Button variant="secondary" size="md" icon={Plus} onClick={openCreate}>
             Add Account
@@ -452,126 +525,156 @@ export const CustomersPage: React.FC = () => {
         }
       />
 
-      {error && <ErrorBanner message={error} />}
-
-      {/* Filter Bar */}
-      <div className="flex flex-wrap items-center gap-space-3 bg-surface p-space-4 rounded-xl border border-surface-container-highest shadow-xs">
-        <div className="w-48">
-          <Select
-            id="territory-filter"
-            value={filterTerritoryId}
-            onChange={(e) => {
-              setFilterTerritoryId(e.target.value);
-              setFilterAreaId('');
-              setPage(1);
-            }}
-          >
-            <option value="">All Zones</option>
-            {territories.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </Select>
-        </div>
-        <div className="w-48">
-          <Select
-            id="area-filter"
-            value={filterAreaId}
-            onChange={(e) => {
-              setFilterAreaId(e.target.value);
-              setPage(1);
-            }}
-            disabled={!filterTerritoryId}
-          >
-            <option value="">All Areas</option>
-            {areas
-              .filter((a) => !filterTerritoryId || a.territory_id === filterTerritoryId)
-              .map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-          </Select>
-        </div>
-        {(filterTerritoryId || filterAreaId || searchQuery) && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setFilterTerritoryId('');
-              setFilterAreaId('');
-              setSearchQuery('');
-              setPage(1);
-            }}
-          >
-            Reset Filters
-          </Button>
-        )}
-
-        {/* Per-page selector */}
-        <div className="flex items-center gap-1.5 ml-auto shrink-0">
-          <span className="font-label-md text-xs text-on-surface-variant uppercase tracking-wider font-semibold">Show:</span>
-          <select
-            value={pageSize}
-            onChange={(e) => {
-              const next = Number(e.target.value);
-              setPageSize(next);
-              setPage(1);
-              fetchCustomers(1, searchQuery, filterTerritoryId, filterAreaId, next);
-            }}
-            className="h-8 bg-surface border border-outline-variant rounded-lg px-2 py-1 text-xs text-primary font-bold focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 transition-all cursor-pointer"
-            aria-label="Rows per page"
-          >
-            {[10, 25, 50, 100, 200].map((opt) => (
-              <option key={opt} value={opt}>{opt} rows</option>
-            ))}
-          </select>
-        </div>
+      {/* Tab Switcher */}
+      <div className="flex items-center gap-2 border-b border-outline-variant pb-2">
+        <button
+          onClick={() => setActiveTab('directory')}
+          className={`px-4 py-2 text-xs font-bold rounded-lg transition-colors cursor-pointer ${
+            activeTab === 'directory'
+              ? 'bg-primary text-on-primary shadow-xs'
+              : 'bg-surface text-on-surface-variant hover:text-on-surface'
+          }`}
+        >
+          Outlets Directory ({totalCount})
+        </button>
+        <button
+          onClick={() => setActiveTab('approvals')}
+          className={`px-4 py-2 text-xs font-bold rounded-lg transition-colors cursor-pointer flex items-center gap-2 ${
+            activeTab === 'approvals'
+              ? 'bg-primary text-on-primary shadow-xs'
+              : 'bg-surface text-on-surface-variant hover:text-on-surface'
+          }`}
+        >
+          <span>Location Approvals Queue</span>
+          {pendingProposalsCount > 0 && (
+            <span className="px-2 py-0.5 text-[11px] font-black rounded-full bg-amber-400 text-amber-950">
+              {pendingProposalsCount}
+            </span>
+          )}
+        </button>
       </div>
 
-      {customers.length === 0 && !isLoading && !filterTerritoryId && !filterAreaId && !searchQuery ? (
-        <EmptyState
-          icon={Building2}
-          title="No customers added yet"
-          subtitle="Add your first customer to start scheduling visits."
-          action={
-            <Button variant="secondary" size="sm" icon={Plus} onClick={openCreate}>
-              Add Account
-            </Button>
-          }
-        />
+      {error && <ErrorBanner message={error} />}
+
+      {activeTab === 'approvals' ? (
+        <LocationApprovalsQueue onProposalReviewed={fetchPendingProposalsCount} />
       ) : (
-        <DataTable
-          columns={columns}
-          data={customers}
-          isLoading={isLoading}
-          searchPlaceholder="Search customers by name, code, address, contact..."
-          serverSide={true}
-          totalCount={totalCount}
-          page={page}
-          pageSize={pageSize}
-          onPageChange={(p) => setPage(p)}
-          onSearchChange={(q) => {
-            setSearchQuery(q);
-            setPage(1);
-          }}
-          onRowClick={(cust) => navigate(`/customers/${cust.id}`)}
-        />
+        <>
+          {/* Filter Bar */}
+          <div className="flex flex-wrap items-center gap-space-3 bg-surface p-space-4 rounded-xl border border-surface-container-highest shadow-xs">
+            <div className="w-48">
+              <Select
+                id="territory-filter"
+                value={filterTerritoryId}
+                onChange={(e) => {
+                  setFilterTerritoryId(e.target.value);
+                  setFilterAreaId('');
+                  setPage(1);
+                }}
+              >
+                <option value="">All Zones</option>
+                {territories.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div className="w-48">
+              <Select
+                id="area-filter"
+                value={filterAreaId}
+                onChange={(e) => {
+                  setFilterAreaId(e.target.value);
+                  setPage(1);
+                }}
+                disabled={!filterTerritoryId}
+              >
+                <option value="">All Areas</option>
+                {areas
+                  .filter((a) => !filterTerritoryId || a.territory_id === filterTerritoryId)
+                  .map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name}
+                    </option>
+                  ))}
+              </Select>
+            </div>
+            {(filterTerritoryId || filterAreaId || searchQuery) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setFilterTerritoryId('');
+                  setFilterAreaId('');
+                  setSearchQuery('');
+                  setPage(1);
+                }}
+              >
+                Reset Filters
+              </Button>
+            )}
+
+            {/* Per-page selector */}
+            <div className="flex items-center gap-1.5 ml-auto shrink-0">
+              <span className="font-label-md text-xs text-on-surface-variant uppercase tracking-wider font-semibold">Show:</span>
+              <select
+                value={pageSize}
+                onChange={(e) => {
+                  const next = Number(e.target.value);
+                  setPageSize(next);
+                  setPage(1);
+                  fetchCustomers(1, searchQuery, filterTerritoryId, filterAreaId, next);
+                }}
+                className="h-8 bg-surface border border-outline-variant rounded-lg px-2 py-1 text-xs text-primary font-bold focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 transition-all cursor-pointer"
+                aria-label="Rows per page"
+              >
+                {[10, 25, 50, 100, 200].map((opt) => (
+                  <option key={opt} value={opt}>{opt} rows</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {customers.length === 0 && !isLoading && !filterTerritoryId && !filterAreaId && !searchQuery ? (
+            <EmptyState
+              icon={Building2}
+              title="No customers added yet"
+              subtitle="Add your first customer to start scheduling visits."
+              action={
+                <Button variant="secondary" size="sm" icon={Plus} onClick={openCreate}>
+                  Add Account
+                </Button>
+              }
+            />
+          ) : (
+            <DataTable
+              columns={columns}
+              data={customers}
+              isLoading={isLoading}
+              searchPlaceholder="Search customers by name, code, GST, address, contact..."
+              serverSide={true}
+              totalCount={totalCount}
+              page={page}
+              pageSize={pageSize}
+              onPageChange={(p) => setPage(p)}
+              onSearchChange={(q) => {
+                setSearchQuery(q);
+                setPage(1);
+                fetchCustomers(1, q, filterTerritoryId, filterAreaId);
+              }}
+            />
+          )}
+        </>
       )}
 
+      {/* Create / Edit Customer Modal */}
       <Modal
         isOpen={isModalOpen}
-        onClose={() => !isSaving && setIsModalOpen(false)}
-        disableClose={isSaving}
-        title={editingId ? 'Edit Customer Account' : 'Register Customer Account & Geofence'}
-        subtitle="Specify client location parameters and radial bounds."
+        onClose={() => setIsModalOpen(false)}
+        title={editingId ? 'Edit Customer Account' : 'Add New Customer Account'}
       >
-        {formError && (
-          <div className="mb-space-4 font-body-md text-xs text-on-error-container bg-error-container p-space-3 rounded-lg border border-error">
-            {formError}
-          </div>
-        )}
+        {formError && <ErrorBanner message={formError} />}
         {isAddressChanged && (
           <div className="mb-space-4 p-space-3 bg-amber-500/10 border border-amber-500/30 rounded-lg text-amber-700 dark:text-amber-300 text-xs flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 shrink-0 text-amber-500" />
@@ -588,14 +691,32 @@ export const CustomersPage: React.FC = () => {
             onChange={(e) => set('name', e.target.value)}
             placeholder="Acme Industrial Corp"
           />
-          <Input
-            label="DMS Code (External Key)"
-            type="text"
-            value={form.outletCode}
-            error={fieldErrors.outlet_code}
-            onChange={(e) => set('outletCode', e.target.value)}
-            placeholder="e.g. SGRGUS1463"
-            helperText="Anchor outlet key for BI and Excel import mapping."
+          <div className="grid grid-cols-2 gap-space-3">
+            <Input
+              label="DMS Code (External Key)"
+              type="text"
+              value={form.outletCode}
+              error={fieldErrors.outlet_code}
+              onChange={(e) => set('outletCode', e.target.value)}
+              placeholder="e.g. SGRGUS1463"
+              helperText="Anchor outlet key for BI/MIS."
+            />
+            <Input
+              label="GST Number"
+              type="text"
+              value={form.gstNumber}
+              error={fieldErrors.gst_number}
+              onChange={(e) => set('gstNumber', e.target.value.toUpperCase())}
+              placeholder="e.g. 07AAAAA0000A1Z5"
+              helperText="15-character GST identification (optional)."
+            />
+          </div>
+          <BrandSelect
+            label="Associated Brands"
+            selectedBrands={form.brands ? form.brands.split(',').map((b) => b.trim()).filter(Boolean) : []}
+            onChange={(brands) => set('brands', brands.join(', '))}
+            error={fieldErrors.brands}
+            helperText="Product brands associated with this outlet."
           />
           <Input
             label="Contact Person"

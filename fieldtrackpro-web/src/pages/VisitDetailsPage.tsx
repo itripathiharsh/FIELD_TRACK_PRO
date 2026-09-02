@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, ShieldCheck, Image as ImageIcon, MapPin, Upload, LogOut, FileSignature, ClipboardList, Eye, PlayCircle, PackagePlus, AlertOctagon } from 'lucide-react';
+import { ArrowLeft, ShieldCheck, Image as ImageIcon, MapPin, Upload, LogOut, FileSignature, ClipboardList, Eye, PlayCircle, PackagePlus, AlertOctagon, ShoppingBag } from 'lucide-react';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -19,6 +19,7 @@ import {
   VisitStatus,
   ExceptionType,
   FieldException,
+  RequirementForm,
 } from '../types';
 import { MediaThumbnail } from '../components/ui/MediaThumbnail';
 import { SignatureThumbnail } from '../components/ui/SignatureThumbnail';
@@ -41,6 +42,7 @@ export const VisitDetailsPage: React.FC = () => {
   const [formSubmissions, setFormSubmissions] = useState<FormSubmission[]>([]);
   const [account, setAccount] = useState<AccountSummary | null>(null);
   const [visitExceptions, setVisitExceptions] = useState<FieldException[]>([]);
+  const [requirementForm, setRequirementForm] = useState<RequirementForm | null>(null);
   const [isCollectModalOpen, setIsCollectModalOpen] = useState(false);
   const [isExceptionModalOpen, setIsExceptionModalOpen] = useState(false);
   const [exceptionType, setExceptionType] = useState<ExceptionType>('VEHICLE_BREAKDOWN');
@@ -82,7 +84,7 @@ export const VisitDetailsPage: React.FC = () => {
       const visitData = await apiClient.getVisitById(id);
       setVisit(visitData);
 
-      const [logs, media, cust, sigs, submissions, acct, excs] = await Promise.all([
+      const [logs, media, cust, sigs, submissions, acct, excs, reqForm] = await Promise.all([
         apiClient.getVisitGeoLogs(id).catch(() => [] as GeoVerificationLog[]),
         apiClient.getVisitMedia(id).catch(() => [] as VisitMedia[]),
         apiClient.getCustomerById(visitData.customer_id).catch(() => null),
@@ -92,6 +94,7 @@ export const VisitDetailsPage: React.FC = () => {
         apiClient.getFormSubmissions({ visit_id: id }).catch(() => [] as FormSubmission[]),
         apiClient.getCustomerAccount(visitData.customer_id).catch(() => null),
         apiClient.getFieldExceptions({ customer_id: visitData.customer_id }).catch(() => [] as FieldException[]),
+        apiClient.getVisitRequirementForm(id).catch(() => null),
       ]);
       setGeoLogs(logs);
       setMediaList(media);
@@ -100,6 +103,7 @@ export const VisitDetailsPage: React.FC = () => {
       setFormSubmissions(submissions);
       setAccount(acct);
       setVisitExceptions(excs.filter((e) => e.visit_id === id));
+      setRequirementForm(reqForm);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load visit details');
     }
@@ -314,8 +318,34 @@ export const VisitDetailsPage: React.FC = () => {
               </p>
             )}
           </div>
-          <StatusBadge status={visit.status} />
+          <div className="flex flex-wrap items-center gap-2">
+            {visit.visit_type === 'AD_HOC' ? (
+              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                AD-HOC VISIT
+              </span>
+            ) : (
+              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-800 border border-slate-300">
+                PLANNED VISIT
+              </span>
+            )}
+            <StatusBadge status={visit.status} />
+          </div>
         </div>
+
+        {visit.visit_type === 'AD_HOC' && (
+          <div className="mb-space-4 p-space-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-950 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <span className="font-semibold text-xs uppercase tracking-wider text-amber-800 mr-2">Ad-Hoc Reason:</span>
+              <span className="font-bold text-sm text-amber-950">{visit.adhoc_reason || 'Off-Beat Visit'}</span>
+              {visit.adhoc_notes && (
+                <p className="text-xs text-amber-900 mt-0.5"><span className="font-semibold">Notes:</span> {visit.adhoc_notes}</p>
+              )}
+            </div>
+            <span className="text-[11px] font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded border border-amber-300 self-start sm:self-auto">
+              Beat Restriction Bypass (GPS Verified)
+            </span>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-space-4 text-body-md">
           <div>
@@ -686,6 +716,78 @@ export const VisitDetailsPage: React.FC = () => {
           />
         )}
 
+        {/* Requirement & Stock Request (Captured during visit) */}
+        {requirementForm && (
+          <Card variant="default" className="space-y-space-4 border border-secondary-container/40">
+            <div className="flex items-center justify-between border-b border-surface-container-highest pb-space-3">
+              <div className="flex items-center gap-space-2">
+                <ShoppingBag className="w-5 h-5 text-secondary" />
+                <h3 className="font-headline-sm text-base font-bold text-primary">
+                  Stock &amp; Business Requirement
+                </h3>
+              </div>
+              <span
+                className={`px-2.5 py-0.5 rounded text-xs font-bold ${
+                  requirementForm.priority === 'CRITICAL'
+                    ? 'bg-rose-950 text-rose-400 border border-rose-800'
+                    : requirementForm.priority === 'HIGH'
+                    ? 'bg-amber-950 text-amber-400 border border-amber-800'
+                    : requirementForm.priority === 'MEDIUM'
+                    ? 'bg-blue-950 text-blue-400 border border-blue-800'
+                    : 'bg-surface-container text-on-surface-variant border border-outline-variant'
+                }`}
+              >
+                {requirementForm.priority} PRIORITY
+              </span>
+            </div>
+
+            <div className="p-space-4 bg-surface-container-low border border-outline-variant rounded-xl space-y-space-3 text-sm">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-space-3">
+                <div>
+                  <p className="text-xs text-on-surface-variant font-medium">Category</p>
+                  <p className="font-semibold text-primary">
+                    {requirementForm.category_name || 'General Requirement'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-on-surface-variant font-medium">Expected Timeline</p>
+                  <p className="font-semibold text-primary">
+                    {requirementForm.expected_timeline || 'Immediate'}
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                <p className="text-xs text-on-surface-variant font-medium">Requirement Description</p>
+                <p className="text-on-surface mt-1 whitespace-pre-wrap bg-surface p-2.5 rounded-lg border border-outline-variant/60">
+                  {requirementForm.description}
+                </p>
+              </div>
+
+              {(requirementForm.budget_range || requirementForm.notes) && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-space-3 pt-2 border-t border-outline-variant/40">
+                  {requirementForm.budget_range && (
+                    <div>
+                      <p className="text-xs text-on-surface-variant font-medium">Budget / Est. Value</p>
+                      <p className="font-semibold text-primary">{requirementForm.budget_range}</p>
+                    </div>
+                  )}
+                  {requirementForm.notes && (
+                    <div>
+                      <p className="text-xs text-on-surface-variant font-medium">Internal / Diary Notes</p>
+                      <p className="text-on-surface text-xs mt-0.5">{requirementForm.notes}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <p className="text-[11px] text-on-surface-variant pt-1 text-right">
+                Captured on {formatIstDateTime(requirementForm.submitted_at)}
+              </p>
+            </div>
+          </Card>
+        )}
+
         {/* Required Form - the ONE form template assigned to this visit
             (Forms-as-a-Visit-workflow fix). Never a global list of every
             published template - that was the bug: any employee opening any
@@ -790,6 +892,7 @@ export const VisitDetailsPage: React.FC = () => {
           isOpen={isCollectModalOpen}
           onClose={() => setIsCollectModalOpen(false)}
           visitId={id}
+          brandSummaries={account?.brand_summary ?? []}
           outstandingInvoices={account?.recent_invoices?.filter((inv) => Number(inv.remaining_amount) > 0) ?? []}
           onCollected={() => void reload()}
         />

@@ -116,6 +116,7 @@ fieldtrackpro-backend/scripts/reconcile_*.py
 fieldtrackpro-backend/scripts/run_cleanup_*.py
 fieldtrackpro-backend/scripts/set_credentials_passwords.py
 fieldtrackpro-backend/scripts/spot_check_*.py
-fieldtrackpro-backend/scripts/summary_counts.py
+fieldtrackpro-backend/scripts/cleanup_*.py
+fieldtrackpro-backend/scripts/initial_verify.py
 fieldtrackpro-backend/scripts/test_*.py
 

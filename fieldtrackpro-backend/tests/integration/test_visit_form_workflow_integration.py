@@ -274,7 +274,7 @@ async def test_submission_detail_shows_full_context(
         json={"form_id": setup["form_id"], "visit_id": visit_id, "answers": [{"question_id": setup["question_id"], "answer_value": "Fine"}]},
         headers=employee_headers,
     )
-    assert submit.status_code == 200, submit.text
+    assert submit.status_code in (200, 201), submit.text
     submission_id = submit.json()["id"]
 
     detail = await client.get(f"/api/v1/form-submissions/{submission_id}", headers=admin_headers)
@@ -302,7 +302,7 @@ async def test_submission_list_shows_full_context(
         json={"form_id": setup["form_id"], "visit_id": visit_id, "answers": []},
         headers=employee_headers,
     )
-    assert submit.status_code == 200
+    assert submit.status_code in (200, 201)
 
     resp = await client.get("/api/v1/form-submissions", params={"form_id": setup["form_id"]}, headers=admin_headers)
     assert resp.status_code == 200

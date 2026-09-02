@@ -36,6 +36,7 @@ import {
   Territory,
   Visit,
   VisitStatus,
+  VisitType,
 } from '../types';
 
 const STATUS_OPTIONS: Array<{ label: string; value: 'ALL' | VisitStatus }> = [
@@ -45,6 +46,12 @@ const STATUS_OPTIONS: Array<{ label: string; value: 'ALL' | VisitStatus }> = [
   { label: 'COMPLETED', value: 'COMPLETED' },
   { label: 'FLAGGED', value: 'FLAGGED' },
   { label: 'MISSED', value: 'MISSED' },
+];
+
+const VISIT_TYPE_OPTIONS: Array<{ label: string; value: 'ALL' | VisitType }> = [
+  { label: 'ALL TYPES', value: 'ALL' },
+  { label: 'PLANNED', value: 'PLANNED' },
+  { label: 'AD-HOC', value: 'AD_HOC' },
 ];
 
 const PAGE_SIZE_OPTIONS = [20, 50, 100];
@@ -57,6 +64,7 @@ export const VisitsPage: React.FC = () => {
 
   // Read URL query state
   const urlStatus = (searchParams.get('status') as VisitStatus | 'ALL') || 'ALL';
+  const urlVisitType = (searchParams.get('visit_type') as VisitType | 'ALL') || 'ALL';
   const urlSearch = searchParams.get('search') || '';
   const urlEmployeeId = searchParams.get('employee_id') || '';
   const urlTerritoryId = searchParams.get('territory_id') || '';
@@ -156,6 +164,7 @@ export const VisitsPage: React.FC = () => {
       const skip = (urlPage - 1) * urlPageSize;
       const resp = await apiClient.getVisitsPaginated({
         status: urlStatus === 'ALL' ? undefined : urlStatus,
+        visit_type: urlVisitType === 'ALL' ? undefined : urlVisitType,
         search: urlSearch.trim() || undefined,
         employee_id: urlEmployeeId || undefined,
         territory_id: urlTerritoryId || undefined,
@@ -177,6 +186,7 @@ export const VisitsPage: React.FC = () => {
     }
   }, [
     urlStatus,
+    urlVisitType,
     urlSearch,
     urlEmployeeId,
     urlTerritoryId,
@@ -217,6 +227,13 @@ export const VisitsPage: React.FC = () => {
         id: 'status',
         label: `Status: ${urlStatus.replace('_', ' ')}`,
         onRemove: () => updateUrlParams({ status: 'ALL' }),
+      });
+    }
+    if (urlVisitType !== 'ALL') {
+      list.push({
+        id: 'visit_type',
+        label: `Type: ${urlVisitType === 'AD_HOC' ? 'Ad-Hoc' : 'Planned'}`,
+        onRemove: () => updateUrlParams({ visit_type: 'ALL' }),
       });
     }
     if (urlSearch) {
@@ -414,6 +431,28 @@ export const VisitsPage: React.FC = () => {
                     isSelected
                       ? 'bg-primary text-on-primary shadow-xs active:scale-95'
                       : 'bg-surface border border-outline-variant text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface active:scale-95'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Visit Type Pills */}
+          <div className="flex items-center gap-1 bg-surface-container-low p-1 rounded-lg border border-outline-variant select-none">
+            {VISIT_TYPE_OPTIONS.map((opt) => {
+              const isSelected = urlVisitType === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => updateUrlParams({ visit_type: opt.value })}
+                  aria-pressed={isSelected}
+                  className={`px-2.5 py-1 rounded-md font-label-md text-xs uppercase tracking-wider transition-all cursor-pointer font-bold whitespace-nowrap ${
+                    isSelected
+                      ? 'bg-primary text-on-primary shadow-xs active:scale-95'
+                      : 'text-on-surface-variant hover:text-on-surface'
                   }`}
                 >
                   {opt.label}
@@ -630,6 +669,9 @@ export const VisitsPage: React.FC = () => {
                     Customer / Visit
                   </th>
                   <th className="px-space-4 py-space-3 font-label-md text-xs text-on-surface uppercase tracking-wider font-bold">
+                    Type
+                  </th>
+                  <th className="px-space-4 py-space-3 font-label-md text-xs text-on-surface uppercase tracking-wider font-bold">
                     Assignee
                   </th>
                   <th className="px-space-4 py-space-3 font-label-md text-xs text-on-surface uppercase tracking-wider font-bold">
@@ -668,6 +710,26 @@ export const VisitsPage: React.FC = () => {
                         <p className="font-caption text-xs text-on-surface-variant font-mono">
                           ID: {visit.id.substring(0, 8)}...
                         </p>
+                      </td>
+
+                      {/* Type */}
+                      <td className="px-space-4 py-space-3.5">
+                        {visit.visit_type === 'AD_HOC' ? (
+                          <div className="inline-flex flex-col items-start gap-0.5">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                              AD-HOC
+                            </span>
+                            {visit.adhoc_reason && (
+                              <span className="text-[11px] text-amber-800 font-medium max-w-[130px] truncate" title={visit.adhoc_reason}>
+                                {visit.adhoc_reason}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-slate-100 text-slate-800 border border-slate-300">
+                            PLANNED
+                          </span>
+                        )}
                       </td>
 
                       {/* Assignee */}

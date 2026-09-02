@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.fieldtrackpro.android.data.local.OfflineQueueManager
 import com.fieldtrackpro.android.data.local.TokenManager
+import com.fieldtrackpro.android.data.model.CustomerDto
 import com.fieldtrackpro.android.data.model.DashboardSummaryDto
 import com.fieldtrackpro.android.data.model.VisitDto
 import com.fieldtrackpro.android.data.remote.ApiClient
@@ -77,6 +78,16 @@ class VisitsViewModel(
     private val _pendingOfflineCount = MutableStateFlow(0)
     val pendingOfflineCount: StateFlow<Int> = _pendingOfflineCount.asStateFlow()
 
+    // Ad-Hoc / Off-Beat Visit State
+    private val _customerSearchResults = MutableStateFlow<List<CustomerDto>>(emptyList())
+    val customerSearchResults: StateFlow<List<CustomerDto>> = _customerSearchResults.asStateFlow()
+
+    private val _isSearchingCustomers = MutableStateFlow(false)
+    val isSearchingCustomers: StateFlow<Boolean> = _isSearchingCustomers.asStateFlow()
+
+    private val _isCreatingAdHocVisit = MutableStateFlow(false)
+    val isCreatingAdHocVisit: StateFlow<Boolean> = _isCreatingAdHocVisit.asStateFlow()
+
     private var currentSkip = 0
     private val pageSize = 50
     private var hasMorePages = true
@@ -84,7 +95,67 @@ class VisitsViewModel(
     private val accumulatedVisits = mutableListOf<VisitDto>()
 
     private var searchJob: Job? = null
+    private var customerSearchJob: Job? = null
     private var loadJob: Job? = null
+
+    fun searchCustomersForAdHoc(query: String) {
+        customerSearchJob?.cancel()
+        if (query.isBlank()) {
+            _customerSearchResults.value = emptyList()
+            _isSearchingCustomers.value = false
+            return
+        }
+        _isSearchingCustomers.value = true
+        customerSearchJob = viewModelScope.launch {
+            delay(300)
+            when (val res = repository.searchCustomers(query = query.trim(), limit = 25)) {
+                is Resource.Success -> {
+                    _customerSearchResults.value = res.data
+                }
+                is Resource.Error -> {
+                    _customerSearchResults.value = emptyList()
+                }
+                else -> {}
+            }
+            _isSearchingCustomers.value = false
+        }
+    }
+
+    fun clearCustomerSearch() {
+        customerSearchJob?.cancel()
+        _customerSearchResults.value = emptyList()
+        _isSearchingCustomers.value = false
+    }
+
+    fun createAdHocVisit(
+        customerId: String,
+        adhocReason: String,
+        adhocNotes: String? = null,
+        onSuccess: (VisitDto) -> Unit,
+        onError: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            _isCreatingAdHocVisit.value = true
+            when (val res = repository.createAdHocVisit(
+                customerId = customerId,
+                adhocReason = adhocReason,
+                adhocNotes = adhocNotes
+            )) {
+                is Resource.Success -> {
+                    _isCreatingAdHocVisit.value = false
+                    loadVisits(refresh = true)
+                    onSuccess(res.data)
+                }
+                is Resource.Error -> {
+                    _isCreatingAdHocVisit.value = false
+                    onError(res.message)
+                }
+                else -> {
+                    _isCreatingAdHocVisit.value = false
+                }
+            }
+        }
+    }
 
     fun setTab(tab: VisitTab) {
         searchJob?.cancel()

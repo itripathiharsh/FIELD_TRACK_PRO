@@ -46,6 +46,7 @@ class VisitRepository(BaseRepository[Visit]):
         to_date: datetime | None = None,
         search: str | None = None,
         sort_order: str = "desc",
+        visit_type: VisitType | None = None,
         skip: int = 0,
         limit: int = 20,
     ) -> tuple[list[Visit], int]:
@@ -73,6 +74,10 @@ class VisitRepository(BaseRepository[Visit]):
         if employee_id:
             stmt = stmt.where(Visit.employee_id == employee_id)
             count_stmt = count_stmt.where(Visit.employee_id == employee_id)
+
+        if visit_type:
+            stmt = stmt.where(Visit.visit_type == visit_type)
+            count_stmt = count_stmt.where(Visit.visit_type == visit_type)
 
         if status:
             if isinstance(status, (list, tuple, set)):

@@ -95,6 +95,8 @@ def test_production_accepts_valid_minio_configuration():
         database_url="postgresql+asyncpg://user:pass@prod-db.internal:5432/db",
         jwt_secret="a_very_secure_production_jwt_secret_987654321",
         media_signing_secret="secure_media_signing_secret_prod_123456",
+        sms_provider="msg91",
+        smtp_host="smtp.example.com",
         storage_provider="MINIO",
         minio_access_key="ProdAccessKey_771122",
         minio_secret_key="ProdSecretKey_StrongPass#2026!",
@@ -114,6 +116,8 @@ def test_production_local_storage_does_not_require_minio():
         database_url="postgresql+asyncpg://user:pass@prod-db.internal:5432/db",
         jwt_secret="a_very_secure_production_jwt_secret_987654321",
         media_signing_secret="secure_media_signing_secret_prod_123456",
+        sms_provider="msg91",
+        smtp_host="smtp.example.com",
         storage_provider="LOCAL",
         media_storage_path="/var/fieldtrackpro/media",
     )

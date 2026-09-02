@@ -130,14 +130,14 @@ async def test_unauthenticated_cannot_create_invoice(client: AsyncClient, seeded
 
 # -- Outlet account visibility -------------------------------------------------
 
-async def test_employee_without_a_visit_cannot_view_account(
+async def test_employee_without_a_visit_can_view_account(
     client: AsyncClient, other_employee_headers, seeded_world
 ):
-    """other_employee has no visit to seeded_world's customer."""
+    """Authenticated employee can view account summary for ad-hoc collections."""
     resp = await client.get(
         f"/api/v1/customers/{seeded_world['customer_id']}/account", headers=other_employee_headers
     )
-    assert resp.status_code == 403, resp.text
+    assert resp.status_code == 200, resp.text
 
 
 async def test_employee_with_a_visit_can_view_account(

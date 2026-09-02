@@ -62,11 +62,28 @@ data class ChangePasswordRequest(
 )
 
 data class ForgotPasswordRequest(
-    val email: String
+    val identifier: String? = null,
+    val email: String? = null,
+    @SerializedName("mobile_number") val mobileNumber: String? = null
+)
+
+data class ForgotPasswordResponse(
+    val message: String,
+    val destination: String? = null,
+    @SerializedName("delivery_channel") val deliveryChannel: String? = null
+)
+
+data class VerifyOtpRequest(
+    val identifier: String? = null,
+    val email: String? = null,
+    @SerializedName("mobile_number") val mobileNumber: String? = null,
+    val otp: String
 )
 
 data class ResetPasswordRequest(
-    val email: String,
+    val identifier: String? = null,
+    val email: String? = null,
+    @SerializedName("mobile_number") val mobileNumber: String? = null,
     val otp: String,
     @SerializedName("new_password") val newPassword: String
 )

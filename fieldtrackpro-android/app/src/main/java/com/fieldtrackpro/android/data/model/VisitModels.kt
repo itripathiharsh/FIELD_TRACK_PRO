@@ -27,6 +27,9 @@ data class VisitDto(
     @SerializedName("employee_id") val employeeId: String,
     @SerializedName("scheduled_at") val scheduledAt: String,
     val status: String,
+    @SerializedName("visit_type") val visitType: String = "PLANNED",
+    @SerializedName("adhoc_reason") val adhocReason: String? = null,
+    @SerializedName("adhoc_notes") val adhocNotes: String? = null,
     @SerializedName("check_in_at") val checkInAt: String? = null,
     @SerializedName("check_in_received_at") val checkInReceivedAt: String? = null,
     @SerializedName("check_out_at") val checkOutAt: String? = null,
@@ -54,6 +57,8 @@ data class VisitDto(
     val isPending: Boolean get() = status == "PENDING"
     val isInProgress: Boolean get() = status == "IN_PROGRESS"
     val isComplete: Boolean get() = status == "COMPLETED"
+    val isAdHoc: Boolean get() = visitType == "AD_HOC"
+    val isPlanned: Boolean get() = visitType != "AD_HOC"
 
     /** Check-in is offered for a visit that has not yet started. */
     val canCheckIn: Boolean get() = status == "PENDING" || status == "FLAGGED"
@@ -136,4 +141,12 @@ data class GeoVerificationLogDto(
     @SerializedName("is_valid") val isValid: Boolean,
     @SerializedName("failure_reason") val failureReason: String? = null,
     @SerializedName("idempotency_key") val idempotencyKey: String? = null
+)
+
+data class AdHocVisitCreateRequest(
+    @SerializedName("customer_id") val customerId: String,
+    @SerializedName("adhoc_reason") val adhocReason: String,
+    @SerializedName("adhoc_notes") val adhocNotes: String? = null,
+    @SerializedName("scheduled_at") val scheduledAt: String? = null,
+    @SerializedName("required_form_id") val requiredFormId: String? = null
 )

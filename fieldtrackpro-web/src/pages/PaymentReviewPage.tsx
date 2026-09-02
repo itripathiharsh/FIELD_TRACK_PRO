@@ -1,29 +1,23 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { CheckCircle2, XCircle, Download, FileText } from 'lucide-react';
+import { CheckCircle2, XCircle, Download, FileText, Edit2, Save } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 import { Button } from '../components/ui/Button';
+import { Input } from '../components/ui/Input';
 import { Select } from '../components/ui/Select';
 import { Textarea } from '../components/ui/Textarea';
 import { ErrorBanner } from '../components/ui/ErrorBanner';
 import { Modal } from '../components/ui/Modal';
 import { StatusBadge } from '../components/ui/StatusBadge';
+import { PaymentMethodBadge } from '../components/ui/PaymentMethodBadge';
 import { DataTable, Column } from '../components/ui/DataTable';
 import { apiClient } from '../api/client';
-import { Payment, PaymentStatus } from '../types';
+import { Payment, PaymentStatus, BrandAllocationInput } from '../types';
 
-const formatCurrency = (value: string): string => `₹${Number(value).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+const formatCurrency = (value: string | number): string =>
+  `₹${Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 
 /**
- * Admin/accountant payment review queue.
- *
- * Design note: the product spec discusses "accountant" review throughout,
- * but there is no dedicated ACCOUNTANT login role in this system (only
- * ADMIN/EMPLOYEE) and the spec itself uses "Admin / Accountant" more or less
- * interchangeably for this workflow. Rather than introduce a new role end to
- * end (backend enum, frontend type, route guards, nav) on an ambiguous cue,
- * this page is gated the same way every other admin-only page already is.
- * Adding a dedicated role later is a contained, additive change if the
- * client confirms they want a separate accounting login.
+ * Admin/accountant payment review queue with Brand-Wise Allocation breakdown & adjustment.
  */
 export const PaymentReviewPage: React.FC = () => {
   const [payments, setPayments] = useState<Payment[]>([]);
@@ -36,6 +30,11 @@ export const PaymentReviewPage: React.FC = () => {
   const [rejectionReason, setRejectionReason] = useState('');
   const [isActing, setIsActing] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+
+  // Admin allocation correction state
+  const [isEditingAllocations, setIsEditingAllocations] = useState(false);
+  const [editAllocations, setEditAllocations] = useState<{ brand: string; amount: string }[]>([]);
+  const [isSavingAllocations, setIsSavingAllocations] = useState(false);
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -54,20 +53,13 @@ export const PaymentReviewPage: React.FC = () => {
     void load();
   }, [load]);
 
-  // P1-11: fetch proof preview object URLs for whichever payment is open,
-  // and revoke every one of them on cleanup (closing the modal, opening a
-  // different payment, or unmounting) - mirrors the same cancelled-guard +
-  // revoke-on-cleanup pattern already used by MediaThumbnail.tsx. Previously
-  // these URLs were fetched once (in openDetail) and never revoked at all,
-  // so every payment reviewed in an admin session permanently retained its
-  // proof photo(s) in memory.
   useEffect(() => {
     if (!selected) return;
     let cancelled = false;
     const createdUrls: string[] = [];
 
     void (async () => {
-      for (const proof of selected.proofs) {
+      for (const proof of selected.proofs || []) {
         try {
           const url = await apiClient.getPaymentProofObjectUrl(proof.id);
           if (cancelled) {
@@ -93,6 +85,13 @@ export const PaymentReviewPage: React.FC = () => {
     setSelected(payment);
     setRejectionReason('');
     setActionError(null);
+    setIsEditingAllocations(false);
+    setEditAllocations(
+      (payment.allocations || []).map((a) => ({
+        brand: a.brand,
+        amount: a.allocated_amount,
+      })),
+    );
   };
 
   const handleVerify = async () => {
@@ -139,11 +138,46 @@ export const PaymentReviewPage: React.FC = () => {
       document.body.appendChild(a);
       a.click();
       a.remove();
-      // Only revoke a URL we just created for this one-off download - the
-      // cached one is still owned by (and revoked by) the effect above.
       if (!cachedUrl) URL.revokeObjectURL(url);
     } catch {
       setActionError('Failed to download proof');
+    }
+  };
+
+  const handleSaveAllocations = async () => {
+    if (!selected) return;
+    setActionError(null);
+
+    const parsed: BrandAllocationInput[] = [];
+    let sum = 0;
+    for (const alloc of editAllocations) {
+      const amt = parseFloat(alloc.amount || '0');
+      if (Number.isNaN(amt) || amt <= 0) {
+        setActionError(`Allocation for ${alloc.brand} must be greater than zero.`);
+        return;
+      }
+      parsed.push({ brand: alloc.brand.trim(), amount: amt });
+      sum += amt;
+    }
+
+    const totalAmt = parseFloat(selected.amount);
+    if (Math.abs(sum - totalAmt) > 0.01) {
+      setActionError(
+        `Allocation sum (${formatCurrency(sum)}) must equal payment total (${formatCurrency(totalAmt)}).`,
+      );
+      return;
+    }
+
+    setIsSavingAllocations(true);
+    try {
+      const updated = await apiClient.updatePaymentAllocations(selected.id, parsed);
+      setSelected(updated);
+      setIsEditingAllocations(false);
+      await load();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to update brand allocations');
+    } finally {
+      setIsSavingAllocations(false);
     }
   };
 
@@ -151,14 +185,40 @@ export const PaymentReviewPage: React.FC = () => {
     { header: 'Outlet', accessor: (p) => <span className="font-medium">{p.customer_name || p.customer_id.slice(0, 8)}</span> },
     { header: 'Employee', accessor: (p) => p.employee_name || p.employee_id.slice(0, 8) },
     { header: 'Amount', accessor: (p) => formatCurrency(p.amount) },
-    { header: 'Method', accessor: (p) => p.payment_method },
+    {
+      header: 'Brand Allocation',
+      accessor: (p) =>
+        p.allocations && p.allocations.length > 0 ? (
+          <div className="flex flex-wrap gap-1">
+            {p.allocations.map((a) => (
+              <span key={a.id} className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium bg-surface-container-highest text-on-surface">
+                {a.brand}: {formatCurrency(a.allocated_amount)}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <span className="text-xs text-on-surface-variant">General</span>
+        ),
+    },
+    {
+      header: 'Method',
+      accessor: (p) => (
+        <PaymentMethodBadge
+          method={p.payment_method}
+          chequeNumber={p.cheque_number}
+        />
+      ),
+    },
     { header: 'Date', accessor: (p) => p.payment_date },
     { header: 'Status', accessor: (p) => <StatusBadge status={p.status} size="sm" /> },
   ];
 
   return (
     <div className="space-y-space-6">
-      <PageHeader title="Payment Collections" subtitle="Review, verify, or reject field collections before they count toward outlet balances." />
+      <PageHeader
+        title="Payment Collections"
+        subtitle="Review, verify, or reject field collections before they count toward outlet balances."
+      />
 
       {error && <ErrorBanner message={error} onRetry={load} />}
 
@@ -203,12 +263,18 @@ export const PaymentReviewPage: React.FC = () => {
                 <p className="font-medium">{selected.employee_name || '—'}</p>
               </div>
               <div>
-                <p className="text-on-surface-variant font-caption text-xs uppercase">Amount</p>
-                <p className="font-medium">{formatCurrency(selected.amount)}</p>
+                <p className="text-on-surface-variant font-caption text-xs uppercase">Total Payment Amount</p>
+                <p className="font-bold text-base text-primary">{formatCurrency(selected.amount)}</p>
               </div>
               <div>
                 <p className="text-on-surface-variant font-caption text-xs uppercase">Method</p>
-                <p className="font-medium">{selected.payment_method}</p>
+                <div className="mt-1">
+                  <PaymentMethodBadge
+                    method={selected.payment_method}
+                    size="md"
+                    chequeNumber={selected.cheque_number}
+                  />
+                </div>
               </div>
               <div>
                 <p className="text-on-surface-variant font-caption text-xs uppercase">Payment Date</p>
@@ -217,7 +283,7 @@ export const PaymentReviewPage: React.FC = () => {
               {selected.utr_reference && (
                 <div>
                   <p className="text-on-surface-variant font-caption text-xs uppercase">UTR / Reference</p>
-                  <p className="font-medium">{selected.utr_reference}</p>
+                  <p className="font-medium font-mono">{selected.utr_reference}</p>
                 </div>
               )}
               {selected.cheque_number && (
@@ -233,7 +299,7 @@ export const PaymentReviewPage: React.FC = () => {
               {selected.notes && (
                 <div className="col-span-2">
                   <p className="text-on-surface-variant font-caption text-xs uppercase">Notes</p>
-                  <p className="font-medium">{selected.notes}</p>
+                  <p className="font-medium whitespace-pre-wrap">{selected.notes}</p>
                 </div>
               )}
               {selected.rejection_reason && (
@@ -244,9 +310,84 @@ export const PaymentReviewPage: React.FC = () => {
               )}
             </div>
 
+            {/* Brand Allocation Breakdown Card */}
+            <div className="bg-surface-container-low p-space-3 rounded-xl border border-outline-variant">
+              <div className="flex items-center justify-between mb-space-2">
+                <p className="text-xs font-bold uppercase tracking-wider text-primary">
+                  Brand Allocation Breakdown
+                </p>
+                {selected.status === 'PENDING_VERIFICATION' && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    icon={isEditingAllocations ? undefined : Edit2}
+                    onClick={() => {
+                      setIsEditingAllocations(!isEditingAllocations);
+                      setActionError(null);
+                    }}
+                  >
+                    {isEditingAllocations ? 'Cancel Edit' : 'Adjust Allocation'}
+                  </Button>
+                )}
+              </div>
+
+              {isEditingAllocations ? (
+                <div className="space-y-space-3 pt-space-2 border-t border-outline-variant/60">
+                  <p className="text-xs text-on-surface-variant">
+                    Adjust amounts per brand. The sum must equal the payment total ({formatCurrency(selected.amount)}).
+                  </p>
+                  <div className="space-y-space-2">
+                    {editAllocations.map((alloc, idx) => (
+                      <div key={alloc.brand} className="flex items-center gap-space-3">
+                        <span className="font-semibold text-sm w-32 truncate">{alloc.brand}</span>
+                        <div className="flex-1">
+                          <Input
+                            type="number"
+                            min="0.01"
+                            step="0.01"
+                            value={alloc.amount}
+                            onChange={(e) => {
+                              const newAllocs = [...editAllocations];
+                              newAllocs[idx] = { ...newAllocs[idx], amount: e.target.value };
+                              setEditAllocations(newAllocs);
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex justify-end gap-space-2 pt-space-2">
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      icon={Save}
+                      isLoading={isSavingAllocations}
+                      onClick={() => void handleSaveAllocations()}
+                    >
+                      Save Adjusted Allocation
+                    </Button>
+                  </div>
+                </div>
+              ) : selected.allocations && selected.allocations.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-space-2 pt-space-2 border-t border-outline-variant/40">
+                  {selected.allocations.map((a) => (
+                    <div key={a.id} className="flex items-center justify-between bg-surface p-space-2 rounded-lg border border-outline-variant/60">
+                      <span className="font-semibold text-sm text-on-surface">{a.brand}</span>
+                      <span className="font-mono font-bold text-sm text-primary">{formatCurrency(a.allocated_amount)}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-on-surface-variant pt-space-1">
+                  Single on-account payment without brand split.
+                </p>
+              )}
+            </div>
+
+            {/* Proofs */}
             <div>
               <p className="text-on-surface-variant font-caption text-xs uppercase mb-space-2">Proof of Payment</p>
-              {selected.proofs.length === 0 ? (
+              {!selected.proofs || selected.proofs.length === 0 ? (
                 <p className="text-sm text-on-surface-variant">No proof was attached to this collection.</p>
               ) : (
                 <div className="grid grid-cols-2 gap-space-3">

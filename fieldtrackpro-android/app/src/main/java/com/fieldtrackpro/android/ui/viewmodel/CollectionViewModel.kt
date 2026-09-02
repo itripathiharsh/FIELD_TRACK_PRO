@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.fieldtrackpro.android.data.local.TokenManager
 import com.fieldtrackpro.android.data.model.AccountSummaryDto
+import com.fieldtrackpro.android.data.model.BrandAllocationInput
 import com.fieldtrackpro.android.data.model.PaymentCreateRequest
 import com.fieldtrackpro.android.data.model.PaymentDto
 import com.fieldtrackpro.android.data.model.PaymentProofDto
@@ -18,7 +19,9 @@ import java.util.UUID
 
 sealed class AccountState {
     object Loading : AccountState()
-    data class Success(val account: AccountSummaryDto) : AccountState()
+    data class Success(val account: AccountSummaryDto) : AccountState() {
+        val summary: AccountSummaryDto get() = account
+    }
     data class Error(val message: String) : AccountState()
 }
 
@@ -30,14 +33,16 @@ sealed class CollectionState {
 }
 
 /**
- * ViewModel for Collections / Payments.
- *
- * APP-CONTRACT-003: Stable operation idempotency key reused across retries.
- * APP-RETRY-001: Synchronous submission guard preventing double-tap duplicate requests.
+ * ViewModel for Collections / Payments with Brand-Wise Allocation support.
  */
-class CollectionViewModel(tokenManager: TokenManager) : ViewModel() {
+class CollectionViewModel(
+    private val tokenManager: TokenManager? = null,
+    customRepository: CollectionRepository? = null
+) : ViewModel() {
 
-    private val repository = CollectionRepository(ApiClient.createCollectionApi(tokenManager))
+    private val repository: CollectionRepository = customRepository ?: CollectionRepository(
+        ApiClient.createCollectionApi(tokenManager ?: throw IllegalArgumentException("TokenManager must not be null"))
+    )
 
     private val _accountState = MutableStateFlow<AccountState>(AccountState.Loading)
     val accountState: StateFlow<AccountState> = _accountState.asStateFlow()
@@ -45,7 +50,7 @@ class CollectionViewModel(tokenManager: TokenManager) : ViewModel() {
     private val _collectionState = MutableStateFlow<CollectionState>(CollectionState.Idle)
     val collectionState: StateFlow<CollectionState> = _collectionState.asStateFlow()
 
-    @Volatile
+    // Key maintained per logical submit attempt to prevent double-charging on network retry
     private var currentSubmissionKey: String? = null
 
     fun loadAccount(customerId: String) {
@@ -69,6 +74,7 @@ class CollectionViewModel(tokenManager: TokenManager) : ViewModel() {
         chequeBankName: String? = null,
         utrReference: String? = null,
         notes: String? = null,
+        allocations: List<BrandAllocationInput>? = null,
         onSubmitted: (PaymentDto) -> Unit = {}
     ) {
         // APP-RETRY-001: Synchronous submit locking
@@ -94,7 +100,8 @@ class CollectionViewModel(tokenManager: TokenManager) : ViewModel() {
                 chequeBankName = chequeBankName,
                 utrReference = utrReference,
                 notes = notes,
-                idempotencyKey = idempotencyKey
+                idempotencyKey = idempotencyKey,
+                allocations = allocations
             )
 
             when (val res = repository.createPayment(req)) {

@@ -12,7 +12,7 @@ from decimal import Decimal
 from pydantic import BaseModel
 
 from app.models.payment import PaymentMethod, PaymentStatus
-from app.models.visit import VisitStatus
+from app.models.visit import VisitStatus, VisitType
 
 
 class EmployeeActivityVisit(BaseModel):
@@ -25,6 +25,9 @@ class EmployeeActivityVisit(BaseModel):
     check_out_at: datetime | None
     duration_minutes: int | None
     status: VisitStatus
+    visit_type: VisitType = VisitType.PLANNED
+    adhoc_reason: str | None = None
+    adhoc_notes: str | None = None
     geo_failure_count: int
 
 
@@ -54,6 +57,8 @@ class EmployeeActivity(BaseModel):
     is_active: bool
 
     visits_total: int
+    visits_planned: int = 0
+    visits_adhoc: int = 0
     visits_completed: int
     visits_missed: int
     visits_flagged: int

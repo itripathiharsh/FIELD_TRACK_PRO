@@ -17,6 +17,11 @@ class VisitStatus(str, enum.Enum):
     FLAGGED = "FLAGGED"
 
 
+class VisitType(str, enum.Enum):
+    PLANNED = "PLANNED"
+    AD_HOC = "AD_HOC"
+
+
 class Visit(Base):
     __tablename__ = "visits"
 
@@ -25,6 +30,14 @@ class Visit(Base):
     employee_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("employees.id", ondelete="RESTRICT"), index=True)
     scheduled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     status: Mapped[VisitStatus] = mapped_column(Enum(VisitStatus, name="visit_status_enum"), default=VisitStatus.PENDING, index=True)
+    visit_type: Mapped[VisitType] = mapped_column(
+        Enum(VisitType, name="visit_type_enum"),
+        default=VisitType.PLANNED,
+        server_default="PLANNED",
+        index=True,
+    )
+    adhoc_reason: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    adhoc_notes: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     check_in_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     check_in_location: Mapped[Optional[Any]] = mapped_column(Geography(geometry_type="POINT", srid=4326), nullable=True)
     check_in_received_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

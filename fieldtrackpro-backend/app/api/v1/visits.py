@@ -13,9 +13,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.deps.auth import CurrentUser, require_role
 from app.database import get_async_session
 from app.models.user import Role
-from app.models.visit import VisitStatus
+from app.models.visit import VisitStatus, VisitType
 from app.schemas.geo import GeoVerificationLogRead
 from app.schemas.visit import (
+    AdHocVisitCreate,
     BulkVisitCreate,
     CheckInRequest,
     CheckOutRequest,
@@ -43,6 +44,16 @@ async def create_visit(
     return await visit_service.create_visit(data, current_user.id, session)
 
 
+@router.post("/ad-hoc", response_model=VisitRead, status_code=201, dependencies=[AnyAuth])
+async def create_adhoc_visit(
+    data: AdHocVisitCreate,
+    current_user: CurrentUser,
+    session: DbSession,
+):
+    """Employee / Admin: Initiate an off-beat / ad-hoc visit with reason."""
+    return await visit_service.create_adhoc_visit(data, current_user, session)
+
+
 @router.get("", response_model=list[VisitRead], dependencies=[AnyAuth])
 async def list_visits(
     response: Response,
@@ -50,6 +61,7 @@ async def list_visits(
     session: DbSession,
     search: str | None = Query(default=None, description="Search by customer name, code, ID, employee name, or visit ID"),
     status: list[VisitStatus] | None = Query(default=None, description="Filter by one or multiple statuses"),
+    visit_type: VisitType | None = Query(default=None, description="Filter by PLANNED or AD_HOC"),
     employee_id: uuid.UUID | None = Query(default=None),
     territory_id: uuid.UUID | None = Query(default=None, description="Zone / Territory"),
     area_id: uuid.UUID | None = Query(default=None),
@@ -77,6 +89,7 @@ async def list_visits(
         to_date=to_date,
         search=search,
         sort_order=sort_order,
+        visit_type=visit_type,
         skip=skip,
         limit=limit,
     )
@@ -91,6 +104,7 @@ async def my_today_visits(
     session: DbSession,
     search: str | None = Query(default=None, description="Search by customer name, code, etc."),
     status: list[VisitStatus] | None = Query(default=None, description="Filter by status"),
+    visit_type: VisitType | None = Query(default=None, description="Filter by PLANNED or AD_HOC"),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, le=200),
 ):
@@ -100,6 +114,7 @@ async def my_today_visits(
         session=session,
         status=status,
         search=search,
+        visit_type=visit_type,
         skip=skip,
         limit=limit,
     )

@@ -59,7 +59,77 @@ export interface GeoPoint {
   longitude: number;
 }
 
-export type LocationStatus = 'VERIFIED' | 'NEEDS_REVIEW' | 'MISSING';
+export type LocationStatus = 'VERIFIED' | 'NEEDS_REVIEW' | 'MISSING' | 'PENDING_APPROVAL';
+export type LocationProposalStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+
+export interface LocationProposal {
+  id: string;
+  customer_id: string;
+  customer_name?: string | null;
+  customer_outlet_code?: string | null;
+  current_latitude?: number | null;
+  current_longitude?: number | null;
+  proposed_latitude: number;
+  proposed_longitude: number;
+  gps_accuracy_meters?: number | null;
+  distance_meters?: number | null;
+  submitted_by: string;
+  submitter_name?: string | null;
+  submitted_by_employee_id?: string | null;
+  submitted_at: string;
+  status: LocationProposalStatus;
+  reviewed_by?: string | null;
+  reviewer_name?: string | null;
+  reviewed_at?: string | null;
+  rejection_reason?: string | null;
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CustomerRequirement {
+  id: string;
+  customer_id: string;
+  customer_name?: string | null;
+  outlet_code?: string | null;
+  brand?: string | null;
+  requirement_type?: string | null;
+  product_details?: string | null;
+  quantity?: number | null;
+  expected_value?: number | null;
+  follow_up_date?: string | null;
+  notes?: string | null;
+  status: string;
+  created_by: string;
+  creator_name?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CustomerProspectCreate {
+  name: string;
+  contact_number: string;
+  contact_person?: string | null;
+  gst_number?: string | null;
+  address?: string;
+  territory_id?: string | null;
+  area_id?: string | null;
+  outlet_code?: string | null;
+  brands?: string[];
+  requirement?: {
+    brand?: string;
+    requirement_type?: string;
+    product_details?: string;
+    quantity?: number;
+    expected_value?: number;
+    follow_up_date?: string;
+    notes?: string;
+  } | null;
+  location?: { latitude: number; longitude: number } | null;
+  gps_accuracy_meters?: number | null;
+  notes?: string | null;
+  force?: boolean;
+}
 
 /** Response of `GET /api/v1/customers`. */
 export interface Customer {
@@ -68,6 +138,7 @@ export interface Customer {
   contact_number: string;
   /** FT-013: separate human contact, distinct from the phone number. */
   contact_person: string | null;
+  gst_number?: string | null;
   address: string;
   /** FT-012: the geofence centre, optional/nullable for bulk imported records. */
   location: GeoPoint | null;
@@ -83,6 +154,7 @@ export interface Customer {
   outlet_code: string | null;
   dms_code?: string | null;
   assigned_fos_names?: string[];
+  brands?: string[];
   created_by: string;
   created_at: string;
 }
@@ -140,6 +212,15 @@ export interface EmployeeAreaAssignment {
 }
 
 export type VisitStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'FLAGGED' | 'MISSED';
+export type VisitType = 'PLANNED' | 'AD_HOC';
+
+export type AdHocReason =
+  | 'Payment Follow-up'
+  | 'Cheque Bounce'
+  | 'Customer Requested'
+  | 'Urgent Collection'
+  | 'New Business Opportunity'
+  | 'Other';
 
 /** Response of `GET /api/v1/visits`. */
 export interface Visit {
@@ -148,6 +229,9 @@ export interface Visit {
   employee_id: string;
   scheduled_at: string;
   status: VisitStatus;
+  visit_type: VisitType;
+  adhoc_reason?: string | null;
+  adhoc_notes?: string | null;
   check_in_at: string | null;
   check_in_received_at?: string | null;
   check_out_at: string | null;
@@ -240,6 +324,19 @@ export interface PaymentProof {
   uploaded_at: string;
 }
 
+export interface PaymentBrandAllocation {
+  id: string;
+  payment_id: string;
+  brand: string;
+  allocated_amount: string;
+  created_at: string;
+}
+
+export interface BrandAllocationInput {
+  brand: string;
+  amount: number;
+}
+
 /** Response of `GET/POST /api/v1/payments*` (the "Collection"). */
 export interface Payment {
   id: string;
@@ -261,6 +358,7 @@ export interface Payment {
   created_by: string;
   created_at: string;
   proofs: PaymentProof[];
+  allocations?: PaymentBrandAllocation[];
   customer_name?: string | null;
   outlet_code?: string | null;
   employee_name?: string | null;
@@ -297,6 +395,7 @@ export interface AccountSummary {
   recent_invoices: Invoice[];
   recent_payments: Payment[];
   brand_summary: BrandSummary[];
+  aging_buckets?: Record<string, string>;
 }
 
 /** One row of `GET /api/v1/collections/overview` - the outlet-list financial overview (Meeting 2). */
@@ -661,6 +760,9 @@ export interface EmployeeActivityVisit {
   check_out_at: string | null;
   duration_minutes: number | null;
   status: VisitStatus;
+  visit_type?: VisitType;
+  adhoc_reason?: string | null;
+  adhoc_notes?: string | null;
   geo_failure_count: number;
 }
 
@@ -691,6 +793,8 @@ export interface EmployeeActivity {
   is_active: boolean;
 
   visits_total: number;
+  visits_planned?: number;
+  visits_adhoc?: number;
   visits_completed: number;
   visits_missed: number;
   visits_flagged: number;
@@ -923,17 +1027,40 @@ export interface MonthlyReportingPeriod {
   period_year: number;
   period_month: number;
   period_name: string;
-  status: 'OPEN' | 'FINALIZED';
+  status: 'OPEN' | 'PENDING_CLOSE' | 'FINALIZED';
   snapshot_count: number;
   total_outlets: number;
   total_sales: string;
   total_collection: string;
   total_market_os: string;
   total_overdue_gt_90: string;
+  opened_at?: string | null;
   finalized_at?: string | null;
   finalized_by?: string | null;
+  reopened_at?: string | null;
+  reopened_by?: string | null;
+  reopen_reason?: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface MonthlyPeriodReviewSummary {
+  period_id: string;
+  period_year: number;
+  period_month: number;
+  period_name: string;
+  status: 'OPEN' | 'PENDING_CLOSE' | 'FINALIZED';
+  visits_completed: number;
+  visits_adhoc: number;
+  visits_total: number;
+  collections_submitted_amount: string;
+  collections_verified_amount: string;
+  collections_pending_amount: string;
+  collections_count: number;
+  total_outstanding: string;
+  total_invoices_count: number;
+  total_outlets_count: number;
+  can_finalize: boolean;
 }
 
 export type ExceptionType =
@@ -1020,4 +1147,133 @@ export interface EmployeeDayDashboardResponse {
   orders_today_count: number;
 }
 
+export type WorkSessionStatus = 'NOT_STARTED' | 'STARTED' | 'COMPLETED';
 
+export interface WorkSession {
+  id: string;
+  employee_id: string;
+  work_date: string;
+  status: WorkSessionStatus;
+  start_time: string | null;
+  start_latitude: number | null;
+  start_longitude: number | null;
+  start_accuracy_meters: number | null;
+  end_time: string | null;
+  end_latitude: number | null;
+  end_longitude: number | null;
+  end_accuracy_meters: number | null;
+  start_notes: string | null;
+  end_notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DailyFieldActivitySummary {
+  work_date: string;
+  total_visits: number;
+  planned_visits: number;
+  adhoc_visits: number;
+  completed_visits: number;
+  missed_visits: number;
+  flagged_visits: number;
+  collections_count: number;
+  collections_total_amount: string;
+  collections_verified_amount: string;
+}
+
+export interface EmployeeWorkdayResponse {
+  employee_id: string;
+  employee_name: string | null;
+  work_date: string;
+  session: WorkSession | null;
+  summary: DailyFieldActivitySummary;
+}
+
+export interface EmployeeWorkdaySessionItem {
+  employee_id: string;
+  employee_name: string;
+  employee_code: string | null;
+  work_date: string;
+  status: WorkSessionStatus;
+  start_time: string | null;
+  end_time: string | null;
+  start_latitude: number | null;
+  start_longitude: number | null;
+  start_accuracy_meters: number | null;
+  end_latitude: number | null;
+  end_longitude: number | null;
+  end_accuracy_meters: number | null;
+  visits_total: number;
+  visits_planned: number;
+  visits_adhoc: number;
+  visits_completed: number;
+  collections_amount: string;
+}
+
+export interface RequirementFollowUpItem {
+  id: string;
+  customer_id: string;
+  customer_name: string;
+  brand: string | null;
+  product_details: string | null;
+  expected_value: string | null;
+  follow_up_date: string | null;
+}
+
+export interface TodayFieldActivityOverview {
+  work_date: string;
+  total_employees: number;
+  employees_started: number;
+  employees_completed: number;
+  employees_active: number;
+  employees_not_started: number;
+  total_visits: number;
+  planned_visits: number;
+  adhoc_visits: number;
+  completed_visits: number;
+  total_collections_amount: string;
+  collections_pending_verification: string;
+  collections_verified: string;
+  pending_location_proposals_count: number;
+  pending_payments_count: number;
+  recent_prospects_count: number;
+  upcoming_follow_ups: RequirementFollowUpItem[];
+  sessions: EmployeeWorkdaySessionItem[];
+}
+
+export interface OrganizationProfile {
+  organization_name: string;
+  operational_hub: string;
+  divisions: string;
+  contact_email: string;
+  contact_phone: string;
+  gstin: string;
+  timezone: string;
+  currency: string;
+  total_employees: number;
+  total_customers: number;
+  total_territories: number;
+  total_areas: number;
+  master_brands: string[];
+}
+
+export interface Brand {
+  id: string;
+  name: string;
+  normalized_name: string;
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+export interface RequirementForm {
+  id: string;
+  visit_id: string;
+  category_id: string;
+  category_name?: string | null;
+  description: string;
+  priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' | string;
+  expected_timeline: string;
+  budget_range?: string | null;
+  notes?: string | null;
+  submitted_at: string;
+}

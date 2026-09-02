@@ -18,6 +18,7 @@ import {
   AlertTriangle,
   ArrowRight,
   Sparkles,
+  X,
 } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 import { Card, CardHeader, CardTitle, CardSubtitle } from '../components/ui/Card';
@@ -36,9 +37,11 @@ import {
   OutstandingAgeingReportRow,
   VisitDetailedReportRow,
   MonthlyReportingPeriod,
+  MonthlyPeriodReviewSummary,
   Territory,
   Area,
   Employee,
+  Brand,
 } from '../types';
 
 interface DateRange {
@@ -101,6 +104,7 @@ export const ReportsPage: React.FC = () => {
   const [areas, setAreas] = useState<Area[]>([]);
   const [employeeOptions, setEmployeeOptions] = useState<Employee[]>([]);
   const [monthlyPeriods, setMonthlyPeriods] = useState<MonthlyReportingPeriod[]>([]);
+  const [masterBrands, setMasterBrands] = useState<Brand[]>([]);
 
   // Report Datasets
   const [businessBI, setBusinessBI] = useState<BusinessBIDashboard | null>(null);
@@ -121,16 +125,18 @@ export const ReportsPage: React.FC = () => {
   useEffect(() => {
     const loadMasters = async () => {
       try {
-        const [tList, aList, eList, pList] = await Promise.all([
+        const [tList, aList, eList, pList, bList] = await Promise.all([
           apiClient.getTerritories().catch(() => [] as Territory[]),
           apiClient.getAreas().catch(() => [] as Area[]),
           apiClient.getEmployees().catch(() => [] as Employee[]),
           apiClient.getMonthlyPeriods().catch(() => [] as MonthlyReportingPeriod[]),
+          apiClient.getBrands(true).catch(() => [] as Brand[]),
         ]);
         setTerritories(tList || []);
         setAreas(aList || []);
         setEmployeeOptions(eList || []);
         setMonthlyPeriods(pList || []);
+        setMasterBrands(bList || []);
       } catch (err) {
         console.error('Failed to load master filters', err);
       }
@@ -545,30 +551,75 @@ export const ReportsPage: React.FC = () => {
     }
   };
 
-  // Month Finalization / Reopen
-  const handleFinalizeMonth = async (period: MonthlyReportingPeriod) => {
-    if (!window.confirm(`Are you sure you want to finalize and lock the monthly snapshot for ${period.period_name}? Once finalized, historical figures cannot be modified.`)) {
-      return;
-    }
+  // Monthly Period Review & Reopen Modal States
+  const [reviewPeriod, setReviewPeriod] = useState<MonthlyReportingPeriod | null>(null);
+  const [reviewSummary, setReviewSummary] = useState<MonthlyPeriodReviewSummary | null>(null);
+  const [isReviewLoading, setIsReviewLoading] = useState<boolean>(false);
+  const [isFinalizingPeriod, setIsFinalizingPeriod] = useState<boolean>(false);
+
+  const [reopenTargetPeriod, setReopenTargetPeriod] = useState<MonthlyReportingPeriod | null>(null);
+  const [reopenReasonText, setReopenReasonText] = useState<string>('');
+  const [reopenError, setReopenError] = useState<string | null>(null);
+  const [isReopeningPeriod, setIsReopeningPeriod] = useState<boolean>(false);
+
+  const handleOpenPeriodReview = async (period: MonthlyReportingPeriod) => {
+    setReviewPeriod(period);
+    setIsReviewLoading(true);
     try {
-      const updated = await apiClient.finalizeMonthlyPeriod(period.id);
-      setMonthlyPeriods((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
-      setActionSuccess(`Monthly period ${period.period_name} finalized and locked successfully.`);
-      setTimeout(() => setActionSuccess(null), 4000);
+      const summary = await apiClient.getMonthlyPeriodReview(period.id);
+      setReviewSummary(summary);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to finalize month');
+      setError(err instanceof Error ? err.message : 'Failed to load period review');
+    } finally {
+      setIsReviewLoading(false);
     }
   };
 
-  const handleReopenMonth = async (period: MonthlyReportingPeriod) => {
-    if (!window.confirm(`Reopen ${period.period_name}? This will remove the finalized lock.`)) return;
+  const handleConfirmFinalizeMonth = async () => {
+    if (!reviewPeriod) return;
+    setIsFinalizingPeriod(true);
     try {
-      const updated = await apiClient.reopenMonthlyPeriod(period.id);
+      const updated = await apiClient.finalizeMonthlyPeriod(reviewPeriod.id);
       setMonthlyPeriods((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
-      setActionSuccess(`Monthly period ${period.period_name} reopened.`);
+      setActionSuccess(`Monthly period ${reviewPeriod.period_name} finalized and locked successfully.`);
+      setReviewPeriod(null);
+      setReviewSummary(null);
       setTimeout(() => setActionSuccess(null), 4000);
+      loadActiveReport();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to reopen month');
+      setError(err instanceof Error ? err.message : 'Failed to finalize month');
+    } finally {
+      setIsFinalizingPeriod(false);
+    }
+  };
+
+  const handleOpenReopenModal = (period: MonthlyReportingPeriod) => {
+    setReopenTargetPeriod(period);
+    setReopenReasonText('');
+    setReopenError(null);
+  };
+
+  const handleConfirmReopenMonth = async () => {
+    if (!reopenTargetPeriod) return;
+    const cleanReason = reopenReasonText.trim();
+    if (!cleanReason) {
+      setReopenError('Please provide an administrative reason for reopening this period.');
+      return;
+    }
+    setIsReopeningPeriod(true);
+    setReopenError(null);
+    try {
+      const updated = await apiClient.reopenMonthlyPeriod(reopenTargetPeriod.id, cleanReason);
+      setMonthlyPeriods((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+      setActionSuccess(`Monthly period ${reopenTargetPeriod.period_name} reopened.`);
+      setReopenTargetPeriod(null);
+      setReopenReasonText('');
+      setTimeout(() => setActionSuccess(null), 4000);
+      loadActiveReport();
+    } catch (err) {
+      setReopenError(err instanceof Error ? err.message : 'Failed to reopen month');
+    } finally {
+      setIsReopeningPeriod(false);
     }
   };
 
@@ -620,9 +671,10 @@ export const ReportsPage: React.FC = () => {
                 <option value="ALL">All Available Months</option>
                 {monthlyPeriods.map((p) => {
                   const mStr = `${p.period_year}-${String(p.period_month).padStart(2, '0')}`;
+                  const tag = p.status === 'FINALIZED' ? '🔒 (Locked)' : p.status === 'PENDING_CLOSE' ? '⏳ (Pending Close)' : '🟢 (Current)';
                   return (
                     <option key={p.id} value={mStr}>
-                      {p.period_name} {p.status === 'FINALIZED' ? '🔒 (Locked)' : '🟢 (Live)'}
+                      {p.period_name} {tag}
                     </option>
                   );
                 })}
@@ -639,10 +691,12 @@ export const ReportsPage: React.FC = () => {
                 value={selectedBrand}
                 onChange={(e) => setSelectedBrand(e.target.value)}
               >
-                <option value="ALL">All Brands (Usha, VU, ZBR)</option>
-                <option value="Usha">Usha</option>
-                <option value="VU">VU</option>
-                <option value="ZBR">ZBR</option>
+                <option value="ALL">All Brands</option>
+                {masterBrands.map((b) => (
+                  <option key={b.id} value={b.name}>
+                    {b.name}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -1356,16 +1410,17 @@ export const ReportsPage: React.FC = () => {
           <CardHeader className="px-0">
             <CardTitle className="flex items-center gap-2">
               <Calendar className="w-5 h-5 text-secondary-container" />
-              Monthly Historical Reporting &amp; Finalization
+              Monthly Accounting Periods &amp; Finalization
             </CardTitle>
             <CardSubtitle>
-              Historical monthly snapshots are archived and immutable once finalized by Admin.
+              Historical monthly snapshots and accounting ledgers are protected and immutable once locked by Admin.
             </CardSubtitle>
           </CardHeader>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {monthlyPeriods.map((period) => {
               const isLocked = period.status === 'FINALIZED';
+              const isPending = period.status === 'PENDING_CLOSE';
               const mStr = `${period.period_year}-${String(period.period_month).padStart(2, '0')}`;
               const isCurrentSelected = selectedMonth === mStr;
 
@@ -1384,18 +1439,32 @@ export const ReportsPage: React.FC = () => {
                       <h4 className="font-headline-sm text-base font-bold text-primary flex items-center gap-2">
                         {period.period_name}
                         {isLocked ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-label-md text-[10px] uppercase tracking-wider font-semibold bg-primary-container text-on-primary-container">
-                            <Lock className="w-2.5 h-2.5" /> FINALIZED
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-label-md text-[10px] uppercase tracking-wider font-semibold bg-slate-100 dark:bg-slate-900 text-slate-800 dark:text-slate-300 border border-slate-300 dark:border-slate-700">
+                            <Lock className="w-2.5 h-2.5" /> LOCKED
+                          </span>
+                        ) : isPending ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-label-md text-[10px] uppercase tracking-wider font-semibold bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
+                            <Clock className="w-2.5 h-2.5" /> PENDING CLOSE
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-label-md text-[10px] uppercase tracking-wider font-semibold bg-secondary-fixed text-on-secondary-fixed">
-                            <Sparkles className="w-2.5 h-2.5 text-secondary-container" /> OPEN (LIVE)
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-label-md text-[10px] uppercase tracking-wider font-semibold bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700">
+                            <Sparkles className="w-2.5 h-2.5" /> CURRENT / OPEN
                           </span>
                         )}
                       </h4>
                       <p className="font-caption text-xs text-on-surface-variant mt-1">
-                        {period.snapshot_count} outlet snapshots recorded
+                        {period.snapshot_count} outlet snapshots archived
                       </p>
+                      {period.finalized_at && (
+                        <p className="text-[10px] text-on-surface-variant mt-0.5">
+                          Locked: {new Date(period.finalized_at).toLocaleDateString()}
+                        </p>
+                      )}
+                      {period.reopen_reason && (
+                        <p className="text-[10px] text-amber-700 dark:text-amber-400 mt-0.5 italic">
+                          Reopen Reason: &quot;{period.reopen_reason}&quot;
+                        </p>
+                      )}
                     </div>
                   </div>
 
@@ -1430,11 +1499,19 @@ export const ReportsPage: React.FC = () => {
                     </button>
 
                     <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleOpenPeriodReview(period)}
+                        className="text-xs"
+                      >
+                        Review
+                      </Button>
                       {isLocked ? (
                         <Button
                           size="sm"
                           variant="ghost"
-                          onClick={() => handleReopenMonth(period)}
+                          onClick={() => handleOpenReopenModal(period)}
                           className="text-xs"
                         >
                           <Unlock className="w-3.5 h-3.5 mr-1" /> Reopen
@@ -1442,11 +1519,11 @@ export const ReportsPage: React.FC = () => {
                       ) : (
                         <Button
                           size="sm"
-                          variant="outline"
-                          onClick={() => handleFinalizeMonth(period)}
+                          variant="secondary"
+                          onClick={() => handleOpenPeriodReview(period)}
                           className="text-xs"
                         >
-                          <Lock className="w-3.5 h-3.5 mr-1" /> Finalize Month
+                          <Lock className="w-3.5 h-3.5 mr-1" /> Close &amp; Lock
                         </Button>
                       )}
                     </div>
@@ -1454,6 +1531,169 @@ export const ReportsPage: React.FC = () => {
                 </Card>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* Review Modal */}
+      {reviewPeriod && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-scrim/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-surface rounded-2xl border border-outline-variant/60 shadow-xl max-w-xl w-full p-6 space-y-5 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between pb-3 border-b border-outline-variant/40">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-primary/10 text-primary rounded-lg">
+                  <Lock className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-headline-sm text-base font-bold text-on-surface">
+                    {reviewPeriod.period_name} — Month Close Review
+                  </h3>
+                  <span className="font-caption text-xs text-on-surface-variant">
+                    Review operational and financial aggregates before locking the accounting period.
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setReviewPeriod(null);
+                  setReviewSummary(null);
+                }}
+                className="p-1 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {isReviewLoading ? (
+              <div className="py-8 text-center text-on-surface-variant text-sm flex items-center justify-center gap-2">
+                <RefreshCw className="w-4 h-4 animate-spin text-primary" />
+                Loading period review summary...
+              </div>
+            ) : reviewSummary ? (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <div className="p-3 bg-surface-container-low rounded-xl border border-outline-variant/30 text-center">
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-on-surface-variant block">Completed Visits</span>
+                    <p className="text-base font-bold text-primary mt-1">{reviewSummary.visits_completed}</p>
+                    <span className="text-[10px] text-on-surface-variant">{reviewSummary.visits_adhoc} ad-hoc</span>
+                  </div>
+                  <div className="p-3 bg-surface-container-low rounded-xl border border-outline-variant/30 text-center">
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-on-surface-variant block">Collections</span>
+                    <p className="text-base font-bold text-emerald-600 mt-1">{formatCurrency(reviewSummary.collections_submitted_amount)}</p>
+                    <span className="text-[10px] text-on-surface-variant">{formatCurrency(reviewSummary.collections_verified_amount)} verified</span>
+                  </div>
+                  <div className="p-3 bg-surface-container-low rounded-xl border border-outline-variant/30 text-center">
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-on-surface-variant block">Market Outstanding</span>
+                    <p className="text-base font-bold text-amber-600 mt-1">{formatCurrency(reviewSummary.total_outstanding)}</p>
+                    <span className="text-[10px] text-on-surface-variant">{reviewSummary.total_invoices_count} invoices</span>
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs text-on-surface space-y-1.5">
+                  <p className="font-bold flex items-center gap-1 text-amber-800 dark:text-amber-300">
+                    <AlertTriangle className="w-4 h-4 text-amber-600" />
+                    Important Financial Lock Notice:
+                  </p>
+                  <p className="text-on-surface-variant leading-relaxed">
+                    After closing <strong>{reviewPeriod.period_name}</strong>, new financial transactions (collections, invoices) cannot be backdated into this month. Any future payments collected for {reviewPeriod.period_name} invoices will be recorded in the open month.
+                  </p>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-outline-variant/40">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setReviewPeriod(null);
+                  setReviewSummary(null);
+                }}
+                disabled={isFinalizingPeriod}
+              >
+                Cancel
+              </Button>
+              {reviewPeriod.status !== 'FINALIZED' && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  icon={Lock}
+                  onClick={handleConfirmFinalizeMonth}
+                  isLoading={isFinalizingPeriod}
+                  disabled={isReviewLoading}
+                >
+                  Close &amp; Lock {reviewPeriod.period_name}
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Controlled Reopen Modal */}
+      {reopenTargetPeriod && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-scrim/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-surface rounded-2xl border border-outline-variant/60 shadow-xl max-w-lg w-full p-6 space-y-5 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between pb-3 border-b border-outline-variant/40">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-amber-500/10 text-amber-600 rounded-lg">
+                  <Unlock className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-headline-sm text-base font-bold text-on-surface">
+                    Reopen {reopenTargetPeriod.period_name}
+                  </h3>
+                  <span className="font-caption text-xs text-on-surface-variant">
+                    Admin Authorization &amp; Reason Required
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => setReopenTargetPeriod(null)}
+                className="p-1 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {reopenError && <ErrorBanner message={reopenError} onDismiss={() => setReopenError(null)} />}
+
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-on-surface block">
+                Reason for Reopening Period <span className="text-error">*</span>
+              </label>
+              <textarea
+                value={reopenReasonText}
+                onChange={(e) => setReopenReasonText(e.target.value)}
+                placeholder="E.g., Auditor request to settle dispute on invoice INV-2026-881..."
+                rows={3}
+                className="w-full bg-surface border border-outline-variant rounded-xl p-3 text-xs text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+              />
+              <span className="text-[11px] text-on-surface-variant block">
+                This action and the supplied reason will be stamped in the audit trail.
+              </span>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-outline-variant/40">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setReopenTargetPeriod(null)}
+                disabled={isReopeningPeriod}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={Unlock}
+                onClick={handleConfirmReopenMonth}
+                isLoading={isReopeningPeriod}
+                disabled={!reopenReasonText.trim()}
+              >
+                Confirm &amp; Reopen
+              </Button>
+            </div>
           </div>
         </div>
       )}

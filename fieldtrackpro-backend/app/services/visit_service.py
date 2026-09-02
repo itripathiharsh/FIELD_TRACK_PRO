@@ -7,33 +7,32 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import date, datetime, timedelta, timezone
-
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
 import os
 
+from app.core.context import get_current_request_id
 from app.exceptions.custom import BaseAPIException, DuplicateVisitException
 from app.models.form_template import FormStatus, FormTemplate
 from app.models.geo_verification_log import GeoVerificationLog, GeoVerificationType
 from app.models.notification import NotificationType
 from app.models.user import Role, User
-from app.models.visit import Visit, VisitStatus
+from app.models.visit import Visit, VisitStatus, VisitType
 from app.repositories.geo_log_repo import GeoLogRepository
 from app.repositories.visit_repo import VisitRepository
-from app.schemas.visit import CheckInRequest, CheckOutRequest, VisitCreate
+from app.schemas.visit import AdHocVisitCreate, CheckInRequest, CheckOutRequest, VisitCreate
 from app.services import notification_service
 from app.services.customer_service import get_customer, verify_geo_proximity
 from app.services.employee_service import get_employee, get_employee_by_user_id
 from app.services.visit_state_machine import assert_valid_transition, is_terminal
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("fieldtrackpro")
 
 
 async def _validate_required_form(required_form_id: uuid.UUID | None, session: AsyncSession) -> None:
     """
     A visit may only require a PUBLISHED template - a DRAFT isn't ready for
-    an employee to see, and an ARCHIVED one is no longer meant for new work
+    an employee to see, and an archived one is no longer meant for new work
     (existing visits/submissions against an archived form are unaffected;
     this only gates assigning one to a visit going forward).
     """
@@ -160,11 +159,24 @@ async def create_visit(data: VisitCreate, created_by: uuid.UUID, session: AsyncS
         scheduled_at=data.scheduled_at,
         created_by=created_by,
         status=VisitStatus.PENDING,
+        visit_type=data.visit_type or VisitType.PLANNED,
+        adhoc_reason=data.adhoc_reason,
+        adhoc_notes=data.adhoc_notes,
         required_form_id=data.required_form_id,
     )
     await repo.add(visit)
     await repo.commit()
     full_visit = await repo.get_full(visit.id)
+
+    req_id = get_current_request_id()
+    logger.info(
+        "event=visit_create result=success request_id=%s visit_id=%s employee_id=%s customer_id=%s visit_type=%s",
+        req_id,
+        visit.id,
+        visit.employee_id,
+        visit.customer_id,
+        visit.visit_type.value if hasattr(visit.visit_type, "value") else str(visit.visit_type),
+    )
 
     # Notify employee of newly assigned visit
     try:
@@ -181,6 +193,89 @@ async def create_visit(data: VisitCreate, created_by: uuid.UUID, session: AsyncS
         logger.warning(f"Failed to create new visit notification: {e}")
 
     return full_visit
+
+
+async def create_adhoc_visit(
+    data: AdHocVisitCreate,
+    current_user: User,
+    session: AsyncSession,
+) -> Visit:
+    """
+    Employee / Admin: Initiate an off-beat / ad-hoc visit to a customer.
+    If the customer already has a pending planned visit for today with this employee,
+    that planned visit is returned.
+    Otherwise, a new visit is created with visit_type = AD_HOC, adhoc_reason, and adhoc_notes.
+    """
+    customer = await get_customer(data.customer_id, session)
+
+    if current_user.role == Role.ADMIN:
+        try:
+            employee = await get_employee_by_user_id(current_user.id, session)
+        except BaseAPIException:
+            from app.models.employee import Employee
+            first_emp = (await session.execute(select(Employee).limit(1))).scalar_one_or_none()
+            if not first_emp:
+                raise BaseAPIException(status_code=400, detail="No employee profile available to assign ad-hoc visit")
+            employee = first_emp
+    else:
+        employee = await get_employee_by_user_id(current_user.id, session)
+
+    scheduled_at = data.scheduled_at or datetime.now(timezone.utc)
+    await _validate_required_form(data.required_form_id, session)
+
+    repo = VisitRepository(session)
+    from app.core.datetime_utils import get_ist_today_range
+    start_utc, end_utc = get_ist_today_range()
+
+    req_id = get_current_request_id()
+
+    # Check if there is already a pending planned visit for today for this customer and employee
+    existing_visits_stmt = (
+        select(Visit)
+        .where(
+            Visit.employee_id == employee.id,
+            Visit.customer_id == customer.id,
+            Visit.scheduled_at >= start_utc,
+            Visit.scheduled_at <= end_utc,
+            Visit.status == VisitStatus.PENDING,
+        )
+        .order_by(Visit.scheduled_at.asc())
+        .limit(1)
+    )
+    existing_pending = (await session.execute(existing_visits_stmt)).scalar_one_or_none()
+    if existing_pending is not None:
+        logger.info(
+            "event=visit_adhoc_matched_planned request_id=%s customer_id=%s planned_visit_id=%s employee_id=%s",
+            req_id,
+            customer.id,
+            existing_pending.id,
+            employee.id,
+        )
+        return await repo.get_full(existing_pending.id)
+
+    # Create new ad-hoc visit
+    visit = Visit(
+        customer_id=customer.id,
+        employee_id=employee.id,
+        scheduled_at=scheduled_at,
+        created_by=current_user.id,
+        status=VisitStatus.PENDING,
+        visit_type=VisitType.AD_HOC,
+        adhoc_reason=data.adhoc_reason.strip(),
+        adhoc_notes=data.adhoc_notes.strip() if data.adhoc_notes else None,
+        required_form_id=data.required_form_id,
+    )
+    await repo.add(visit)
+    await repo.commit()
+    logger.info(
+        "event=visit_adhoc_created request_id=%s visit_id=%s employee_id=%s customer_id=%s reason=%s",
+        req_id,
+        visit.id,
+        employee.id,
+        customer.id,
+        data.adhoc_reason,
+    )
+    return await repo.get_full(visit.id)
 
 
 async def get_visit(visit_id: uuid.UUID, session: AsyncSession) -> Visit:
@@ -211,6 +306,7 @@ async def list_visits(
     to_date: datetime | None = None,
     search: str | None = None,
     sort_order: str = "desc",
+    visit_type: VisitType | None = None,
     skip: int = 0,
     limit: int = 20,
 ) -> tuple[list[Visit], int]:
@@ -235,6 +331,7 @@ async def list_visits(
         to_date=to_date,
         search=search,
         sort_order=sort_order,
+        visit_type=visit_type,
         skip=skip,
         limit=limit,
     )
@@ -245,6 +342,7 @@ async def get_my_today_visits(
     session: AsyncSession,
     status: list[VisitStatus] | VisitStatus | None = None,
     search: str | None = None,
+    visit_type: VisitType | None = None,
     skip: int = 0,
     limit: int = 50,
 ) -> tuple[list[Visit], int]:
@@ -265,6 +363,7 @@ async def get_my_today_visits(
         to_date=end_utc,
         search=search,
         sort_order="asc",
+        visit_type=visit_type,
         skip=skip,
         limit=limit,
     )
@@ -278,6 +377,7 @@ async def check_in(
 ) -> Visit:
     from app.services.customer_service import verify_device_against_customer
 
+    req_id = get_current_request_id()
     visit = await get_visit_for_user(visit_id, current_user, session)
 
     # Idempotency: if key matches any previous check-in attempt, replay the exact outcome
@@ -286,17 +386,30 @@ async def check_in(
         existing_log = await geo_repo.get_by_idempotency_key(visit.id, data.idempotency_key)
         if existing_log is not None:
             if not existing_log.is_valid:
+                logger.warning(
+                    "event=visit_checkin result=rejected reason=%s idempotency_replay=true request_id=%s visit_id=%s",
+                    existing_log.failure_reason,
+                    req_id,
+                    visit.id,
+                )
                 raise BaseAPIException(
                     status_code=422,
                     detail=f"Check-in failed: {existing_log.failure_reason}",
                     error_code="GEO_VERIFICATION_FAILED",
                 )
+            logger.info("event=visit_checkin result=success idempotency_replay=true request_id=%s visit_id=%s", req_id, visit.id)
             return visit
 
     assert_valid_transition(visit.status, VisitStatus.IN_PROGRESS)
 
     customer = await get_customer(visit.customer_id, session)
     if customer.location is None:
+        logger.warning(
+            "event=visit_checkin result=rejected reason=OUTLET_LOCATION_NOT_CONFIGURED request_id=%s visit_id=%s customer_id=%s",
+            req_id,
+            visit.id,
+            visit.customer_id,
+        )
         raise BaseAPIException(
             status_code=422,
             detail="Outlet location is not configured.",
@@ -334,6 +447,18 @@ async def check_in(
             visit.status = VisitStatus.FLAGGED
             session.add(visit)
         await geo_repo.commit()
+        logger.warning(
+            "event=visit_checkin result=rejected reason=%s request_id=%s visit_id=%s employee_id=%s customer_id=%s distance_m=%s accuracy_m=%s allowed_radius_m=%s is_mock=%s",
+            geo_res.failure_reason,
+            req_id,
+            visit.id,
+            visit.employee_id,
+            visit.customer_id,
+            geo_res.distance_m,
+            data.accuracy_m,
+            customer.geofence_radius_m,
+            data.is_mock_location,
+        )
         raise BaseAPIException(
             status_code=422,
             detail=f"Check-in failed: {geo_res.failure_reason}",
@@ -346,6 +471,18 @@ async def check_in(
     visit.check_in_location = f"SRID=4326;POINT({data.longitude} {data.latitude})"
     session.add(visit)
     await geo_repo.commit()
+
+    logger.info(
+        "event=visit_checkin result=success request_id=%s visit_id=%s employee_id=%s customer_id=%s distance_m=%s accuracy_m=%s visit_type=%s",
+        req_id,
+        visit.id,
+        visit.employee_id,
+        visit.customer_id,
+        geo_res.distance_m,
+        data.accuracy_m,
+        visit.visit_type.value if hasattr(visit.visit_type, "value") else str(visit.visit_type),
+    )
+
     repo = VisitRepository(session)
     return await repo.get_full(visit.id)
 
@@ -358,6 +495,7 @@ async def check_out(
 ) -> Visit:
     from app.services.customer_service import verify_device_against_customer
 
+    req_id = get_current_request_id()
     visit = await get_visit_for_user(visit_id, current_user, session)
 
     # Idempotency: if key matches any previous check-out attempt, replay the exact outcome
@@ -366,17 +504,30 @@ async def check_out(
         existing_log = await geo_repo.get_by_idempotency_key(visit.id, data.idempotency_key)
         if existing_log is not None:
             if not existing_log.is_valid:
+                logger.warning(
+                    "event=visit_checkout result=rejected reason=%s idempotency_replay=true request_id=%s visit_id=%s",
+                    existing_log.failure_reason,
+                    req_id,
+                    visit.id,
+                )
                 raise BaseAPIException(
                     status_code=422,
                     detail=f"Check-out failed: {existing_log.failure_reason}",
                     error_code="GEO_VERIFICATION_FAILED",
                 )
+            logger.info("event=visit_checkout result=success idempotency_replay=true request_id=%s visit_id=%s", req_id, visit.id)
             return visit
 
     if visit.status == VisitStatus.COMPLETED:
         return visit
 
     if visit.status != VisitStatus.IN_PROGRESS:
+        logger.warning(
+            "event=visit_checkout result=rejected reason=CHECKIN_REQUIRED request_id=%s visit_id=%s current_status=%s",
+            req_id,
+            visit.id,
+            visit.status.value if hasattr(visit.status, "value") else str(visit.status),
+        )
         raise BaseAPIException(
             status_code=400,
             detail="Check-in is required before checking out",
@@ -390,6 +541,11 @@ async def check_out(
         cin = visit.check_in_at if visit.check_in_at.tzinfo else visit.check_in_at.replace(tzinfo=timezone.utc)
         cout = check_out_time if check_out_time.tzinfo else check_out_time.replace(tzinfo=timezone.utc)
         if cout < cin:
+            logger.warning(
+                "event=visit_checkout result=rejected reason=INVALID_VISIT_DURATION request_id=%s visit_id=%s",
+                req_id,
+                visit.id,
+            )
             raise BaseAPIException(
                 status_code=422,
                 detail="Check-out time cannot be earlier than check-in time",
@@ -398,6 +554,12 @@ async def check_out(
 
     customer = await get_customer(visit.customer_id, session)
     if customer.location is None:
+        logger.warning(
+            "event=visit_checkout result=rejected reason=OUTLET_LOCATION_NOT_CONFIGURED request_id=%s visit_id=%s customer_id=%s",
+            req_id,
+            visit.id,
+            visit.customer_id,
+        )
         raise BaseAPIException(
             status_code=422,
             detail="Outlet location is not configured.",
@@ -433,6 +595,16 @@ async def check_out(
             visit.status = VisitStatus.FLAGGED
             session.add(visit)
         await geo_repo.commit()
+        logger.warning(
+            "event=visit_checkout result=rejected reason=%s request_id=%s visit_id=%s employee_id=%s customer_id=%s distance_m=%s accuracy_m=%s",
+            geo_res.failure_reason,
+            req_id,
+            visit.id,
+            visit.employee_id,
+            visit.customer_id,
+            geo_res.distance_m,
+            data.accuracy_m,
+        )
         raise BaseAPIException(
             status_code=422,
             detail=f"Check-out failed: {geo_res.failure_reason}",
@@ -447,6 +619,15 @@ async def check_out(
         visit.notes = data.notes
     session.add(visit)
     await session.commit()
+
+    logger.info(
+        "event=visit_checkout result=success request_id=%s visit_id=%s employee_id=%s customer_id=%s",
+        req_id,
+        visit.id,
+        visit.employee_id,
+        visit.customer_id,
+    )
+
     repo = VisitRepository(session)
     return await repo.get_full(visit.id)
 
@@ -582,7 +763,7 @@ async def bulk_create_visits(
     await _check_duplicate_visit(data.employee_id, data.scheduled_at, session)
 
     visits = []
-    for customer_id in data.customer_ids:
+    for i, customer_id in enumerate(data.customer_ids):
         # Validate customer exists
         from app.models.customer import Customer
         customer = await session.execute(
@@ -595,12 +776,14 @@ async def bulk_create_visits(
                 error_code="CUSTOMER_NOT_FOUND",
             )
 
+        slot_time = data.scheduled_at + timedelta(minutes=i * VISIT_CONFLICT_WINDOW_MINUTES)
         visit = Visit(
             customer_id=customer_id,
             employee_id=data.employee_id,
-            scheduled_at=data.scheduled_at,
+            scheduled_at=slot_time,
             status=VisitStatus.PENDING,
             created_by=created_by,
+            visit_type=VisitType.PLANNED,
             required_form_id=data.required_form_id,
         )
         session.add(visit)

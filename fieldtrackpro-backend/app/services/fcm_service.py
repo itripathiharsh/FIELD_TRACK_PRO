@@ -99,12 +99,12 @@ class FCMService:
                     string_data[str(k)] = str(v)
 
         if not self._ensure_firebase_app():
-            # Dry-run / mock mode for local dev or tests
-            logger.info(
-                f"[FCM DRY-RUN] Would send push to {len(valid_tokens)} device(s): "
-                f"title='{title}', body='{body}', data={string_data}"
+            logger.warning(
+                f"[FCM UNAVAILABLE] Firebase not initialized. "
+                f"Failed to deliver push to {len(valid_tokens)} device(s): "
+                f"title='{title}', body='{body}'"
             )
-            return len(valid_tokens), 0, []
+            return 0, len(valid_tokens), []
 
         try:
             from firebase_admin import exceptions, messaging

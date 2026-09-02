@@ -143,11 +143,11 @@ class AuthRepository(
         }
     }
 
-    suspend fun forgotPassword(email: String): Resource<String> {
+    suspend fun forgotPassword(identifier: String): Resource<com.fieldtrackpro.android.data.model.ForgotPasswordResponse> {
         return try {
-            val response = authApi.forgotPassword(ForgotPasswordRequest(email))
+            val response = authApi.forgotPassword(ForgotPasswordRequest(identifier = identifier))
             if (response.isSuccessful && response.body() != null) {
-                Resource.Success(response.body()!!.message)
+                Resource.Success(response.body()!!)
             } else {
                 Resource.Error("Failed to request password reset (${response.code()})")
             }
@@ -156,9 +156,22 @@ class AuthRepository(
         }
     }
 
-    suspend fun resetPassword(email: String, otp: String, newPassword: String): Resource<String> {
+    suspend fun verifyOtp(identifier: String, otp: String): Resource<String> {
         return try {
-            val response = authApi.resetPassword(ResetPasswordRequest(email, otp, newPassword))
+            val response = authApi.verifyOtp(com.fieldtrackpro.android.data.model.VerifyOtpRequest(identifier = identifier, otp = otp))
+            if (response.isSuccessful && response.body() != null) {
+                Resource.Success(response.body()!!.message)
+            } else {
+                Resource.Error(if (response.code() == 400) "Invalid or expired verification code" else "Verification failed (${response.code()})")
+            }
+        } catch (e: Exception) {
+            Resource.Error("Network error: ${e.localizedMessage}")
+        }
+    }
+
+    suspend fun resetPassword(identifier: String, otp: String, newPassword: String): Resource<String> {
+        return try {
+            val response = authApi.resetPassword(ResetPasswordRequest(identifier = identifier, otp = otp, newPassword = newPassword))
             if (response.isSuccessful && response.body() != null) {
                 Resource.Success(response.body()!!.message)
             } else {

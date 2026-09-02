@@ -76,9 +76,36 @@ class MonthlyPeriodRead(BaseModel):
     total_collection: Decimal
     total_market_os: Decimal
     total_overdue_gt_90: Decimal
+    opened_at: Optional[datetime] = None
     finalized_at: Optional[datetime] = None
     finalized_by: Optional[uuid.UUID] = None
+    reopened_at: Optional[datetime] = None
+    reopened_by: Optional[uuid.UUID] = None
+    reopen_reason: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ReopenMonthlyPeriodRequest(BaseModel):
+    reason: str
+
+
+class MonthlyPeriodReviewSummary(BaseModel):
+    period_id: uuid.UUID
+    period_year: int
+    period_month: int
+    period_name: str
+    status: str
+    visits_completed: int
+    visits_adhoc: int
+    visits_total: int
+    collections_submitted_amount: Decimal
+    collections_verified_amount: Decimal
+    collections_pending_amount: Decimal
+    collections_count: int
+    total_outstanding: Decimal
+    total_invoices_count: int
+    total_outlets_count: int
+    can_finalize: bool

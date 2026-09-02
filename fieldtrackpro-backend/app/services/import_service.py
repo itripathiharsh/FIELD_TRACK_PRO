@@ -666,6 +666,11 @@ async def commit_import_batch(
     plan_rows = summary.get("plan_rows", [])
     today = date.today()
 
+    has_outlet_bi = any(row.get("type") == "outlet_bi" for row in plan_rows)
+    if has_outlet_bi:
+        from app.services.period_service import assert_period_open_for_date
+        await assert_period_open_for_date(today, session)
+
     try:
         # Collect targeted lookup keys from validated plan rows
         needed_emp_codes: set[str] = set()
@@ -848,11 +853,16 @@ async def commit_import_batch(
                         ))
 
                 # Financial Snapshot
-                brand = row.get("brand", "General")
+                from app.services.brand_service import resolve_brand, resolve_canonical_brand_name
+                raw_brand = row.get("brand", "General")
+                brand_obj = await resolve_brand(session, raw_brand)
+                canonical_brand = brand_obj.name if brand_obj else resolve_canonical_brand_name(raw_brand)
+                brand_id_val = brand_obj.id if brand_obj else None
+
                 snap_res = await session.execute(
                     select(OutletFinancialSnapshot).where(
                         OutletFinancialSnapshot.customer_id == cust_obj.id,
-                        OutletFinancialSnapshot.brand == brand,
+                        OutletFinancialSnapshot.brand == canonical_brand,
                         OutletFinancialSnapshot.snapshot_date == today,
                     )
                 )
@@ -860,7 +870,8 @@ async def commit_import_batch(
                 if not snap_obj:
                     snap_obj = OutletFinancialSnapshot(
                         customer_id=cust_obj.id,
-                        brand=brand,
+                        brand=canonical_brand,
+                        brand_id=brand_id_val,
                         snapshot_date=today,
                         sales=Decimal(row["sales"]),
                         collection=Decimal(row["collection"]),

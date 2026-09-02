@@ -1,4 +1,4 @@
-﻿import { describe, expect, it, beforeEach } from 'vitest';
+import { describe, expect, it, beforeEach } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
@@ -16,7 +16,7 @@ import {
   route,
   signIn,
 } from '../test/utils';
-import { Customer } from '../types';
+import { Customer, Visit } from '../types';
 
 /**
  * VisitsPage behaviour.
@@ -468,6 +468,55 @@ describe('VisitsPage - employee (FT-044)', () => {
     await waitFor(() =>
       expect(screen.getByText(new RegExp(VISIT.id.substring(0, 8), 'i'))).toBeInTheDocument(),
     );
+  });
+});
+
+describe('VisitsPage - visit_type (Planned vs Ad-Hoc)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    signIn(ADMIN_USER);
+  });
+
+  it('renders PLANNED and AD-HOC badges with reason', async () => {
+    const adhocVisit: Visit = {
+      ...VISIT,
+      id: '88888888-8888-8888-8888-888888888888',
+      visit_type: 'AD_HOC',
+      adhoc_reason: 'Payment Follow-up',
+      adhoc_notes: 'Urgent cheque collection',
+    };
+
+    mockApi({
+      ...baseRoutes(ADMIN_USER),
+      '/api/v1/visits': [VISIT, adhocVisit],
+    });
+
+    renderWithProviders(<VisitsPage />);
+    await waitFor(() => expect(screen.getByText(/visit dispatch/i)).toBeInTheDocument());
+
+    expect(screen.getAllByText('PLANNED').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('AD-HOC').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('Payment Follow-up')).toBeInTheDocument();
+  });
+
+  it('filters visits when clicking AD-HOC visit type pill', async () => {
+    const fetchSpy = mockApi({
+      ...baseRoutes(ADMIN_USER),
+      '/api/v1/visits': [VISIT],
+    });
+
+    renderWithProviders(<VisitsPage />);
+    await waitFor(() => expect(screen.getByText(/visit dispatch/i)).toBeInTheDocument());
+
+    const adhocButton = screen.getByRole('button', { name: 'AD-HOC' });
+    await userEvent.click(adhocButton);
+
+    await waitFor(() => {
+      const calledAdHoc = fetchSpy.mock.calls.some(([u]) =>
+        String(u).includes('visit_type=AD_HOC'),
+      );
+      expect(calledAdHoc).toBe(true);
+    });
   });
 });
 

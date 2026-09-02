@@ -36,17 +36,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     let cancelled = false;
 
     const restore = async () => {
-      if (!apiClient.hasStoredSession()) {
-        if (!cancelled) setIsLoading(false);
-        return;
-      }
       try {
-        const currentUser = await apiClient.getCurrentUser();
-        if (!cancelled) setUser(currentUser);
+        const hasSession =
+          typeof apiClient.tryRestoreSession === 'function'
+            ? await apiClient.tryRestoreSession()
+            : apiClient.hasStoredSession?.();
+        if (hasSession) {
+          const currentUser = await apiClient.getCurrentUser();
+          if (!cancelled) setUser(currentUser);
+        } else {
+          if (!cancelled) setUser(null);
+        }
       } catch {
         // The token is absent, expired, revoked or forged. Discard it.
         // No fallback user: an unverifiable token means "not signed in".
-        apiClient.clearSession();
+        apiClient.clearSession?.();
         if (!cancelled) setUser(null);
       } finally {
         if (!cancelled) setIsLoading(false);

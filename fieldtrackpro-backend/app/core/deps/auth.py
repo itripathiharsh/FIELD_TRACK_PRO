@@ -44,6 +44,9 @@ async def _get_user_from_token(
     if user is None or not user.is_active:
         raise UnauthorizedException("Could not validate credentials")
 
+    from app.core.context import set_current_user_id
+    set_current_user_id(str(user.id))
+
     return user
 
 

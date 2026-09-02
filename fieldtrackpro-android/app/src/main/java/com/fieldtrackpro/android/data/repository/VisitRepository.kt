@@ -9,8 +9,10 @@ import com.fieldtrackpro.android.data.local.OfflineQueueManager
 import com.fieldtrackpro.android.data.local.PendingAction
 import com.fieldtrackpro.android.data.local.SyncConflict
 import com.fieldtrackpro.android.data.local.TokenManager
+import com.fieldtrackpro.android.data.model.AdHocVisitCreateRequest
 import com.fieldtrackpro.android.data.model.CheckInRequest
 import com.fieldtrackpro.android.data.model.CheckOutRequest
+import com.fieldtrackpro.android.data.model.CustomerDto
 import com.fieldtrackpro.android.data.model.DashboardSummaryDto
 import com.fieldtrackpro.android.data.model.EmployeeDayDashboardDto
 import com.fieldtrackpro.android.data.model.GeoVerificationLogDto
@@ -18,6 +20,7 @@ import com.fieldtrackpro.android.data.model.LocationVerifyRequest
 import com.fieldtrackpro.android.data.model.LocationVerifyResponse
 import com.fieldtrackpro.android.data.model.SyncResult
 import com.fieldtrackpro.android.data.model.VisitDto
+import com.fieldtrackpro.android.data.remote.ApiClient
 import java.time.Instant
 import java.util.UUID
 
@@ -34,7 +37,8 @@ class VisitRepository(
     private val geoApi: GeoApi,
     private val offlineQueueManager: OfflineQueueManager,
     private val dashboardApi: DashboardApi? = null,
-    private val tokenManager: TokenManager? = null
+    private val tokenManager: TokenManager? = null,
+    private val workdayApi: com.fieldtrackpro.android.data.api.WorkdayApi? = null,
 ) {
     suspend fun getVisits(
         status: String? = null,
@@ -76,6 +80,54 @@ class VisitRepository(
                 Resource.Success(response.body()!!)
             } else {
                 Resource.Error("Failed to fetch today's visits (${response.code()})", response.code())
+            }
+        } catch (e: Exception) {
+            Resource.Error("Network error: ${e.localizedMessage ?: "Unable to connect"}")
+        }
+    }
+
+    suspend fun createAdHocVisit(
+        customerId: String,
+        adhocReason: String,
+        adhocNotes: String? = null,
+        scheduledAt: String? = null,
+        requiredFormId: String? = null
+    ): Resource<VisitDto> {
+        return try {
+            val response = visitApi.createAdHocVisit(
+                AdHocVisitCreateRequest(
+                    customerId = customerId,
+                    adhocReason = adhocReason,
+                    adhocNotes = adhocNotes,
+                    scheduledAt = scheduledAt,
+                    requiredFormId = requiredFormId
+                )
+            )
+            if (response.isSuccessful && response.body() != null) {
+                Resource.Success(response.body()!!)
+            } else {
+                Resource.Error("Failed to initiate ad-hoc visit (${response.code()})", response.code())
+            }
+        } catch (e: Exception) {
+            Resource.Error("Network error: ${e.localizedMessage ?: "Unable to connect"}")
+        }
+    }
+
+    suspend fun searchCustomers(
+        query: String,
+        skip: Int = 0,
+        limit: Int = 50
+    ): Resource<List<CustomerDto>> {
+        return try {
+            val response = customerApi.getCustomers(
+                skip = skip,
+                limit = limit,
+                search = query.ifBlank { null }
+            )
+            if (response.isSuccessful && response.body() != null) {
+                Resource.Success(response.body()!!)
+            } else {
+                Resource.Error("Failed to search customers (${response.code()})", response.code())
             }
         } catch (e: Exception) {
             Resource.Error("Network error: ${e.localizedMessage ?: "Unable to connect"}")
@@ -319,44 +371,79 @@ class VisitRepository(
                 continue
             }
 
-            // Check current visit status before attempting sync
-            val visitStatus = getVisitById(action.visitId)
-            if (visitStatus is Resource.Error && visitStatus.code == 401) {
-                // 401 Auth expired: pause synchronization immediately without modifying queue
-                return SyncResult(syncedCount = syncedCount, conflicts = conflicts)
-            }
+            // Check current visit status before attempting sync (for visit-specific actions)
+            if (action.actionType in listOf("CHECK_IN", "CHECK_OUT")) {
+                val visitStatus = getVisitById(action.visitId)
+                if (visitStatus is Resource.Error && visitStatus.code == 401) {
+                    // 401 Auth expired: pause synchronization immediately without modifying queue
+                    return SyncResult(syncedCount = syncedCount, conflicts = conflicts)
+                }
 
-            if (visitStatus is Resource.Success) {
-                val visit = visitStatus.data
-                val conflict = detectConflict(action, visit.status)
-                if (conflict != null) {
-                    offlineQueueManager.saveConflict(conflict)
-                    conflicts.add(conflict)
-                    continue
+                if (visitStatus is Resource.Success) {
+                    val visit = visitStatus.data
+                    val conflict = detectConflict(action, visit.status)
+                    if (conflict != null) {
+                        offlineQueueManager.saveConflict(conflict)
+                        conflicts.add(conflict)
+                        continue
+                    }
                 }
             }
 
-            val res = if (action.actionType == "CHECK_IN") {
-                checkIn(
-                    action.visitId, action.latitude, action.longitude,
-                    capturedAtMillis = action.timestamp,
-                    accuracyM = action.accuracyM ?: 0.0,
-                    isMock = action.isMockLocation,
-                    isOfflineMode = false,
-                    idempotencyKey = action.id,
-                    skipEnqueueOnFailure = true,
-                )
-            } else {
-                checkOut(
-                    action.visitId, action.latitude, action.longitude,
-                    capturedAtMillis = action.timestamp,
-                    accuracyM = action.accuracyM ?: 0.0,
-                    isMock = action.isMockLocation,
-                    notes = action.notes,
-                    isOfflineMode = false,
-                    idempotencyKey = action.id,
-                    skipEnqueueOnFailure = true,
-                )
+            val res = when (action.actionType) {
+                "START_DAY" -> {
+                    val wApi = workdayApi ?: (tokenManager?.let { ApiClient.createWorkdayApi(it) })
+                    if (wApi != null) {
+                        val repo = WorkdayRepository(wApi, offlineQueueManager, tokenManager)
+                        repo.startDay(
+                            action.latitude, action.longitude,
+                            accuracyM = action.accuracyM,
+                            notes = action.notes,
+                            capturedAtMillis = action.timestamp,
+                            skipEnqueueOnFailure = true,
+                        )
+                    } else {
+                        Resource.Error("Missing Workday API client")
+                    }
+                }
+                "END_DAY" -> {
+                    val wApi = workdayApi ?: (tokenManager?.let { ApiClient.createWorkdayApi(it) })
+                    if (wApi != null) {
+                        val repo = WorkdayRepository(wApi, offlineQueueManager, tokenManager)
+                        repo.endDay(
+                            action.latitude, action.longitude,
+                            accuracyM = action.accuracyM,
+                            notes = action.notes,
+                            capturedAtMillis = action.timestamp,
+                            skipEnqueueOnFailure = true,
+                        )
+                    } else {
+                        Resource.Error("Missing Workday API client")
+                    }
+                }
+                "CHECK_IN" -> {
+                    checkIn(
+                        action.visitId, action.latitude, action.longitude,
+                        capturedAtMillis = action.timestamp,
+                        accuracyM = action.accuracyM ?: 0.0,
+                        isMock = action.isMockLocation,
+                        isOfflineMode = false,
+                        idempotencyKey = action.id,
+                        skipEnqueueOnFailure = true,
+                    )
+                }
+                else -> {
+                    checkOut(
+                        action.visitId, action.latitude, action.longitude,
+                        capturedAtMillis = action.timestamp,
+                        accuracyM = action.accuracyM ?: 0.0,
+                        isMock = action.isMockLocation,
+                        notes = action.notes,
+                        isOfflineMode = false,
+                        idempotencyKey = action.id,
+                        skipEnqueueOnFailure = true,
+                    )
+                }
             }
 
             when (res) {

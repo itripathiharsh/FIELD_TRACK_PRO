@@ -3,32 +3,106 @@ Customer service — refactored to use CustomerRepository with support for locat
 """
 from __future__ import annotations
 
+import logging
 import re
 import uuid
 from typing import Any
 
+import math
 from geoalchemy2.elements import WKBElement, WKTElement
 from geoalchemy2.shape import to_shape
 from shapely.wkb import loads as wkb_loads
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.context import get_current_request_id
 from app.exceptions.custom import BaseAPIException
 from app.models.customer import Customer
+from app.models.customer_brand import CustomerBrand
+from app.models.customer_location_proposal import CustomerLocationProposal, LocationProposalStatus
+from app.models.customer_requirement import CustomerRequirement
+from app.models.employee import Employee
 from app.models.user import Role, User
 from app.models.visit import Visit
 from app.models.employee_customer_assignment import EmployeeCustomerAssignment
 from app.repositories.customer_repo import CustomerRepository
-from app.schemas.customer import CustomerCreate, CustomerUpdate
+from app.schemas.customer import CustomerCreate, CustomerProspectCreate, CustomerUpdate
 from app.services.employee_service import get_employee_by_user_id
 from app.services.geocoding_service import GeocodingError, geocode_address
+
+logger = logging.getLogger("fieldtrackpro")
 
 _WKT_POINT_RE = re.compile(
     r"^(?:SRID=\d+;)?\s*POINT\s*\(\s*(?P<lng>-?\d+(?:\.\d+)?)\s+(?P<lat>-?\d+(?:\.\d+)?)\s*\)$",
     re.IGNORECASE,
 )
+
+DEFAULT_MASTER_BRANDS = ["USHA", "Zebronics", "VU", "Havells", "Finolex", "Anchor"]
+
+
+def calculate_distance_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Haversine formula for calculating distance between two coordinates in meters."""
+    R = 6371000.0  # Earth's radius in meters
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    delta_phi = math.radians(lat2 - lat1)
+    delta_lambda = math.radians(lon2 - lon1)
+
+    a = (
+        math.sin(delta_phi / 2.0) ** 2
+        + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2.0) ** 2
+    )
+    c = 2.0 * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
+    return round(R * c, 2)
+
+
+async def get_master_brands(session: AsyncSession) -> list[str]:
+    """Returns the list of master brands from the authoritative brands table."""
+    from app.services import brand_service
+    brands = await brand_service.list_brands(session, active_only=True)
+    return [b.name for b in brands]
+
+
+async def list_customers(
+    session: AsyncSession,
+    current_user: User,
+    territory_id: uuid.UUID | None = None,
+    skip: int = 0,
+    limit: int = 50,
+    area_id: uuid.UUID | None = None,
+    search: str | None = None,
+) -> tuple[list[Customer], int]:
+    repo = CustomerRepository(session)
+    if current_user.role == Role.EMPLOYEE:
+        try:
+            emp = await get_employee_by_user_id(current_user.id, session)
+            return await repo.list_visited_by_employee(
+                emp.id,
+                territory_id=territory_id,
+                skip=skip,
+                limit=limit,
+                area_id=area_id,
+                search=search,
+            )
+        except BaseAPIException:
+            # Fallback to directory search if employee record is unlinked
+            return await repo.list_by_territory(
+                territory_id=territory_id,
+                skip=skip,
+                limit=limit,
+                area_id=area_id,
+                search=search,
+            )
+    return await repo.list_by_territory(
+        territory_id=territory_id,
+        skip=skip,
+        limit=limit,
+        area_id=area_id,
+        search=search,
+    )
+
 
 
 async def create_customer(data: CustomerCreate, created_by: uuid.UUID, session: AsyncSession) -> Customer:
@@ -67,6 +141,7 @@ async def create_customer(data: CustomerCreate, created_by: uuid.UUID, session: 
         name=data.name,
         contact_number=data.contact_number,
         contact_person=data.contact_person,
+        gst_number=data.gst_number,
         address=data.address,
         location=location_wkt,
         geofence_radius_m=data.geofence_radius_m,
@@ -78,64 +153,227 @@ async def create_customer(data: CustomerCreate, created_by: uuid.UUID, session: 
     )
     try:
         await repo.add(customer)
+        await session.flush()
+
+        if data.brands:
+            from app.services import brand_service
+            from app.schemas.brand import BrandCreate
+            for brand_name in data.brands:
+                b_stripped = brand_name.strip()
+                if b_stripped:
+                    brand_obj = await brand_service.get_brand_by_name(session, b_stripped)
+                    if brand_obj is None:
+                        brand_obj = await brand_service.create_brand(session, BrandCreate(name=b_stripped))
+                    cb = CustomerBrand(
+                        customer_id=customer.id,
+                        brand=brand_obj.name,
+                        brand_id=brand_obj.id,
+                        is_active=True,
+                    )
+                    session.add(cb)
+
         await repo.commit()
+        await session.refresh(customer)
     except IntegrityError as exc:
         await session.rollback()
         if "outlet_code" in str(exc).lower():
+            logger.warning(
+                "event=customer_create result=rejected reason=OUTLET_CODE_EXISTS request_id=%s outlet_code=%s",
+                get_current_request_id(),
+                cleaned_outlet_code,
+            )
             raise BaseAPIException(
                 status_code=409,
                 detail=f"A customer with DMS Code '{cleaned_outlet_code}' already exists.",
                 error_code="OUTLET_CODE_EXISTS",
             ) from exc
         raise
+
+    logger.info(
+        "event=customer_create result=success request_id=%s customer_id=%s name=%s outlet_code=%s",
+        get_current_request_id(),
+        customer.id,
+        customer.name,
+        customer.outlet_code or "-",
+    )
+    return customer
+
+
+async def create_customer_prospect(
+    data: CustomerProspectCreate,
+    current_user: User,
+    session: AsyncSession,
+) -> Customer:
+    """
+    Onboards a new customer / outlet from field sales with duplicate protection,
+    brand association, requirement logging, and pending location proposal.
+    """
+    repo = CustomerRepository(session)
+    req_id = get_current_request_id()
+
+    # 1. Duplicate check (unless force=True)
+    if not data.force:
+        dup_conditions = []
+        if data.contact_number:
+            dup_conditions.append(Customer.contact_number == data.contact_number)
+        if data.gst_number:
+            dup_conditions.append(Customer.gst_number == data.gst_number)
+        if data.outlet_code:
+            dup_conditions.append(Customer.outlet_code == data.outlet_code.strip().upper())
+
+        if dup_conditions:
+            dup_res = await session.execute(
+                select(Customer).where(or_(*dup_conditions)).limit(1)
+            )
+            dup_cust = dup_res.scalar_one_or_none()
+            if dup_cust is not None:
+                logger.warning(
+                    "event=customer_prospect_create result=rejected reason=DUPLICATE_CUSTOMER request_id=%s name=%s duplicate_of=%s",
+                    req_id,
+                    data.name,
+                    dup_cust.id,
+                )
+                raise BaseAPIException(
+                    status_code=409,
+                    detail=f"Possible existing customer found: '{dup_cust.name}' (Phone: {dup_cust.contact_number}, GST: {dup_cust.gst_number or 'N/A'}).",
+                    error_code="DUPLICATE_CUSTOMER",
+                )
+
+    cleaned_outlet_code = data.outlet_code.strip().upper() if data.outlet_code else None
+
+    # 2. Location & Status Handling
+    # For a NEW customer from the field, the location is PENDING APPROVAL (not trusted official geofence until reviewed)
+    loc_status = "PENDING_APPROVAL" if data.location is not None else "MISSING"
+
+    territory_id = data.territory_id
+    if data.area_id is not None:
+        from app.services.area_service import get_area
+        area = await get_area(data.area_id, session)
+        territory_id = area.territory_id
+
+    customer = Customer(
+        name=data.name,
+        contact_number=data.contact_number,
+        contact_person=data.contact_person,
+        gst_number=data.gst_number,
+        address=data.address,
+        location=None,  # Official coordinates remain null until location approval
+        geofence_radius_m=75,
+        location_status=loc_status,
+        territory_id=territory_id,
+        area_id=data.area_id,
+        outlet_code=cleaned_outlet_code,
+        created_by=current_user.id,
+    )
+    await repo.add(customer)
+    await session.flush()
+
+    # 3. Resolve employee ID if user is employee
+    employee_id = None
+    if current_user.role == Role.EMPLOYEE:
+        emp_res = await session.execute(
+            select(Employee).where(Employee.user_id == current_user.id)
+        )
+        emp = emp_res.scalar_one_or_none()
+        if emp:
+            employee_id = emp.id
+            # Also create employee assignment so the employee can view/visit their prospect
+            assignment = EmployeeCustomerAssignment(
+                employee_id=employee_id,
+                customer_id=customer.id,
+                created_by=current_user.id,
+            )
+            session.add(assignment)
+
+    # 4. Create Location Proposal if coordinates were captured
+    if data.location is not None:
+        proposal = CustomerLocationProposal(
+            customer_id=customer.id,
+            proposed_latitude=data.location.latitude,
+            proposed_longitude=data.location.longitude,
+            gps_accuracy_meters=data.gps_accuracy_meters,
+            submitted_by=current_user.id,
+            submitted_by_employee_id=employee_id,
+            notes=data.notes or "Initial location captured during outlet onboarding.",
+            status=LocationProposalStatus.PENDING,
+        )
+        session.add(proposal)
+
+    # 5. Associate Brands
+    if data.brands:
+        from app.services import brand_service
+        from app.schemas.brand import BrandCreate
+        for brand_name in data.brands:
+            b_stripped = brand_name.strip()
+            if b_stripped:
+                brand_obj = await brand_service.get_brand_by_name(session, b_stripped)
+                if brand_obj is None:
+                    brand_obj = await brand_service.create_brand(session, BrandCreate(name=b_stripped))
+                cb = CustomerBrand(
+                    customer_id=customer.id,
+                    brand=brand_obj.name,
+                    brand_id=brand_obj.id,
+                    is_active=True,
+                )
+                session.add(cb)
+
+    # 6. Create Customer Requirement if provided
+    if data.requirement is not None:
+        req_brand = data.requirement.brand
+        if req_brand:
+            from app.services import brand_service
+            from app.schemas.brand import BrandCreate
+            req_b_obj = await brand_service.get_brand_by_name(session, req_brand.strip())
+            if req_b_obj is None:
+                req_b_obj = await brand_service.create_brand(session, BrandCreate(name=req_brand.strip()))
+            req_brand = req_b_obj.name
+
+        req = CustomerRequirement(
+            customer_id=customer.id,
+            brand=req_brand,
+            requirement_type=data.requirement.requirement_type,
+            product_details=data.requirement.product_details,
+            quantity=data.requirement.quantity,
+            expected_value=data.requirement.expected_value,
+            follow_up_date=data.requirement.follow_up_date,
+            notes=data.requirement.notes,
+            status="OPEN",
+            created_by=current_user.id,
+        )
+        session.add(req)
+
+    await session.commit()
+    await session.refresh(customer)
+
+    logger.info(
+        "event=customer_prospect_create result=success request_id=%s customer_id=%s name=%s employee_id=%s has_location=%s",
+        req_id,
+        customer.id,
+        customer.name,
+        employee_id or "-",
+        data.location is not None,
+    )
     return customer
 
 
 
 async def get_customer(customer_id: uuid.UUID, session: AsyncSession) -> Customer:
     repo = CustomerRepository(session)
-    c = await repo.get_by_id(customer_id)
-    if c is None:
-        raise BaseAPIException(status_code=404, detail="Customer not found", error_code="CUSTOMER_NOT_FOUND")
-    return c
-
-
-async def list_customers(
-    session: AsyncSession,
-    current_user: User,
-    territory_id: uuid.UUID | None = None,
-    skip: int = 0,
-    limit: int = 50,
-    area_id: uuid.UUID | None = None,
-    search: str | None = None,
-) -> tuple[list[Customer], int]:
-    repo = CustomerRepository(session)
-
-    if current_user.role == Role.ADMIN:
-        return await repo.list_by_territory(territory_id, skip, limit, area_id, search)
-
-    employee = await get_employee_by_user_id(current_user.id, session)
-    return await repo.list_visited_by_employee(employee.id, territory_id, skip, limit, area_id, search)
+    customer = await repo.get_by_id(customer_id)
+    if customer is None:
+        raise BaseAPIException(
+            status_code=404,
+            detail=f"Customer with id '{customer_id}' not found.",
+            error_code="CUSTOMER_NOT_FOUND",
+        )
+    return customer
 
 
 async def assert_employee_can_view_customer(
     customer_id: uuid.UUID, current_user: User, session: AsyncSession
 ) -> None:
-    if current_user.role == Role.ADMIN:
-        return
-
-    employee = await get_employee_by_user_id(current_user.id, session)
-    count = await session.scalar(
-        select(func.count())
-        .select_from(Visit)
-        .where(Visit.customer_id == customer_id, Visit.employee_id == employee.id)
-    )
-    if not count:
-        raise BaseAPIException(
-            status_code=403,
-            detail="You have no visit assigned to this outlet",
-            error_code="OUTLET_NOT_ASSIGNED",
-        )
+    # Authenticated employees and admins can view active customer details to support off-beat / ad-hoc visits
+    await get_customer(customer_id, session)
 
 
 async def update_customer(
@@ -149,6 +387,8 @@ async def update_customer(
         customer.contact_number = data.contact_number
     if "contact_person" in data.model_fields_set:
         customer.contact_person = data.contact_person
+    if "gst_number" in data.model_fields_set:
+        customer.gst_number = data.gst_number
     if data.address is not None:
         customer.address = data.address
     if data.location is not None:
@@ -192,6 +432,26 @@ async def update_customer(
                     error_code="OUTLET_CODE_EXISTS",
                 )
         customer.outlet_code = cleaned_code
+
+    if data.brands is not None:
+        # Replace brands
+        existing_cbs = (await session.execute(select(CustomerBrand).where(CustomerBrand.customer_id == customer_id))).scalars().all()
+        for cb in existing_cbs:
+            await session.delete(cb)
+        from app.services import brand_service
+        from app.schemas.brand import BrandCreate
+        for brand_name in data.brands:
+            b_stripped = brand_name.strip()
+            if b_stripped:
+                brand_obj = await brand_service.get_brand_by_name(session, b_stripped)
+                if brand_obj is None:
+                    brand_obj = await brand_service.create_brand(session, BrandCreate(name=b_stripped))
+                session.add(CustomerBrand(
+                    customer_id=customer_id,
+                    brand=brand_obj.name,
+                    brand_id=brand_obj.id,
+                    is_active=True,
+                ))
 
     try:
         session.add(customer)

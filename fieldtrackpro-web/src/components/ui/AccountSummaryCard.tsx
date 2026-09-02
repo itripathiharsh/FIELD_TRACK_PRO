@@ -3,6 +3,7 @@ import { Wallet, AlertTriangle, Clock, Landmark, Receipt, Paperclip } from 'luci
 import { Card, CardHeader, CardTitle, CardSubtitle } from './Card';
 import { Button } from './Button';
 import { StatusBadge } from './StatusBadge';
+import { PaymentMethodBadge } from './PaymentMethodBadge';
 import { apiClient } from '../../api/client';
 import { AccountSummary } from '../../types';
 
@@ -151,6 +152,34 @@ export const AccountSummaryCard: React.FC<AccountSummaryCardProps> = ({ account,
         </div>
       )}
 
+      {account.aging_buckets && Object.keys(account.aging_buckets).length > 0 && (
+        <div>
+          <p className="font-label-md text-xs uppercase tracking-wider text-on-surface-variant font-semibold mb-space-2">
+            Outstanding Ageing
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-space-2">
+            <div className="p-space-2 bg-surface-container-low rounded border border-outline-variant">
+              <span className="font-caption text-xs text-on-surface-variant block">0–30 Days</span>
+              <span className="font-medium text-sm text-primary">{formatCurrency(account.aging_buckets['0-30'] || '0')}</span>
+            </div>
+            <div className="p-space-2 bg-surface-container-low rounded border border-outline-variant">
+              <span className="font-caption text-xs text-on-surface-variant block">31–60 Days</span>
+              <span className="font-medium text-sm text-primary">{formatCurrency(account.aging_buckets['31-60'] || '0')}</span>
+            </div>
+            <div className="p-space-2 bg-surface-container-low rounded border border-outline-variant">
+              <span className="font-caption text-xs text-on-surface-variant block">61–90 Days</span>
+              <span className="font-medium text-sm text-primary">{formatCurrency(account.aging_buckets['61-90'] || '0')}</span>
+            </div>
+            <div className={`p-space-2 rounded border ${Number(account.aging_buckets['90+'] || '0') > 0 ? 'bg-error-container/20 border-error/30' : 'bg-surface-container-low border-outline-variant'}`}>
+              <span className="font-caption text-xs text-on-surface-variant block">90+ Days</span>
+              <span className={`font-medium text-sm ${Number(account.aging_buckets['90+'] || '0') > 0 ? 'text-error' : 'text-primary'}`}>
+                {formatCurrency(account.aging_buckets['90+'] || '0')}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {account.recent_invoices.length > 0 && (
         <div>
           <p className="font-label-md text-xs uppercase tracking-wider text-on-surface-variant font-semibold mb-space-2">
@@ -192,29 +221,44 @@ export const AccountSummaryCard: React.FC<AccountSummaryCardProps> = ({ account,
           <p className="font-label-md text-xs uppercase tracking-wider text-on-surface-variant font-semibold mb-space-2">
             Payment History
           </p>
-          <div className="space-y-space-1.5">
+          <div className="space-y-space-2">
             {account.recent_payments.map((p) => (
-              <div key={p.id} className="flex items-center justify-between text-sm py-space-1.5 border-b border-surface-container-highest last:border-0">
-                <div>
-                  <span className="font-medium text-on-surface">{formatCurrency(p.amount)}</span>
-                  <span className="text-on-surface-variant ml-space-2">
-                    {p.payment_method} &middot; {p.payment_date}
-                    {p.utr_reference ? ` · UTR ${p.utr_reference}` : ''}
-                    {p.cheque_number ? ` · Chq ${p.cheque_number}` : ''}
-                  </span>
+              <div key={p.id} className="p-space-2 bg-surface-container-low rounded border border-outline-variant flex flex-col gap-space-1">
+                <div className="flex items-center justify-between text-sm">
+                  <div className="flex items-center gap-space-2 flex-wrap">
+                    <span className="font-bold text-on-surface">{formatCurrency(p.amount)}</span>
+                    <PaymentMethodBadge method={p.payment_method} chequeNumber={p.cheque_number} size="sm" />
+                    <span className="text-on-surface-variant text-xs">
+                      {p.payment_date}
+                      {p.utr_reference ? ` · UTR ${p.utr_reference}` : ''}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-space-2 shrink-0">
+                    {p.proofs.length > 0 && (
+                      <Button
+                        variant="outline" size="sm" icon={Paperclip}
+                        isLoading={viewingProofId === p.proofs[0].id}
+                        onClick={() => void viewProof(p.proofs[0].id)}
+                      >
+                        Proof
+                      </Button>
+                    )}
+                    <StatusBadge status={p.status} size="sm" />
+                  </div>
                 </div>
-                <div className="flex items-center gap-space-2 shrink-0">
-                  {p.proofs.length > 0 && (
-                    <Button
-                      variant="outline" size="sm" icon={Paperclip}
-                      isLoading={viewingProofId === p.proofs[0].id}
-                      onClick={() => void viewProof(p.proofs[0].id)}
-                    >
-                      Proof
-                    </Button>
-                  )}
-                  <StatusBadge status={p.status} size="sm" />
-                </div>
+
+                {p.allocations && p.allocations.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-0.5">
+                    {p.allocations.map((a) => (
+                      <span
+                        key={a.brand}
+                        className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium bg-primary/10 text-primary"
+                      >
+                        {a.brand}: {formatCurrency(a.allocated_amount)}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>

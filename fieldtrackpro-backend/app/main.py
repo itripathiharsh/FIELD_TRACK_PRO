@@ -8,7 +8,11 @@ from app.config import settings
 from app.exceptions.handlers import register_exception_handlers
 from app.jobs.scheduler import shutdown_scheduler, start_scheduler
 from app.logging_config import setup_logging
-from app.middleware import CatchUnhandledExceptionsMiddleware, SecurityHeadersMiddleware
+from app.middleware import (
+    CatchUnhandledExceptionsMiddleware,
+    RequestLoggingAndContextMiddleware,
+    SecurityHeadersMiddleware,
+)
 
 logger = setup_logging(settings.environment)
 
@@ -57,6 +61,7 @@ app = FastAPI(
 # the catch-all still receives Access-Control-Allow-Origin (FT-046).
 # SecurityHeadersMiddleware is registered last (outermost of all) so its
 # headers land on every response, including CORS-decorated error responses.
+app.add_middleware(RequestLoggingAndContextMiddleware)
 app.add_middleware(CatchUnhandledExceptionsMiddleware)
 app.add_middleware(
     CORSMiddleware,
@@ -65,7 +70,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["X-Total-Count"],
+    expose_headers=["X-Total-Count", "X-Request-ID"],
 )
 app.add_middleware(SecurityHeadersMiddleware)
 

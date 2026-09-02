@@ -58,3 +58,4 @@ class AccountSummary(BaseModel):
     recent_invoices: list[InvoiceRead]
     recent_payments: list[PaymentRead]
     brand_summary: list[BrandSummary]
+    aging_buckets: dict[str, Decimal] = {}

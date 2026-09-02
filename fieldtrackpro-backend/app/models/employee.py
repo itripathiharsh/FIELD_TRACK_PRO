@@ -40,3 +40,6 @@ class Employee(Base):
     outlet_assignments: Mapped[list["EmployeeCustomerAssignment"]] = relationship(
         back_populates="employee", cascade="all, delete-orphan"
     )
+    work_sessions: Mapped[list["EmployeeWorkSession"]] = relationship(
+        back_populates="employee", cascade="all, delete-orphan"
+    )

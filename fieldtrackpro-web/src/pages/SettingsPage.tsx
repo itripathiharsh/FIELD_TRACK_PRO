@@ -11,16 +11,21 @@ import {
   CheckCircle2,
   XCircle,
   Lock,
+  Tag,
+  Plus,
+  Loader2,
 } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 import { Card } from '../components/ui/Card';
 import { StatusBadge } from '../components/ui/StatusBadge';
+import { AddBrandModal } from '../components/ui/AddBrandModal';
 import { ENV } from '../config/env';
 import { apiClient } from '../api/client';
-import { Employee, Territory, Area } from '../types';
+import { Employee, Territory, Area, OrganizationProfile, Brand } from '../types';
 
 type SettingsTab =
   | 'organization'
+  | 'brands'
   | 'users_roles'
   | 'field_ops'
   | 'data_import'
@@ -33,12 +38,16 @@ export const SettingsPage: React.FC = () => {
   const [health, setHealth] = useState<'checking' | 'online' | 'offline'>('checking');
   const [healthDetail, setHealthDetail] = useState<string>('');
 
-  // Live master counts from backend APIs
+  // Live master counts, brands, and organization profile from backend APIs
+  const [orgProfile, setOrgProfile] = useState<OrganizationProfile | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [territories, setTerritories] = useState<Territory[]>([]);
   const [areas, setAreas] = useState<Area[]>([]);
+  const [brands, setBrands] = useState<Brand[]>([]);
   const [customerTotal, setCustomerTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  const [isAddBrandOpen, setIsAddBrandOpen] = useState(false);
+  const [updatingBrandId, setUpdatingBrandId] = useState<string | null>(null);
 
   useEffect(() => {
     loadSettingsData();
@@ -47,12 +56,14 @@ export const SettingsPage: React.FC = () => {
   const loadSettingsData = async () => {
     try {
       setIsLoading(true);
-      const [healthData, empData, terrData, areaData, custPaginated] = await Promise.all([
+      const [healthData, orgData, empData, terrData, areaData, custPaginated, brandsData] = await Promise.all([
         apiClient.getHealth().catch((err) => ({ status: 'OFFLINE', error: err.message })),
+        apiClient.getOrganizationProfile().catch(() => null),
         apiClient.getEmployees().catch(() => [] as Employee[]),
         apiClient.getTerritories().catch(() => [] as Territory[]),
         apiClient.getAreas().catch(() => [] as Area[]),
         apiClient.getCustomersPaginated({ skip: 0, limit: 1 }).catch(() => ({ items: [], total: 0 })),
+        apiClient.getBrands(false).catch(() => [] as Brand[]),
       ]);
 
       if ('status' in healthData && healthData.status === 'UP') {
@@ -67,15 +78,29 @@ export const SettingsPage: React.FC = () => {
         setHealthDetail('error' in healthData ? String(healthData.error) : 'Unreachable');
       }
 
+      setOrgProfile(orgData);
       setEmployees(Array.isArray(empData) ? empData : []);
       setTerritories(Array.isArray(terrData) ? terrData : []);
       setAreas(Array.isArray(areaData) ? areaData : []);
-      setCustomerTotal(custPaginated?.total || 0);
+      setCustomerTotal(custPaginated?.total || orgData?.total_customers || 0);
+      setBrands(Array.isArray(brandsData) ? brandsData : []);
     } catch {
       setHealth('offline');
       setHealthDetail('Configuration load error');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleToggleBrandStatus = async (brand: Brand) => {
+    try {
+      setUpdatingBrandId(brand.id);
+      const updated = await apiClient.updateBrand(brand.id, { is_active: !brand.is_active });
+      setBrands((prev) => prev.map((b) => (b.id === updated.id ? updated : b)));
+    } catch {
+      // Ignored
+    } finally {
+      setUpdatingBrandId(null);
     }
   };
 
@@ -96,6 +121,7 @@ export const SettingsPage: React.FC = () => {
 
   const tabs: { id: SettingsTab; label: string; icon: React.FC<{ className?: string }> }[] = [
     { id: 'organization', label: 'Organization', icon: Building2 },
+    { id: 'brands', label: 'Brand Management', icon: Tag },
     { id: 'users_roles', label: 'Users & Roles', icon: Users },
     { id: 'field_ops', label: 'Field Operations', icon: MapPin },
     { id: 'data_import', label: 'Data & Ingestion', icon: FileSpreadsheet },
@@ -173,7 +199,7 @@ export const SettingsPage: React.FC = () => {
                 Legal Entity Name
               </dt>
               <dd className="font-headline-sm text-base font-bold text-on-surface">
-                SGRG Services Private Limited
+                {orgProfile?.organization_name || 'Organization Profile Loading...'}
               </dd>
               <p className="font-caption text-xs text-on-surface-variant mt-1">
                 Verified client corporate entity for multi-brand distribution.
@@ -185,7 +211,7 @@ export const SettingsPage: React.FC = () => {
                 Operational Command Hub
               </dt>
               <dd className="font-headline-sm text-base font-bold text-on-surface">
-                Kanpur Central, Uttar Pradesh
+                {orgProfile?.operational_hub || 'Kanpur Central, Uttar Pradesh'}
               </dd>
               <p className="font-caption text-xs text-on-surface-variant mt-1">
                 Central headquarters for field telemetry, dispatch &amp; credit recovery.
@@ -197,7 +223,7 @@ export const SettingsPage: React.FC = () => {
                 Active Business Divisions
               </dt>
               <dd className="font-body-md text-sm font-semibold text-on-surface">
-                Telecom Distribution (11001–11020) &amp; Consumer Electronics (11021–11030)
+                {orgProfile?.divisions || 'Telecom Distribution & Consumer Electronics'}
               </dd>
               <p className="font-caption text-xs text-on-surface-variant mt-1">
                 Independent cost centers mapped to CUG employee series.
@@ -209,13 +235,140 @@ export const SettingsPage: React.FC = () => {
                 System Timezone &amp; Currency
               </dt>
               <dd className="font-body-md text-sm font-semibold text-on-surface">
-                Asia/Kolkata (IST, UTC+5:30) • Indian Rupee (INR ₹)
+                {orgProfile?.timezone || 'Asia/Kolkata (IST, UTC+5:30)'} • {orgProfile?.currency || 'Indian Rupee (INR ₹)'}
               </dd>
               <p className="font-caption text-xs text-on-surface-variant mt-1">
                 Standard reporting period format with Lakh / Crore Indian number formatting.
               </p>
             </div>
           </dl>
+        </Card>
+      )}
+
+      {/* Tab: Brand Management */}
+      {activeTab === 'brands' && (
+        <Card variant="default" className="space-y-space-5">
+          <div className="flex items-center justify-between border-b border-surface-container-highest pb-space-3 flex-wrap gap-3">
+            <div className="flex items-center gap-space-3">
+              <div className="p-2 rounded-lg bg-primary-container/10 text-primary">
+                <Tag className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-headline-sm text-lg font-bold text-primary tracking-tight">
+                  Brand Management &amp; Catalog
+                </h3>
+                <p className="font-caption text-xs text-on-surface-variant">
+                  Central source of truth for brands across Customer Onboarding, Payments, and Requirements
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsAddBrandOpen(true)}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-primary text-on-primary hover:bg-primary/90 transition-all shadow-sm"
+            >
+              <Plus className="w-4 h-4" />
+              <span>+ Add New Brand</span>
+            </button>
+          </div>
+
+          {/* Quick Metrics */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-space-4">
+            <div className="p-space-4 bg-surface-container-low rounded-xl border border-surface-container-highest">
+              <span className="font-headline-sm text-xs font-bold uppercase tracking-wider text-secondary">
+                Total Master Brands
+              </span>
+              <p className="font-headline-lg text-3xl font-black text-primary mt-1">{brands.length}</p>
+              <p className="font-caption text-xs text-on-surface-variant mt-0.5">Configured in central database</p>
+            </div>
+
+            <div className="p-space-4 bg-surface-container-low rounded-xl border border-surface-container-highest">
+              <span className="font-headline-sm text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                Active Brands
+              </span>
+              <p className="font-headline-lg text-3xl font-black text-emerald-600 dark:text-emerald-400 mt-1">
+                {brands.filter((b) => b.is_active).length}
+              </p>
+              <p className="font-caption text-xs text-on-surface-variant mt-0.5">Selectable across FieldTrack</p>
+            </div>
+
+            <div className="p-space-4 bg-surface-container-low rounded-xl border border-surface-container-highest">
+              <span className="font-headline-sm text-xs font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+                Archived / Inactive
+              </span>
+              <p className="font-headline-lg text-3xl font-black text-amber-600 dark:text-amber-400 mt-1">
+                {brands.filter((b) => !b.is_active).length}
+              </p>
+              <p className="font-caption text-xs text-on-surface-variant mt-0.5">Hidden from new dropdowns</p>
+            </div>
+          </div>
+
+          {/* Brands List Table */}
+          <div className="overflow-x-auto rounded-xl border border-surface-container-highest">
+            <table className="w-full text-left text-xs text-on-surface">
+              <thead className="bg-surface-container text-on-surface-variant font-bold uppercase tracking-wider border-b border-surface-container-highest">
+                <tr>
+                  <th className="px-4 py-3">Brand Name</th>
+                  <th className="px-4 py-3">Normalized Identifier</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Created</th>
+                  <th className="px-4 py-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-surface-container-highest bg-surface">
+                {brands.map((brand) => (
+                  <tr key={brand.id} className="hover:bg-surface-container-low transition-colors">
+                    <td className="px-4 py-3.5 font-bold text-on-surface flex items-center gap-2">
+                      <Tag className="w-3.5 h-3.5 text-secondary" />
+                      <span>{brand.name}</span>
+                    </td>
+                    <td className="px-4 py-3.5 font-mono text-on-surface-variant">
+                      {brand.normalized_name}
+                    </td>
+                    <td className="px-4 py-3.5">
+                      {brand.is_active ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
+                          Active
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/10 text-amber-600 border border-amber-500/20">
+                          Inactive
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3.5 text-on-surface-variant">
+                      {brand.created_at ? new Date(brand.created_at).toLocaleDateString() : 'System Seed'}
+                    </td>
+                    <td className="px-4 py-3.5 text-right">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleBrandStatus(brand)}
+                        disabled={updatingBrandId === brand.id}
+                        className={`px-3 py-1 rounded-lg text-xs font-semibold border transition-all ${
+                          brand.is_active
+                            ? 'border-amber-500/30 text-amber-600 hover:bg-amber-500/10'
+                            : 'border-emerald-500/30 text-emerald-600 hover:bg-emerald-500/10'
+                        } disabled:opacity-50`}
+                      >
+                        {updatingBrandId === brand.id ? (
+                          <Loader2 className="w-3 h-3 animate-spin inline mr-1" />
+                        ) : null}
+                        {brand.is_active ? 'Deactivate' : 'Activate'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+
+                {brands.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="px-4 py-8 text-center text-on-surface-variant italic">
+                      No brands found. Click &quot;+ Add New Brand&quot; to create your first brand.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </Card>
       )}
 
@@ -438,10 +591,10 @@ export const SettingsPage: React.FC = () => {
                 Recognized Brand Sheets &amp; MIS Formats
               </dt>
               <dd className="font-body-md text-sm font-semibold text-on-surface">
-                Combined BI Excel, Usha, VU, ZBR, Telecom Roster, and Consumer Electronics (CE) Master Sheets.
+                Combined BI Excel, USHA, VU, Zebronics (ZBR alias), Telecom Roster, and Consumer Electronics (CE) Master Sheets.
               </dd>
               <p className="font-caption text-xs text-on-surface-variant mt-1">
-                Automatic multi-tab detection parses brand sales, collections, and ageing ledgers.
+                Automatic multi-tab detection parses brand sales, collections, and ageing ledgers with alias canonicalization.
               </p>
             </div>
           </dl>
@@ -643,6 +796,18 @@ export const SettingsPage: React.FC = () => {
           </p>
         </Card>
       )}
+
+      {/* Add Brand Modal */}
+      <AddBrandModal
+        isOpen={isAddBrandOpen}
+        onClose={() => setIsAddBrandOpen(false)}
+        onBrandCreated={(newBrand) => {
+          setBrands((prev) => {
+            if (prev.some((b) => b.id === newBrand.id || b.normalized_name === newBrand.normalized_name)) return prev;
+            return [...prev, newBrand].sort((a, b) => a.name.localeCompare(b.name));
+          });
+        }}
+      />
     </div>
   );
 };

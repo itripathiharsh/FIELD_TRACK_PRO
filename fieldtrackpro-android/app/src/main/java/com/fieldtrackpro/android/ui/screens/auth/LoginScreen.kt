@@ -2,7 +2,6 @@ package com.fieldtrackpro.android.ui.screens.auth
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,9 +18,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -38,14 +41,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -67,9 +71,10 @@ import com.fieldtrackpro.android.ui.theme.TextPrimary
 import com.fieldtrackpro.android.ui.theme.TextSecondary
 import com.fieldtrackpro.android.ui.viewmodel.AuthState
 import com.fieldtrackpro.android.ui.viewmodel.AuthViewModel
+import kotlinx.coroutines.delay
 
 enum class AuthMode {
-    LOGIN, FORGOT_PASSWORD, RESET_PASSWORD
+    LOGIN, FORGOT_PASSWORD, VERIFY_OTP, SET_PASSWORD, SUCCESS
 }
 
 @Composable
@@ -86,25 +91,46 @@ fun LoginScreen(
     var isPasswordVisible by remember { mutableStateOf(false) }
     
     var otp by remember { mutableStateOf("") }
+    var maskedDestination by remember { mutableStateOf("") }
+    var deliveryChannel by remember { mutableStateOf("") }
+
     var newPassword by remember { mutableStateOf("") }
+    var confirmPassword by remember { mutableStateOf("") }
     var isNewPasswordVisible by remember { mutableStateOf(false) }
+    var isConfirmPasswordVisible by remember { mutableStateOf(false) }
     
     var successMessage by remember { mutableStateOf<String?>(null) }
+    var resendCooldown by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(resendCooldown) {
+        if (resendCooldown > 0) {
+            delay(1000L)
+            resendCooldown -= 1
+        }
+    }
 
     LaunchedEffect(authState) {
-        when (authState) {
+        when (val state = authState) {
             is AuthState.Authenticated -> onLoginSuccess()
             is AuthState.ForgotPasswordSuccess -> {
-                successMessage = (authState as AuthState.ForgotPasswordSuccess).message
-                mode = AuthMode.RESET_PASSWORD
+                successMessage = state.message
+                maskedDestination = state.destination ?: identity
+                deliveryChannel = state.deliveryChannel ?: if (identity.contains("@")) "EMAIL" else "SMS"
+                mode = AuthMode.VERIFY_OTP
+                resendCooldown = 60
+                viewModel.resetAuthState()
+            }
+            is AuthState.OtpVerified -> {
+                mode = AuthMode.SET_PASSWORD
                 viewModel.resetAuthState()
             }
             is AuthState.ResetPasswordSuccess -> {
-                successMessage = (authState as AuthState.ResetPasswordSuccess).message
-                mode = AuthMode.LOGIN
+                successMessage = state.message
+                mode = AuthMode.SUCCESS
                 password = ""
                 otp = ""
                 newPassword = ""
+                confirmPassword = ""
                 viewModel.resetAuthState()
             }
             else -> {}
@@ -129,7 +155,7 @@ fun LoginScreen(
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Brand Logo & Header (matches Web Sidebar & Login Hero)
+            // Brand Logo & Header
             Box(
                 modifier = Modifier
                     .size(52.dp)
@@ -179,8 +205,10 @@ fun LoginScreen(
             Text(
                 text = when (mode) {
                     AuthMode.LOGIN -> "Precision Field Force Intelligence & Geolocation Verification"
-                    AuthMode.FORGOT_PASSWORD -> "Enter your registered email to request a reset code"
-                    AuthMode.RESET_PASSWORD -> "Verify the security code sent to your email"
+                    AuthMode.FORGOT_PASSWORD -> "Enter your registered email or mobile to request a security code"
+                    AuthMode.VERIFY_OTP -> "Verify the 6-digit security code dispatched to your account"
+                    AuthMode.SET_PASSWORD -> "Set a new secure password for your account"
+                    AuthMode.SUCCESS -> "Your credentials have been securely updated"
                 },
                 fontFamily = LibreBaskervilleFamily,
                 fontSize = 14.sp,
@@ -199,7 +227,7 @@ fun LoginScreen(
             }
             
             val currentSuccess = successMessage
-            if (currentSuccess != null && authState !is AuthState.Error) {
+            if (currentSuccess != null && authState !is AuthState.Error && mode != AuthMode.SUCCESS) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -226,7 +254,7 @@ fun LoginScreen(
                         onValueChange = { identity = it },
                         label = { 
                             Text(
-                                "Email or Mobile",
+                                "Email or Mobile Number",
                                 fontFamily = LeagueSpartanFamily,
                                 fontWeight = FontWeight.SemiBold
                             ) 
@@ -320,7 +348,6 @@ fun LoginScreen(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Primary CTA button with brand Navy & Gold
                     Button(
                         onClick = { 
                             successMessage = null
@@ -371,13 +398,20 @@ fun LoginScreen(
                         onValueChange = { identity = it },
                         label = { 
                             Text(
-                                "Registered Email",
+                                "Email or Mobile Number",
                                 fontFamily = LeagueSpartanFamily,
                                 fontWeight = FontWeight.SemiBold
                             ) 
                         },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Person,
+                                contentDescription = null,
+                                tint = BrandNavy.copy(alpha = 0.7f),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        },
                         singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(10.dp),
                         colors = OutlinedTextFieldDefaults.colors(
@@ -396,7 +430,7 @@ fun LoginScreen(
                     Button(
                         onClick = { 
                             successMessage = null
-                            viewModel.forgotPassword(identity) 
+                            viewModel.forgotPassword(identity.trim()) 
                         },
                         enabled = identity.isNotBlank() && authState !is AuthState.Loading,
                         modifier = Modifier
@@ -409,7 +443,7 @@ fun LoginScreen(
                             CircularProgressIndicator(color = BrandGold, modifier = Modifier.size(24.dp))
                         } else {
                             Text(
-                                "SEND RESET CODE",
+                                "SEND VERIFICATION CODE",
                                 fontFamily = LeagueSpartanFamily,
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold,
@@ -433,39 +467,67 @@ fun LoginScreen(
                     }
                 }
 
-                AuthMode.RESET_PASSWORD -> {
+                AuthMode.VERIFY_OTP -> {
+                    // Masked Destination Info Card
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(SurfaceSecondary)
+                            .border(1.dp, BrandLightGray, RoundedCornerShape(10.dp))
+                            .padding(12.dp)
+                    ) {
+                        Column {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = if (deliveryChannel == "SMS") "SMS CODE DISPATCHED" else "EMAIL CODE DISPATCHED",
+                                    fontFamily = LeagueSpartanFamily,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp,
+                                    color = BrandNavy
+                                )
+                                TextButton(
+                                    onClick = { 
+                                        mode = AuthMode.FORGOT_PASSWORD
+                                        viewModel.resetAuthState()
+                                    }
+                                ) {
+                                    Text("Change", fontSize = 12.sp, color = BrandNavy, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                            Text(
+                                text = maskedDestination.ifBlank { identity },
+                                fontFamily = LeagueSpartanFamily,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 14.sp,
+                                color = TextPrimary
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
                     OutlinedTextField(
-                        value = identity,
-                        onValueChange = { identity = it },
+                        value = otp,
+                        onValueChange = { otp = it.filter { ch -> ch.isDigit() }.take(6) },
                         label = { 
                             Text(
-                                "Email Address",
+                                "6-Digit Security Code",
                                 fontFamily = LeagueSpartanFamily,
                                 fontWeight = FontWeight.SemiBold
                             ) 
                         },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = TextPrimary,
-                            unfocusedTextColor = TextPrimary,
-                            focusedBorderColor = BrandGold,
-                            unfocusedBorderColor = BrandLightGray
-                        )
-                    )
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    OutlinedTextField(
-                        value = otp,
-                        onValueChange = { otp = it },
-                        label = { 
-                            Text(
-                                "Reset Code (OTP)",
-                                fontFamily = LeagueSpartanFamily,
-                                fontWeight = FontWeight.SemiBold
-                            ) 
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Key,
+                                contentDescription = null,
+                                tint = BrandNavy.copy(alpha = 0.7f),
+                                modifier = Modifier.size(20.dp)
+                            )
                         },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -479,17 +541,100 @@ fun LoginScreen(
                         )
                     )
 
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Didn't receive code?",
+                            fontFamily = LibreBaskervilleFamily,
+                            fontSize = 12.sp,
+                            color = TextSecondary
+                        )
+                        if (resendCooldown > 0) {
+                            Text(
+                                text = "Resend in ${resendCooldown}s",
+                                fontFamily = LeagueSpartanFamily,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                color = TextSecondary
+                            )
+                        } else {
+                            TextButton(onClick = {
+                                viewModel.forgotPassword(identity.trim())
+                            }) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp), tint = BrandNavy)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Resend Code", fontFamily = LeagueSpartanFamily, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = BrandNavy)
+                                }
+                            }
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(10.dp))
 
+                    Button(
+                        onClick = { 
+                            successMessage = null
+                            viewModel.verifyOtp(identity.trim(), otp.trim()) 
+                        },
+                        enabled = otp.trim().length >= 6 && authState !is AuthState.Loading,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(50.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandNavy)
+                    ) {
+                        if (authState is AuthState.Loading) {
+                            CircularProgressIndicator(color = BrandGold, modifier = Modifier.size(24.dp))
+                        } else {
+                            Text(
+                                "VERIFY CODE",
+                                fontFamily = LeagueSpartanFamily,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = BrandWhite
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    TextButton(onClick = { 
+                        mode = AuthMode.LOGIN
+                        viewModel.resetAuthState()
+                    }) {
+                        Text(
+                            "Cancel",
+                            fontFamily = LeagueSpartanFamily,
+                            fontWeight = FontWeight.Bold,
+                            color = BrandNavy
+                        )
+                    }
+                }
+
+                AuthMode.SET_PASSWORD -> {
                     OutlinedTextField(
                         value = newPassword,
                         onValueChange = { newPassword = it },
                         label = { 
                             Text(
-                                "New Password",
+                                "New Password (min 8 chars)",
                                 fontFamily = LeagueSpartanFamily,
                                 fontWeight = FontWeight.SemiBold
                             ) 
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Lock,
+                                contentDescription = null,
+                                tint = BrandNavy.copy(alpha = 0.7f),
+                                modifier = Modifier.size(20.dp)
+                            )
                         },
                         singleLine = true,
                         visualTransformation = if (isNewPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
@@ -513,14 +658,59 @@ fun LoginScreen(
                         )
                     )
 
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    OutlinedTextField(
+                        value = confirmPassword,
+                        onValueChange = { confirmPassword = it },
+                        label = { 
+                            Text(
+                                "Confirm New Password",
+                                fontFamily = LeagueSpartanFamily,
+                                fontWeight = FontWeight.SemiBold
+                            ) 
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Lock,
+                                contentDescription = null,
+                                tint = BrandNavy.copy(alpha = 0.7f),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        },
+                        singleLine = true,
+                        visualTransformation = if (isConfirmPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = if (isConfirmPasswordVisible) KeyboardType.Text else KeyboardType.Password),
+                        trailingIcon = {
+                            IconButton(onClick = { isConfirmPasswordVisible = !isConfirmPasswordVisible }) {
+                                Icon(
+                                    imageVector = if (isConfirmPasswordVisible) Icons.Filled.Visibility else Icons.Filled.VisibilityOff,
+                                    contentDescription = null,
+                                    tint = BrandNavy
+                                )
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary,
+                            focusedBorderColor = BrandGold,
+                            unfocusedBorderColor = BrandLightGray
+                        )
+                    )
+
                     Spacer(modifier = Modifier.height(16.dp))
+
+                    val passwordsMatch = newPassword.isNotBlank() && newPassword == confirmPassword
+                    val passwordLengthOk = newPassword.length >= 8
 
                     Button(
                         onClick = { 
                             successMessage = null
-                            viewModel.resetPassword(identity, otp, newPassword) 
+                            viewModel.resetPassword(identity.trim(), otp.trim(), newPassword) 
                         },
-                        enabled = identity.isNotBlank() && otp.isNotBlank() && newPassword.isNotBlank() && authState !is AuthState.Loading,
+                        enabled = passwordLengthOk && passwordsMatch && authState !is AuthState.Loading,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(50.dp),
@@ -531,7 +721,7 @@ fun LoginScreen(
                             CircularProgressIndicator(color = BrandGold, modifier = Modifier.size(24.dp))
                         } else {
                             Text(
-                                "UPDATE PASSWORD & SIGN IN",
+                                "SAVE NEW PASSWORD",
                                 fontFamily = LeagueSpartanFamily,
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold,
@@ -552,6 +742,73 @@ fun LoginScreen(
                             fontWeight = FontWeight.Bold,
                             color = BrandNavy
                         )
+                    }
+                }
+
+                AuthMode.SUCCESS -> {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(64.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(SuccessGreenBg)
+                                .border(1.dp, SuccessGreen.copy(alpha = 0.5f), RoundedCornerShape(16.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = SuccessGreen,
+                                modifier = Modifier.size(36.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        Text(
+                            text = "Password Reset Successful",
+                            fontFamily = LeagueSpartanFamily,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 20.sp,
+                            color = BrandNavy
+                        )
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        Text(
+                            text = "Your password has been changed. You can now sign in with your new credentials.",
+                            fontFamily = LibreBaskervilleFamily,
+                            fontSize = 13.sp,
+                            color = TextSecondary,
+                            textAlign = TextAlign.Center
+                        )
+
+                        Spacer(modifier = Modifier.height(20.dp))
+
+                        Button(
+                            onClick = { 
+                                mode = AuthMode.LOGIN
+                                viewModel.resetAuthState()
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(50.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = BrandNavy)
+                        ) {
+                            Text(
+                                "BACK TO SIGN IN",
+                                fontFamily = LeagueSpartanFamily,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = BrandWhite
+                            )
+                        }
                     }
                 }
             }

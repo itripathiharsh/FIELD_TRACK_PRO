@@ -43,12 +43,44 @@ android {
             keyPassword = "android"
             enableV1Signing = true
             enableV2Signing = true
+            enableV3Signing = true
+            enableV4Signing = false
+        }
+        create("release") {
+            val storeFilePath = System.getenv("RELEASE_STORE_FILE")
+                ?: localProperties.getProperty("RELEASE_STORE_FILE")
+                ?: (project.findProperty("RELEASE_STORE_FILE") as? String)
+            val storePass = System.getenv("RELEASE_STORE_PASSWORD")
+                ?: localProperties.getProperty("RELEASE_STORE_PASSWORD")
+                ?: (project.findProperty("RELEASE_STORE_PASSWORD") as? String)
+            val keyAl = System.getenv("RELEASE_KEY_ALIAS")
+                ?: localProperties.getProperty("RELEASE_KEY_ALIAS")
+                ?: (project.findProperty("RELEASE_KEY_ALIAS") as? String)
+            val keyPass = System.getenv("RELEASE_KEY_PASSWORD")
+                ?: localProperties.getProperty("RELEASE_KEY_PASSWORD")
+                ?: (project.findProperty("RELEASE_KEY_PASSWORD") as? String)
+
+            if (!storeFilePath.isNullOrBlank() && file(storeFilePath).exists() && !storePass.isNullOrBlank() && !keyAl.isNullOrBlank() && !keyPass.isNullOrBlank()) {
+                storeFile = file(storeFilePath)
+                storePassword = storePass
+                keyAlias = keyAl
+                keyPassword = keyPass
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
+                enableV4Signing = false
+            }
         }
     }
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("debug")
+            val releaseSigning = signingConfigs.getByName("release")
+            if (releaseSigning.storeFile != null) {
+                signingConfig = releaseSigning
+            } else {
+                signingConfig = null
+            }
             isDebuggable = false
             isMinifyEnabled = false
             val prodBaseUrl = "https://fieldtrackpro-backend-s7hs.onrender.com/"
@@ -126,5 +158,9 @@ dependencies {
     androidTestImplementation(libs.androidx.ui.test.junit4)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
+}
+
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
 }
 

@@ -127,9 +127,43 @@ class Payment(Base):
     proofs: Mapped[list["PaymentProof"]] = relationship(
         back_populates="payment", cascade="all, delete-orphan"
     )
+    allocations: Mapped[list["PaymentBrandAllocation"]] = relationship(
+        "PaymentBrandAllocation", back_populates="payment", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         # A retried/double-tapped submission must not create a second
         # collection row for the same visit.
         UniqueConstraint("visit_id", "idempotency_key", name="uq_payments_visit_idempotency"),
+    )
+
+
+class PaymentBrandAllocation(Base):
+    """
+    Brand-wise breakdown of a payment (e.g. Total 10,000 -> USHA 6,000, Zebronics 4,000).
+    Strict brand isolation is enforced: a payment allocated to a brand reduces only that brand's
+    outstanding and never spills over to other brands.
+    """
+
+    __tablename__ = "payment_brand_allocations"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    payment_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("payments.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    brand: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    brand_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("brands.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
+    allocated_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    payment: Mapped["Payment"] = relationship(back_populates="allocations")
+    brand_rel: Mapped[Optional["Brand"]] = relationship(back_populates="payment_allocations")
+
+    __table_args__ = (
+        UniqueConstraint("payment_id", "brand", name="uq_payment_brand_allocations_payment_brand"),
     )

@@ -202,6 +202,13 @@ def _purge_test_artifacts() -> None:
         # employees, so they must be purged before those rows or the deletes
         # below fail with a foreign key violation.
         cur.execute(
+            "DELETE FROM payment_brand_allocations WHERE payment_id IN ("
+            "  SELECT p.id FROM payments p"
+            "  JOIN employees e ON e.id = p.employee_id"
+            "  WHERE e.employee_code LIKE %s)",
+            (f"{TEST_MARKER}%",),
+        )
+        cur.execute(
             "DELETE FROM payment_proofs WHERE payment_id IN ("
             "  SELECT p.id FROM payments p"
             "  JOIN employees e ON e.id = p.employee_id"
@@ -420,6 +427,10 @@ def seeded_world() -> Iterator[dict[str, Any]]:
                 ids["territory_id"],
             ),
         )
+        cur.execute(
+            "UPDATE monthly_reporting_periods SET status = 'OPEN', finalized_at = NULL WHERE period_year = %s AND period_month = %s",
+            (datetime.now().year, datetime.now().month),
+        )
 
     ids.update(
         {
@@ -573,11 +584,14 @@ def created_payments() -> Iterator[list[str]]:
     if not ids:
         return
     keys: list[str] = []
-    with db_cursor() as cur:
-        cur.execute("SELECT storage_key FROM payment_proofs WHERE payment_id = ANY(%s::uuid[])", (ids,))
-        keys = [r["storage_key"] for r in cur.fetchall()]
-        cur.execute("DELETE FROM payment_proofs WHERE payment_id = ANY(%s::uuid[])", (ids,))
-        cur.execute("DELETE FROM payments WHERE id = ANY(%s::uuid[])", (ids,))
+    clean_ids = [str(x) for x in ids if x]
+    if clean_ids:
+        with db_cursor(privileged=True) as cur:
+            cur.execute("DELETE FROM payment_brand_allocations WHERE payment_id = ANY(%s::uuid[])", (clean_ids,))
+            cur.execute("SELECT storage_key FROM payment_proofs WHERE payment_id = ANY(%s::uuid[])", (clean_ids,))
+            keys = [r["storage_key"] for r in cur.fetchall()]
+            cur.execute("DELETE FROM payment_proofs WHERE payment_id = ANY(%s::uuid[])", (clean_ids,))
+            cur.execute("DELETE FROM payments WHERE id = ANY(%s::uuid[])", (clean_ids,))
     base = os.path.abspath(settings.media_storage_path)
     for key in keys:
         path = os.path.abspath(os.path.join(base, key))

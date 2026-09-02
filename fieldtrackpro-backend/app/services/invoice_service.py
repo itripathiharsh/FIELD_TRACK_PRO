@@ -21,6 +21,7 @@ from app.repositories.invoice_repo import InvoiceRepository
 from app.repositories.payment_repo import PaymentRepository
 from app.schemas.invoice import InvoiceCreate, InvoiceRead
 from app.services.aging_service import compute_invoice_aging
+from app.services.period_service import assert_period_open_for_date
 
 
 async def _verified_paid_amount(invoice_id: uuid.UUID, session: AsyncSession) -> Decimal:
@@ -56,6 +57,9 @@ async def to_invoice_read(invoice: Invoice, session: AsyncSession, today: date |
 
 
 async def create_invoice(data: InvoiceCreate, current_user: User, session: AsyncSession) -> Invoice:
+    # Enforce financial lock: reject invoices backdated into a finalized period
+    await assert_period_open_for_date(data.invoice_date, session)
+
     repo = InvoiceRepository(session)
     existing = await repo.find_by_number(data.customer_id, data.invoice_number)
     if existing is not None:

@@ -22,18 +22,28 @@ from app.api.v1 import (
     field_exceptions,
     dashboard,
     devices,
+    location_proposals,
+    brands,
+    requirements,
+    workday,
+    organization,
 )
 
 api_router = APIRouter()
 
 api_router.include_router(health.router, tags=["health"])
 api_router.include_router(auth.router)
+api_router.include_router(organization.router)
 api_router.include_router(users.router)
 api_router.include_router(devices.router)
 api_router.include_router(territories.router)
 api_router.include_router(areas.router)
 api_router.include_router(employees.router)
 api_router.include_router(customers.router)
+api_router.include_router(location_proposals.router)
+api_router.include_router(brands.router)
+api_router.include_router(requirements.router)
+api_router.include_router(workday.router)
 api_router.include_router(visits.router)
 api_router.include_router(geo.router)
 api_router.include_router(media.router)

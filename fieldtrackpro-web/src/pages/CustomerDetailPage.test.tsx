@@ -36,12 +36,11 @@ describe('CustomerDetailPage', () => {
 
         mockApi({
             ...baseRoutes(ADMIN_USER),
-            // Longer/more specific than the '/api/v1/customers' catch-all
-            // below, so mockApi's suffix matcher tries this first - without
-            // it, the P1 account fetch would incorrectly match the customer
-            // catch-all and receive a raw Customer object instead of a 404.
             [`/api/v1/customers/${CUSTOMER.id}/account`]: () => json({ error: { code: 'NOT_MOCKED', message: 'not mocked' } }, 404),
             [`/api/v1/customers/${CUSTOMER.id}/orders`]: () => json({ error: { code: 'NOT_MOCKED', message: 'not mocked' } }, 404),
+            [`/api/v1/customers/${CUSTOMER.id}/location-proposals`]: () => json([]),
+            [`/api/v1/customers/${CUSTOMER.id}/requirements`]: () => json([]),
+            '/api/v1/brands': () => json(['USHA', 'Zebronics', 'Havells']),
             '/api/v1/customers': route((url) => {
                 if (url.includes(CUSTOMER.id)) {
                     return json(customer);
@@ -131,12 +130,11 @@ describe('CustomerDetailPage', () => {
 
         mockApi({
             ...baseRoutes(ADMIN_USER),
-            // Longer/more specific than the '/api/v1/customers' catch-all
-            // below, so mockApi's suffix matcher tries this first - without
-            // it, the P1 account fetch would incorrectly match the customer
-            // catch-all and receive a raw Customer object instead of a 404.
             [`/api/v1/customers/${CUSTOMER.id}/account`]: () => json({ error: { code: 'NOT_MOCKED', message: 'not mocked' } }, 404),
             [`/api/v1/customers/${CUSTOMER.id}/orders`]: () => json({ error: { code: 'NOT_MOCKED', message: 'not mocked' } }, 404),
+            [`/api/v1/customers/${CUSTOMER.id}/location-proposals`]: () => json([]),
+            [`/api/v1/customers/${CUSTOMER.id}/requirements`]: () => json([]),
+            '/api/v1/brands': () => json(['USHA', 'Zebronics', 'Havells']),
             '/api/v1/customers': route((url) => {
                 if (url.includes(CUSTOMER.id)) {
                     return json(customer);
@@ -173,12 +171,11 @@ describe('CustomerDetailPage', () => {
 
         mockApi({
             ...baseRoutes(ADMIN_USER),
-            // Longer/more specific than the '/api/v1/customers' catch-all
-            // below, so mockApi's suffix matcher tries this first - without
-            // it, the P1 account fetch would incorrectly match the customer
-            // catch-all and receive a raw Customer object instead of a 404.
             [`/api/v1/customers/${CUSTOMER.id}/account`]: () => json({ error: { code: 'NOT_MOCKED', message: 'not mocked' } }, 404),
             [`/api/v1/customers/${CUSTOMER.id}/orders`]: () => json({ error: { code: 'NOT_MOCKED', message: 'not mocked' } }, 404),
+            [`/api/v1/customers/${CUSTOMER.id}/location-proposals`]: () => json([]),
+            [`/api/v1/customers/${CUSTOMER.id}/requirements`]: () => json([]),
+            '/api/v1/brands': () => json(['USHA', 'Zebronics', 'Havells']),
             '/api/v1/customers': route((url) => {
                 if (url.includes(CUSTOMER.id)) {
                     return json(customer);

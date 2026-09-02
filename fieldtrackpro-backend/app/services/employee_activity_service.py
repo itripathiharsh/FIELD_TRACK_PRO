@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.customer import Customer
 from app.models.payment import Payment, PaymentStatus
 from app.models.territory import Territory
-from app.models.visit import Visit, VisitStatus
+from app.models.visit import Visit, VisitStatus, VisitType
 from app.repositories.geo_log_repo import GeoLogRepository
 from app.repositories.media_repo import MediaRepository
 from app.repositories.payment_repo import PaymentRepository
@@ -54,6 +54,8 @@ async def get_employee_activity(employee_id: uuid.UUID, session: AsyncSession) -
         reverse=True,
     )
     visits_total = await visit_repo.count(Visit.employee_id == employee_id)
+    visits_planned = await visit_repo.count(Visit.employee_id == employee_id, Visit.visit_type == VisitType.PLANNED)
+    visits_adhoc = await visit_repo.count(Visit.employee_id == employee_id, Visit.visit_type == VisitType.AD_HOC)
     visits_completed = await visit_repo.count(Visit.employee_id == employee_id, Visit.status == VisitStatus.COMPLETED)
     visits_missed = await visit_repo.count(Visit.employee_id == employee_id, Visit.status == VisitStatus.MISSED)
     visits_flagged = await visit_repo.count(Visit.employee_id == employee_id, Visit.status == VisitStatus.FLAGGED)
@@ -76,6 +78,9 @@ async def get_employee_activity(employee_id: uuid.UUID, session: AsyncSession) -
                 else None
             ),
             status=v.status,
+            visit_type=getattr(v, "visit_type", VisitType.PLANNED) or VisitType.PLANNED,
+            adhoc_reason=getattr(v, "adhoc_reason", None),
+            adhoc_notes=getattr(v, "adhoc_notes", None),
             geo_failure_count=geo_failure_counts.get(v.id, 0),
         )
         for v in visits
@@ -135,6 +140,8 @@ async def get_employee_activity(employee_id: uuid.UUID, session: AsyncSession) -
         territory_name=territory_name,
         is_active=employee.user.is_active,
         visits_total=visits_total,
+        visits_planned=visits_planned,
+        visits_adhoc=visits_adhoc,
         visits_completed=visits_completed,
         visits_missed=visits_missed,
         visits_flagged=visits_flagged,

@@ -37,6 +37,19 @@ data class PaymentProofDto(
     @SerializedName("uploaded_at") val uploadedAt: String,
 )
 
+data class PaymentBrandAllocationDto(
+    val id: String? = null,
+    @SerializedName("payment_id") val paymentId: String? = null,
+    val brand: String,
+    @SerializedName("allocated_amount") val allocatedAmount: String,
+    @SerializedName("created_at") val createdAt: String? = null,
+)
+
+data class BrandAllocationInput(
+    val brand: String,
+    val amount: Double,
+)
+
 data class PaymentDto(
     val id: String,
     @SerializedName("visit_id") val visitId: String,
@@ -54,6 +67,7 @@ data class PaymentDto(
     @SerializedName("rejection_reason") val rejectionReason: String? = null,
     @SerializedName("created_at") val createdAt: String,
     val proofs: List<PaymentProofDto> = emptyList(),
+    val allocations: List<PaymentBrandAllocationDto> = emptyList(),
 )
 
 data class BrandSummaryDto(
@@ -61,8 +75,6 @@ data class BrandSummaryDto(
     @SerializedName("total_invoiced") val totalInvoiced: String,
     @SerializedName("total_paid") val totalPaid: String,
     @SerializedName("total_outstanding") val totalOutstanding: String,
-    // P2-A: brand-wise history enrichment - mirrors app/schemas/account.py's
-    // BrandSummary exactly.
     @SerializedName("overdue_amount") val overdueAmount: String = "0",
     @SerializedName("invoice_count") val invoiceCount: Int = 0,
     @SerializedName("payment_count") val paymentCount: Int = 0,
@@ -81,13 +93,12 @@ data class AccountSummaryDto(
     @SerializedName("max_days_outstanding") val maxDaysOutstanding: Int,
     @SerializedName("collection_status") val collectionStatus: String,
     @SerializedName("most_recent_payment") val mostRecentPayment: PaymentDto? = null,
-    // The most recent visit that actually happened (has a check-in) - null
-    // if this outlet has never had one. Mirrors the web AccountSummaryCard.
     @SerializedName("most_recent_visit_date") val mostRecentVisitDate: String? = null,
     @SerializedName("most_recent_visit_employee_name") val mostRecentVisitEmployeeName: String? = null,
     @SerializedName("recent_invoices") val recentInvoices: List<InvoiceDto> = emptyList(),
     @SerializedName("recent_payments") val recentPayments: List<PaymentDto> = emptyList(),
     @SerializedName("brand_summary") val brandSummary: List<BrandSummaryDto> = emptyList(),
+    @SerializedName("aging_buckets") val agingBuckets: Map<String, String>? = null,
 )
 
 data class PaymentCreateRequest(
@@ -101,6 +112,7 @@ data class PaymentCreateRequest(
     @SerializedName("utr_reference") val utrReference: String? = null,
     val notes: String? = null,
     @SerializedName("idempotency_key") val idempotencyKey: String? = null,
+    val allocations: List<BrandAllocationInput>? = null,
 )
 
 data class PaymentProofDownloadResponse(

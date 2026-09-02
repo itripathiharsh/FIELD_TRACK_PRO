@@ -14,10 +14,13 @@ from app.database import get_async_session
 from app.exceptions.custom import BaseAPIException
 from app.schemas.auth import (
     ForgotPasswordRequest,
+    ForgotPasswordResponse,
     LoginRequest,
     RefreshRequest,
     ResetPasswordRequest,
     TokenResponse,
+    VerifyOtpRequest,
+    VerifyOtpResponse,
 )
 from app.schemas.user import CurrentUserRead
 from app.services import auth_service
@@ -121,15 +124,21 @@ async def me(current_user: CurrentUser, session: DbSession) -> CurrentUserRead:
     return await auth_service.build_current_user(current_user, session)
 
 
-@router.post("/forgot-password", status_code=202, summary="Request password reset")
-async def forgot_password_request(data: ForgotPasswordRequest, session: DbSession):
-    """Initiate the password recovery flow via email."""
-    await auth_service.forgot_password(data.email, session)
-    return {"message": "If that email is registered, you will receive a reset code shortly."}
+@router.post("/forgot-password", response_model=ForgotPasswordResponse, status_code=200, summary="Request password reset")
+async def forgot_password_request(data: ForgotPasswordRequest, session: DbSession) -> ForgotPasswordResponse:
+    """Initiate the password recovery flow via email or SMS."""
+    identifier = data.identifier or data.email or data.mobile_number or ""
+    return await auth_service.forgot_password(identifier, session)
+
+
+@router.post("/verify-otp", response_model=VerifyOtpResponse, status_code=200, summary="Pre-verify reset OTP")
+async def verify_otp_request(data: VerifyOtpRequest, session: DbSession) -> VerifyOtpResponse:
+    """Validate 6-digit OTP code before proceeding to password reset."""
+    return await auth_service.verify_otp(data, session)
 
 
 @router.post("/reset-password", status_code=200, summary="Complete password reset")
 async def reset_password(data: ResetPasswordRequest, session: DbSession):
-    """Verify reset code and update password."""
+    """Verify reset code, update password, and revoke active refresh tokens."""
     await auth_service.reset_password(data, session)
     return {"message": "Password updated successfully"}

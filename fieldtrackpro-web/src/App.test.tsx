@@ -120,7 +120,7 @@ describe('Routing - admin', () => {
     // Scope to the sidebar: page content also contains words like "Visits".
     const nav = await screen.findByRole('navigation');
     await waitFor(() => expect(within(nav).getByText('Employees')).toBeInTheDocument());
-    for (const item of ['Dashboard', 'Employees', 'Territories', 'Customers', 'Visits', 'Geo Logs']) {
+    for (const item of ['Dashboard', 'Employees', 'Territories', 'Customers', 'Visits', 'Map']) {
       expect(within(nav).getByText(item)).toBeInTheDocument();
     }
   });
@@ -169,7 +169,7 @@ describe('Routing - employee (RBAC guards)', () => {
     expect(screen.getByText('Visits')).toBeInTheDocument();
   });
 
-  it.each(['/customers', '/employees', '/territories', '/geo-logs', '/media', '/settings', '/forms'])(
+  it.each(['/customers', '/employees', '/territories', '/settings', '/forms'])(
     'redirects away from admin-only route %s',
     async (route) => {
       mockApi({

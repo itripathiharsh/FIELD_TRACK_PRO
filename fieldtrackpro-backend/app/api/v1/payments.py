@@ -17,7 +17,13 @@ from app.core.deps.auth import CurrentUser, require_role
 from app.database import get_async_session
 from app.models.payment import PaymentStatus
 from app.models.user import Role
-from app.schemas.payment import PaymentCreate, PaymentProofRead, PaymentRead, PaymentReviewAction
+from app.schemas.payment import (
+    PaymentAllocationUpdate,
+    PaymentCreate,
+    PaymentProofRead,
+    PaymentRead,
+    PaymentReviewAction,
+)
 from app.services import payment_service
 from app.services.payment_service import to_payment_read as _to_read
 
@@ -68,10 +74,12 @@ async def upload_payment_proof(
     """Upload a cheque photo or online-payment screenshot for a collection."""
     file_bytes = await file.read()
     filename = file.filename or "payment_proof"
+    mime_type = file.content_type or "image/jpeg"
     return await payment_service.upload_payment_proof(
         payment_id=payment_id,
-        original_filename=filename,
         file_bytes=file_bytes,
+        original_filename=filename,
+        mime_type=mime_type,
         current_user=current_user,
         session=session,
     )
@@ -108,4 +116,16 @@ async def reject_payment(
     payment = await payment_service.reject_payment(
         payment_id, data.rejection_reason, current_user, session
     )
+    return _to_read(payment)
+
+
+@router.patch("/{payment_id}/allocations", response_model=PaymentRead, dependencies=[AdminOnly])
+async def update_payment_allocations(
+    payment_id: uuid.UUID,
+    data: PaymentAllocationUpdate,
+    current_user: CurrentUser,
+    session: DbSession,
+):
+    """Admin: adjust brand allocations before final verification/rejection."""
+    payment = await payment_service.update_payment_allocations(payment_id, data, current_user, session)
     return _to_read(payment)

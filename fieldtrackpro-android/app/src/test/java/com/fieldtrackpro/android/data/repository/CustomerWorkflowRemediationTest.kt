@@ -122,6 +122,46 @@ class CustomerWorkflowRemediationTest {
             override suspend fun getCustomerById(customerId: String): Response<CustomerDto> {
                 throw UnsupportedOperationException()
             }
+
+            override suspend fun proposeCustomerLocation(
+                customerId: String,
+                proposal: com.fieldtrackpro.android.data.model.LocationProposalCreate
+            ): Response<com.fieldtrackpro.android.data.model.LocationProposalDto> {
+                throw UnsupportedOperationException()
+            }
+
+            override suspend fun getCustomerLocationProposals(
+                customerId: String
+            ): Response<List<com.fieldtrackpro.android.data.model.LocationProposalDto>> {
+                throw UnsupportedOperationException()
+            }
+
+            override suspend fun createCustomerProspect(
+                prospect: com.fieldtrackpro.android.data.model.CustomerProspectCreate
+            ): Response<CustomerDto> {
+                throw UnsupportedOperationException()
+            }
+
+            override suspend fun getCustomerRequirements(
+                customerId: String
+            ): Response<List<com.fieldtrackpro.android.data.model.CustomerRequirementDto>> {
+                throw UnsupportedOperationException()
+            }
+
+            override suspend fun createCustomerRequirement(
+                customerId: String,
+                req: com.fieldtrackpro.android.data.model.CustomerRequirementCreate
+            ): Response<com.fieldtrackpro.android.data.model.CustomerRequirementDto> {
+                throw UnsupportedOperationException()
+            }
+
+            override suspend fun getBrands(activeOnly: Boolean): Response<List<com.fieldtrackpro.android.data.model.BrandDto>> {
+                throw UnsupportedOperationException()
+            }
+
+            override suspend fun createBrand(request: com.fieldtrackpro.android.data.model.BrandCreate): Response<com.fieldtrackpro.android.data.model.BrandDto> {
+                throw UnsupportedOperationException()
+            }
         }
 
         val repository = CustomerRepository(fakeApi)
@@ -172,5 +212,53 @@ class CustomerWorkflowRemediationTest {
         assertFalse(deserialized.isMockLocation)
         assertEquals("Test notes", deserialized.notes)
         assertEquals("act-1", deserialized.id)
+    }
+
+    @Test
+    fun customerProspectCreate_serializesWithBrandsAndRequirement() {
+        val req = com.fieldtrackpro.android.data.model.CustomerRequirementCreate(
+            brand = "USHA",
+            requirementType = "Dealership Stock",
+            productDetails = "50 Fans",
+            quantity = 50,
+            expectedValue = 100000.0,
+            followUpDate = "2026-09-01"
+        )
+        val prospect = com.fieldtrackpro.android.data.model.CustomerProspectCreate(
+            name = "Test Outlet",
+            contactNumber = "+919876543210",
+            contactPerson = "Owner",
+            gstNumber = "07AAAAA0000A1Z5",
+            address = "Main Street",
+            brands = listOf("USHA", "Zebronics"),
+            requirement = req,
+            location = com.fieldtrackpro.android.data.model.GeoPointDto(latitude = 28.6139, longitude = 77.2090),
+            gpsAccuracyMeters = 5.0,
+            force = false
+        )
+        val json = gson.toJson(prospect)
+        assertTrue(json.contains("\"name\":\"Test Outlet\""))
+        assertTrue(json.contains("\"contact_number\":\"+919876543210\""))
+        assertTrue(json.contains("\"gst_number\":\"07AAAAA0000A1Z5\""))
+        assertTrue(json.contains("\"brands\":[\"USHA\",\"Zebronics\"]"))
+        assertTrue(json.contains("\"product_details\":\"50 Fans\""))
+        assertTrue(json.contains("\"latitude\":28.6139"))
+    }
+
+    @Test
+    fun brandDto_serializesAndDeserializesCorrectly() {
+        val brand = com.fieldtrackpro.android.data.model.BrandDto(
+            id = "brand-uuid-1",
+            name = "Panasonic",
+            normalizedName = "panasonic",
+            isActive = true
+        )
+        val json = gson.toJson(brand)
+        assertTrue(json.contains("\"name\":\"Panasonic\""))
+        assertTrue(json.contains("\"is_active\":true"))
+
+        val brandCreate = com.fieldtrackpro.android.data.model.BrandCreate(name = "Panasonic")
+        val createJson = gson.toJson(brandCreate)
+        assertTrue(createJson.contains("\"name\":\"Panasonic\""))
     }
 }

@@ -83,6 +83,23 @@ class Settings(BaseSettings):
     smtp_password: str | None = None
     smtp_from_email: str = "noreply@fieldtrackpro.com"
 
+    # SMS Configuration
+    sms_provider: str = "mock"  # "mock" | "msg91" | "twilio" | "fast2sms"
+    sms_api_key: str | None = None
+    sms_sender_id: str | None = None
+    sms_template_id: str | None = None
+    twilio_account_sid: str | None = None
+    twilio_auth_token: str | None = None
+    # Organization Profile & Identity
+    organization_name: str = "SGRG Services Private Limited"
+    organization_hub: str = "Kanpur Central, Uttar Pradesh"
+    organization_divisions: str = "Telecom Distribution (11001–11020) & Consumer Electronics (11021–11030)"
+    organization_contact_email: str = "contact@sgrgservices.com"
+    organization_contact_phone: str = "+91 98390 11015"
+    organization_gstin: str = "09AAECS1234F1Z5"
+    organization_timezone: str = "Asia/Kolkata (IST, UTC+5:30)"
+    organization_currency: str = "INR (₹)"
+
     @field_validator("database_url", "migration_database_url", mode="before")
     @classmethod
     def _ensure_asyncpg_driver(cls, v: str | None) -> str | None:
@@ -171,6 +188,25 @@ class Settings(BaseSettings):
                     "when ENVIRONMENT=production and STORAGE_PROVIDER=MINIO."
                 )
 
+        return self
+
+    @model_validator(mode="after")
+    def _validate_production_auth_communication_config(self) -> "Settings":
+        """
+        Production hardening: In production, mock SMS provider and unconfigured SMTP
+        are rejected at startup to prevent silent communication failures or leaks.
+        """
+        if self.environment == "production":
+            if (self.sms_provider or "").strip().lower() == "mock":
+                raise ValueError(
+                    "SMS_PROVIDER cannot be 'mock' when ENVIRONMENT=production. "
+                    "Configure a valid production SMS provider (msg91, twilio, fast2sms) and credentials."
+                )
+            if not self.smtp_host:
+                raise ValueError(
+                    "SMTP_HOST must be configured when ENVIRONMENT=production - "
+                    "refusing to start with silent fallback to terminal mock email."
+                )
         return self
 
 

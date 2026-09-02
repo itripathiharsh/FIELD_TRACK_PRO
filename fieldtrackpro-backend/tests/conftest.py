@@ -24,11 +24,7 @@ from app.models.refresh_token import RefreshToken
 # Async test event loop
 # ---------------------------------------------------------------------------
 
-@pytest_asyncio.fixture(autouse=True)
-async def dispose_db_engine():
-    yield
-    from app.database import engine
-    await engine.dispose()
+
 
 
 
@@ -58,10 +54,13 @@ def make_admin_token(user_id: str | None = None) -> str:
         from sqlalchemy import create_engine, select
         from sqlalchemy.orm import Session
         engine = create_engine(settings.database_url.replace("postgresql+asyncpg://", "postgresql://"))
-        with Session(engine) as s:
-            u = s.execute(select(User).where(User.role == Role.ADMIN, User.is_active == True)).scalars().first()
-            if u:
-                return create_access_token(str(u.id), Role.ADMIN.value)
+        try:
+            with Session(engine) as s:
+                u = s.execute(select(User).where(User.role == Role.ADMIN, User.is_active == True)).scalars().first()
+                if u:
+                    return create_access_token(str(u.id), Role.ADMIN.value)
+        finally:
+            engine.dispose()
     except Exception:
         pass
     return create_access_token(SEED_ADMIN_ID, Role.ADMIN.value)
@@ -75,10 +74,13 @@ def make_employee_token(user_id: str | None = None) -> str:
         from sqlalchemy import create_engine, select
         from sqlalchemy.orm import Session
         engine = create_engine(settings.database_url.replace("postgresql+asyncpg://", "postgresql://"))
-        with Session(engine) as s:
-            u = s.execute(select(User).where(User.role == Role.EMPLOYEE, User.is_active == True)).scalars().first()
-            if u:
-                return create_access_token(str(u.id), Role.EMPLOYEE.value)
+        try:
+            with Session(engine) as s:
+                u = s.execute(select(User).where(User.role == Role.EMPLOYEE, User.is_active == True)).scalars().first()
+                if u:
+                    return create_access_token(str(u.id), Role.EMPLOYEE.value)
+        finally:
+            engine.dispose()
     except Exception:
         pass
     return create_access_token(SEED_EMPLOYEE_ID, Role.EMPLOYEE.value)
@@ -107,6 +109,12 @@ def _check_db_migrated() -> bool:
         engine = create_engine(sync_url, connect_args={"connect_timeout": 2})
         with engine.connect() as conn:
             conn.execute(text("SELECT 1 FROM users LIMIT 1"))
+            from datetime import date
+            conn.execute(
+                text("UPDATE monthly_reporting_periods SET status = 'OPEN', finalized_at = NULL WHERE period_year = :y AND period_month = :m"),
+                {"y": date.today().year, "m": date.today().month},
+            )
+            conn.commit()
         engine.dispose()
         return True
     except Exception:

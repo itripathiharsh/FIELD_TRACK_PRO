@@ -17,7 +17,8 @@ sealed class AuthState {
     object Loading : AuthState()
     data class Authenticated(val user: UserDto) : AuthState()
     data class Error(val message: String) : AuthState()
-    data class ForgotPasswordSuccess(val message: String) : AuthState()
+    data class ForgotPasswordSuccess(val message: String, val destination: String? = null, val deliveryChannel: String? = null) : AuthState()
+    data class OtpVerified(val message: String) : AuthState()
     data class ResetPasswordSuccess(val message: String) : AuthState()
 }
 
@@ -69,23 +70,39 @@ class AuthViewModel(
         _authState.value = AuthState.Idle
     }
 
-    fun forgotPassword(email: String) {
+    fun forgotPassword(identifier: String) {
         if (_authState.value is AuthState.Loading) return
         viewModelScope.launch {
             _authState.value = AuthState.Loading
-            when (val result = authRepository.forgotPassword(email)) {
-                is Resource.Success -> _authState.value = AuthState.ForgotPasswordSuccess(result.data)
+            when (val result = authRepository.forgotPassword(identifier)) {
+                is Resource.Success -> _authState.value = AuthState.ForgotPasswordSuccess(
+                    message = result.data.message,
+                    destination = result.data.destination,
+                    deliveryChannel = result.data.deliveryChannel
+                )
                 is Resource.Error -> _authState.value = AuthState.Error(result.message)
                 else -> {}
             }
         }
     }
 
-    fun resetPassword(email: String, otp: String, newPassword: String) {
+    fun verifyOtp(identifier: String, otp: String) {
         if (_authState.value is AuthState.Loading) return
         viewModelScope.launch {
             _authState.value = AuthState.Loading
-            when (val result = authRepository.resetPassword(email, otp, newPassword)) {
+            when (val result = authRepository.verifyOtp(identifier, otp)) {
+                is Resource.Success -> _authState.value = AuthState.OtpVerified(result.data)
+                is Resource.Error -> _authState.value = AuthState.Error(result.message)
+                else -> {}
+            }
+        }
+    }
+
+    fun resetPassword(identifier: String, otp: String, newPassword: String) {
+        if (_authState.value is AuthState.Loading) return
+        viewModelScope.launch {
+            _authState.value = AuthState.Loading
+            when (val result = authRepository.resetPassword(identifier, otp, newPassword)) {
                 is Resource.Success -> _authState.value = AuthState.ResetPasswordSuccess(result.data)
                 is Resource.Error -> _authState.value = AuthState.Error(result.message)
                 else -> {}

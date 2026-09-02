@@ -48,6 +48,9 @@ class Invoice(Base):
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))
     # Brand-level aggregation (P1: brand info, not SKU/product-level detail).
     brand: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    brand_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("brands.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
     source: Mapped[InvoiceSource] = mapped_column(
         Enum(InvoiceSource, name="invoice_source_enum"), default=InvoiceSource.MANUAL
     )
@@ -67,6 +70,7 @@ class Invoice(Base):
     )
 
     customer: Mapped["Customer"] = relationship(back_populates="invoices")
+    brand_rel: Mapped[Optional["Brand"]] = relationship()
     payments: Mapped[list["Payment"]] = relationship(back_populates="invoice")
 
     __table_args__ = (

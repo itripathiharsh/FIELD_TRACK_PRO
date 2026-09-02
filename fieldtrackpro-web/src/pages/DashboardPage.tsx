@@ -21,6 +21,10 @@ import {
   X,
   ChevronRight,
   Eye,
+  Calendar,
+  Bell,
+  ArrowRight,
+  Lock,
 } from 'lucide-react';
 import { MetricCard } from '../components/ui/MetricCard';
 import { StatusBadge } from '../components/ui/StatusBadge';
@@ -35,12 +39,15 @@ import {
   Employee,
   Visit,
   MonthlyReportingPeriod,
+  MonthlyPeriodReviewSummary,
   Territory,
   Area,
   DashboardSummaryResponse,
   EmployeeDayDashboardResponse,
   FieldException,
   BusinessSummaryRow,
+  TodayFieldActivityOverview,
+  Brand,
 } from '../types';
 import { generatePDFContent } from '../utils/pdf-report';
 
@@ -62,6 +69,7 @@ export const DashboardPage: React.FC = () => {
   const [areas, setAreas] = useState<Area[]>([]);
   const [employeeOptions, setEmployeeOptions] = useState<Employee[]>([]);
   const [monthlyPeriods, setMonthlyPeriods] = useState<MonthlyReportingPeriod[]>([]);
+  const [masterBrands, setMasterBrands] = useState<Brand[]>([]);
 
   // Core Data States
   const [visits, setVisits] = useState<Visit[]>([]);
@@ -69,7 +77,11 @@ export const DashboardPage: React.FC = () => {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [dashboardBI, setDashboardBI] = useState<DashboardSummaryResponse | null>(null);
   const [dayDashboard, setDayDashboard] = useState<EmployeeDayDashboardResponse | null>(null);
+  const [fieldOverview, setFieldOverview] = useState<TodayFieldActivityOverview | null>(null);
   const [exceptions, setExceptions] = useState<FieldException[]>([]);
+
+  const todayStr = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const [selectedWorkDate, setSelectedWorkDate] = useState<string>(todayStr);
 
   // Drilldown Modal State
   const [drilldownRow, setDrilldownRow] = useState<BusinessSummaryRow | null>(null);
@@ -80,6 +92,52 @@ export const DashboardPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
 
+  // Monthly Period Lifecycle & Review State
+  const pendingClosePeriod = useMemo(
+    () => monthlyPeriods.find((p) => p.status === 'PENDING_CLOSE'),
+    [monthlyPeriods]
+  );
+  const currentOpenPeriod = useMemo(
+    () => monthlyPeriods.find((p) => p.status === 'OPEN'),
+    [monthlyPeriods]
+  );
+  const [isMonthAlertDismissed, setIsMonthAlertDismissed] = useState<boolean>(false);
+  const [reviewPeriod, setReviewPeriod] = useState<MonthlyReportingPeriod | null>(null);
+  const [reviewSummary, setReviewSummary] = useState<MonthlyPeriodReviewSummary | null>(null);
+  const [isReviewLoading, setIsReviewLoading] = useState<boolean>(false);
+  const [isFinalizingPeriod, setIsFinalizingPeriod] = useState<boolean>(false);
+
+  const handleOpenPeriodReview = async (period: MonthlyReportingPeriod) => {
+    setReviewPeriod(period);
+    setIsReviewLoading(true);
+    try {
+      const summary = await apiClient.getMonthlyPeriodReview(period.id);
+      setReviewSummary(summary);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load month review summary');
+    } finally {
+      setIsReviewLoading(false);
+    }
+  };
+
+  const handleConfirmCloseMonth = async () => {
+    if (!reviewPeriod) return;
+    setIsFinalizingPeriod(true);
+    try {
+      const updated = await apiClient.finalizeMonthlyPeriod(reviewPeriod.id);
+      setMonthlyPeriods((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+      setActionSuccess(`Accounting period ${reviewPeriod.period_name} has been closed and locked.`);
+      setReviewPeriod(null);
+      setReviewSummary(null);
+      setTimeout(() => setActionSuccess(null), 4000);
+      fetchData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to close monthly period');
+    } finally {
+      setIsFinalizingPeriod(false);
+    }
+  };
+
   // Load reference master lists for filtering
   useEffect(() => {
     if (!isAdmin) return;
@@ -88,11 +146,13 @@ export const DashboardPage: React.FC = () => {
       apiClient.getAreas().catch(() => [] as Area[]),
       apiClient.getEmployees().catch(() => [] as Employee[]),
       apiClient.getMonthlyPeriods().catch(() => [] as MonthlyReportingPeriod[]),
-    ]).then(([tList, aList, eList, pList]) => {
+      apiClient.getBrands(true).catch(() => [] as Brand[]),
+    ]).then(([tList, aList, eList, pList, bList]) => {
       setTerritories(tList || []);
       setAreas(aList || []);
       setEmployeeOptions(eList || []);
       setMonthlyPeriods(pList || []);
+      setMasterBrands(bList || []);
     });
   }, [isAdmin]);
 
@@ -132,14 +192,24 @@ export const DashboardPage: React.FC = () => {
       // Kept only for fallback in test environments where /dashboard/summary is unmocked
       const customersPromise = apiClient.getCustomers().catch(() => [] as Customer[]);
       const employeesPromise = apiClient.getEmployees().catch(() => [] as Employee[]);
+      const overviewPromise = apiClient
+        .getTodayFieldOverview(selectedWorkDate !== todayStr ? selectedWorkDate : undefined)
+        .catch(() => null);
+      const periodsPromise = apiClient
+        .getMonthlyPeriods()
+        .catch(() => [] as MonthlyReportingPeriod[]);
 
-      Promise.all([visitsPromise, biPromise, customersPromise, employeesPromise])
-        .then(([vList, biData, cList, eList]) => {
+      Promise.all([visitsPromise, biPromise, customersPromise, employeesPromise, overviewPromise, periodsPromise])
+        .then(([vList, biData, cList, eList, ovData, pList]) => {
           setVisits(vList || []);
           setDashboardBI(biData);
           setCustomers(cList || []);
           setEmployees(eList || []);
+          setFieldOverview(ovData);
           setExceptions(biData?.recent_exceptions || []);
+          if (pList && pList.length > 0) {
+            setMonthlyPeriods(pList);
+          }
         })
         .catch((err: Error) => {
           setError(err.message || 'Unable to load dashboard data');
@@ -173,6 +243,8 @@ export const DashboardPage: React.FC = () => {
     selectedEmployeeId,
     selectedAgeingBucket,
     selectedMonth,
+    selectedWorkDate,
+    todayStr,
   ]);
 
   useEffect(() => {
@@ -380,6 +452,57 @@ export const DashboardPage: React.FC = () => {
         </div>
       )}
 
+      {/* 1st-of-Month Admin Alert Banner */}
+      {isAdmin && pendingClosePeriod && !isMonthAlertDismissed && (
+        <div className="p-4 rounded-xl bg-gradient-to-r from-amber-500/15 via-primary/10 to-amber-500/5 border border-amber-500/30 dark:border-amber-500/40 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
+          <div className="flex items-start gap-3">
+            <div className="p-2 bg-amber-500/20 text-amber-700 dark:text-amber-300 rounded-lg shrink-0 mt-0.5">
+              <Calendar className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-headline-sm text-sm font-bold text-on-surface">
+                  Monthly Close Required
+                </span>
+                <span className="px-2 py-0.5 text-[10px] uppercase font-bold tracking-wider rounded-full bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
+                  Action Item
+                </span>
+              </div>
+              <p className="font-caption text-xs text-on-surface-variant mt-0.5">
+                {currentOpenPeriod ? `${currentOpenPeriod.period_name} is now active.` : 'New accounting period is open.'}{' '}
+                <strong className="text-on-surface">{pendingClosePeriod.period_name}</strong> is ready for review and closing.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => handleOpenPeriodReview(pendingClosePeriod)}
+              className="text-xs"
+            >
+              Review {pendingClosePeriod.period_name}
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              icon={Lock}
+              onClick={() => handleOpenPeriodReview(pendingClosePeriod)}
+              className="text-xs"
+            >
+              Close &amp; Lock
+            </Button>
+            <button
+              onClick={() => setIsMonthAlertDismissed(true)}
+              aria-label="Dismiss monthly close alert"
+              className="p-1.5 text-on-surface-variant hover:text-on-surface hover:bg-surface-container rounded-lg transition-colors cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Global Filter Engine for Admin */}
       {isAdmin && (
         <Card variant="flat">
@@ -428,9 +551,10 @@ export const DashboardPage: React.FC = () => {
                   <option value="ALL">Current Live Data</option>
                   {monthlyPeriods.map((p) => {
                     const mStr = `${p.period_year}-${String(p.period_month).padStart(2, '0')}`;
+                    const tag = p.status === 'FINALIZED' ? '🔒 (Locked)' : p.status === 'PENDING_CLOSE' ? '⏳ (Pending Close)' : '🟢 (Current)';
                     return (
                       <option key={p.id} value={mStr}>
-                        {p.period_name} {p.status === 'FINALIZED' ? '🔒 (Locked)' : '🟢 (Live)'}
+                        {p.period_name} {tag}
                       </option>
                     );
                   })}
@@ -447,10 +571,12 @@ export const DashboardPage: React.FC = () => {
                   value={selectedBrand}
                   onChange={(e) => setSelectedBrand(e.target.value)}
                 >
-                  <option value="ALL">All Brands (Usha, VU, ZBR)</option>
-                  <option value="Usha">Usha</option>
-                  <option value="VU">VU</option>
-                  <option value="ZBR">ZBR</option>
+                  <option value="ALL">All Brands</option>
+                  {masterBrands.map((b) => (
+                    <option key={b.id} value={b.name}>
+                      {b.name}
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -577,7 +703,7 @@ export const DashboardPage: React.FC = () => {
           }
           icon={ShieldCheck}
           color={geoComplianceRate !== null && geoComplianceRate < 85 ? 'amber' : 'primary'}
-          onClick={isAdmin ? () => navigate('/geo-logs') : undefined}
+          onClick={isAdmin ? () => navigate('/map') : undefined}
         />
       </div>
 
@@ -613,6 +739,234 @@ export const DashboardPage: React.FC = () => {
             color="rose"
           />
         </div>
+      )}
+
+      {/* Today's Field Activity Command Center (Sections 10 - 17) */}
+      {isAdmin && fieldOverview && (
+        <Card className="space-y-6 bg-gradient-to-br from-surface-container-low to-surface border border-outline-variant/60 shadow-sm">
+          {/* Header & Date Controls */}
+          <div className="flex flex-wrap items-center justify-between gap-4 pb-2 border-b border-outline-variant/30">
+            <div>
+              <div className="flex items-center gap-2">
+                <Clock className="w-5 h-5 text-primary" />
+                <h3 className="font-headline-sm text-lg font-bold text-primary">
+                  Today&apos;s Field Activity Command Center
+                </h3>
+              </div>
+              <p className="font-caption text-xs text-on-surface-variant mt-0.5">
+                Real-time operational monitoring of field representatives, visits, collections, and action items.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Active Now Pill */}
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                {fieldOverview.employees_active} Active on Field
+              </span>
+
+              {/* Date Selector */}
+              <div className="flex items-center gap-1.5 bg-surface border border-outline-variant rounded-lg px-2.5 py-1">
+                <Calendar className="w-3.5 h-3.5 text-on-surface-variant" />
+                <input
+                  type="date"
+                  value={selectedWorkDate}
+                  onChange={(e) => setSelectedWorkDate(e.target.value)}
+                  className="bg-transparent text-xs font-semibold text-on-surface focus:outline-none cursor-pointer"
+                />
+                {selectedWorkDate !== todayStr && (
+                  <button
+                    onClick={() => setSelectedWorkDate(todayStr)}
+                    className="text-[10px] font-bold text-primary bg-primary/10 hover:bg-primary/20 px-1.5 py-0.5 rounded transition-colors"
+                  >
+                    Today
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* 1. Employee Shift Status 5-Metric Strip (Section 11) */}
+          <div>
+            <span className="text-[11px] font-bold uppercase tracking-wider text-on-surface-variant block mb-2">
+              Shift Status Breakdown ({fieldOverview.total_employees} Total Reps)
+            </span>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+              <div className="p-3 rounded-xl bg-surface border border-outline-variant/40 shadow-2xs">
+                <span className="text-[11px] uppercase tracking-wider text-on-surface-variant font-medium">Total Reps</span>
+                <p className="text-xl font-bold text-on-surface mt-0.5">{fieldOverview.total_employees}</p>
+                <span className="text-[10px] text-on-surface-variant">registered field team</span>
+              </div>
+              <div className="p-3 rounded-xl bg-surface border border-outline-variant/40 shadow-2xs">
+                <span className="text-[11px] uppercase tracking-wider text-on-surface-variant font-medium">Shift Started</span>
+                <p className="text-xl font-bold text-primary mt-0.5">{fieldOverview.employees_started}</p>
+                <span className="text-[10px] text-on-surface-variant">clocked in today</span>
+              </div>
+              <div className="p-3 rounded-xl bg-surface border border-outline-variant/40 shadow-2xs">
+                <span className="text-[11px] uppercase tracking-wider text-on-surface-variant font-medium">Active Now</span>
+                <p className="text-xl font-bold text-emerald-600 mt-0.5">{fieldOverview.employees_active}</p>
+                <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-medium">currently on beat</span>
+              </div>
+              <div className="p-3 rounded-xl bg-surface border border-outline-variant/40 shadow-2xs">
+                <span className="text-[11px] uppercase tracking-wider text-on-surface-variant font-medium">Completed Shift</span>
+                <p className="text-xl font-bold text-indigo-600 mt-0.5">{fieldOverview.employees_completed}</p>
+                <span className="text-[10px] text-on-surface-variant">day closed with summary</span>
+              </div>
+              <div className="p-3 rounded-xl bg-surface border border-outline-variant/40 shadow-2xs col-span-2 sm:col-span-1">
+                <span className="text-[11px] uppercase tracking-wider text-on-surface-variant font-medium">Not Started</span>
+                <p className="text-xl font-bold text-slate-500 mt-0.5">{fieldOverview.employees_not_started}</p>
+                <span className="text-[10px] text-on-surface-variant">yet to clock in</span>
+              </div>
+            </div>
+          </div>
+
+          {/* 2. Side-by-Side: Visit Overview (Section 12) & Collection Overview (Section 13) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Visit Overview Card */}
+            <div className="p-4 rounded-xl bg-surface border border-outline-variant/50 shadow-2xs space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <CalendarCheck className="w-4 h-4 text-primary" />
+                  <h4 className="font-headline-sm text-sm font-bold text-primary">Today&apos;s Visits Overview</h4>
+                </div>
+                <button
+                  onClick={() => navigate('/visits')}
+                  className="text-xs font-semibold text-primary hover:underline inline-flex items-center gap-1 cursor-pointer"
+                >
+                  View All Visits <ArrowRight className="w-3 h-3" />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+                <div className="p-2.5 rounded-lg bg-surface-container-low border border-outline-variant/30 text-center">
+                  <span className="text-[10px] uppercase font-bold text-on-surface-variant">Total Visits</span>
+                  <p className="text-lg font-bold text-on-surface mt-0.5">{fieldOverview.total_visits}</p>
+                </div>
+                <div className="p-2.5 rounded-lg bg-surface-container-low border border-outline-variant/30 text-center">
+                  <span className="text-[10px] uppercase font-bold text-on-surface-variant">Planned</span>
+                  <p className="text-lg font-bold text-primary mt-0.5">{fieldOverview.planned_visits}</p>
+                </div>
+                <div className="p-2.5 rounded-lg bg-surface-container-low border border-outline-variant/30 text-center">
+                  <span className="text-[10px] uppercase font-bold text-amber-600">Ad-hoc</span>
+                  <p className="text-lg font-bold text-amber-600 mt-0.5">{fieldOverview.adhoc_visits}</p>
+                </div>
+                <div className="p-2.5 rounded-lg bg-surface-container-low border border-outline-variant/30 text-center">
+                  <span className="text-[10px] uppercase font-bold text-emerald-600">Completed</span>
+                  <p className="text-lg font-bold text-emerald-600 mt-0.5">{fieldOverview.completed_visits}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Collection Overview Card */}
+            <div className="p-4 rounded-xl bg-surface border border-outline-variant/50 shadow-2xs space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <DollarSign className="w-4 h-4 text-emerald-600" />
+                  <h4 className="font-headline-sm text-sm font-bold text-primary">Today&apos;s Collections Overview</h4>
+                </div>
+                <button
+                  onClick={() => navigate('/payments')}
+                  className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 hover:underline inline-flex items-center gap-1 cursor-pointer"
+                >
+                  Review Payments <ArrowRight className="w-3 h-3" />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                <div className="p-2.5 rounded-lg bg-surface-container-low border border-outline-variant/30 text-center">
+                  <span className="text-[10px] uppercase font-bold text-on-surface-variant">Total Submitted</span>
+                  <p className="text-base font-bold text-primary mt-0.5">{formatCurrency(fieldOverview.total_collections_amount)}</p>
+                </div>
+                <div className="p-2.5 rounded-lg bg-surface-container-low border border-outline-variant/30 text-center">
+                  <span className="text-[10px] uppercase font-bold text-amber-600">Pending Verification</span>
+                  <p className="text-base font-bold text-amber-600 mt-0.5">{formatCurrency(fieldOverview.collections_pending_verification)}</p>
+                </div>
+                <div className="p-2.5 rounded-lg bg-surface-container-low border border-outline-variant/30 text-center">
+                  <span className="text-[10px] uppercase font-bold text-emerald-600">Verified</span>
+                  <p className="text-base font-bold text-emerald-600 mt-0.5">{formatCurrency(fieldOverview.collections_verified)}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 3. Needs Attention Alerts (Section 15) */}
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <Bell className="w-4 h-4 text-amber-600" />
+              <span className="text-[11px] font-bold uppercase tracking-wider text-on-surface-variant">
+                Needs Attention / Action Queue
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div
+                onClick={() => navigate('/customers')}
+                className="p-3 rounded-xl bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200/80 dark:border-amber-800/40 hover:border-amber-400 transition-all cursor-pointer flex items-center justify-between"
+              >
+                <div>
+                  <span className="text-xs font-bold text-amber-900 dark:text-amber-200 block">
+                    Location Updates Pending
+                  </span>
+                  <p className="text-[11px] text-amber-800/80 dark:text-amber-300/80 mt-0.5">
+                    {fieldOverview.pending_location_proposals_count} GPS correction proposal{fieldOverview.pending_location_proposals_count === 1 ? '' : 's'} awaiting review
+                  </p>
+                </div>
+                <ChevronRight className="w-4 h-4 text-amber-700" />
+              </div>
+
+              <div
+                onClick={() => navigate('/customers')}
+                className="p-3 rounded-xl bg-blue-50/70 dark:bg-blue-950/20 border border-blue-200/80 dark:border-blue-800/40 hover:border-blue-400 transition-all cursor-pointer flex items-center justify-between"
+              >
+                <div>
+                  <span className="text-xs font-bold text-blue-900 dark:text-blue-200 block">
+                    New Customers / Prospects
+                  </span>
+                  <p className="text-[11px] text-blue-800/80 dark:text-blue-300/80 mt-0.5">
+                    {fieldOverview.recent_prospects_count} new outlet registration{fieldOverview.recent_prospects_count === 1 ? '' : 's'} to verify
+                  </p>
+                </div>
+                <ChevronRight className="w-4 h-4 text-blue-700" />
+              </div>
+
+              <div
+                onClick={() => navigate('/payments')}
+                className="p-3 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/20 border border-emerald-200/80 dark:border-emerald-800/40 hover:border-emerald-400 transition-all cursor-pointer flex items-center justify-between"
+              >
+                <div>
+                  <span className="text-xs font-bold text-emerald-900 dark:text-emerald-200 block">
+                    Payments Pending Verification
+                  </span>
+                  <p className="text-[11px] text-emerald-800/80 dark:text-emerald-300/80 mt-0.5">
+                    {fieldOverview.pending_payments_count} field collection deposit{fieldOverview.pending_payments_count === 1 ? '' : 's'}
+                  </p>
+                </div>
+                <ChevronRight className="w-4 h-4 text-emerald-700" />
+              </div>
+            </div>
+          </div>
+
+          {/* 4. Employee Daily Logs Quick Link */}
+          <div className="p-4 rounded-2xl bg-surface border border-outline-variant/50 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-primary-container/70 text-secondary-container flex items-center justify-center shrink-0">
+                <Users className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="font-bold text-sm text-primary font-headline-sm">Employee Field Operations Daily Logs</h4>
+                <p className="text-xs text-on-surface-variant">
+                  Detailed shift tracking, GPS check-in accuracy, planned vs ad-hoc visit breakdown, and collections.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => navigate('/daily-logs')}
+              className="inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-bold bg-primary text-on-primary rounded-xl hover:opacity-90 transition-opacity cursor-pointer shrink-0 shadow-xs"
+            >
+              <span>Open Daily Logs</span>
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </Card>
       )}
 
       {/* Admin Executive BI Panels */}
@@ -946,15 +1300,15 @@ export const DashboardPage: React.FC = () => {
                   </button>
 
                   <button
-                    onClick={() => navigate('/geo-logs')}
+                    onClick={() => navigate('/map')}
                     className="w-full text-left p-3.5 rounded-lg bg-surface-container-low border border-outline-variant hover:border-primary-container transition-all flex items-center justify-between group cursor-pointer"
                   >
                     <div>
                       <p className="font-label-md text-sm text-primary font-bold group-hover:text-secondary transition-colors">
-                        Geo Audit Trail
+                        Live Operations Map
                       </p>
                       <p className="font-caption text-xs text-on-surface-variant">
-                        Inspect GPS coordinate logs
+                        View live field agents &amp; geofences
                       </p>
                     </div>
                     <ArrowUpRight className="w-4 h-4 text-primary group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
@@ -1040,6 +1394,99 @@ export const DashboardPage: React.FC = () => {
                 }}
               >
                 Open Full Report
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Monthly Close Review & Confirmation Modal */}
+      {reviewPeriod && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-scrim/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-surface rounded-2xl border border-outline-variant/60 shadow-xl max-w-xl w-full p-6 space-y-5 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between pb-3 border-b border-outline-variant/40">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-primary/10 text-primary rounded-lg">
+                  <Lock className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-headline-sm text-base font-bold text-on-surface">
+                    {reviewPeriod.period_name} — Month Close Review
+                  </h3>
+                  <span className="font-caption text-xs text-on-surface-variant">
+                    Review operational and financial aggregates before locking the accounting period.
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setReviewPeriod(null);
+                  setReviewSummary(null);
+                }}
+                className="p-1 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {isReviewLoading ? (
+              <div className="py-8 text-center text-on-surface-variant text-sm flex items-center justify-center gap-2">
+                <RefreshCw className="w-4 h-4 animate-spin text-primary" />
+                Loading period review summary...
+              </div>
+            ) : reviewSummary ? (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <div className="p-3 bg-surface-container-low rounded-xl border border-outline-variant/30 text-center">
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-on-surface-variant block">Completed Visits</span>
+                    <p className="text-base font-bold text-primary mt-1">{reviewSummary.visits_completed}</p>
+                    <span className="text-[10px] text-on-surface-variant">{reviewSummary.visits_adhoc} ad-hoc</span>
+                  </div>
+                  <div className="p-3 bg-surface-container-low rounded-xl border border-outline-variant/30 text-center">
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-on-surface-variant block">Collections</span>
+                    <p className="text-base font-bold text-emerald-600 mt-1">{formatCurrency(reviewSummary.collections_submitted_amount)}</p>
+                    <span className="text-[10px] text-on-surface-variant">{formatCurrency(reviewSummary.collections_verified_amount)} verified</span>
+                  </div>
+                  <div className="p-3 bg-surface-container-low rounded-xl border border-outline-variant/30 text-center">
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-on-surface-variant block">Market Outstanding</span>
+                    <p className="text-base font-bold text-amber-600 mt-1">{formatCurrency(reviewSummary.total_outstanding)}</p>
+                    <span className="text-[10px] text-on-surface-variant">{reviewSummary.total_invoices_count} invoices</span>
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs text-on-surface space-y-1.5">
+                  <p className="font-bold flex items-center gap-1 text-amber-800 dark:text-amber-300">
+                    <AlertTriangle className="w-4 h-4 text-amber-600" />
+                    Important Financial Lock Notice:
+                  </p>
+                  <p className="text-on-surface-variant leading-relaxed">
+                    After closing <strong>{reviewPeriod.period_name}</strong>, new financial transactions (collections, invoices) cannot be backdated into this month. Any future payments collected for {reviewPeriod.period_name} invoices will be recorded in the open month.
+                  </p>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-outline-variant/40">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setReviewPeriod(null);
+                  setReviewSummary(null);
+                }}
+                disabled={isFinalizingPeriod}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={Lock}
+                onClick={handleConfirmCloseMonth}
+                isLoading={isFinalizingPeriod}
+                disabled={isReviewLoading}
+              >
+                Close &amp; Lock {reviewPeriod.period_name}
               </Button>
             </div>
           </div>

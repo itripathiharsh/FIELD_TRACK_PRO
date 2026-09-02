@@ -87,6 +87,8 @@ def test_production_accepts_an_explicitly_configured_media_signing_secret():
         database_url="postgresql+asyncpg://user:pass@localhost/db",
         jwt_secret="some-jwt-secret",
         media_signing_secret="a-real-production-secret",
+        sms_provider="msg91",
+        smtp_host="smtp.example.com",
     )
     assert settings.media_signing_secret == "a-real-production-secret"
 

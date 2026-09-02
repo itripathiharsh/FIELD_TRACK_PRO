@@ -25,6 +25,7 @@ class Customer(Base):
     
     # Stable external code (DMS Code / External MIS anchor)
     outlet_code: Mapped[Optional[str]] = mapped_column(String(50), unique=True, nullable=True)
+    gst_number: Mapped[Optional[str]] = mapped_column(String(20), nullable=True, index=True)
     created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
     
     # Zone (Territory) & Area
@@ -46,4 +47,13 @@ class Customer(Base):
     )
     financial_snapshots: Mapped[list["OutletFinancialSnapshot"]] = relationship(
         back_populates="customer", cascade="all, delete-orphan"
+    )
+    location_proposals: Mapped[list["CustomerLocationProposal"]] = relationship(
+        back_populates="customer", cascade="all, delete-orphan", lazy="selectin"
+    )
+    brands: Mapped[list["CustomerBrand"]] = relationship(
+        back_populates="customer", cascade="all, delete-orphan", lazy="selectin"
+    )
+    requirements: Mapped[list["CustomerRequirement"]] = relationship(
+        back_populates="customer", cascade="all, delete-orphan", lazy="selectin"
     )

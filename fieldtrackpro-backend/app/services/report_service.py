@@ -41,6 +41,24 @@ from app.schemas.reports import (
     VisitDetailedReportRow,
     GeoVerificationReportRow,
 )
+from app.services.brand_service import (
+    resolve_canonical_brand_name,
+    normalize_brand_name,
+    BRAND_ALIASES,
+)
+
+
+def _get_brand_filter_aliases(brand_query: str) -> list[str]:
+    """Resolve brand query to canonical name and all alias strings (e.g. 'ZBR' -> ['zbr', 'zebronics'])."""
+    canon = resolve_canonical_brand_name(brand_query)
+    canon_norm = normalize_brand_name(canon)
+    aliases = [k for k, v in BRAND_ALIASES.items() if v == canon_norm]
+    if canon_norm not in aliases:
+        aliases.append(canon_norm)
+    raw_norm = normalize_brand_name(brand_query)
+    if raw_norm and raw_norm not in aliases:
+        aliases.append(raw_norm)
+    return aliases
 
 
 class ReportService:
@@ -257,7 +275,8 @@ class ReportService:
         if location_status and location_status != "ALL":
             stmt = stmt.where(Customer.location_status == location_status)
         if brand and brand != "ALL":
-            stmt = stmt.where(func.lower(OutletFinancialSnapshot.brand) == func.lower(brand))
+            aliases = _get_brand_filter_aliases(brand)
+            stmt = stmt.where(func.lower(OutletFinancialSnapshot.brand).in_(aliases))
         if query:
             q_str = f"%{query.strip().lower()}%"
             stmt = stmt.where(
@@ -351,7 +370,8 @@ class ReportService:
         )
 
         if brand and brand != "ALL":
-            stmt = stmt.where(func.lower(OutletFinancialSnapshot.brand) == func.lower(brand))
+            aliases = _get_brand_filter_aliases(brand)
+            stmt = stmt.where(func.lower(OutletFinancialSnapshot.brand).in_(aliases))
         if zone_id:
             stmt = stmt.where(Customer.territory_id == zone_id)
         if area_id:
@@ -486,7 +506,8 @@ class ReportService:
         )
 
         if brand and brand != "ALL":
-            stmt = stmt.where(func.lower(OutletFinancialSnapshot.brand) == func.lower(brand))
+            aliases = _get_brand_filter_aliases(brand)
+            stmt = stmt.where(func.lower(OutletFinancialSnapshot.brand).in_(aliases))
         if zone_id:
             stmt = stmt.where(Customer.territory_id == zone_id)
         if area_id:
@@ -815,7 +836,8 @@ class ReportService:
         )
 
         if brand and brand != "ALL":
-            stmt = stmt.where(func.lower(OutletFinancialSnapshot.brand) == func.lower(brand))
+            aliases = _get_brand_filter_aliases(brand)
+            stmt = stmt.where(func.lower(OutletFinancialSnapshot.brand).in_(aliases))
         if zone_id:
             stmt = stmt.where(Customer.territory_id == zone_id)
         if area_id:
@@ -883,7 +905,7 @@ class ReportService:
         seen_fos_entries: set[tuple[uuid.UUID, str]] = set()
 
         for snap, c_name, dms, z_name, a_name, f_name in records:
-            b_name = snap.brand or "General"
+            b_name = resolve_canonical_brand_name(snap.brand) if snap.brand else "General"
             z_label = z_name or "Unknown Zone"
             a_label = a_name or "Unknown Area"
             f_label = f_name or "Unassigned"

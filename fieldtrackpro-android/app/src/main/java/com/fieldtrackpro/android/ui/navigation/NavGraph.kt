@@ -113,7 +113,17 @@ fun NavGraph(
                 onNavigateToVisitDetails = { vId -> navController.navigate(Screen.VisitDetails.createRoute(vId)) },
                 onNavigateToProfile = { navController.navigate(Screen.ProfileSettings.route) },
                 onNavigateToSync = { navController.navigate(Screen.OfflineQueue.route) },
-                onNavigateToNotifications = { navController.navigate(Screen.Notifications.route) }
+                onNavigateToNotifications = { navController.navigate(Screen.Notifications.route) },
+                onNavigateToAddCustomer = { navController.navigate(Screen.AddCustomer.route) }
+            )
+        }
+
+        composable(Screen.AddCustomer.route) {
+            com.fieldtrackpro.android.ui.screens.customers.AddCustomerScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onCustomerCreated = {
+                    visitsViewModel.loadVisits(refresh = true)
+                }
             )
         }
 

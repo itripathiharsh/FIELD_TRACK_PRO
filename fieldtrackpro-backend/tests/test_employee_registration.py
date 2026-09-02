@@ -7,13 +7,13 @@ from tests.conftest import admin_headers, requires_db
 pytestmark = [pytest.mark.asyncio, requires_db]
 
 async def test_employee_registration_success(client: AsyncClient):
-    uid = uuid.uuid4().hex[:8]
+    uid = uuid.uuid4().hex[:8].upper()
     response = await client.post(
         "/api/v1/employees/register",
         json={
             "user": {
-                "email": f"new.emp.{uid}@fieldtrackpro.com",
-                "mobile_number": f"9990{uid[:6].replace('a','1').replace('b','2').replace('c','3').replace('d','4').replace('e','5').replace('f','6')}",
+                "email": f"new.emp.{uid.lower()}@fieldtrackpro.com",
+                "mobile_number": f"9990{uid[:6].replace('A','1').replace('B','2').replace('C','3').replace('D','4').replace('E','5').replace('F','6')}",
                 "password": "Password123!",
                 "role": "EMPLOYEE"
             },
@@ -26,10 +26,10 @@ async def test_employee_registration_success(client: AsyncClient):
     data = response.json()
     assert data["full_name"] == "New Employee"
     assert data["employee_code"] == f"EMP-{uid}"
-    assert data["user"]["email"] == f"new.emp.{uid}@fieldtrackpro.com"
+    assert data["user"]["email"] == f"new.emp.{uid.lower()}@fieldtrackpro.com"
 
 async def test_employee_registration_duplicate_code(client: AsyncClient):
-    uid = uuid.uuid4().hex[:8]
+    uid = uuid.uuid4().hex[:8].upper()
     code = f"EMP-{uid}"
     
     # First registration
@@ -37,8 +37,8 @@ async def test_employee_registration_duplicate_code(client: AsyncClient):
         "/api/v1/employees/register",
         json={
             "user": {
-                "email": f"emp1.{uid}@fieldtrackpro.com",
-                "mobile_number": f"1110{uid[:6].replace('a','1').replace('b','2').replace('c','3').replace('d','4').replace('e','5').replace('f','6')}",
+                "email": f"emp1.{uid.lower()}@fieldtrackpro.com",
+                "mobile_number": f"1110{uid[:6].replace('A','1').replace('B','2').replace('C','3').replace('D','4').replace('E','5').replace('F','6')}",
                 "password": "Password123!",
                 "role": "EMPLOYEE"
             },
@@ -53,8 +53,8 @@ async def test_employee_registration_duplicate_code(client: AsyncClient):
         "/api/v1/employees/register",
         json={
             "user": {
-                "email": f"emp2.{uid}@fieldtrackpro.com",
-                "mobile_number": f"2220{uid[:6].replace('a','1').replace('b','2').replace('c','3').replace('d','4').replace('e','5').replace('f','6')}",
+                "email": f"emp2.{uid.lower()}@fieldtrackpro.com",
+                "mobile_number": f"2220{uid[:6].replace('A','1').replace('B','2').replace('C','3').replace('D','4').replace('E','5').replace('F','6')}",
                 "password": "Password123!",
                 "role": "EMPLOYEE"
             },

@@ -81,6 +81,7 @@ export const VISIT: Visit = {
   employee_id: EMPLOYEE.id,
   scheduled_at: '2026-08-09T10:00:00Z',
   status: 'PENDING',
+  visit_type: 'PLANNED',
   check_in_at: null,
   check_out_at: null,
   synced: false,
@@ -172,6 +173,21 @@ export function mockApi(routes: RouteMap) {
 export function baseRoutes(user: User): RouteMap {
   return {
     '/health': { status: 'UP', service: 'FieldTrack Pro API' },
+    '/api/v1/organization': {
+      organization_name: 'SGRG Services Private Limited',
+      operational_hub: 'Kanpur Central, Uttar Pradesh',
+      divisions: 'Telecom Distribution (11001–11020) & Consumer Electronics (11021–11030)',
+      contact_email: 'contact@sgrgservices.com',
+      contact_phone: '+91 98390 11015',
+      gstin: '09AAECS1234F1Z5',
+      timezone: 'Asia/Kolkata (IST, UTC+5:30)',
+      currency: 'INR (₹)',
+      total_employees: 30,
+      total_customers: 359,
+      total_territories: 8,
+      total_areas: 18,
+      master_brands: ['USHA', 'Zebronics', 'VU', 'Havells', 'Finolex', 'Anchor'],
+    },
     '/api/v1/auth/refresh': {
       access_token: 'test-access-token',
       refresh_token: 'test-refresh-token',

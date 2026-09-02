@@ -2,13 +2,19 @@ import { ENV } from '../config/env';
 import {
   AccountSummary,
   Area,
+  Brand,
+  BrandAllocationInput,
   BusinessBIDashboard,
   CollectionsOverviewResponse,
   Customer,
   CustomerMapLocation,
+  CustomerProspectCreate,
+  CustomerRequirement,
   Employee,
   EmployeeAreaAssignment,
   EmployeeActivity,
+  EmployeeWorkdayResponse,
+  TodayFieldActivityOverview,
   CollectionReportRow,
   EmployeeMasterReportRow,
   FOSEmployeeMappingRead,
@@ -24,6 +30,7 @@ import {
   ImportPreviewResponse,
   ImportTargetFieldConfig,
   Invoice,
+  LocationProposal,
   LoginResponse,
   MonthlyReportingPeriod,
   OrderRead,
@@ -48,6 +55,7 @@ import {
   VisitMedia,
   VisitSignature,
   VisitStatus,
+  VisitType,
 } from '../types';
 
 /**
@@ -68,13 +76,15 @@ export class ApiError extends Error {
   readonly code?: string;
   readonly details?: any;
   readonly fieldErrors?: Record<string, string>;
+  readonly requestId?: string;
 
-  constructor(message: string, status: number, code?: string, details?: any) {
+  constructor(message: string, status: number, code?: string, details?: any, requestId?: string) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
     this.details = details;
+    this.requestId = requestId;
 
     // Extract field-specific validation errors from FastAPI/Pydantic details array:
     // details: [{ loc: ['body', 'contact_number'], msg: '...', type: '...' }]
@@ -131,11 +141,16 @@ export class ApiClient {
    * True when an in-memory session or refresh token indicator exists.
    */
   hasStoredSession(): boolean {
-    try {
-      return Boolean(this.accessToken || (typeof localStorage !== 'undefined' && localStorage.getItem(LEGACY_REFRESH_TOKEN_KEY)));
-    } catch {
-      return Boolean(this.accessToken);
-    }
+    return Boolean(this.accessToken);
+  }
+
+  /**
+   * Attempt to restore session on page load using existing in-memory token
+   * or exchanging the HttpOnly refresh token cookie.
+   */
+  async tryRestoreSession(): Promise<boolean> {
+    if (this.accessToken) return true;
+    return this.tryRefresh();
   }
 
   private storeSession(tokens: LoginResponse): void {
@@ -164,13 +179,15 @@ export class ApiClient {
     let message = response.statusText || `Request failed (${response.status})`;
     let code: string | undefined;
     let details: any = undefined;
+    let requestId: string | undefined = response.headers?.get('x-request-id') || undefined;
     try {
       const body = await response.json();
-      // Backend error envelope: { error: { code, message, details } }
+      // Backend error envelope: { error: { code, message, details, request_id } }
       if (body?.error) {
         if (body.error.message) message = body.error.message;
         code = typeof body.error.code === 'string' ? body.error.code : undefined;
         details = body.error.details;
+        if (body.error.request_id) requestId = body.error.request_id;
       } else if (body?.detail) {
         if (typeof body.detail === 'string') {
           message = body.detail;
@@ -182,7 +199,7 @@ export class ApiClient {
     } catch {
       // Non-JSON body; keep the status text.
     }
-    return new ApiError(message, response.status, code, details);
+    return new ApiError(message, response.status, code, details, requestId);
   }
 
   /**
@@ -434,19 +451,37 @@ export class ApiClient {
   }
 
 
-  async forgotPassword(email: string): Promise<{ message: string }> {
-    return this.request<{ message: string }>('/api/v1/auth/forgot-password', {
-      method: 'POST',
-      body: JSON.stringify({ email }),
-      // Do not try to refresh token since we're not logged in
-    }, false);
+  async forgotPassword(identifier: string): Promise<{ message: string; destination?: string; delivery_channel?: 'EMAIL' | 'SMS' }> {
+    return this.request<{ message: string; destination?: string; delivery_channel?: 'EMAIL' | 'SMS' }>(
+      '/api/v1/auth/forgot-password',
+      {
+        method: 'POST',
+        body: JSON.stringify({ identifier }),
+      },
+      false,
+    );
   }
 
-  async resetPassword(email: string, otp: string, newPassword: string): Promise<{ message: string }> {
-    return this.request<{ message: string }>('/api/v1/auth/reset-password', {
-      method: 'POST',
-      body: JSON.stringify({ email, otp, new_password: newPassword }),
-    }, false);
+  async verifyOtp(identifier: string, otp: string): Promise<{ valid: boolean; message: string }> {
+    return this.request<{ valid: boolean; message: string }>(
+      '/api/v1/auth/verify-otp',
+      {
+        method: 'POST',
+        body: JSON.stringify({ identifier, otp }),
+      },
+      false,
+    );
+  }
+
+  async resetPassword(identifier: string, otp: string, newPassword: string): Promise<{ message: string }> {
+    return this.request<{ message: string }>(
+      '/api/v1/auth/reset-password',
+      {
+        method: 'POST',
+        body: JSON.stringify({ identifier, otp, new_password: newPassword }),
+      },
+      false,
+    );
   }
 
   // -- employees -------------------------------------------------------------
@@ -554,6 +589,49 @@ export class ApiClient {
 
   async getEmployeeActivity(employeeId: string): Promise<EmployeeActivity> {
     return this.request<EmployeeActivity>(`/api/v1/employees/${employeeId}/activity`);
+  }
+
+  // -- Workday & Daily Field Activity -----------------------------------------
+
+  async startWorkday(data: {
+    latitude: number;
+    longitude: number;
+    accuracy_meters?: number | null;
+    client_timestamp?: string | null;
+    notes?: string | null;
+  }): Promise<EmployeeWorkdayResponse> {
+    return this.request<EmployeeWorkdayResponse>('/api/v1/workday/start', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async endWorkday(data: {
+    latitude: number;
+    longitude: number;
+    accuracy_meters?: number | null;
+    client_timestamp?: string | null;
+    notes?: string | null;
+  }): Promise<EmployeeWorkdayResponse> {
+    return this.request<EmployeeWorkdayResponse>('/api/v1/workday/end', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getTodayWorkday(workDate?: string): Promise<EmployeeWorkdayResponse> {
+    const qs = workDate ? `?work_date=${encodeURIComponent(workDate)}` : '';
+    return this.request<EmployeeWorkdayResponse>(`/api/v1/workday/today${qs}`);
+  }
+
+  async getEmployeeWorkday(employeeId: string, workDate?: string): Promise<EmployeeWorkdayResponse> {
+    const qs = workDate ? `?work_date=${encodeURIComponent(workDate)}` : '';
+    return this.request<EmployeeWorkdayResponse>(`/api/v1/workday/employees/${employeeId}${qs}`);
+  }
+
+  async getTodayFieldOverview(workDate?: string): Promise<TodayFieldActivityOverview> {
+    const qs = workDate ? `?work_date=${encodeURIComponent(workDate)}` : '';
+    return this.request<TodayFieldActivityOverview>(`/api/v1/workday/overview/today${qs}`);
   }
 
   // -- P2-D: territory reassignment ---------------------------------------------
@@ -667,6 +745,7 @@ export class ApiClient {
     name: string;
     contact_number: string;
     contact_person?: string | null;
+    gst_number?: string | null;
     address?: string;
     location?: { latitude: number; longitude: number } | null;
     geofence_radius_m?: number;
@@ -674,8 +753,16 @@ export class ApiClient {
     area_id?: string | null;
     outlet_code?: string | null;
     location_status?: string | null;
+    brands?: string[];
   }): Promise<Customer> {
     return this.request<Customer>('/api/v1/customers', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async createCustomerProspect(data: CustomerProspectCreate): Promise<Customer> {
+    return this.request<Customer>('/api/v1/customers/prospect', {
       method: 'POST',
       body: JSON.stringify(data),
     });
@@ -687,6 +774,7 @@ export class ApiClient {
       name: string;
       contact_number: string;
       contact_person: string | null;
+      gst_number: string | null;
       address: string;
       location: { latitude: number; longitude: number } | null;
       geofence_radius_m: number;
@@ -694,10 +782,160 @@ export class ApiClient {
       area_id: string | null;
       outlet_code: string | null;
       location_status: string | null;
+      brands: string[];
     }>,
   ): Promise<Customer> {
     return this.request<Customer>(`/api/v1/customers/${id}`, {
       method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  // -- Location Proposals ---------------------------------------------------
+
+  async proposeCustomerLocation(
+    customerId: string,
+    data: {
+      proposed_latitude: number;
+      proposed_longitude: number;
+      gps_accuracy_meters?: number;
+      notes?: string;
+    },
+  ): Promise<LocationProposal> {
+    return this.request<LocationProposal>(`/api/v1/customers/${customerId}/location-proposals`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getLocationProposals(params?: {
+    status?: string;
+    customer_id?: string;
+    skip?: number;
+    limit?: number;
+  }): Promise<LocationProposal[]> {
+    const searchParams = new URLSearchParams();
+    if (params) {
+      if (params.status) searchParams.set('status', params.status);
+      if (params.customer_id) searchParams.set('customer_id', params.customer_id);
+      if (params.skip !== undefined) searchParams.set('skip', String(params.skip));
+      if (params.limit !== undefined) searchParams.set('limit', String(params.limit));
+    }
+    const query = searchParams.toString();
+    return this.request<LocationProposal[]>(`/api/v1/location-proposals${query ? `?${query}` : ''}`);
+  }
+
+  async approveLocationProposal(proposalId: string): Promise<LocationProposal> {
+    return this.request<LocationProposal>(`/api/v1/location-proposals/${proposalId}/approve`, {
+      method: 'POST',
+    });
+  }
+
+  async rejectLocationProposal(proposalId: string, rejection_reason: string): Promise<LocationProposal> {
+    return this.request<LocationProposal>(`/api/v1/location-proposals/${proposalId}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ rejection_reason }),
+    });
+  }
+
+  async getCustomerLocationProposals(customerId: string): Promise<LocationProposal[]> {
+    return this.request<LocationProposal[]>(`/api/v1/customers/${customerId}/location-proposals`);
+  }
+
+  // -- Brands ---------------------------------------------------------------
+
+  async getBrands(activeOnly?: boolean): Promise<Brand[]> {
+    const query = activeOnly !== undefined ? `?active_only=${activeOnly}` : '';
+    const res = await this.request<any[]>(`/api/v1/brands${query}`);
+    return (res || []).map((b) =>
+      typeof b === 'string'
+        ? { id: b, name: b, normalized_name: b.toLowerCase(), is_active: true }
+        : b
+    );
+  }
+
+  async getBrandNames(activeOnly?: boolean): Promise<string[]> {
+    const brands = await this.getBrands(activeOnly);
+    return brands.map((b) => b.name);
+  }
+
+  async createBrand(data: { name: string }): Promise<Brand> {
+    return this.request<Brand>('/api/v1/brands', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateBrand(id: string, data: { name?: string; is_active?: boolean }): Promise<Brand> {
+    return this.request<Brand>(`/api/v1/brands/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+
+  // -- Customer Requirements ------------------------------------------------
+
+  async getCustomerRequirements(customerId: string): Promise<CustomerRequirement[]> {
+    return this.request<CustomerRequirement[]>(`/api/v1/customers/${customerId}/requirements`);
+  }
+
+  async createCustomerRequirement(
+    customerId: string,
+    data: {
+      brand?: string;
+      requirement_type?: string;
+      product_details?: string;
+      quantity?: number;
+      expected_value?: number;
+      follow_up_date?: string;
+      notes?: string;
+    },
+  ): Promise<CustomerRequirement> {
+    return this.request<CustomerRequirement>(`/api/v1/customers/${customerId}/requirements`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getAllRequirements(params?: {
+    brand?: string;
+    status?: string;
+    follow_up_date?: string;
+    skip?: number;
+    limit?: number;
+  }): Promise<CustomerRequirement[]> {
+    const searchParams = new URLSearchParams();
+    if (params) {
+      if (params.brand) searchParams.set('brand', params.brand);
+      if (params.status) searchParams.set('status', params.status);
+      if (params.follow_up_date) searchParams.set('follow_up_date', params.follow_up_date);
+      if (params.skip !== undefined) searchParams.set('skip', String(params.skip));
+      if (params.limit !== undefined) searchParams.set('limit', String(params.limit));
+    }
+    const query = searchParams.toString();
+    return this.request<CustomerRequirement[]>(`/api/v1/requirements${query ? `?${query}` : ''}`);
+  }
+
+  // -- Requirement Forms (Visit-level) --------------------------------------
+
+  async getVisitRequirementForm(visitId: string): Promise<RequirementForm | null> {
+    return this.request<RequirementForm | null>(`/api/v1/visits/${visitId}/requirement-form`);
+  }
+
+  async submitVisitRequirementForm(
+    visitId: string,
+    data: {
+      category_id: string;
+      description: string;
+      priority: string;
+      expected_timeline: string;
+      budget_range?: string | null;
+      notes?: string | null;
+    },
+  ): Promise<RequirementForm> {
+    return this.request<RequirementForm>(`/api/v1/visits/${visitId}/requirement-form`, {
+      method: 'POST',
       body: JSON.stringify(data),
     });
   }
@@ -807,6 +1045,7 @@ export class ApiClient {
 
   async getVisitsPaginated(params?: {
     status?: VisitStatus | VisitStatus[];
+    visit_type?: VisitType;
     employee_id?: string;
     territory_id?: string;
     area_id?: string;
@@ -820,6 +1059,7 @@ export class ApiClient {
     const searchParams = new URLSearchParams();
     if (params) {
       if (params.search) searchParams.set('search', params.search);
+      if (params.visit_type) searchParams.set('visit_type', params.visit_type);
       if (params.employee_id) searchParams.set('employee_id', params.employee_id);
       if (params.territory_id) searchParams.set('territory_id', params.territory_id);
       if (params.area_id) searchParams.set('area_id', params.area_id);
@@ -863,6 +1103,19 @@ export class ApiClient {
     required_form_id?: string | null;
   }): Promise<Visit> {
     return this.request<Visit>('/api/v1/visits', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async createAdHocVisit(data: {
+    customer_id: string;
+    adhoc_reason: string;
+    adhoc_notes?: string | null;
+    required_form_id?: string | null;
+    scheduled_at?: string;
+  }): Promise<Visit> {
+    return this.request<Visit>('/api/v1/visits/ad-hoc', {
       method: 'POST',
       body: JSON.stringify(data),
     });
@@ -1144,15 +1397,20 @@ export class ApiClient {
     return this.request<MonthlyReportingPeriod[]>('/api/v1/reports/monthly-periods');
   }
 
+  async getMonthlyPeriodReview(periodId: string): Promise<import('../types').MonthlyPeriodReviewSummary> {
+    return this.request<import('../types').MonthlyPeriodReviewSummary>(`/api/v1/reports/monthly-periods/${periodId}/review`);
+  }
+
   async finalizeMonthlyPeriod(periodId: string): Promise<MonthlyReportingPeriod> {
     return this.request<MonthlyReportingPeriod>(`/api/v1/reports/monthly-periods/${periodId}/finalize`, {
       method: 'POST',
     });
   }
 
-  async reopenMonthlyPeriod(periodId: string): Promise<MonthlyReportingPeriod> {
+  async reopenMonthlyPeriod(periodId: string, reason?: string): Promise<MonthlyReportingPeriod> {
     return this.request<MonthlyReportingPeriod>(`/api/v1/reports/monthly-periods/${periodId}/reopen`, {
       method: 'POST',
+      body: JSON.stringify({ reason: reason || 'Administrative adjustment' }),
     });
   }
 
@@ -1354,10 +1612,21 @@ export class ApiClient {
     cheque_bank_name?: string | null;
     utr_reference?: string | null;
     notes?: string | null;
+    allocations?: BrandAllocationInput[] | null;
   }): Promise<Payment> {
     return this.request<Payment>('/api/v1/payments', {
       method: 'POST',
       body: JSON.stringify(data),
+    });
+  }
+
+  async updatePaymentAllocations(
+    paymentId: string,
+    allocations: BrandAllocationInput[],
+  ): Promise<Payment> {
+    return this.request<Payment>(`/api/v1/payments/${paymentId}/allocations`, {
+      method: 'PATCH',
+      body: JSON.stringify({ allocations }),
     });
   }
 
@@ -1719,6 +1988,10 @@ export class ApiClient {
 
   async getEmployeeDayDashboard(): Promise<import('../types').EmployeeDayDashboardResponse> {
     return this.request<import('../types').EmployeeDayDashboardResponse>('/api/v1/dashboard/my-day');
+  }
+
+  async getOrganizationProfile(): Promise<import('../types').OrganizationProfile> {
+    return this.request<import('../types').OrganizationProfile>('/api/v1/organization');
   }
 }
 

@@ -13,10 +13,31 @@ from app.core.deps.auth import CurrentUser, require_role
 from app.database import get_async_session
 from app.models.user import Role
 from app.schemas.account import AccountSummary
-from app.schemas.customer import CustomerCreate, CustomerMapLocation, CustomerRead, CustomerUpdate
+from app.schemas.customer import (
+    CustomerCreate,
+    CustomerMapLocation,
+    CustomerProspectCreate,
+    CustomerRead,
+    CustomerUpdate,
+)
+from app.schemas.customer_requirement import (
+    CustomerRequirementCreate,
+    CustomerRequirementRead,
+)
 from app.schemas.invoice import InvoiceRead
+from app.schemas.location_proposal import (
+    LocationProposalCreate,
+    LocationProposalRead,
+)
 from app.schemas.media import OrderRead
-from app.services import account_service, customer_service, invoice_service, media_service
+from app.services import (
+    account_service,
+    customer_requirement_service,
+    customer_service,
+    invoice_service,
+    location_proposal_service,
+    media_service,
+)
 
 router = APIRouter(prefix="/customers", tags=["customers"])
 
@@ -32,6 +53,19 @@ async def create_customer(
     session: DbSession,
 ):
     customer = await customer_service.create_customer(data, current_user.id, session)
+    return CustomerRead.from_model(customer)
+
+
+@router.post("/prospect", response_model=CustomerRead, status_code=201, dependencies=[AnyAuth])
+async def create_customer_prospect(
+    data: CustomerProspectCreate,
+    current_user: CurrentUser,
+    session: DbSession,
+):
+    """
+    Field sales: Onboard a new customer / outlet with brands, requirement, and pending location proposal.
+    """
+    customer = await customer_service.create_customer_prospect(data, current_user, session)
     return CustomerRead.from_model(customer)
 
 
@@ -135,3 +169,69 @@ async def list_customer_invoices(customer_id: uuid.UUID, current_user: CurrentUs
 async def list_customer_orders(customer_id: uuid.UUID, current_user: CurrentUser, session: DbSession):
     """Every order captured on this outlet, across its full visit history (P2-B)."""
     return await media_service.list_customer_orders(customer_id, current_user, session)
+
+
+@router.post("/{customer_id}/location-proposals", response_model=LocationProposalRead, status_code=201, dependencies=[AnyAuth])
+async def propose_customer_location(
+    customer_id: uuid.UUID,
+    data: LocationProposalCreate,
+    current_user: CurrentUser,
+    session: DbSession,
+):
+    """
+    Employee / Admin: Propose corrected GPS coordinates for an existing customer.
+    Creates a pending location proposal without altering official coordinates until approved.
+    """
+    return await location_proposal_service.create_location_proposal(
+        customer_id=customer_id,
+        data=data,
+        current_user=current_user,
+        session=session,
+    )
+
+
+@router.get("/{customer_id}/location-proposals", response_model=list[LocationProposalRead], dependencies=[AnyAuth])
+async def list_customer_location_proposals(
+    customer_id: uuid.UUID,
+    session: DbSession,
+):
+    """
+    List all location proposals and audit trail for a specific customer.
+    """
+    return await location_proposal_service.list_location_proposals(
+        session=session,
+        status="ALL",
+        customer_id=customer_id,
+    )
+
+
+@router.get("/{customer_id}/requirements", response_model=list[CustomerRequirementRead], dependencies=[AnyAuth])
+async def list_customer_requirements(
+    customer_id: uuid.UUID,
+    session: DbSession,
+):
+    """
+    List business opportunities / requirements for a customer.
+    """
+    return await customer_requirement_service.list_requirements_for_customer(
+        customer_id=customer_id,
+        session=session,
+    )
+
+
+@router.post("/{customer_id}/requirements", response_model=CustomerRequirementRead, status_code=201, dependencies=[AnyAuth])
+async def create_customer_requirement(
+    customer_id: uuid.UUID,
+    data: CustomerRequirementCreate,
+    current_user: CurrentUser,
+    session: DbSession,
+):
+    """
+    Add a business opportunity / requirement for a customer.
+    """
+    return await customer_requirement_service.create_requirement(
+        customer_id=customer_id,
+        data=data,
+        current_user=current_user,
+        session=session,
+    )

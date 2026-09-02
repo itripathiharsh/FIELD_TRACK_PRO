@@ -9,7 +9,6 @@ import { TerritoriesPage } from './pages/TerritoriesPage';
 import { CustomersPage } from './pages/CustomersPage';
 import { VisitsPage } from './pages/VisitsPage';
 import { VisitDetailsPage } from './pages/VisitDetailsPage';
-import { GeoLogsPage } from './pages/GeoLogsPage';
 import { FormsPage } from './pages/FormsPage';
 import { FormBuilderPage } from './pages/FormBuilderPage';
 import { FormPreviewPage } from './pages/FormPreviewPage';
@@ -27,6 +26,7 @@ import { TerritoryDetailPage } from './pages/TerritoryDetailPage';
 import { PaymentReviewPage } from './pages/PaymentReviewPage';
 import { ImportWizardPage } from './pages/ImportWizardPage';
 import { ImportHistoryPage } from './pages/ImportHistoryPage';
+import { EmployeeDailyLogsPage } from './pages/EmployeeDailyLogsPage';
 
 const AuthLoadingFallback: React.FC = () => (
   <div className="min-h-screen bg-background flex flex-col items-center justify-center text-on-surface">
@@ -68,12 +68,13 @@ export function AppContent() {
               <Routes>
                 <Route path="/" element={<DashboardPage />} />
                 <Route path="/employees" element={<AdminRoute><EmployeesPage /></AdminRoute>} />
+                <Route path="/daily-logs" element={<AdminRoute><EmployeeDailyLogsPage /></AdminRoute>} />
+                <Route path="/employee-daily-logs" element={<AdminRoute><EmployeeDailyLogsPage /></AdminRoute>} />
                 <Route path="/territories" element={<AdminRoute><TerritoriesPage /></AdminRoute>} />
                 <Route path="/territories/:id" element={<AdminRoute><TerritoryDetailPage /></AdminRoute>} />
                 <Route path="/customers" element={<AdminRoute><CustomersPage /></AdminRoute>} />
                 <Route path="/visits" element={<VisitsPage />} />
                 <Route path="/visits/:id" element={<VisitDetailsPage />} />
-                <Route path="/geo-logs" element={<AdminRoute><GeoLogsPage /></AdminRoute>} />
                 <Route path="/map" element={<AdminRoute><MapPage /></AdminRoute>} />
                 <Route path="/employees/:id" element={<AdminRoute><EmployeeDetailPage /></AdminRoute>} />
                 <Route path="/customers/:id" element={<AdminRoute><CustomerDetailPage /></AdminRoute>} />

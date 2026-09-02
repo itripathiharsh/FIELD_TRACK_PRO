@@ -190,12 +190,14 @@ def run_import() -> None:
             except Exception:
                 return Decimal("0.00")
 
-        # 4. In-Memory Aggregation of Excel Rows per (dms_code, brand)
-        # Some physical outlets have multiple rows in the client sheet representing sub-accounts/transactions.
-        # Aggregating within the file ensures exact totals before upserting into the database.
+        from app.services.brand_service import resolve_canonical_brand_name, normalize_brand_name
+        from app.models.brand import Brand
+        brand_cache = {b.normalized_name: b.id for b in session.execute(select(Brand)).scalars().all()}
+
         file_agg = {}
         for row in data_rows:
-            brand = str(row[0] or "General").strip()
+            raw_b = str(row[0] or "General").strip()
+            brand = resolve_canonical_brand_name(raw_b)
             dms_code = str(row[1] or "").strip()
             outlet_name = str(row[2] or "").strip()
             zone_name = str(row[3] or "General Zone").strip()
@@ -329,10 +331,12 @@ def run_import() -> None:
                 )
             ).scalar_one_or_none()
 
+            b_id = brand_cache.get(normalize_brand_name(brand))
             if not snap:
                 snap = OutletFinancialSnapshot(
                     customer_id=cust_obj.id,
                     brand=brand,
+                    brand_id=b_id,
                     snapshot_date=today_date,
                     sales=agg_data["sales"],
                     collection=agg_data["collection"],
@@ -347,6 +351,8 @@ def run_import() -> None:
                 )
                 session.add(snap)
             else:
+                snap.brand = brand
+                snap.brand_id = b_id
                 snap.sales = agg_data["sales"]
                 snap.collection = agg_data["collection"]
                 snap.market_outstanding = agg_data["market_outstanding"]

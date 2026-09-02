@@ -33,6 +33,8 @@ where the response is produced, never whether the failure is recorded.
 from __future__ import annotations
 
 import logging
+import time
+import uuid
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -40,6 +42,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
 from app.config import settings
+from app.core.context import get_current_request_id, get_current_user_id, request_id_ctx, user_id_ctx
 
 logger = logging.getLogger("fieldtrackpro")
 
@@ -49,6 +52,61 @@ logger = logging.getLogger("fieldtrackpro")
 # at all (this is a JSON API), so a default-deny CSP there is safe and pure
 # defense-in-depth, not something the app actually relies on to be secure.
 _DOC_PATHS = {"/docs", "/redoc", "/openapi.json"}
+
+
+class RequestLoggingAndContextMiddleware(BaseHTTPMiddleware):
+    """
+    Initializes request_id and user_id contextvars, measures request duration,
+    and logs a concise access summary on request completion.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        super().__init__(app)
+
+    async def dispatch(self, request: Request, call_next):
+        req_id = request.headers.get("x-request-id")
+        if not req_id or not req_id.strip():
+            req_id = uuid.uuid4().hex[:8]
+        else:
+            req_id = req_id.strip()
+
+        req_token = request_id_ctx.set(req_id)
+        user_token = user_id_ctx.set("")
+        request.state.request_id = req_id
+
+        start_time = time.perf_counter()
+        try:
+            response = await call_next(request)
+            duration_ms = round((time.perf_counter() - start_time) * 1000, 1)
+            response.headers["X-Request-ID"] = req_id
+
+            # Keep health checks concise/silent to avoid log flooding
+            if request.url.path != "/health":
+                uid = get_current_user_id() or getattr(request.state, "user_id", None) or "-"
+                if response.status_code < 400:
+                    logger.info(
+                        "event=http_request request_id=%s method=%s path=%s status=%s duration_ms=%s user_id=%s",
+                        req_id,
+                        request.method,
+                        request.url.path,
+                        response.status_code,
+                        duration_ms,
+                        uid,
+                    )
+                else:
+                    logger.warning(
+                        "event=http_request request_id=%s method=%s path=%s status=%s duration_ms=%s user_id=%s",
+                        req_id,
+                        request.method,
+                        request.url.path,
+                        response.status_code,
+                        duration_ms,
+                        uid,
+                    )
+            return response
+        finally:
+            request_id_ctx.reset(req_token)
+            user_id_ctx.reset(user_token)
 
 
 class CatchUnhandledExceptionsMiddleware(BaseHTTPMiddleware):
@@ -61,16 +119,19 @@ class CatchUnhandledExceptionsMiddleware(BaseHTTPMiddleware):
         try:
             return await call_next(request)
         except Exception as exc:  # noqa: BLE001 - deliberate boundary handler
-            # Log the real cause with a traceback. Nothing is swallowed: the
-            # operator sees exactly what failed, while the client receives a
-            # generic message that leaks no internals.
+            req_id = get_current_request_id() or getattr(request.state, "request_id", "-")
+            uid = get_current_user_id() or getattr(request.state, "user_id", None) or "-"
             logger.error(
-                "Unhandled exception on %s %s: %s",
+                "event=unhandled_exception request_id=%s method=%s path=%s user_id=%s exception=%s: %s",
+                req_id,
                 request.method,
                 request.url.path,
+                uid,
+                type(exc).__name__,
                 exc,
                 exc_info=True,
             )
+            headers = {"X-Request-ID": req_id} if req_id != "-" else {}
             return JSONResponse(
                 status_code=500,
                 content={
@@ -78,8 +139,10 @@ class CatchUnhandledExceptionsMiddleware(BaseHTTPMiddleware):
                         "code": "INTERNAL_SERVER_ERROR",
                         "message": "An internal server error occurred.",
                         "details": {},
+                        "request_id": req_id,
                     }
                 },
+                headers=headers,
             )
 
 

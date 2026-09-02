@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.schemas.customer_requirement import CustomerRequirementCreate, CustomerRequirementRead
 from app.validation import PHONE_PATTERN, PHONE_MAX_LENGTH
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -47,6 +48,7 @@ class CustomerCreate(BaseModel):
         pattern=PHONE_PATTERN,
     )
     contact_person: str | None = Field(default=None, max_length=150)
+    gst_number: str | None = Field(default=None, max_length=20)
     address: str = Field(default="")
     location: LocationIn | None = None
     auto_geocode: bool = Field(default=False)
@@ -55,6 +57,7 @@ class CustomerCreate(BaseModel):
     area_id: uuid.UUID | None = None
     outlet_code: str | None = Field(default=None, max_length=50)
     location_status: str | None = Field(default="MISSING")
+    brands: list[str] = Field(default_factory=list)
 
     @field_validator("address")
     @classmethod
@@ -74,11 +77,49 @@ class CustomerCreate(BaseModel):
             return stripped if stripped else None
         return None
 
+    @field_validator("gst_number")
+    @classmethod
+    def normalize_gst_number(cls, v: str | None) -> str | None:
+        if v is not None:
+            stripped = v.strip().upper()
+            return stripped if stripped else None
+        return None
+
     @model_validator(mode="after")
     def validate_location_presence(self) -> "CustomerCreate":
         if self.location is None and not self.auto_geocode and not self.outlet_code:
             raise ValueError("location is required unless auto_geocode is true or outlet_code is provided")
         return self
+
+
+class CustomerProspectCreate(BaseModel):
+    """Payload submitted by field employee to onboard a new customer/outlet with brands & requirement."""
+    name: str = Field(min_length=1, max_length=150)
+    contact_number: str = Field(
+        min_length=1,
+        max_length=PHONE_MAX_LENGTH,
+        pattern=PHONE_PATTERN,
+    )
+    contact_person: str | None = Field(default=None, max_length=150)
+    gst_number: str | None = Field(default=None, max_length=20)
+    address: str = Field(default="")
+    territory_id: uuid.UUID | None = None
+    area_id: uuid.UUID | None = None
+    outlet_code: str | None = Field(default=None, max_length=50)
+    brands: list[str] = Field(default_factory=list)
+    requirement: Optional["CustomerRequirementCreate"] = None
+    location: LocationIn | None = None
+    gps_accuracy_meters: float | None = None
+    notes: str | None = None
+    force: bool = Field(default=False, description="Set to true to bypass duplicate warnings if confirmed")
+
+    @field_validator("gst_number")
+    @classmethod
+    def normalize_gst(cls, v: str | None) -> str | None:
+        if v is not None:
+            stripped = v.strip().upper()
+            return stripped if stripped else None
+        return None
 
 
 class CustomerUpdate(BaseModel):
@@ -89,6 +130,7 @@ class CustomerUpdate(BaseModel):
         pattern=PHONE_PATTERN,
     )
     contact_person: str | None = Field(default=None, max_length=150)
+    gst_number: str | None = Field(default=None, max_length=20)
     address: str | None = Field(default=None)
     location: LocationIn | None = None
     auto_geocode: bool = Field(default=False)
@@ -97,6 +139,7 @@ class CustomerUpdate(BaseModel):
     area_id: uuid.UUID | None = None
     outlet_code: str | None = Field(default=None, max_length=50)
     location_status: str | None = Field(default=None)
+    brands: list[str] | None = None
 
     @field_validator("address")
     @classmethod
@@ -111,6 +154,14 @@ class CustomerUpdate(BaseModel):
     @field_validator("outlet_code")
     @classmethod
     def normalize_outlet_code(cls, v: str | None) -> str | None:
+        if v is not None:
+            stripped = v.strip().upper()
+            return stripped if stripped else None
+        return None
+
+    @field_validator("gst_number")
+    @classmethod
+    def normalize_gst(cls, v: str | None) -> str | None:
         if v is not None:
             stripped = v.strip().upper()
             return stripped if stripped else None
@@ -139,6 +190,7 @@ class CustomerRead(BaseModel):
     name: str
     contact_number: str
     contact_person: str | None = None
+    gst_number: str | None = None
     address: str
     location: LocationOut | None = None
     geofence_radius_m: int
@@ -150,6 +202,7 @@ class CustomerRead(BaseModel):
     outlet_code: str | None = None
     dms_code: str | None = None
     assigned_fos_names: list[str] = []
+    brands: list[str] = []
     created_by: uuid.UUID
     created_at: datetime
 
@@ -180,11 +233,19 @@ class CustomerRead(BaseModel):
                 if emp and getattr(emp, "full_name", None):
                     fos_names.append(emp.full_name)
 
+        brand_names = []
+        brand_objs = cust_dict.get("brands")
+        if brand_objs:
+            for b in brand_objs:
+                if getattr(b, "is_active", True) and getattr(b, "brand", None):
+                    brand_names.append(b.brand)
+
         return cls(
             id=customer.id,
             name=customer.name,
             contact_number=customer.contact_number or "",
             contact_person=customer.contact_person,
+            gst_number=getattr(customer, "gst_number", None),
             address=customer.address or "",
             location=location_out,
             geofence_radius_m=customer.geofence_radius_m or 75,
@@ -196,6 +257,10 @@ class CustomerRead(BaseModel):
             outlet_code=customer.outlet_code,
             dms_code=customer.outlet_code,
             assigned_fos_names=fos_names,
+            brands=brand_names,
             created_by=customer.created_by,
             created_at=customer.created_at,
         )
+
+
+CustomerProspectCreate.model_rebuild()

@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Sequence
 
 from sqlalchemy import select
@@ -19,15 +20,17 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.context import get_current_request_id
 from app.exceptions.custom import BaseAPIException
 from app.models.employee import Employee
-from app.models.payment import Payment, PaymentStatus
+from app.models.payment import Payment, PaymentBrandAllocation, PaymentStatus
 from app.models.payment_proof import PaymentProof
 from app.models.user import Role, User
 from app.repositories.payment_repo import PaymentProofRepository, PaymentRepository
-from app.schemas.payment import PaymentCreate, PaymentRead
+from app.schemas.payment import PaymentAllocationUpdate, PaymentCreate, PaymentRead
 from app.services.file_validation_service import FileValidationService
 from app.services.invoice_service import get_invoice
+from app.services.period_service import assert_period_open_for_date
 from app.services.storage_service import storage_service
 from app.services.visit_service import get_visit_for_user
 
@@ -64,14 +67,24 @@ def to_payment_read(payment: Payment) -> PaymentRead:
                 "uploaded_by": p.uploaded_by,
                 "uploaded_at": p.uploaded_at,
             }
-            for p in payment.proofs
+            for p in (payment.proofs or [])
+        ],
+        allocations=[
+            {
+                "id": a.id,
+                "payment_id": a.payment_id,
+                "brand": a.brand,
+                "allocated_amount": a.allocated_amount,
+                "created_at": a.created_at,
+            }
+            for a in (payment.allocations or [])
         ],
     )
 
 
 async def create_payment(data: PaymentCreate, current_user: User, session: AsyncSession) -> Payment:
     """
-    Create a collection. `visit_id` is the single source of truth for which
+    Create a collection with brand allocations. `visit_id` is the single source of truth for which
     outlet/employee this payment belongs to - the client never supplies
     customer_id/employee_id, so a collection can never be attached to the
     wrong (similarly-named) outlet by mistake.
@@ -79,14 +92,12 @@ async def create_payment(data: PaymentCreate, current_user: User, session: Async
     P0-2: a double-tap or a retried request after a dropped response must not
     create two collection rows. When the caller supplies `idempotency_key`,
     a prior payment for the same (visit, key) is returned as-is instead of
-    inserting again. The pre-check alone is only correct for sequential
-    retries; the DB's own `uq_payments_visit_idempotency` constraint is what
-    actually makes this safe under concurrent duplicate requests - a race
-    that slips past the pre-check hits that constraint, and the resulting
-    IntegrityError is caught below and resolved to the winning row rather
-    than surfacing as a raw 500.
+    inserting again.
     """
     visit = await get_visit_for_user(data.visit_id, current_user, session)
+
+    # Enforce financial lock: reject payments into a finalized period
+    await assert_period_open_for_date(data.payment_date, session)
 
     if data.invoice_id is not None:
         invoice = await get_invoice(data.invoice_id, session)
@@ -120,8 +131,21 @@ async def create_payment(data: PaymentCreate, current_user: User, session: Async
         created_by=current_user.id,
         idempotency_key=data.idempotency_key,
     )
-    await repo.add(payment)
+
+    if data.allocations:
+        from app.services import brand_service
+        for alloc in data.allocations:
+            brand_obj = await brand_service.validate_brand_for_transaction(session, alloc.brand.strip())
+            payment.allocations.append(
+                PaymentBrandAllocation(
+                    brand=brand_obj.name,
+                    brand_id=brand_obj.id,
+                    allocated_amount=alloc.amount,
+                )
+            )
+
     try:
+        await repo.add(payment)
         await repo.commit()
     except IntegrityError:
         await session.rollback()
@@ -130,10 +154,108 @@ async def create_payment(data: PaymentCreate, current_user: User, session: Async
             if existing is not None:
                 return existing
         raise
-    # Re-fetch through the eager-loaded query rather than returning the
-    # just-added ORM object directly: `proofs` would otherwise be an unloaded
-    # relationship, and accessing it later (to build the response) risks a
-    # MissingGreenlet lazy-load under the async driver.
+
+    req_id = get_current_request_id()
+    method_str = payment.payment_method.value if hasattr(payment.payment_method, "value") else str(payment.payment_method)
+    alloc_summary = ",".join([f"{a.brand}:{a.amount}" for a in (data.allocations or [])])
+    logger.info(
+        "event=payment_submit result=success request_id=%s payment_id=%s customer_id=%s employee_id=%s amount=%s payment_method=%s allocations=%s",
+        req_id,
+        payment.id,
+        payment.customer_id,
+        payment.employee_id,
+        payment.amount,
+        method_str,
+        alloc_summary or "none",
+    )
+
+    return await repo.get_by_id(payment.id)
+
+
+async def update_payment_allocations(
+    payment_id: uuid.UUID,
+    data: PaymentAllocationUpdate,
+    current_user: User,
+    session: AsyncSession,
+) -> Payment:
+    """
+    Admin pre-verification allocation adjustment.
+    Allows Admins to correct the brand breakdown (e.g. from bank statement) before final verification.
+    """
+    req_id = get_current_request_id()
+    if current_user.role != Role.ADMIN:
+        logger.warning("event=payment_reallocate result=rejected reason=ADMIN_REQUIRED request_id=%s user_id=%s", req_id, current_user.id)
+        raise BaseAPIException(
+            status_code=403,
+            detail="Only administrators can adjust payment brand allocations",
+            error_code="ADMIN_REQUIRED",
+        )
+
+    repo = PaymentRepository(session)
+    payment = await repo.get_by_id(payment_id)
+    if payment is None:
+        logger.warning("event=payment_reallocate result=rejected reason=PAYMENT_NOT_FOUND request_id=%s payment_id=%s", req_id, payment_id)
+        raise BaseAPIException(status_code=404, detail="Payment not found", error_code="PAYMENT_NOT_FOUND")
+
+    if payment.status != PaymentStatus.PENDING_VERIFICATION:
+        logger.warning(
+            "event=payment_reallocate result=rejected reason=PAYMENT_NOT_PENDING request_id=%s payment_id=%s status=%s",
+            req_id,
+            payment.id,
+            payment.status.value,
+        )
+        raise BaseAPIException(
+            status_code=409,
+            detail=f"Cannot adjust allocations for a payment that is already {payment.status.value}",
+            error_code="PAYMENT_NOT_PENDING",
+        )
+
+    total_allocated = sum((a.amount for a in data.allocations), Decimal("0"))
+    if abs(total_allocated - payment.amount) > Decimal("0.001"):
+        logger.warning(
+            "event=payment_reallocate result=rejected reason=ALLOCATION_TOTAL_MISMATCH request_id=%s payment_id=%s total_allocated=%s payment_amount=%s",
+            req_id,
+            payment.id,
+            total_allocated,
+            payment.amount,
+        )
+        raise BaseAPIException(
+            status_code=422,
+            detail=f"Sum of brand allocations (₹{total_allocated:,.2f}) must equal payment total (₹{payment.amount:,.2f})",
+            error_code="ALLOCATION_TOTAL_MISMATCH",
+        )
+
+    # Log previous allocations for auditability
+    old_breakdown = ", ".join([f"{a.brand}: ₹{a.allocated_amount}" for a in (payment.allocations or [])])
+    new_breakdown = ", ".join([f"{a.brand}: ₹{a.amount}" for a in data.allocations])
+    audit_note = f"[Allocation adjusted by Admin {current_user.id} at {datetime.now(timezone.utc).isoformat()}: (Old: {old_breakdown}) -> (New: {new_breakdown})]"
+    payment.notes = f"{payment.notes}\n{audit_note}" if payment.notes else audit_note
+
+    # Clear existing allocations and flush deletes before inserting new ones
+    payment.allocations.clear()
+    await session.flush()
+
+    from app.services import brand_service
+    for alloc in data.allocations:
+        brand_obj = await brand_service.validate_brand_for_transaction(session, alloc.brand.strip())
+        payment.allocations.append(
+            PaymentBrandAllocation(
+                payment_id=payment.id,
+                brand=brand_obj.name,
+                brand_id=brand_obj.id,
+                allocated_amount=alloc.amount,
+            )
+        )
+
+    session.add(payment)
+    await session.commit()
+    logger.info(
+        "event=payment_reallocate result=success request_id=%s payment_id=%s updated_by=%s allocations=%s",
+        req_id,
+        payment.id,
+        current_user.id,
+        new_breakdown,
+    )
     return await repo.get_by_id(payment.id)
 
 
@@ -214,11 +336,19 @@ async def to_payment_read_for_queue(payment: Payment, session: AsyncSession) -> 
 
 
 async def verify_payment(payment_id: uuid.UUID, current_user: User, session: AsyncSession) -> Payment:
+    req_id = get_current_request_id()
     repo = PaymentRepository(session)
     payment = await repo.get_by_id(payment_id)
     if payment is None:
+        logger.warning("event=payment_verify result=rejected reason=PAYMENT_NOT_FOUND request_id=%s payment_id=%s", req_id, payment_id)
         raise BaseAPIException(status_code=404, detail="Payment not found", error_code="PAYMENT_NOT_FOUND")
     if payment.status != PaymentStatus.PENDING_VERIFICATION:
+        logger.warning(
+            "event=payment_verify result=rejected reason=PAYMENT_ALREADY_REVIEWED request_id=%s payment_id=%s status=%s",
+            req_id,
+            payment.id,
+            payment.status.value,
+        )
         raise BaseAPIException(
             status_code=409,
             detail=f"Payment is already {payment.status.value}, cannot verify again",
@@ -229,16 +359,23 @@ async def verify_payment(payment_id: uuid.UUID, current_user: User, session: Asy
     payment.reviewed_at = datetime.now(tz=timezone.utc)
     session.add(payment)
     await session.commit()
-    # Re-fetch with `proofs` eager-loaded rather than session.refresh(), which
-    # would leave the relationship expired and risk a lazy-load MissingGreenlet
-    # when the route handler serializes it into PaymentRead.
+    logger.info(
+        "event=payment_verify result=approved request_id=%s payment_id=%s customer_id=%s amount=%s verified_by=%s",
+        req_id,
+        payment.id,
+        payment.customer_id,
+        payment.amount,
+        current_user.id,
+    )
     return await repo.get_by_id(payment.id)
 
 
 async def reject_payment(
     payment_id: uuid.UUID, rejection_reason: str | None, current_user: User, session: AsyncSession
 ) -> Payment:
+    req_id = get_current_request_id()
     if not rejection_reason or not rejection_reason.strip():
+        logger.warning("event=payment_reject result=rejected reason=REJECTION_REASON_REQUIRED request_id=%s payment_id=%s", req_id, payment_id)
         raise BaseAPIException(
             status_code=422,
             detail="A rejection reason is required",
@@ -247,78 +384,95 @@ async def reject_payment(
     repo = PaymentRepository(session)
     payment = await repo.get_by_id(payment_id)
     if payment is None:
+        logger.warning("event=payment_reject result=rejected reason=PAYMENT_NOT_FOUND request_id=%s payment_id=%s", req_id, payment_id)
         raise BaseAPIException(status_code=404, detail="Payment not found", error_code="PAYMENT_NOT_FOUND")
     if payment.status != PaymentStatus.PENDING_VERIFICATION:
+        logger.warning(
+            "event=payment_reject result=rejected reason=PAYMENT_ALREADY_REVIEWED request_id=%s payment_id=%s status=%s",
+            req_id,
+            payment.id,
+            payment.status.value,
+        )
         raise BaseAPIException(
             status_code=409,
             detail=f"Payment is already {payment.status.value}, cannot reject again",
             error_code="PAYMENT_ALREADY_REVIEWED",
         )
     payment.status = PaymentStatus.REJECTED
-    payment.rejection_reason = rejection_reason
+    payment.rejection_reason = rejection_reason.strip()
     payment.reviewed_by = current_user.id
     payment.reviewed_at = datetime.now(tz=timezone.utc)
     session.add(payment)
     await session.commit()
+    logger.info(
+        "event=payment_verify result=rejected request_id=%s payment_id=%s customer_id=%s amount=%s rejected_by=%s reason=%s",
+        req_id,
+        payment.id,
+        payment.customer_id,
+        payment.amount,
+        current_user.id,
+        rejection_reason.strip(),
+    )
     return await repo.get_by_id(payment.id)
 
 
 async def upload_payment_proof(
     payment_id: uuid.UUID,
-    original_filename: str,
     file_bytes: bytes,
+    original_filename: str,
+    mime_type: str,
     current_user: User,
     session: AsyncSession,
 ) -> PaymentProof:
-    """Mirrors media_service.upload_visit_media exactly, scoped to a Payment instead of a Visit."""
+    """Attach a payment proof photo/screenshot to a collection."""
+    detected_mime, _, sanitized_name, checksum = FileValidationService.validate_image(file_bytes, original_filename)
+
     payment = await get_payment_for_user(payment_id, current_user, session)
-
-    detected_mime, _media_type, sanitized_name, checksum = FileValidationService.validate_and_inspect(
-        file_bytes=file_bytes, original_filename=original_filename,
-    )
-
-    repo = PaymentProofRepository(session)
-    duplicate = await repo.find_by_checksum_for_payment(payment.id, checksum)
-    if duplicate is not None:
+    if payment.status != PaymentStatus.PENDING_VERIFICATION:
         raise BaseAPIException(
             status_code=409,
-            detail="This exact file is already attached to this payment",
-            error_code="PROOF_DUPLICATE_CONTENT",
+            detail=f"Cannot attach proof: payment is already {payment.status.value}",
+            error_code="PAYMENT_CLOSED",
         )
+
+    proof_repo = PaymentProofRepository(session)
+    existing = await proof_repo.find_by_checksum_for_payment(payment.id, checksum)
+    if existing is not None:
+        return existing
 
     proof_id = uuid.uuid4()
     storage_key = f"payments/{payment.id}/{proof_id}_{sanitized_name}"
+    await storage_service.upload(
+        file_bytes=file_bytes,
+        storage_key=storage_key,
+        content_type=detected_mime,
+    )
 
-    await storage_service.upload(file_bytes=file_bytes, storage_key=storage_key, content_type=detected_mime)
-
-    try:
-        proof = PaymentProof(
-            id=proof_id,
-            payment_id=payment.id,
-            storage_key=storage_key,
-            file_size_bytes=len(file_bytes),
-            checksum_sha256=checksum,
-            original_filename=sanitized_name,
-            uploaded_by=current_user.id,
-        )
-        await repo.add(proof)
-        await repo.commit()
-        return proof
-    except Exception:
-        await session.rollback()
-        try:
-            await storage_service.delete(storage_key)
-        except Exception:
-            logger.warning("Orphaned storage object after failed proof upload: %s", storage_key, exc_info=True)
-        raise
+    proof = PaymentProof(
+        id=proof_id,
+        payment_id=payment.id,
+        storage_key=storage_key,
+        file_size_bytes=len(file_bytes),
+        checksum_sha256=checksum,
+        original_filename=sanitized_name,
+        uploaded_by=current_user.id,
+    )
+    await proof_repo.add(proof)
+    await proof_repo.commit()
+    return proof
 
 
 async def get_proof_download_url(
-    proof_id: uuid.UUID, current_user: User, session: AsyncSession, expiry_minutes: int = 15
+    proof_id: uuid.UUID,
+    current_user: User,
+    session: AsyncSession,
+    expiry_minutes: int = 15,
 ) -> str:
-    repo = PaymentProofRepository(session)
-    proof = await repo.get_by_id(proof_id)
+    """Pre-signed URL for viewing/downloading a payment proof."""
+    proof_repo = PaymentProofRepository(session)
+    proof = await proof_repo.get_by_id(proof_id)
     if proof is None:
         raise BaseAPIException(status_code=404, detail="Proof not found", error_code="PROOF_NOT_FOUND")
+
     await get_payment_for_user(proof.payment_id, current_user, session)
-    return await storage_service.generate_presigned_url(proof.storage_key, expiry_minutes)
+    return await storage_service.generate_presigned_url(proof.storage_key, expiry_minutes=expiry_minutes)
