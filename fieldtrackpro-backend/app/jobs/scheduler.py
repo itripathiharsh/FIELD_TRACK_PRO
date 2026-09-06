@@ -25,15 +25,21 @@ _scheduler: AsyncIOScheduler | None = None
 
 
 async def _run_missed_visit_sweep() -> None:
-    """Open a dedicated session and sweep overdue visits."""
+    """Open a dedicated session and sweep overdue visits and missed planned visits."""
     async with AsyncSessionLocal() as session:
         try:
             updated = await mark_overdue_visits_as_missed(session)
             if updated:
                 logger.info("[scheduler] marked %s visit(s) as MISSED", updated)
+
+            from app.services.visit_analytics_service import sweep_missed_planned_visits
+            planned_missed = await sweep_missed_planned_visits(session)
+            if planned_missed:
+                logger.info("[scheduler] processed %s missed planned visit(s)", planned_missed)
         except Exception:
             await session.rollback()
             logger.exception("[scheduler] missed-visit sweep failed")
+
 
 
 async def _run_security_cleanup_sweep() -> None:

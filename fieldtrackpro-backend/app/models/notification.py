@@ -17,6 +17,10 @@ class NotificationType(str, enum.Enum):
     COMPLETED = "COMPLETED"
     GEO_FAILURE_ALERT = "GEO_FAILURE_ALERT"
     GEO_ALERT = "GEO_ALERT"
+    # Phase 2E: Planning Notifications
+    PLANNED_VISIT_MISSED = "PLANNED_VISIT_MISSED"
+    EMPLOYEE_SCHEDULE_CHANGED = "EMPLOYEE_SCHEDULE_CHANGED"
+    PLANNED_VISIT_CANCELLED = "PLANNED_VISIT_CANCELLED"
 
 
 class Notification(Base):
@@ -25,10 +29,16 @@ class Notification(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     visit_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("visits.id", ondelete="SET NULL"), nullable=True)
+    planned_visit_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("planned_visits.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     type: Mapped[NotificationType] = mapped_column(Enum(NotificationType, name="notification_type_enum"))
+    title: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     message: Mapped[str] = mapped_column(Text)
     is_read: Mapped[bool] = mapped_column(Boolean, default=False)
     sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     user: Mapped["User"] = relationship(back_populates="notifications")
     visit: Mapped[Optional["Visit"]] = relationship()
+    planned_visit: Mapped[Optional["PlannedVisit"]] = relationship()
+

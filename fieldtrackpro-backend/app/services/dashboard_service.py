@@ -81,6 +81,17 @@ async def get_dashboard_summary(
             visit_q = visit_q.where(Customer.territory_id == zone_id)
         if area_id:
             visit_q = visit_q.where(Customer.area_id == area_id)
+    if month and month != "ALL":
+        try:
+            m_y, m_m = [int(x) for x in month.split("-")]
+            visit_q = visit_q.where(
+                and_(
+                    func.extract("year", Visit.scheduled_at) == m_y,
+                    func.extract("month", Visit.scheduled_at) == m_m,
+                )
+            )
+        except Exception:
+            pass
 
     v_res = await session.execute(visit_q)
     v_row = v_res.one()
@@ -96,13 +107,26 @@ async def get_dashboard_summary(
     exc_row = exc_res.one()
 
     # 5. Fetch Collections count & Realized Live Payments sum
-    col_q = select(
-        func.count(Payment.id).label("total_count"),
-        func.coalesce(
-            func.sum(case((Payment.status == "VERIFIED", Payment.amount), else_=Decimal("0.00"))),
-            Decimal("0.00"),
-        ).label("verified_sum"),
-    )
+    if brand and brand != "ALL":
+        from app.services.brand_service import resolve_canonical_brand_name
+        canonical_b = resolve_canonical_brand_name(brand)
+        col_q = select(
+            func.count(func.distinct(Payment.id)).label("total_count"),
+            func.coalesce(
+                func.sum(case((Payment.status == "VERIFIED", PaymentBrandAllocation.allocated_amount), else_=Decimal("0.00"))),
+                Decimal("0.00"),
+            ).label("verified_sum"),
+        ).join(PaymentBrandAllocation, PaymentBrandAllocation.payment_id == Payment.id).where(
+            func.lower(PaymentBrandAllocation.brand) == canonical_b.lower()
+        )
+    else:
+        col_q = select(
+            func.count(Payment.id).label("total_count"),
+            func.coalesce(
+                func.sum(case((Payment.status == "VERIFIED", Payment.amount), else_=Decimal("0.00"))),
+                Decimal("0.00"),
+            ).label("verified_sum"),
+        )
     if employee_id:
         col_q = col_q.where(Payment.employee_id == employee_id)
     if zone_id or area_id:
@@ -111,6 +135,17 @@ async def get_dashboard_summary(
             col_q = col_q.where(Customer.territory_id == zone_id)
         if area_id:
             col_q = col_q.where(Customer.area_id == area_id)
+    if month and month != "ALL":
+        try:
+            m_y, m_m = [int(x) for x in month.split("-")]
+            col_q = col_q.where(
+                and_(
+                    func.extract("year", Payment.payment_date) == m_y,
+                    func.extract("month", Payment.payment_date) == m_m,
+                )
+            )
+        except Exception:
+            pass
 
     col_res = (await session.execute(col_q)).one()
     col_count = col_res.total_count or 0
@@ -137,8 +172,9 @@ async def get_dashboard_summary(
         cust_q = cust_q.where(Customer.area_id == area_id)
 
     act_outlets_count = (await session.execute(cust_q)).scalar() or 0
-    final_outlets = max(bi_data.total_outlets, act_outlets_count)
-    final_collection = max(bi_data.total_collection, live_verified_col) if bi_data.total_collection == Decimal("0.00") else (bi_data.total_collection + live_verified_col)
+    final_outlets = bi_data.total_outlets if (month and month != "ALL") else max(bi_data.total_outlets, act_outlets_count)
+    # Authoritative single collection sum: prevents double counting of bi_data + live_verified_col
+    final_collection = bi_data.total_collection if (month and month != "ALL") else live_verified_col
 
     # 6. Fetch Orders count
     order_q = select(func.count(VisitMedia.id)).where(VisitMedia.media_type == MediaType.ORDER)
@@ -147,6 +183,17 @@ async def get_dashboard_summary(
         emp_uid = (await session.execute(emp_user_stmt)).scalar_one_or_none()
         if emp_uid:
             order_q = order_q.where(VisitMedia.uploaded_by == emp_uid)
+    if month and month != "ALL":
+        try:
+            m_y, m_m = [int(x) for x in month.split("-")]
+            order_q = order_q.where(
+                and_(
+                    func.extract("year", VisitMedia.created_at) == m_y,
+                    func.extract("month", VisitMedia.created_at) == m_m,
+                )
+            )
+        except Exception:
+            pass
     order_count = (await session.execute(order_q)).scalar_one() or 0
 
     # 7. Recent Exceptions for preview

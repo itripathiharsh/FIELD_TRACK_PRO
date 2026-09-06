@@ -41,6 +41,7 @@ class AccountSummary(BaseModel):
     total_invoiced: Decimal
     total_paid: Decimal
     total_outstanding: Decimal
+    advance_amount: Decimal = Decimal("0.00")
     overdue_amount: Decimal
     # Days outstanding of the single oldest unpaid/partially-paid invoice -
     # the headline "how old is the oldest thing they owe" number.

@@ -9,6 +9,8 @@ import { TerritoriesPage } from './pages/TerritoriesPage';
 import { CustomersPage } from './pages/CustomersPage';
 import { VisitsPage } from './pages/VisitsPage';
 import { VisitDetailsPage } from './pages/VisitDetailsPage';
+import { MonthlyVisitPlanningPage } from './pages/MonthlyVisitPlanningPage';
+import { AdminVisitPlanningPage } from './pages/AdminVisitPlanningPage';
 import { FormsPage } from './pages/FormsPage';
 import { FormBuilderPage } from './pages/FormBuilderPage';
 import { FormPreviewPage } from './pages/FormPreviewPage';
@@ -24,8 +26,6 @@ import { CustomerDetailPage } from './pages/CustomerDetailPage';
 import { UserDetailPage } from './pages/UserDetailPage';
 import { TerritoryDetailPage } from './pages/TerritoryDetailPage';
 import { PaymentReviewPage } from './pages/PaymentReviewPage';
-import { ImportWizardPage } from './pages/ImportWizardPage';
-import { ImportHistoryPage } from './pages/ImportHistoryPage';
 import { EmployeeDailyLogsPage } from './pages/EmployeeDailyLogsPage';
 
 const AuthLoadingFallback: React.FC = () => (
@@ -73,6 +73,8 @@ export function AppContent() {
                 <Route path="/territories" element={<AdminRoute><TerritoriesPage /></AdminRoute>} />
                 <Route path="/territories/:id" element={<AdminRoute><TerritoryDetailPage /></AdminRoute>} />
                 <Route path="/customers" element={<AdminRoute><CustomersPage /></AdminRoute>} />
+                <Route path="/visit-planning" element={<MonthlyVisitPlanningPage />} />
+                <Route path="/admin/visit-planning" element={<AdminRoute><AdminVisitPlanningPage /></AdminRoute>} />
                 <Route path="/visits" element={<VisitsPage />} />
                 <Route path="/visits/:id" element={<VisitDetailsPage />} />
                 <Route path="/map" element={<AdminRoute><MapPage /></AdminRoute>} />
@@ -92,8 +94,6 @@ export function AppContent() {
                 <Route path="/reports" element={<AdminRoute><ReportsPage /></AdminRoute>} />
                 <Route path="/collections" element={<Navigate to="/reports?tab=collections_workbench" replace />} />
                 <Route path="/payments" element={<AdminRoute><PaymentReviewPage /></AdminRoute>} />
-                <Route path="/imports" element={<AdminRoute><ImportHistoryPage /></AdminRoute>} />
-                <Route path="/imports/new" element={<AdminRoute><ImportWizardPage /></AdminRoute>} />
                 <Route path="/settings" element={<AdminRoute><SettingsPage /></AdminRoute>} />
                 <Route path="/profile" element={<ProfilePage />} />
                 <Route path="*" element={<Navigate to="/" replace />} />

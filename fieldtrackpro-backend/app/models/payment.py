@@ -66,7 +66,9 @@ class Payment(Base):
         ForeignKey("visits.id", ondelete="RESTRICT"), nullable=True, index=True
     )
     customer_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("customers.id", ondelete="RESTRICT"), index=True)
-    employee_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("employees.id", ondelete="RESTRICT"), index=True)
+    employee_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("employees.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
     invoice_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("invoices.id", ondelete="SET NULL"), nullable=True, index=True
     )
@@ -129,6 +131,9 @@ class Payment(Base):
     )
     allocations: Mapped[list["PaymentBrandAllocation"]] = relationship(
         "PaymentBrandAllocation", back_populates="payment", cascade="all, delete-orphan"
+    )
+    invoice_allocations: Mapped[list["PaymentInvoiceAllocation"]] = relationship(
+        "PaymentInvoiceAllocation", back_populates="payment", cascade="all, delete-orphan"
     )
 
     __table_args__ = (

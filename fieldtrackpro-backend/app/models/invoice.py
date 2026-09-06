@@ -72,6 +72,9 @@ class Invoice(Base):
     customer: Mapped["Customer"] = relationship(back_populates="invoices")
     brand_rel: Mapped[Optional["Brand"]] = relationship()
     payments: Mapped[list["Payment"]] = relationship(back_populates="invoice")
+    payment_allocations: Mapped[list["PaymentInvoiceAllocation"]] = relationship(
+        "PaymentInvoiceAllocation", back_populates="invoice", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         # The same invoice cannot be imported/entered twice for one outlet.

@@ -1,7 +1,9 @@
-﻿import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Menu, ShieldCheck, Wifi, WifiOff } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { apiClient } from '../../api/client';
+import { NotificationBell } from './NotificationBell';
+
 
 interface HeaderProps {
   onMobileMenuToggle: () => void;
@@ -57,14 +59,9 @@ export const Header: React.FC<HeaderProps> = ({ onMobileMenuToggle }) => {
           )}
         </div>
 
-        {/*
-          FT-071: a notifications bell used to sit here, permanently displaying
-          an "unread" dot. It had no click handler, and the notifications API
-          (GET /notifications/me) does not exist in this build - the dot could
-          never correspond to anything. Showing a persistent unread indicator
-          for a feature that cannot be opened is misleading, so the control has
-          been removed. The capability is tracked as FT-068.
-        */}
+        {/* Planning Warnings & Notifications Bell (Phase 2E) */}
+        <NotificationBell />
+
 
         {/* User Role Badge */}
         <div className="hidden lg:flex items-center gap-space-2 pl-space-2 border-l border-surface-container-highest">

@@ -163,6 +163,9 @@ export interface CustomerMapLocation {
   id: string;
   name: string;
   outlet_code: string | null;
+  address?: string | null;
+  contact_person?: string | null;
+  contact_number?: string | null;
   latitude: number;
   longitude: number;
   geofence_radius_m: number;
@@ -291,6 +294,22 @@ export type AgingStatus = 'NORMAL' | 'WARNING' | 'OVERDUE' | 'PAID';
 export type MisBucket = '0-15' | '16-30' | '31-60' | '61-90' | '90+';
 export type PaymentMethod = 'CASH' | 'CHEQUE' | 'ONLINE';
 export type PaymentStatus = 'PENDING_VERIFICATION' | 'VERIFIED' | 'REJECTED';
+
+export interface TallyIntegrationStatus {
+  is_connected: boolean;
+  agent_status: 'ONLINE' | 'OFFLINE' | 'NOT_CONFIGURED';
+  agent_id?: string | null;
+  agent_name?: string | null;
+  agent_version?: string | null;
+  tally_company_name?: string | null;
+  tally_company_guid?: string | null;
+  last_heartbeat_at?: string | null;
+  last_sync_at?: string | null;
+  total_invoices_synced: number;
+  total_payments_synced: number;
+  total_customers_synced: number;
+  message?: string | null;
+}
 
 /** Response of `GET /api/v1/customers/{id}/invoices` and `POST /api/v1/invoices`. */
 export interface Invoice {
@@ -1277,3 +1296,140 @@ export interface RequirementForm {
   notes?: string | null;
   submitted_at: string;
 }
+
+// -- Monthly Visit Planning Types (Phase 2) --------------------------------
+
+export type Priority = 'LOW' | 'MEDIUM' | 'HIGH';
+export type MonthlyPlanStatus = 'ACTIVE' | 'LOCKED';
+export type PlannedVisitStatus = 'PLANNED' | 'CANCELLED' | 'COMPLETED' | 'MISSED';
+
+export interface PlannedVisit {
+  id: string;
+  monthly_plan_id: string;
+  employee_id: string;
+  customer_id: string;
+  planned_date: string; // YYYY-MM-DD
+  visit_type: VisitType;
+  priority: Priority;
+  notes?: string | null;
+  status: PlannedVisitStatus;
+  created_at: string;
+  updated_at: string;
+  customer_name?: string | null;
+  customer_outlet_code?: string | null;
+  customer_address?: string | null;
+  employee_name?: string | null;
+  employee_code?: string | null;
+  area_name?: string | null;
+  territory_name?: string | null;
+}
+
+export interface MonthlyVisitPlan {
+  id: string;
+  employee_id: string;
+  year: number;
+  month: number;
+  status: MonthlyPlanStatus;
+  notes?: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  employee_name?: string | null;
+  employee_code?: string | null;
+  planned_visits: PlannedVisit[];
+  total_planned_visits: number;
+  active_days_count: number;
+}
+
+export interface MonthlyPlanSummary {
+  id: string;
+  employee_id: string;
+  employee_name: string;
+  employee_code?: string | null;
+  year: number;
+  month: number;
+  status: MonthlyPlanStatus;
+  total_planned_visits: number;
+  active_days_count: number;
+}
+
+export interface TeamMonthlyPlan {
+  year: number;
+  month: number;
+  total_planned_visits: number;
+  active_days_count: number;
+  active_employees_count: number;
+  planned_visits: PlannedVisit[];
+}
+
+// -- Planning Analytics Types (Phase 2D) -----------------------------------
+
+export interface EmployeeMonthlyAnalytics {
+  employee_id: string;
+  employee_name: string;
+  employee_code?: string | null;
+  year: number;
+  month: number;
+  total_planned: number;
+  completed: number;
+  missed: number;
+  cancelled: number;
+  extra_unplanned: number;
+  completion_rate: number | null;
+  active_planned_days: number;
+  active_execution_days: number;
+  avg_planned_per_active_day: number | null;
+  avg_completed_per_execution_day: number | null;
+  behind_schedule: boolean;
+}
+
+export interface DailyAnalytics {
+  date: string;
+  employee_id: string;
+  employee_name: string;
+  planned: number;
+  completed: number;
+  missed: number;
+  extra_unplanned: number;
+}
+
+export interface TeamMonthlyAnalytics {
+  year: number;
+  month: number;
+  employees: EmployeeMonthlyAnalytics[];
+  team_total_planned: number;
+  team_completed: number;
+  team_missed: number;
+  team_cancelled: number;
+  team_extra: number;
+  team_completion_rate: number | null;
+}
+
+// -- Planning Warnings & Notifications (Phase 2E) ----------------------------
+
+export type NotificationType =
+  | 'NEW_VISIT'
+  | 'RESCHEDULED'
+  | 'CANCELLED'
+  | 'REMINDER'
+  | 'OVERDUE'
+  | 'COMPLETED'
+  | 'GEO_FAILURE_ALERT'
+  | 'GEO_ALERT'
+  | 'PLANNED_VISIT_MISSED'
+  | 'EMPLOYEE_SCHEDULE_CHANGED'
+  | 'PLANNED_VISIT_CANCELLED';
+
+export interface NotificationItem {
+  id: string;
+  user_id: string;
+  visit_id?: string | null;
+  planned_visit_id?: string | null;
+  type: NotificationType;
+  title?: string | null;
+  message: string;
+  is_read: boolean;
+  sent_at: string;
+}
+
+

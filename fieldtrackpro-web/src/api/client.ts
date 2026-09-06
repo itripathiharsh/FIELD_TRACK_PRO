@@ -33,6 +33,13 @@ import {
   LocationProposal,
   LoginResponse,
   MonthlyReportingPeriod,
+  MonthlyVisitPlan,
+  MonthlyPlanSummary,
+  NotificationItem,
+  TeamMonthlyPlan,
+  EmployeeMonthlyAnalytics,
+  DailyAnalytics,
+  TeamMonthlyAnalytics,
   OrderRead,
   OutletMatchStrategy,
   OutletReportRow,
@@ -42,9 +49,12 @@ import {
   PaymentMethod,
   PaymentProof,
   PaymentStatus,
+  PlannedVisit,
+  Priority,
   QuestionOption,
   QuestionType,
   SignatureDownloadResponse,
+  TallyIntegrationStatus,
   Territory,
   TerritoryAssignmentCreate,
   TerritoryAssignmentHistory,
@@ -491,8 +501,13 @@ export class ApiClient {
    * GET /api/v1/users, which does not exist (405), so every employee list and
    * assignment dropdown was permanently empty.
    */
-  async getEmployees(): Promise<Employee[]> {
-    return this.request<Employee[]>('/api/v1/employees');
+  async getEmployees(params?: { limit?: number; search?: string; is_active?: boolean }): Promise<Employee[]> {
+    const searchParams = new URLSearchParams();
+    if (params?.limit !== undefined) searchParams.set('limit', String(params.limit));
+    if (params?.search) searchParams.set('search', params.search);
+    if (params?.is_active !== undefined) searchParams.set('is_active', String(params.is_active));
+    const qs = searchParams.toString();
+    return this.request<Employee[]>(`/api/v1/employees${qs ? `?${qs}` : ''}`);
   }
 
   async getEmployeesPaginated(params?: {
@@ -711,7 +726,7 @@ export class ApiClient {
             .filter(([, v]) => v !== undefined && v !== '')
             .map(([k, v]) => [k, String(v)]),
         ).toString()
-      : '?limit=200';
+      : '?limit=3000';
     return this.request<Customer[]>(`/api/v1/customers${query}`);
   }
 
@@ -1393,8 +1408,9 @@ export class ApiClient {
     return this.request<VisitDetailedReportRow[]>(`/api/v1/reports/visits-detailed${q}`);
   }
 
-  async getMonthlyPeriods(): Promise<MonthlyReportingPeriod[]> {
-    return this.request<MonthlyReportingPeriod[]>('/api/v1/reports/monthly-periods');
+  async getMonthlyPeriods(onlyWithData?: boolean): Promise<MonthlyReportingPeriod[]> {
+    const q = onlyWithData ? '?only_with_data=true' : '';
+    return this.request<MonthlyReportingPeriod[]>(`/api/v1/reports/monthly-periods${q}`);
   }
 
   async getMonthlyPeriodReview(periodId: string): Promise<import('../types').MonthlyPeriodReviewSummary> {
@@ -1992,6 +2008,158 @@ export class ApiClient {
 
   async getOrganizationProfile(): Promise<import('../types').OrganizationProfile> {
     return this.request<import('../types').OrganizationProfile>('/api/v1/organization');
+  }
+
+  // -- Monthly Visit Planning (Phase 2) -----------------------------------
+
+  async getMyMonthlyPlan(params?: { year?: number; month?: number }): Promise<MonthlyVisitPlan> {
+    const query = new URLSearchParams();
+    if (params?.year) query.set('year', String(params.year));
+    if (params?.month) query.set('month', String(params.month));
+    const qs = query.toString();
+    return this.request<MonthlyVisitPlan>(`/api/v1/visit-planning/my-plan${qs ? `?${qs}` : ''}`);
+  }
+
+  async getEmployeeMonthlyPlan(employeeId: string, params?: { year?: number; month?: number }): Promise<MonthlyVisitPlan> {
+    const query = new URLSearchParams();
+    if (params?.year) query.set('year', String(params.year));
+    if (params?.month) query.set('month', String(params.month));
+    const qs = query.toString();
+    return this.request<MonthlyVisitPlan>(`/api/v1/visit-planning/plans/${employeeId}${qs ? `?${qs}` : ''}`);
+  }
+
+  async getMonthlyPlans(params?: { year?: number; month?: number }): Promise<MonthlyPlanSummary[]> {
+    const query = new URLSearchParams();
+    if (params?.year) query.set('year', String(params.year));
+    if (params?.month) query.set('month', String(params.month));
+    const qs = query.toString();
+    return this.request<MonthlyPlanSummary[]>(`/api/v1/visit-planning/plans${qs ? `?${qs}` : ''}`);
+  }
+
+  async getTeamMonthlyPlan(params?: {
+    year?: number;
+    month?: number;
+    employee_id?: string;
+  }): Promise<TeamMonthlyPlan> {
+    const query = new URLSearchParams();
+    if (params?.year) query.set('year', String(params.year));
+    if (params?.month) query.set('month', String(params.month));
+    if (params?.employee_id) query.set('employee_id', params.employee_id);
+    const qs = query.toString();
+    return this.request<TeamMonthlyPlan>(`/api/v1/visit-planning/team-plan${qs ? `?${qs}` : ''}`);
+  }
+
+  async createPlannedVisit(data: {
+    customer_id: string;
+    planned_date: string;
+    visit_type?: VisitType;
+    priority?: Priority;
+    notes?: string | null;
+    employee_id?: string;
+  }): Promise<PlannedVisit> {
+    return this.request<PlannedVisit>('/api/v1/visit-planning/visits', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updatePlannedVisit(
+    id: string,
+    data: {
+      priority?: Priority;
+      notes?: string | null;
+      visit_type?: VisitType;
+    }
+  ): Promise<PlannedVisit> {
+    return this.request<PlannedVisit>(`/api/v1/visit-planning/visits/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async reschedulePlannedVisit(id: string, newDate: string): Promise<PlannedVisit> {
+    return this.request<PlannedVisit>(`/api/v1/visit-planning/visits/${id}/reschedule`, {
+      method: 'POST',
+      body: JSON.stringify({ new_date: newDate }),
+    });
+  }
+
+  async reassignPlannedVisit(id: string, newEmployeeId: string): Promise<PlannedVisit> {
+    return this.request<PlannedVisit>(`/api/v1/visit-planning/visits/${id}/reassign`, {
+      method: 'POST',
+      body: JSON.stringify({ new_employee_id: newEmployeeId }),
+    });
+  }
+
+  async deletePlannedVisit(id: string): Promise<void> {
+    return this.request<void>(`/api/v1/visit-planning/visits/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getMyMonthAnalytics(params?: { year?: number; month?: number }): Promise<EmployeeMonthlyAnalytics> {
+    const query = new URLSearchParams();
+    if (params?.year) query.set('year', String(params.year));
+    if (params?.month) query.set('month', String(params.month));
+    const qs = query.toString();
+    return this.request<EmployeeMonthlyAnalytics>(`/api/v1/visit-planning/analytics/my-month${qs ? `?${qs}` : ''}`);
+  }
+
+  async getEmployeeAnalytics(
+    employeeId: string,
+    params?: { year?: number; month?: number }
+  ): Promise<EmployeeMonthlyAnalytics> {
+    const query = new URLSearchParams();
+    if (params?.year) query.set('year', String(params.year));
+    if (params?.month) query.set('month', String(params.month));
+    const qs = query.toString();
+    return this.request<EmployeeMonthlyAnalytics>(
+      `/api/v1/visit-planning/analytics/employee/${employeeId}${qs ? `?${qs}` : ''}`
+    );
+  }
+
+  async getTeamAnalytics(params?: {
+    year?: number;
+    month?: number;
+    employee_id?: string;
+  }): Promise<TeamMonthlyAnalytics> {
+    const query = new URLSearchParams();
+    if (params?.year) query.set('year', String(params.year));
+    if (params?.month) query.set('month', String(params.month));
+    if (params?.employee_id) query.set('employee_id', params.employee_id);
+    const qs = query.toString();
+    return this.request<TeamMonthlyAnalytics>(`/api/v1/visit-planning/analytics/team${qs ? `?${qs}` : ''}`);
+  }
+
+  async getDailyAnalytics(employeeId: string, date: string): Promise<DailyAnalytics> {
+    const query = new URLSearchParams({ employee_id: employeeId, date });
+    return this.request<DailyAnalytics>(`/api/v1/visit-planning/analytics/daily?${query.toString()}`);
+  }
+
+  // -- notifications (Phase 2E) ---------------------------------------------
+
+  async getMyNotifications(): Promise<NotificationItem[]> {
+    return this.request<NotificationItem[]>('/api/v1/notifications/me');
+  }
+
+  async getUnreadNotificationCount(): Promise<{ unread_count: number }> {
+    return this.request<{ unread_count: number }>('/api/v1/notifications/unread-count');
+  }
+
+  async markNotificationRead(id: string): Promise<{ status: string }> {
+    return this.request<{ status: string }>(`/api/v1/notifications/${id}/read`, {
+      method: 'PATCH',
+    });
+  }
+
+  async markAllNotificationsRead(): Promise<{ status: string; marked_read: number }> {
+    return this.request<{ status: string; marked_read: number }>('/api/v1/notifications/read-all', {
+      method: 'PATCH',
+    });
+  }
+
+  async getTallyStatus(): Promise<TallyIntegrationStatus> {
+    return this.request<TallyIntegrationStatus>('/api/v1/integrations/tally/status');
   }
 }
 

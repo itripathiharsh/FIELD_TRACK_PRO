@@ -37,7 +37,7 @@ class Customer(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    territory: Mapped[Optional["Territory"]] = relationship(back_populates="customers")
+    territory: Mapped[Optional["Territory"]] = relationship(back_populates="customers", lazy="joined")
     area: Mapped[Optional["Area"]] = relationship(back_populates="customers", lazy="joined")
     visits: Mapped[list["Visit"]] = relationship(back_populates="customer")
     invoices: Mapped[list["Invoice"]] = relationship(back_populates="customer")

@@ -60,4 +60,5 @@ sealed class Screen(val route: String) {
         fun createRoute(visitId: String, customerId: String) = "collect_payment/$visitId/$customerId"
     }
     object AddCustomer : Screen("add_customer")
+    object MonthlyPlanning : Screen("monthly_planning")
 }

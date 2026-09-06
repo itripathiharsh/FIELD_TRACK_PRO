@@ -508,11 +508,12 @@ async def export_visits_detailed_excel(
 # ---------------------------------------------------------------------------
 @router.get("/reports/monthly-periods", response_model=list[MonthlyPeriodRead])
 async def get_monthly_periods(
+    only_with_data: bool = Query(default=False, description="Filter for periods that contain real imported transaction data"),
     current_user: CurrentUser = None,
     session=Depends(get_async_session),
 ) -> list[MonthlyPeriodRead]:
     """Lists all historical and current monthly reporting periods with automatic month rollover."""
-    periods = await period_service.ensure_monthly_periods_synced(session)
+    periods = await period_service.ensure_monthly_periods_synced(session, only_with_data=only_with_data)
     return [
         MonthlyPeriodRead(
             id=p.id,

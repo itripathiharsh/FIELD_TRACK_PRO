@@ -30,6 +30,7 @@ import com.fieldtrackpro.android.ui.viewmodel.CollectionViewModel
 import com.fieldtrackpro.android.ui.viewmodel.FormFillViewModel
 import com.fieldtrackpro.android.ui.viewmodel.GeofenceViewModel
 import com.fieldtrackpro.android.ui.viewmodel.MediaViewModel
+import com.fieldtrackpro.android.ui.viewmodel.MonthlyPlanningViewModel
 import com.fieldtrackpro.android.ui.viewmodel.NotificationViewModel
 import com.fieldtrackpro.android.ui.viewmodel.RequirementViewModel
 import com.fieldtrackpro.android.ui.viewmodel.SignatureViewModel
@@ -92,6 +93,9 @@ class MainActivity : ComponentActivity() {
     private val collectionViewModel by viewModels<CollectionViewModel> {
         viewModelFactory { initializer { CollectionViewModel(tokenManager) } }
     }
+    private val monthlyPlanningViewModel by viewModels<MonthlyPlanningViewModel> {
+        viewModelFactory { initializer { MonthlyPlanningViewModel(tokenManager) } }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -149,7 +153,8 @@ class MainActivity : ComponentActivity() {
                         formFillViewModel = formFillViewModel,
                         signatureViewModel = signatureViewModel,
                         visitSummaryViewModel = visitSummaryViewModel,
-                        collectionViewModel = collectionViewModel
+                        collectionViewModel = collectionViewModel,
+                        monthlyPlanningViewModel = monthlyPlanningViewModel
                     )
                 }
             }
@@ -187,6 +192,7 @@ class MainActivity : ComponentActivity() {
         signatureViewModel.resetState()
         visitSummaryViewModel.resetState()
         collectionViewModel.resetState()
+        monthlyPlanningViewModel.resetState()
         notificationViewModel.resetState()
         authViewModel.resetAuthState()
         tokenManager.clear()

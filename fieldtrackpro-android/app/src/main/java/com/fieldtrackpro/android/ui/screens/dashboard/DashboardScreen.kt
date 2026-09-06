@@ -23,6 +23,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.AddBusiness
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronRight
@@ -108,7 +109,8 @@ fun DashboardScreen(
     onNavigateToProfile: () -> Unit,
     onNavigateToSync: () -> Unit,
     onNavigateToNotifications: () -> Unit,
-    onNavigateToAddCustomer: () -> Unit = {}
+    onNavigateToAddCustomer: () -> Unit = {},
+    onNavigateToMonthlyPlanning: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -572,6 +574,73 @@ fun DashboardScreen(
                             onClick = onNavigateToVisits,
                             modifier = Modifier.weight(1f)
                         )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        QuickActionButton(
+                            title = "My Monthly Plan",
+                            icon = Icons.Default.CalendarMonth,
+                            onClick = onNavigateToMonthlyPlanning,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Monthly Planning Quick Access Card
+                    Card(
+                        onClick = onNavigateToMonthlyPlanning,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(1.dp, BrandGold.copy(alpha = 0.5f), RoundedCornerShape(12.dp)),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = BrandGold.copy(alpha = 0.08f))
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                Icon(
+                                    imageVector = Icons.Default.CalendarMonth,
+                                    contentDescription = null,
+                                    tint = BrandGoldDark,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
+                                    Text(
+                                        text = "My Monthly Visit Plan",
+                                        fontFamily = LeagueSpartanFamily,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp,
+                                        color = BrandNavy
+                                    )
+                                    Text(
+                                        text = "Plan beat visits, organize routes & track progress",
+                                        fontFamily = LeagueSpartanFamily,
+                                        fontSize = 11.sp,
+                                        color = TextSecondary
+                                    )
+                                }
+                            }
+                            Text(
+                                text = "Open →",
+                                fontFamily = LeagueSpartanFamily,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = BrandGoldDark
+                            )
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(18.dp))

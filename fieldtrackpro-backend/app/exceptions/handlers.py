@@ -90,6 +90,8 @@ def register_exception_handlers(app: FastAPI) -> None:
             err_dict = dict(err)
             if "ctx" in err_dict:
                 err_dict["ctx"] = {k: str(v) for k, v in err_dict["ctx"].items()}
+            if "input" in err_dict and isinstance(err_dict["input"], bytes):
+                err_dict["input"] = err_dict["input"].decode(errors="replace")
             sanitized_details.append(err_dict)
 
         logger.warning(

@@ -12,7 +12,7 @@ import json
 import uuid
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse, Response
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,6 +37,11 @@ router = APIRouter(prefix="/imports", tags=["imports"])
 DbSession = Annotated[AsyncSession, Depends(get_async_session)]
 AdminOnly = Depends(require_role(Role.ADMIN))
 
+EXCEL_IMPORT_DISABLED_DETAIL = (
+    "Excel/MIS data import has been permanently disabled. "
+    "TallyPrime synchronization is the sole authoritative source for financial, customer, and transaction data."
+)
+
 
 async def _to_read(batch, session: DbSession) -> ImportBatchRead:
     result = await session.execute(select(User.email).where(User.id == batch.uploaded_by))
@@ -57,10 +62,11 @@ async def preview_import_file(
     file: UploadFile = File(...),
     sheet_name: str | None = Form(default=None),
 ):
-    """Inspect an uploaded Excel file's real headers/sample rows and get a suggested column mapping."""
-    file_bytes = await file.read()
-    filename = file.filename or "upload.xlsx"
-    return import_service.preview_excel_file(file_bytes, filename, sheet_name)
+    """Excel/MIS import preview is disabled. Tally synchronization is the authoritative source."""
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail=EXCEL_IMPORT_DISABLED_DETAIL,
+    )
 
 
 @router.post("/validate", response_model=ImportBatchRead, dependencies=[AdminOnly])
@@ -70,26 +76,11 @@ async def validate_import(
     file: UploadFile = File(...),
     request: str = Form(..., description="JSON-encoded ImportValidateRequest"),
 ):
-    """
-    Full parse + mapping + resolution + validation against the confirmed
-    mapping. Writes nothing to the business tables - only creates the
-    ImportBatch audit/staging row (status=VALIDATED) that /commit reads back.
-    """
-    payload = ImportValidateRequest.model_validate(json.loads(request))
-    file_bytes = await file.read()
-    filename = file.filename or "upload.xlsx"
-    batch = await import_service.create_import_batch(
-        file_bytes=file_bytes,
-        filename=filename,
-        sheet_name=payload.sheet_name,
-        column_mapping=payload.column_mapping,
-        outlet_match_strategy=payload.outlet_match_strategy,
-        allow_generated_invoice_numbers=payload.allow_generated_invoice_numbers,
-        current_user=current_user,
-        session=session,
-        fos_mapping_overrides=payload.fos_mapping_overrides,
+    """Excel/MIS import validation is disabled. Tally synchronization is the authoritative source."""
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail=EXCEL_IMPORT_DISABLED_DETAIL,
     )
-    return await _to_read(batch, session)
 
 
 @router.get("/fos-mappings", dependencies=[AdminOnly])
@@ -212,6 +203,8 @@ async def download_import_credentials(batch_id: uuid.UUID, session: DbSession):
 
 @router.post("/{batch_id}/commit", response_model=ImportBatchRead, dependencies=[AdminOnly])
 async def commit_import(batch_id: uuid.UUID, current_user: CurrentUser, session: DbSession):
-    """The only endpoint that writes to territories/employees/customers/financial_snapshots."""
-    batch = await import_service.commit_import_batch(batch_id, current_user, session)
-    return await _to_read(batch, session)
+    """Excel/MIS import commit is disabled. Tally synchronization is the authoritative source."""
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail=EXCEL_IMPORT_DISABLED_DETAIL,
+    )

@@ -9,6 +9,11 @@ from datetime import datetime, time, timedelta, timezone
 IST = timezone(timedelta(hours=5, minutes=30))
 
 
+def get_ist_now() -> datetime:
+    """Returns the current datetime in IST (UTC+05:30)."""
+    return datetime.now(IST)
+
+
 def get_ist_today_range(now_utc: datetime | None = None) -> tuple[datetime, datetime]:
     """
     Returns (start_utc, end_utc) for the current day in IST (UTC+05:30).

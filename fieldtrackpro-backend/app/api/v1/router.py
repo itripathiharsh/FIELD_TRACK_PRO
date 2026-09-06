@@ -27,6 +27,8 @@ from app.api.v1 import (
     requirements,
     workday,
     organization,
+    visit_planning,
+    tally_integration,
 )
 
 api_router = APIRouter()
@@ -58,4 +60,6 @@ api_router.include_router(imports.router)
 api_router.include_router(collections.router)
 api_router.include_router(field_exceptions.router)
 api_router.include_router(dashboard.router)
+api_router.include_router(visit_planning.router)
+api_router.include_router(tally_integration.router)
 

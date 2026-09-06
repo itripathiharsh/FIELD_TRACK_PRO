@@ -173,12 +173,16 @@ class CustomerMapLocation(BaseModel):
     id: uuid.UUID
     name: str
     outlet_code: str | None = None
+    address: str | None = None
+    contact_person: str | None = None
+    contact_number: str | None = None
     latitude: float
     longitude: float
     geofence_radius_m: int = 75
     location_status: str = "VERIFIED"
     territory_id: uuid.UUID | None = None
     area_id: uuid.UUID | None = None
+
 
 
 class CustomerRead(BaseModel):

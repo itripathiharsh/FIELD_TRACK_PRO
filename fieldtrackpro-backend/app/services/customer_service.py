@@ -242,8 +242,15 @@ async def create_customer_prospect(
     cleaned_outlet_code = data.outlet_code.strip().upper() if data.outlet_code else None
 
     # 2. Location & Status Handling
-    # For a NEW customer from the field, the location is PENDING APPROVAL (not trusted official geofence until reviewed)
-    loc_status = "PENDING_APPROVAL" if data.location is not None else "MISSING"
+    # For an Admin, coordinates entered directly are official & VERIFIED immediately.
+    # For field employees, coordinates are submitted as PENDING_APPROVAL until admin review.
+    is_admin = getattr(current_user, "role", None) in (Role.ADMIN, "ADMIN")
+    if is_admin and data.location is not None:
+        official_location = from_shape(Point(data.location.longitude, data.location.latitude), srid=4326)
+        loc_status = "VERIFIED"
+    else:
+        official_location = None
+        loc_status = "PENDING_APPROVAL" if data.location is not None else "MISSING"
 
     territory_id = data.territory_id
     if data.area_id is not None:
@@ -257,7 +264,7 @@ async def create_customer_prospect(
         contact_person=data.contact_person,
         gst_number=data.gst_number,
         address=data.address,
-        location=None,  # Official coordinates remain null until location approval
+        location=official_location,
         geofence_radius_m=75,
         location_status=loc_status,
         territory_id=territory_id,
@@ -294,8 +301,10 @@ async def create_customer_prospect(
             gps_accuracy_meters=data.gps_accuracy_meters,
             submitted_by=current_user.id,
             submitted_by_employee_id=employee_id,
-            notes=data.notes or "Initial location captured during outlet onboarding.",
-            status=LocationProposalStatus.PENDING,
+            notes=data.notes or ("Official coordinates recorded during admin outlet creation." if is_admin else "Initial location captured during outlet onboarding."),
+            status=LocationProposalStatus.APPROVED if is_admin else LocationProposalStatus.PENDING,
+            reviewed_by=current_user.id if is_admin else None,
+            reviewed_at=func.now() if is_admin else None,
         )
         session.add(proposal)
 
@@ -434,29 +443,37 @@ async def update_customer(
         customer.outlet_code = cleaned_code
 
     if data.brands is not None:
-        # Replace brands
-        existing_cbs = (await session.execute(select(CustomerBrand).where(CustomerBrand.customer_id == customer_id))).scalars().all()
-        for cb in existing_cbs:
-            await session.delete(cb)
         from app.services import brand_service
-        from app.schemas.brand import BrandCreate
+        from app.models.customer_brand import CustomerBrand
+        from sqlalchemy import delete
+
+        # Safely remove existing brand allocations directly to avoid constraint collisions
+        await session.execute(delete(CustomerBrand).where(CustomerBrand.customer_id == customer_id))
+        await session.flush()
+        session.expire(customer, ["brands"])
+
+        seen_brands: set[str] = set()
         for brand_name in data.brands:
             b_stripped = brand_name.strip()
-            if b_stripped:
-                brand_obj = await brand_service.get_brand_by_name(session, b_stripped)
-                if brand_obj is None:
-                    brand_obj = await brand_service.create_brand(session, BrandCreate(name=b_stripped))
+            if not b_stripped:
+                continue
+            brand_obj = await brand_service.ensure_brand(session, b_stripped)
+            canonical = brand_obj.name if brand_obj else b_stripped
+            norm = brand_obj.normalized_name if brand_obj else b_stripped.lower()
+            if norm not in seen_brands:
+                seen_brands.add(norm)
                 session.add(CustomerBrand(
                     customer_id=customer_id,
-                    brand=brand_obj.name,
-                    brand_id=brand_obj.id,
+                    brand=canonical,
+                    brand_id=brand_obj.id if brand_obj else None,
                     is_active=True,
                 ))
+        await session.flush()
 
     try:
         session.add(customer)
         await session.commit()
-        await session.refresh(customer)
+        await session.refresh(customer, ["brands", "location_proposals", "requirements"])
     except IntegrityError as exc:
         await session.rollback()
         if "outlet_code" in str(exc).lower():

@@ -6,6 +6,7 @@ import {
   CalendarClock,
   Building2,
   CalendarCheck,
+  CalendarDays,
   Globe2,
   FileText,
   BarChart3,
@@ -13,7 +14,6 @@ import {
   LogOut,
   ShieldCheck,
   Wallet,
-  UploadCloud,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
@@ -25,9 +25,11 @@ interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => {
   const { user, logout } = useAuth();
   const isEmployee = user?.role === 'EMPLOYEE';
+  const visitPlanningPath = user?.role === 'ADMIN' ? '/admin/visit-planning' : '/visit-planning';
 
   const navItems = [
     { name: 'Dashboard',            path: '/',          icon: LayoutDashboard, roles: ['ADMIN', 'MANAGER', 'EMPLOYEE'] },
+    { name: 'Visit Planning',       path: visitPlanningPath, icon: CalendarDays, roles: ['ADMIN', 'MANAGER', 'EMPLOYEE'] },
     { name: 'Employees',            path: '/employees', icon: Users,           roles: ['ADMIN', 'MANAGER'] },
     { name: 'Employee Daily Logs',  path: '/daily-logs',icon: CalendarClock,   roles: ['ADMIN', 'MANAGER'] },
     { name: 'Territories',          path: '/territories', icon: Globe2,        roles: ['ADMIN', 'MANAGER'] },
@@ -36,7 +38,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => 
     { name: 'Map',                  path: '/map',       icon: Globe2,          roles: ['ADMIN', 'MANAGER'] },
     { name: 'Requirement Forms',    path: '/forms',     icon: FileText,        roles: ['ADMIN', 'MANAGER'] },
     { name: 'Payment Collections',  path: '/payments',  icon: Wallet,          roles: ['ADMIN', 'MANAGER'] },
-    { name: 'Excel / MIS Import',   path: '/imports',   icon: UploadCloud,     roles: ['ADMIN', 'MANAGER'] },
     { name: 'Reports & Collections',path: '/reports',   icon: BarChart3,       roles: ['ADMIN', 'MANAGER'] },
   ];
 

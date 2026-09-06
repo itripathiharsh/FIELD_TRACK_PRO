@@ -18,6 +18,9 @@ BRAND_ALIASES: dict[str, str] = {
     "zebronics": "zebronics",
     "usha": "usha",
     "vu": "vu",
+    "oppo": "oppo",
+    "philips": "philips",
+    "ph": "philips",
 }
 
 # Master canonical casing lookup
@@ -25,10 +28,28 @@ CANONICAL_BRAND_DISPLAY: dict[str, str] = {
     "zebronics": "Zebronics",
     "usha": "USHA",
     "vu": "VU",
+    "oppo": "Oppo",
+    "philips": "Philips",
     "havells": "Havells",
     "finolex": "Finolex",
     "anchor": "Anchor",
 }
+
+
+def resolve_from_outlet_code(outlet_code: Optional[str]) -> Optional[str]:
+    """Resolves canonical brand from outlet DMS code prefix."""
+    if not outlet_code:
+        return None
+    code = outlet_code.strip().upper()
+    if code.startswith("SGRGZBR"):
+        return "Zebronics"
+    if code.startswith("SGRGUS"):
+        return "USHA"
+    if code.startswith("SGRGVU"):
+        return "VU"
+    if code.startswith("UPDD"):
+        return "Philips"
+    return None
 
 
 def normalize_brand_name(name: str) -> str:
@@ -62,6 +83,25 @@ async def resolve_brand(session: AsyncSession, name: str) -> Optional[Brand]:
     resolved_key = BRAND_ALIASES.get(normalized, normalized)
     result = await session.execute(select(Brand).where(Brand.normalized_name == resolved_key))
     return result.scalar_one_or_none()
+
+
+async def ensure_brand(session: AsyncSession, name: str) -> Optional[Brand]:
+    """
+    Retrieve an authoritative master Brand instance by resolving any alias or casing variant,
+    or dynamically provision a new Brand record if it does not yet exist.
+    """
+    if not name or not name.strip():
+        return None
+    normalized = normalize_brand_name(name)
+    resolved_key = BRAND_ALIASES.get(normalized, normalized)
+    brand = (await session.execute(select(Brand).where(Brand.normalized_name == resolved_key))).scalar_one_or_none()
+    if not brand:
+        canonical = resolve_canonical_brand_name(name)
+        brand = Brand(name=canonical, normalized_name=resolved_key, is_active=True)
+        session.add(brand)
+        await session.flush()
+    return brand
+
 
 
 async def list_brands(session: AsyncSession, active_only: bool = True) -> list[Brand]:

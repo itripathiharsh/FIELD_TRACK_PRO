@@ -7,7 +7,7 @@ from app.config import settings
 
 engine = create_async_engine(
     settings.database_url,
-    echo=(settings.environment == "dev"),
+    echo=False,
     pool_pre_ping=True,
     poolclass=NullPool if "pytest" in sys.modules else None,
 )

@@ -106,6 +106,17 @@ export const ReportsPage: React.FC = () => {
   const [monthlyPeriods, setMonthlyPeriods] = useState<MonthlyReportingPeriod[]>([]);
   const [masterBrands, setMasterBrands] = useState<Brand[]>([]);
 
+  // Authoritative Tally transaction months: only show periods that have real data
+  const availablePeriodsWithData = useMemo(() => {
+    return monthlyPeriods.filter(
+      (p) =>
+        Number(p.total_sales) > 0 ||
+        Number(p.total_collection) > 0 ||
+        (p.snapshot_count ?? 0) > 0 ||
+        (p.total_outlets ?? 0) > 0
+    );
+  }, [monthlyPeriods]);
+
   // Report Datasets
   const [businessBI, setBusinessBI] = useState<BusinessBIDashboard | null>(null);
   const [employeeReport, setEmployeeReport] = useState<EmployeeReportRow[]>([]);
@@ -669,7 +680,7 @@ export const ReportsPage: React.FC = () => {
                 onChange={(e) => setSelectedMonth(e.target.value)}
               >
                 <option value="ALL">All Available Months</option>
-                {monthlyPeriods.map((p) => {
+                {availablePeriodsWithData.map((p) => {
                   const mStr = `${p.period_year}-${String(p.period_month).padStart(2, '0')}`;
                   const tag = p.status === 'FINALIZED' ? '🔒 (Locked)' : p.status === 'PENDING_CLOSE' ? '⏳ (Pending Close)' : '🟢 (Current)';
                   return (
@@ -1418,7 +1429,7 @@ export const ReportsPage: React.FC = () => {
           </CardHeader>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {monthlyPeriods.map((period) => {
+            {availablePeriodsWithData.map((period) => {
               const isLocked = period.status === 'FINALIZED';
               const isPending = period.status === 'PENDING_CLOSE';
               const mStr = `${period.period_year}-${String(period.period_month).padStart(2, '0')}`;

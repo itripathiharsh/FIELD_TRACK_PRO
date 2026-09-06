@@ -40,12 +40,16 @@ def get_current_ist_year_month() -> tuple[int, int, date]:
     return ist_now.year, ist_now.month, ist_now.date()
 
 
-async def ensure_monthly_periods_synced(session: AsyncSession) -> list[MonthlyReportingPeriod]:
+async def ensure_monthly_periods_synced(
+    session: AsyncSession,
+    only_with_data: bool = False,
+) -> list[MonthlyReportingPeriod]:
     """
     Idempotently ensures that:
-    1. Current IST month exists as an active OPEN period.
-    2. Any past unclosed periods transition to PENDING_CLOSE state so Admin can review and close them.
-    3. MonthlyReportingPeriod exists for any historical snapshot data.
+    1. All months with Tally-imported data (invoices, payments, snapshots) exist and have updated metrics.
+    2. Current IST month exists as an active OPEN period for accounting lifecycle.
+    3. Any past unclosed periods transition to PENDING_CLOSE state so Admin can review and close them.
+    4. If only_with_data is True, returns only periods containing actual transaction data.
     """
     req_id = get_current_request_id()
     cur_year, cur_month, _ = get_current_ist_year_month()
@@ -70,68 +74,76 @@ async def ensure_monthly_periods_synced(session: AsyncSession) -> list[MonthlyRe
         (int(r.s_year), int(r.s_month)): r for r in snap_res.all()
     }
 
+    # 1b. Fetch distinct invoice months (authoritative Tally source of truth)
+    inv_stmt = select(
+        func.extract("year", Invoice.invoice_date).label("i_year"),
+        func.extract("month", Invoice.invoice_date).label("i_month"),
+        func.count(Invoice.id).label("inv_cnt"),
+        func.count(func.distinct(Invoice.customer_id)).label("outlets_cnt"),
+        func.sum(Invoice.amount).label("tot_sales"),
+    ).where(Invoice.invoice_date.isnot(None)).group_by(
+        func.extract("year", Invoice.invoice_date),
+        func.extract("month", Invoice.invoice_date),
+    )
+    inv_res = await session.execute(inv_stmt)
+    inv_months = {
+        (int(r.i_year), int(r.i_month)): r for r in inv_res.all()
+    }
+
+    # 1c. Fetch distinct payment months (authoritative Tally source of truth)
+    pay_stmt = select(
+        func.extract("year", Payment.payment_date).label("p_year"),
+        func.extract("month", Payment.payment_date).label("p_month"),
+        func.count(Payment.id).label("pay_cnt"),
+        func.sum(Payment.amount).label("tot_col"),
+    ).where(
+        Payment.payment_date.isnot(None),
+        Payment.status == PaymentStatus.VERIFIED,
+    ).group_by(
+        func.extract("year", Payment.payment_date),
+        func.extract("month", Payment.payment_date),
+    )
+    pay_res = await session.execute(pay_stmt)
+    pay_months = {
+        (int(r.p_year), int(r.p_month)): r for r in pay_res.all()
+    }
+
+    # Unified set of all known months with real data
+    all_data_months = set(snap_months.keys()) | set(inv_months.keys()) | set(pay_months.keys())
+    all_months = set(all_data_months)
+    all_months.add((cur_year, cur_month))
+
+    # Helper to resolve metrics for any (year, month)
+    def _get_metrics(y: int, m: int):
+        snap_r = snap_months.get((y, m))
+        inv_r = inv_months.get((y, m))
+        pay_r = pay_months.get((y, m))
+
+        if snap_r:
+            return (
+                snap_r.snap_cnt or 0,
+                snap_r.outlets_cnt or 0,
+                snap_r.s_sales or Decimal("0.00"),
+                snap_r.s_collection or Decimal("0.00"),
+                snap_r.s_os or Decimal("0.00"),
+                snap_r.s_gt90 or Decimal("0.00"),
+            )
+        else:
+            s_cnt = 0
+            o_cnt = inv_r.outlets_cnt if inv_r else 0
+            s_amt = inv_r.tot_sales if inv_r and inv_r.tot_sales else Decimal("0.00")
+            c_amt = pay_r.tot_col if pay_r and pay_r.tot_col else Decimal("0.00")
+            os_amt = s_amt
+            gt90_amt = Decimal("0.00")
+            return s_cnt, o_cnt, s_amt, c_amt, os_amt, gt90_amt
+
     # 2. Fetch all existing periods
     existing_res = await session.execute(select(MonthlyReportingPeriod))
     existing_periods = {
         (p.period_year, p.period_month): p for p in existing_res.scalars().all()
     }
 
-    # 3. Ensure current month exists
-    if (cur_year, cur_month) not in existing_periods:
-        cur_snap = snap_months.get((cur_year, cur_month))
-        cur_period = MonthlyReportingPeriod(
-            period_year=cur_year,
-            period_month=cur_month,
-            period_name=f"{MONTH_NAMES[cur_month]} {cur_year}",
-            status=MonthlyPeriodStatus.OPEN,
-            opened_at=now_dt,
-            snapshot_count=cur_snap.snap_cnt if cur_snap else 0,
-            total_outlets=cur_snap.outlets_cnt if cur_snap else 0,
-            total_sales=cur_snap.s_sales if cur_snap and cur_snap.s_sales else Decimal("0.00"),
-            total_collection=cur_snap.s_collection if cur_snap and cur_snap.s_collection else Decimal("0.00"),
-            total_market_os=cur_snap.s_os if cur_snap and cur_snap.s_os else Decimal("0.00"),
-            total_overdue_gt_90=cur_snap.s_gt90 if cur_snap and cur_snap.s_gt90 else Decimal("0.00"),
-        )
-        session.add(cur_period)
-        existing_periods[(cur_year, cur_month)] = cur_period
-        logger.info(
-            "event=monthly_period_created request_id=%s year=%s month=%s period_name='%s' status=OPEN",
-            req_id,
-            cur_year,
-            cur_month,
-            cur_period.period_name,
-        )
-
-    # 4. Sync historical snapshot months and update past OPEN months to PENDING_CLOSE
-    for (y, m), snap_r in snap_months.items():
-        if (y, m) not in existing_periods:
-            is_past = (y < cur_year) or (y == cur_year and m < cur_month)
-            init_status = MonthlyPeriodStatus.PENDING_CLOSE if is_past else MonthlyPeriodStatus.OPEN
-            p_obj = MonthlyReportingPeriod(
-                period_year=y,
-                period_month=m,
-                period_name=f"{MONTH_NAMES[m]} {y}",
-                status=init_status,
-                opened_at=now_dt,
-                snapshot_count=snap_r.snap_cnt or 0,
-                total_outlets=snap_r.outlets_cnt or 0,
-                total_sales=snap_r.s_sales or Decimal("0.00"),
-                total_collection=snap_r.s_collection or Decimal("0.00"),
-                total_market_os=snap_r.s_os or Decimal("0.00"),
-                total_overdue_gt_90=snap_r.s_gt90 or Decimal("0.00"),
-            )
-            session.add(p_obj)
-            existing_periods[(y, m)] = p_obj
-            logger.info(
-                "event=monthly_period_created request_id=%s year=%s month=%s period_name='%s' status=%s",
-                req_id,
-                y,
-                m,
-                p_obj.period_name,
-                init_status.value,
-            )
-
-    # 5. Check all existing periods for rollover transition (OPEN past months -> PENDING_CLOSE)
+    # 2b. Transition all past OPEN periods in existing_periods to PENDING_CLOSE
     for (y, m), period in existing_periods.items():
         is_past = (y < cur_year) or (y == cur_year and m < cur_month)
         if is_past and period.status == MonthlyPeriodStatus.OPEN:
@@ -144,15 +156,46 @@ async def ensure_monthly_periods_synced(session: AsyncSession) -> list[MonthlyRe
                 period.period_name,
             )
 
-        # Update snapshot counts for non-finalized periods
-        if period.status != MonthlyPeriodStatus.FINALIZED and (y, m) in snap_months:
-            snap_r = snap_months[(y, m)]
-            period.snapshot_count = snap_r.snap_cnt or 0
-            period.total_outlets = snap_r.outlets_cnt or 0
-            period.total_sales = snap_r.s_sales or Decimal("0.00")
-            period.total_collection = snap_r.s_collection or Decimal("0.00")
-            period.total_market_os = snap_r.s_os or Decimal("0.00")
-            period.total_overdue_gt_90 = snap_r.s_gt90 or Decimal("0.00")
+    # 3. Ensure all months exist and sync their states
+    for (y, m) in all_months:
+        s_cnt, o_cnt, s_amt, c_amt, os_amt, gt90_amt = _get_metrics(y, m)
+        is_past = (y < cur_year) or (y == cur_year and m < cur_month)
+        init_status = MonthlyPeriodStatus.PENDING_CLOSE if is_past else MonthlyPeriodStatus.OPEN
+
+        if (y, m) not in existing_periods:
+            p_obj = MonthlyReportingPeriod(
+                period_year=y,
+                period_month=m,
+                period_name=f"{MONTH_NAMES[m]} {y}",
+                status=init_status,
+                opened_at=now_dt,
+                snapshot_count=s_cnt,
+                total_outlets=o_cnt,
+                total_sales=s_amt,
+                total_collection=c_amt,
+                total_market_os=os_amt,
+                total_overdue_gt_90=gt90_amt,
+            )
+            session.add(p_obj)
+            existing_periods[(y, m)] = p_obj
+            logger.info(
+                "event=monthly_period_created request_id=%s year=%s month=%s period_name='%s' status=%s",
+                req_id,
+                y,
+                m,
+                p_obj.period_name,
+                init_status.value,
+            )
+        else:
+            period = existing_periods[(y, m)]
+            # Update snapshot counts & financial totals for non-finalized periods
+            if period.status != MonthlyPeriodStatus.FINALIZED:
+                period.snapshot_count = s_cnt
+                period.total_outlets = o_cnt
+                period.total_sales = s_amt
+                period.total_collection = c_amt
+                period.total_market_os = os_amt
+                period.total_overdue_gt_90 = gt90_amt
 
     await session.commit()
 
@@ -162,7 +205,12 @@ async def ensure_monthly_periods_synced(session: AsyncSession) -> list[MonthlyRe
         MonthlyReportingPeriod.period_month.desc(),
     )
     res = await session.execute(all_periods_stmt)
-    return list(res.scalars().all())
+    all_periods = list(res.scalars().all())
+
+    if only_with_data:
+        return [p for p in all_periods if (p.period_year, p.period_month) in all_data_months]
+
+    return all_periods
 
 
 async def assert_period_open_for_date(target_date: date, session: AsyncSession) -> None:

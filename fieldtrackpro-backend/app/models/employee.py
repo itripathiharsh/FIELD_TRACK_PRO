@@ -43,3 +43,6 @@ class Employee(Base):
     work_sessions: Mapped[list["EmployeeWorkSession"]] = relationship(
         back_populates="employee", cascade="all, delete-orphan"
     )
+    monthly_plans: Mapped[list["MonthlyVisitPlan"]] = relationship(
+        "MonthlyVisitPlan", back_populates="employee", cascade="all, delete-orphan"
+    )

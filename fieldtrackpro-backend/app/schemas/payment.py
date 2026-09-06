@@ -9,7 +9,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app.models.payment import PaymentMethod, PaymentStatus
+from app.models.payment import PaymentMethod, PaymentStatus, PaymentSource
 
 
 class PaymentProofRead(BaseModel):
@@ -135,7 +135,7 @@ class PaymentRead(BaseModel):
     id: uuid.UUID
     visit_id: uuid.UUID | None = None
     customer_id: uuid.UUID
-    employee_id: uuid.UUID
+    employee_id: uuid.UUID | None = None
     invoice_id: uuid.UUID | None
     amount: Decimal
     payment_method: PaymentMethod
@@ -145,6 +145,8 @@ class PaymentRead(BaseModel):
     utr_reference: str | None
     notes: str | None
     status: PaymentStatus
+    source: PaymentSource = PaymentSource.MANUAL
+    source_reference: str | None = None
     rejection_reason: str | None
     reviewed_by: uuid.UUID | None
     reviewed_at: datetime | None

@@ -42,40 +42,49 @@ async def test_auto_rollover_sync_marks_previous_month_pending_close():
     test_year = 2022
     test_month = 4
 
-    async with AsyncSessionLocal() as session:
-        # Clean up any leftover test year/month
-        await session.execute(
-            delete(MonthlyReportingPeriod).where(
-                MonthlyReportingPeriod.period_year == test_year,
-                MonthlyReportingPeriod.period_month == test_month,
+    try:
+        async with AsyncSessionLocal() as session:
+            # Clean up any leftover test year/month
+            await session.execute(
+                delete(MonthlyReportingPeriod).where(
+                    MonthlyReportingPeriod.period_year == test_year,
+                    MonthlyReportingPeriod.period_month == test_month,
+                )
             )
-        )
-        await session.commit()
+            await session.commit()
 
-        # Insert a past open month
-        past_period = MonthlyReportingPeriod(
-            period_year=test_year,
-            period_month=test_month,
-            period_name=f"April {test_year}",
-            status=MonthlyPeriodStatus.OPEN,
-        )
-        session.add(past_period)
-        await session.commit()
-        period_id = past_period.id
+            # Insert a past open month
+            past_period = MonthlyReportingPeriod(
+                period_year=test_year,
+                period_month=test_month,
+                period_name=f"April {test_year}",
+                status=MonthlyPeriodStatus.OPEN,
+            )
+            session.add(past_period)
+            await session.commit()
+            period_id = past_period.id
 
-        periods = await ensure_monthly_periods_synced(session)
-        await session.commit()
+            periods = await ensure_monthly_periods_synced(session)
+            await session.commit()
 
-        # Past period must now be PENDING_CLOSE
-        refreshed_past = await session.get(MonthlyReportingPeriod, period_id)
-        assert refreshed_past is not None
-        assert refreshed_past.status in (MonthlyPeriodStatus.PENDING_CLOSE, MonthlyPeriodStatus.PENDING_CLOSE.value, "PENDING_CLOSE")
+            # Past period must now be PENDING_CLOSE
+            refreshed_past = await session.get(MonthlyReportingPeriod, period_id)
+            assert refreshed_past is not None
+            assert refreshed_past.status in (MonthlyPeriodStatus.PENDING_CLOSE, MonthlyPeriodStatus.PENDING_CLOSE.value, "PENDING_CLOSE")
 
-        # Current month must exist in periods
-        today = date.today()
-        current_period = next((p for p in periods if p.period_year == today.year and p.period_month == today.month), None)
-        assert current_period is not None
-        assert current_period.period_name is not None
+            # Current month must exist in periods
+            today = date.today()
+            current_period = next((p for p in periods if p.period_year == today.year and p.period_month == today.month), None)
+            assert current_period is not None
+            assert current_period.period_name is not None
+    finally:
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                delete(MonthlyReportingPeriod).where(
+                    MonthlyReportingPeriod.period_year == test_year,
+                )
+            )
+            await session.commit()
 
 
 @requires_db
@@ -87,32 +96,41 @@ async def test_assert_period_open_blocks_finalized_period():
     test_year = 2032
     test_month = 2
 
-    async with AsyncSessionLocal() as session:
-        await session.execute(
-            delete(MonthlyReportingPeriod).where(
-                MonthlyReportingPeriod.period_year == test_year,
-                MonthlyReportingPeriod.period_month == test_month,
+    try:
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                delete(MonthlyReportingPeriod).where(
+                    MonthlyReportingPeriod.period_year == test_year,
+                    MonthlyReportingPeriod.period_month == test_month,
+                )
             )
-        )
-        await session.commit()
+            await session.commit()
 
-        finalized_period = MonthlyReportingPeriod(
-            period_year=test_year,
-            period_month=test_month,
-            period_name=f"February {test_year}",
-            status=MonthlyPeriodStatus.FINALIZED,
-        )
-        session.add(finalized_period)
-        await session.commit()
+            finalized_period = MonthlyReportingPeriod(
+                period_year=test_year,
+                period_month=test_month,
+                period_name=f"February {test_year}",
+                status=MonthlyPeriodStatus.FINALIZED,
+            )
+            session.add(finalized_period)
+            await session.commit()
 
-        # A date in February 2032 must raise 409
-        with pytest.raises(BaseAPIException) as exc_info:
-            await assert_period_open_for_date(date(test_year, test_month, 15), session)
-        assert exc_info.value.status_code == 409
-        assert exc_info.value.error_code == "PERIOD_LOCKED"
+            # A date in February 2032 must raise 409
+            with pytest.raises(BaseAPIException) as exc_info:
+                await assert_period_open_for_date(date(test_year, test_month, 15), session)
+            assert exc_info.value.status_code == 409
+            assert exc_info.value.error_code == "PERIOD_LOCKED"
 
-        # A date in an unfinalized period (e.g. March 2032) must succeed
-        await assert_period_open_for_date(date(test_year, 3, 15), session)
+            # A date in an unfinalized period (e.g. March 2032) must succeed
+            await assert_period_open_for_date(date(test_year, 3, 15), session)
+    finally:
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                delete(MonthlyReportingPeriod).where(
+                    MonthlyReportingPeriod.period_year == test_year,
+                )
+            )
+            await session.commit()
 
 
 @requires_db
@@ -123,36 +141,45 @@ async def test_cross_period_payment_on_closed_invoice_allowed():
     closed period passes period check, while backdating into the closed period is blocked.
     """
     test_year = 2033
-    async with AsyncSessionLocal() as session:
-        await session.execute(
-            delete(MonthlyReportingPeriod).where(
-                MonthlyReportingPeriod.period_year == test_year,
+    try:
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                delete(MonthlyReportingPeriod).where(
+                    MonthlyReportingPeriod.period_year == test_year,
+                )
             )
-        )
-        await session.commit()
+            await session.commit()
 
-        aug_period = MonthlyReportingPeriod(
-            period_year=test_year,
-            period_month=8,
-            period_name=f"August {test_year}",
-            status=MonthlyPeriodStatus.FINALIZED,
-        )
-        sep_period = MonthlyReportingPeriod(
-            period_year=test_year,
-            period_month=9,
-            period_name=f"September {test_year}",
-            status=MonthlyPeriodStatus.OPEN,
-        )
-        session.add_all([aug_period, sep_period])
-        await session.commit()
+            aug_period = MonthlyReportingPeriod(
+                period_year=test_year,
+                period_month=8,
+                period_name=f"August {test_year}",
+                status=MonthlyPeriodStatus.FINALIZED,
+            )
+            sep_period = MonthlyReportingPeriod(
+                period_year=test_year,
+                period_month=9,
+                period_name=f"September {test_year}",
+                status=MonthlyPeriodStatus.OPEN,
+            )
+            session.add_all([aug_period, sep_period])
+            await session.commit()
 
-        # September payment passes period check
-        await assert_period_open_for_date(date(test_year, 9, 5), session)
+            # September payment passes period check
+            await assert_period_open_for_date(date(test_year, 9, 5), session)
 
-        # August payment fails period check
-        with pytest.raises(BaseAPIException) as exc_info:
-            await assert_period_open_for_date(date(test_year, 8, 20), session)
-        assert exc_info.value.status_code == 409
+            # August payment fails period check
+            with pytest.raises(BaseAPIException) as exc_info:
+                await assert_period_open_for_date(date(test_year, 8, 20), session)
+            assert exc_info.value.status_code == 409
+    finally:
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                delete(MonthlyReportingPeriod).where(
+                    MonthlyReportingPeriod.period_year == test_year,
+                )
+            )
+            await session.commit()
 
 
 @requires_db
@@ -164,51 +191,60 @@ async def test_reopen_requires_valid_reason():
     test_year = 2034
     test_month = 5
 
-    async with AsyncSessionLocal() as session:
-        # Get or create admin user
-        admin_res = await session.execute(
-            select(User).where(User.role == Role.ADMIN, User.is_active == True)
-        )
-        admin_user = admin_res.scalars().first()
-        if not admin_user:
-            admin_user = User(
-                email=f"admin_reopen_{uuid.uuid4().hex[:6]}@test.com",
-                password_hash=hash_password("AdminPass123!"),
-                role=Role.ADMIN,
-                is_active=True,
+    try:
+        async with AsyncSessionLocal() as session:
+            # Get or create admin user
+            admin_res = await session.execute(
+                select(User).where(User.role == Role.ADMIN, User.is_active == True)
             )
-            session.add(admin_user)
-            await session.flush()
+            admin_user = admin_res.scalars().first()
+            if not admin_user:
+                admin_user = User(
+                    email=f"admin_reopen_{uuid.uuid4().hex[:6]}@test.com",
+                    password_hash=hash_password("AdminPass123!"),
+                    role=Role.ADMIN,
+                    is_active=True,
+                )
+                session.add(admin_user)
+                await session.flush()
 
-        await session.execute(
-            delete(MonthlyReportingPeriod).where(
-                MonthlyReportingPeriod.period_year == test_year,
-                MonthlyReportingPeriod.period_month == test_month,
+            await session.execute(
+                delete(MonthlyReportingPeriod).where(
+                    MonthlyReportingPeriod.period_year == test_year,
+                    MonthlyReportingPeriod.period_month == test_month,
+                )
             )
-        )
-        await session.commit()
+            await session.commit()
 
-        period = MonthlyReportingPeriod(
-            period_year=test_year,
-            period_month=test_month,
-            period_name=f"May {test_year}",
-            status=MonthlyPeriodStatus.FINALIZED,
-        )
-        session.add(period)
-        await session.commit()
+            period = MonthlyReportingPeriod(
+                period_year=test_year,
+                period_month=test_month,
+                period_name=f"May {test_year}",
+                status=MonthlyPeriodStatus.FINALIZED,
+            )
+            session.add(period)
+            await session.commit()
 
-        # Empty reason raises 422
-        with pytest.raises(BaseAPIException) as exc_info:
-            await reopen_monthly_period(period.id, admin_user.id, "   ", session)
-        assert exc_info.value.status_code == 422
-        assert exc_info.value.error_code == "REOPEN_REASON_REQUIRED"
+            # Empty reason raises 422
+            with pytest.raises(BaseAPIException) as exc_info:
+                await reopen_monthly_period(period.id, admin_user.id, "   ", session)
+            assert exc_info.value.status_code == 422
+            assert exc_info.value.error_code == "REOPEN_REASON_REQUIRED"
 
-        # Valid reason succeeds and records tracking metadata
-        updated = await reopen_monthly_period(period.id, admin_user.id, "Dispute resolution on invoice #1024", session)
-        assert updated.status == MonthlyPeriodStatus.PENDING_CLOSE.value
-        assert updated.reopen_reason == "Dispute resolution on invoice #1024"
-        assert updated.reopened_by == admin_user.id
-        assert updated.finalized_at is None
+            # Valid reason succeeds and records tracking metadata
+            updated = await reopen_monthly_period(period.id, admin_user.id, "Dispute resolution on invoice #1024", session)
+            assert updated.status == MonthlyPeriodStatus.PENDING_CLOSE.value
+            assert updated.reopen_reason == "Dispute resolution on invoice #1024"
+            assert updated.reopened_by == admin_user.id
+            assert updated.finalized_at is None
+    finally:
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                delete(MonthlyReportingPeriod).where(
+                    MonthlyReportingPeriod.period_year == test_year,
+                )
+            )
+            await session.commit()
 
 
 @requires_db
@@ -220,35 +256,44 @@ async def test_monthly_period_review_endpoint(client: AsyncClient):
     test_year = 2035
     test_month = 10
 
-    async with AsyncSessionLocal() as session:
-        await session.execute(
-            delete(MonthlyReportingPeriod).where(
-                MonthlyReportingPeriod.period_year == test_year,
-                MonthlyReportingPeriod.period_month == test_month,
+    try:
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                delete(MonthlyReportingPeriod).where(
+                    MonthlyReportingPeriod.period_year == test_year,
+                    MonthlyReportingPeriod.period_month == test_month,
+                )
             )
-        )
-        await session.commit()
+            await session.commit()
 
-        period = MonthlyReportingPeriod(
-            period_year=test_year,
-            period_month=test_month,
-            period_name=f"October {test_year}",
-            status=MonthlyPeriodStatus.PENDING_CLOSE,
-            total_market_os=Decimal("45000.00"),
-        )
-        session.add(period)
-        await session.commit()
-        p_id = period.id
+            period = MonthlyReportingPeriod(
+                period_year=test_year,
+                period_month=test_month,
+                period_name=f"October {test_year}",
+                status=MonthlyPeriodStatus.PENDING_CLOSE,
+                total_market_os=Decimal("45000.00"),
+            )
+            session.add(period)
+            await session.commit()
+            p_id = period.id
 
-    resp = await client.get(
-        f"/api/v1/reports/monthly-periods/{p_id}/review",
-        headers=admin_headers(),
-    )
-    assert resp.status_code == 200, resp.text
-    data = resp.json()
-    assert data["period_name"] == f"October {test_year}"
-    assert data["status"] == "PENDING_CLOSE"
-    assert "visits_completed" in data
-    assert "collections_submitted_amount" in data
-    assert "total_outstanding" in data
-    assert data["can_finalize"] is True
+        resp = await client.get(
+            f"/api/v1/reports/monthly-periods/{p_id}/review",
+            headers=admin_headers(),
+        )
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["period_name"] == f"October {test_year}"
+        assert data["status"] == "PENDING_CLOSE"
+        assert "visits_completed" in data
+        assert "collections_submitted_amount" in data
+        assert "total_outstanding" in data
+        assert data["can_finalize"] is True
+    finally:
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                delete(MonthlyReportingPeriod).where(
+                    MonthlyReportingPeriod.period_year == test_year,
+                )
+            )
+            await session.commit()

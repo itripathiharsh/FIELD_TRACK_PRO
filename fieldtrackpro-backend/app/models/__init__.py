@@ -43,6 +43,15 @@ from app.models.customer_brand import CustomerBrand
 from app.models.brand import Brand
 from app.models.customer_requirement import CustomerRequirement
 from app.models.employee_work_session import EmployeeWorkSession, WorkSessionStatus
+from app.models.monthly_visit_plan import (
+    MonthlyVisitPlan,
+    MonthlyPlanStatus,
+    PlannedVisit,
+    PlannedVisitStatus,
+)
+from app.models.sync_agent import SyncAgent
+from app.models.payment_invoice_allocation import PaymentInvoiceAllocation
+
 
 __all__ = [
     "Base",
@@ -105,4 +114,10 @@ __all__ = [
     "CustomerRequirement",
     "EmployeeWorkSession",
     "WorkSessionStatus",
+    "MonthlyVisitPlan",
+    "MonthlyPlanStatus",
+    "PlannedVisit",
+    "PlannedVisitStatus",
+    "SyncAgent",
+    "PaymentInvoiceAllocation",
 ]

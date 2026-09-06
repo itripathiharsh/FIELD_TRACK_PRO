@@ -84,6 +84,7 @@ export interface FieldTrackMapProps {
   onError?: (error: string) => void;
   enableClustering?: boolean;
   autoFitBounds?: boolean;
+  fitBoundsKey?: number | string;
 }
 
 const LOADING_TIMEOUT_MS = 15000;
@@ -217,20 +218,29 @@ function ensureMarkerStylesInjected() {
       0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7); }
       70% { transform: scale(1.05); box-shadow: 0 0 0 8px rgba(245, 158, 11, 0); }
       100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+    }
     .ft-marker-wrapper {
-      position: relative;
+      position: absolute !important;
+      top: 0;
+      left: 0;
+      width: 32px !important;
+      height: 39px !important;
       cursor: pointer;
       pointer-events: auto;
       user-select: none;
+      display: block;
     }
     .ft-customer-pin-inner {
-      position: relative;
+      position: absolute;
+      top: 0;
+      left: 0;
       display: flex;
       align-items: center;
       justify-content: center;
       width: 32px;
       height: 32px;
       border-radius: 50% 50% 50% 0;
+      transform-origin: 16px 16px;
       transform: rotate(-45deg);
       cursor: pointer;
       box-shadow: 0 3px 8px rgba(0,0,0,0.3);
@@ -246,7 +256,7 @@ function ensureMarkerStylesInjected() {
       background: linear-gradient(135deg, #ffa515 0%, #ea580c 100%);
       border: 3px solid #14213D;
       animation: ft-pulse-ring 2s infinite;
-      transform: rotate(-45deg) scale(1.2);
+      transform: rotate(-45deg) scale(1.15);
     }
     .ft-customer-pin-inner svg {
       transform: rotate(45deg);
@@ -276,9 +286,11 @@ function ensureMarkerStylesInjected() {
       line-height: 14px;
     }
     .ft-employee-marker-container {
-      position: relative;
-      width: 44px;
-      height: 44px;
+      position: absolute !important;
+      top: 0;
+      left: 0;
+      width: 44px !important;
+      height: 44px !important;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -354,6 +366,7 @@ export function FieldTrackMap({
   onError,
   enableClustering = true,
   autoFitBounds = false,
+  fitBoundsKey,
 }: FieldTrackMapProps) {
   void enableClustering;
   const mapContainer = useRef<HTMLDivElement>(null);
@@ -517,23 +530,27 @@ export function FieldTrackMap({
   // and would cause the map to zoom out globally to fit both Africa and Lucknow.
   const currentMarkersSignature = markers.map((m) => m.id).sort().join(',');
 
-  // Auto-fit bounding box on style load or when dataset/filters change, NOT on selection!
+  // Auto-fit bounding box on style load, dataset/filters change, or explicit fitBoundsKey trigger, NOT on selection!
+  const lastFitBoundsKeyRef = useRef<number | string | undefined>(fitBoundsKey);
+
   useEffect(() => {
     if (!map.current || !isStyleLoaded || !autoFitBounds) return;
 
-    if (lastFittedSignatureRef.current === currentMarkersSignature) {
-      return; // Skip re-fitting bounds if markers have not changed
+    const isExplicitKeyTrigger = fitBoundsKey != null && fitBoundsKey !== lastFitBoundsKeyRef.current;
+    if (!isExplicitKeyTrigger && lastFittedSignatureRef.current === currentMarkersSignature) {
+      return; // Skip re-fitting bounds if markers have not changed and no explicit trigger
     }
+    lastFitBoundsKeyRef.current = fitBoundsKey;
+    lastFittedSignatureRef.current = currentMarkersSignature;
 
     // Only fit to customer markers + territory circles (NOT employee GPS location)
     const bounds = getBoundsForMarkersAndCircles(markers, territoryCircles);
     if (bounds) {
-      lastFittedSignatureRef.current = currentMarkersSignature;
       const [sw, ne] = bounds;
       if (Math.abs(sw[0] - ne[0]) < 0.0001 && Math.abs(sw[1] - ne[1]) < 0.0001) {
         map.current.flyTo({
           center: [sw[0], sw[1]],
-          zoom: 13,
+          zoom: 14,
           essential: true,
         });
       } else {
@@ -544,7 +561,7 @@ export function FieldTrackMap({
         });
       }
     }
-  }, [currentMarkersSignature, territoryCircles, autoFitBounds, isStyleLoaded, markers]);
+  }, [currentMarkersSignature, territoryCircles, autoFitBounds, isStyleLoaded, markers, fitBoundsKey]);
 
   // Render Territory Circles
   useEffect(() => {
@@ -621,7 +638,7 @@ export function FieldTrackMap({
       // Group markers by identical/near-identical coordinates for clean stacking
       const clusterMap = new Map<string, { key: string; lat: number; lng: number; items: MapMarker[] }>();
       validMarkers.forEach((m) => {
-        const key = `${m.latitude.toFixed(5)},${m.longitude.toFixed(5)}`;
+        const key = `${m.latitude.toFixed(4)},${m.longitude.toFixed(4)}`;
         let grp = clusterMap.get(key);
         if (!grp) {
           grp = { key, lat: m.latitude, lng: m.longitude, items: [] };
@@ -652,6 +669,8 @@ export function FieldTrackMap({
           // Build custom SVG Pin DOM Element
           const el = document.createElement('div');
           el.className = `ft-marker-wrapper ${isSelected ? 'is-selected' : ''}`;
+          el.style.width = '32px';
+          el.style.height = '39px';
           el.setAttribute('data-testid', isCluster ? `marker-cluster-${key}` : `marker-${primaryMarker.id}`);
           el.setAttribute(
             'title',
@@ -729,21 +748,29 @@ export function FieldTrackMap({
           });
 
           const popup = new maplibregl.Popup({
-            offset: 16,
+            offset: [0, -39],
             closeButton: isCluster,
             className: 'fieldtrack-outlet-hover-popup',
           }).setDOMContent(popupContent);
 
           const handleClick = (e: Event) => {
             e.stopPropagation();
-            onMarkerClickRef.current?.(primaryMarker);
+            if (isCluster) {
+              markerInstance?.togglePopup();
+            } else {
+              onMarkerClickRef.current?.(primaryMarker);
+            }
           };
 
           el.addEventListener('click', handleClick);
           el.addEventListener('keydown', (e: KeyboardEvent) => {
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault();
-              onMarkerClickRef.current?.(primaryMarker);
+              if (isCluster) {
+                markerInstance?.togglePopup();
+              } else {
+                onMarkerClickRef.current?.(primaryMarker);
+              }
             }
           });
 
@@ -757,13 +784,32 @@ export function FieldTrackMap({
 
           activeMarkersRef.current.set(key, markerInstance);
         } else {
-          // Update position and selected state of existing marker
+          // Update position, selected state, and attributes of existing marker
           markerInstance.setLngLat([group.lng, group.lat]);
           const el = markerInstance.getElement();
+          el.style.width = '32px';
+          el.style.height = '39px';
           if (isSelected) {
             el.classList.add('is-selected');
           } else {
             el.classList.remove('is-selected');
+          }
+          el.setAttribute('title', isCluster ? `${group.items.length} Outlets at this location` : primaryMarker.label || 'Customer Outlet');
+          el.setAttribute('aria-label', isCluster ? `Cluster of ${group.items.length} outlets` : `Outlet: ${primaryMarker.label || primaryMarker.id}`);
+
+          // Re-sync cluster badge
+          const existingBadge = el.querySelector('.ft-cluster-badge');
+          if (isCluster) {
+            if (existingBadge) {
+              existingBadge.textContent = String(group.items.length);
+            } else {
+              const badge = document.createElement('div');
+              badge.className = 'ft-cluster-badge';
+              badge.textContent = String(group.items.length);
+              el.appendChild(badge);
+            }
+          } else if (existingBadge) {
+            existingBadge.remove();
           }
         }
       });
@@ -782,6 +828,8 @@ export function FieldTrackMap({
           // Create custom GPS radar marker DOM element
           const el = document.createElement('div');
           el.className = 'ft-employee-marker-container';
+          el.style.width = '44px';
+          el.style.height = '44px';
           el.setAttribute('data-testid', 'marker-employee-location');
           el.setAttribute('title', 'Your Current Location');
           el.setAttribute('aria-label', 'Employee Current GPS Location');
@@ -865,7 +913,7 @@ export function FieldTrackMap({
           `;
 
           popupRef.current = new maplibregl.Popup({
-            offset: [0, -36],
+            offset: [0, -39],
             closeButton: true,
             closeOnClick: false,
             anchor: 'bottom',

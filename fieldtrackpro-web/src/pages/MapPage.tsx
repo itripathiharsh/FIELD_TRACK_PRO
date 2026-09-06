@@ -51,6 +51,7 @@ export const MapPage: React.FC = () => {
   const [secondsAgo, setSecondsAgo] = useState<number>(0);
   const [gpsStatus, setGpsStatus] = useState<'idle' | 'locating' | 'active' | 'stale' | 'denied' | 'unavailable'>('locating');
   const [gpsError, setGpsError] = useState<string | null>(null);
+  const [fitBoundsTrigger, setFitBoundsTrigger] = useState<number>(0);
 
   useEffect(() => {
     loadMapData();
@@ -143,9 +144,9 @@ export const MapPage: React.FC = () => {
         return {
           id: item.id,
           name: item.name,
-          contact_number: '',
-          contact_person: null,
-          address: '',
+          contact_number: item.contact_number || '',
+          contact_person: item.contact_person || null,
+          address: item.address || '',
           location: { latitude: item.latitude, longitude: item.longitude },
           geofence_radius_m: item.geofence_radius_m || 75,
           location_status: item.location_status || 'VERIFIED',
@@ -526,6 +527,21 @@ export const MapPage: React.FC = () => {
               <span>Locate Me</span>
             </Button>
 
+            {/* Fit All Outlets Button */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setSelectedCustomer(null);
+                setFitBoundsTrigger((prev) => prev + 1);
+              }}
+              className="flex items-center gap-space-1.5 text-primary border-outline-variant hover:bg-surface-container"
+              title="Reset view and frame all registered outlets"
+            >
+              <Layers className="w-3.5 h-3.5 text-primary" />
+              <span>Fit All Outlets ({markers.length})</span>
+            </Button>
+
             {/* Reset Filters / View */}
             {(searchQuery || selectedZoneId !== 'ALL' || selectedAreaId !== 'ALL' || selectedEmployeeId !== 'ALL') && (
               <Button
@@ -589,6 +605,7 @@ export const MapPage: React.FC = () => {
             selectedMarkerId={selectedCustomer?.id || null}
             currentLocation={currentLocation}
             autoFitBounds={true}
+            fitBoundsKey={fitBoundsTrigger}
             height="520px"
             enableClustering={true}
             onMarkerClick={handleMarkerClick}

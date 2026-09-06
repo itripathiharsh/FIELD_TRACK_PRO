@@ -25,8 +25,10 @@ from app.models.area import Area
 from app.models.visit import Visit, VisitStatus
 from app.models.geo_verification_log import GeoVerificationLog
 from app.models.employee_customer_assignment import EmployeeCustomerAssignment
+from app.models.invoice import Invoice, InvoiceSource
 from app.models.outlet_financial_snapshot import OutletFinancialSnapshot
 from app.models.monthly_reporting_period import MonthlyReportingPeriod, MonthlyPeriodStatus
+from app.models.payment import Payment, PaymentBrandAllocation, PaymentSource, PaymentStatus
 from app.schemas.financial_snapshot import (
     BusinessBIDashboard,
     BusinessSummaryRow,
@@ -904,69 +906,262 @@ class ReportService:
         seen_snapshots: set[uuid.UUID] = set()
         seen_fos_entries: set[tuple[uuid.UUID, str]] = set()
 
-        for snap, c_name, dms, z_name, a_name, f_name in records:
-            b_name = resolve_canonical_brand_name(snap.brand) if snap.brand else "General"
-            z_label = z_name or "Unknown Zone"
-            a_label = a_name or "Unknown Area"
-            f_label = f_name or "Unassigned"
-            snap_id = snap.id
+        if records:
+            for snap, c_name, dms, z_name, a_name, f_name in records:
+                b_name = resolve_canonical_brand_name(snap.brand) if snap.brand else "General"
+                z_label = z_name or "Unknown Zone"
+                a_label = a_name or "Unknown Area"
+                f_label = f_name or "Unassigned"
+                snap_id = snap.id
 
-            if snap_id not in seen_snapshots:
-                seen_snapshots.add(snap_id)
-                unique_outlets.add(snap.customer_id)
-                total_sales += snap.sales
-                total_collection += snap.collection
-                total_market_os += snap.market_outstanding
-                total_gt_90 += snap.bucket_gt_90
+                if snap_id not in seen_snapshots:
+                    seen_snapshots.add(snap_id)
+                    unique_outlets.add(snap.customer_id)
+                    total_sales += snap.sales
+                    total_collection += snap.collection
+                    total_market_os += snap.market_outstanding
+                    total_gt_90 += snap.bucket_gt_90
 
-                raw_rows.append(
-                    BusinessSummaryRow(
-                        brand=b_name,
-                        dimension_name=c_name,
-                        dms_code=dms or "",
-                        outlet_name=c_name,
-                        zone_name=z_label,
-                        area_name=a_label,
-                        fos_name=f_label,
-                        outlets_count=1,
-                        sales=snap.sales,
-                        collection=snap.collection,
-                        market_outstanding=snap.market_outstanding,
-                        bucket_lt_15=snap.bucket_lt_15,
-                        bucket_15_30=snap.bucket_15_30,
-                        bucket_30_45=snap.bucket_30_45,
-                        bucket_45_60=snap.bucket_45_60,
-                        bucket_60_75=snap.bucket_60_75,
-                        bucket_75_90=snap.bucket_75_90,
-                        bucket_gt_90=snap.bucket_gt_90,
+                    raw_rows.append(
+                        BusinessSummaryRow(
+                            brand=b_name,
+                            dimension_name=c_name,
+                            dms_code=dms or "",
+                            outlet_name=c_name,
+                            zone_name=z_label,
+                            area_name=a_label,
+                            fos_name=f_label,
+                            outlets_count=1,
+                            sales=snap.sales,
+                            collection=snap.collection,
+                            market_outstanding=snap.market_outstanding,
+                            bucket_lt_15=snap.bucket_lt_15,
+                            bucket_15_30=snap.bucket_15_30,
+                            bucket_30_45=snap.bucket_30_45,
+                            bucket_45_60=snap.bucket_45_60,
+                            bucket_60_75=snap.bucket_60_75,
+                            bucket_75_90=snap.bucket_75_90,
+                            bucket_gt_90=snap.bucket_gt_90,
+                        )
                     )
+
+                    # Brand aggregation (exactly once per snapshot)
+                    if b_name not in brand_map:
+                        brand_map[b_name] = _init_agg(b_name, b_name)
+                    _add_to_agg(brand_map[b_name], snap, snap.customer_id)
+
+                    # Zone aggregation (exactly once per snapshot)
+                    z_key = f"{b_name}::{z_label}"
+                    if z_key not in zone_map:
+                        zone_map[z_key] = _init_agg(z_label, b_name)
+                    _add_to_agg(zone_map[z_key], snap, snap.customer_id)
+
+                    # Area aggregation (exactly once per snapshot)
+                    a_key = f"{b_name}::{a_label}"
+                    if a_key not in area_map:
+                        area_map[a_key] = _init_agg(a_label, b_name)
+                    _add_to_agg(area_map[a_key], snap, snap.customer_id)
+
+                # FOS aggregation (exactly once per (snapshot, FOS) assignment)
+                fos_entry_key = (snap_id, f_label)
+                if fos_entry_key not in seen_fos_entries:
+                    seen_fos_entries.add(fos_entry_key)
+                    f_key = f"{b_name}::{f_label}"
+                    if f_key not in fos_map:
+                        fos_map[f_key] = _init_agg(f_label, b_name)
+                    _add_to_agg(fos_map[f_key], snap, snap.customer_id)
+        else:
+            # Authoritative Tally Accounting Source of Truth: Aggregate directly from real Invoices & Payments
+            today = date.today()
+            inv_stmt = (
+                select(
+                    Invoice,
+                    Customer.name.label("customer_name"),
+                    Customer.outlet_code.label("dms_code"),
+                    Territory.name.label("zone_name"),
+                    Area.name.label("area_name"),
+                    Employee.full_name.label("fos_name"),
                 )
+                .join(Customer, Invoice.customer_id == Customer.id)
+                .outerjoin(Territory, Customer.territory_id == Territory.id)
+                .outerjoin(Area, Customer.area_id == Area.id)
+                .outerjoin(EmployeeCustomerAssignment, EmployeeCustomerAssignment.customer_id == Customer.id)
+                .outerjoin(Employee, EmployeeCustomerAssignment.employee_id == Employee.id)
+                .where(Invoice.source == InvoiceSource.TALLY)
+            )
 
-                # Brand aggregation (exactly once per snapshot)
-                if b_name not in brand_map:
-                    brand_map[b_name] = _init_agg(b_name, b_name)
-                _add_to_agg(brand_map[b_name], snap, snap.customer_id)
+            if brand and brand != "ALL":
+                aliases = _get_brand_filter_aliases(brand)
+                inv_stmt = inv_stmt.where(func.lower(Invoice.brand).in_(aliases))
+            if zone_id:
+                inv_stmt = inv_stmt.where(Customer.territory_id == zone_id)
+            if area_id:
+                inv_stmt = inv_stmt.where(Customer.area_id == area_id)
+            if employee_id:
+                inv_stmt = inv_stmt.where(EmployeeCustomerAssignment.employee_id == employee_id)
+            if month:
+                try:
+                    y, m = [int(x) for x in month.split("-")]
+                    inv_stmt = inv_stmt.where(
+                        and_(
+                            func.extract("year", Invoice.invoice_date) == y,
+                            func.extract("month", Invoice.invoice_date) == m,
+                        )
+                    )
+                except Exception:
+                    pass
 
-                # Zone aggregation (exactly once per snapshot)
-                z_key = f"{b_name}::{z_label}"
-                if z_key not in zone_map:
-                    zone_map[z_key] = _init_agg(z_label, b_name)
-                _add_to_agg(zone_map[z_key], snap, snap.customer_id)
+            inv_res = await session.execute(inv_stmt)
+            inv_records = inv_res.all()
 
-                # Area aggregation (exactly once per snapshot)
-                a_key = f"{b_name}::{a_label}"
-                if a_key not in area_map:
-                    area_map[a_key] = _init_agg(a_label, b_name)
-                _add_to_agg(area_map[a_key], snap, snap.customer_id)
+            # Collections from verified payments
+            if brand and brand != "ALL":
+                aliases = _get_brand_filter_aliases(brand)
+                pay_stmt = (
+                    select(func.coalesce(func.sum(PaymentBrandAllocation.allocated_amount), Decimal("0.00")))
+                    .select_from(Payment)
+                    .join(Customer, Payment.customer_id == Customer.id)
+                    .join(PaymentBrandAllocation, PaymentBrandAllocation.payment_id == Payment.id)
+                    .where(Payment.status == PaymentStatus.VERIFIED)
+                    .where(func.lower(PaymentBrandAllocation.brand).in_(aliases))
+                )
+            else:
+                pay_stmt = (
+                    select(func.coalesce(func.sum(Payment.amount), Decimal("0.00")))
+                    .join(Customer, Payment.customer_id == Customer.id)
+                    .where(Payment.status == PaymentStatus.VERIFIED)
+                )
+            if employee_id:
+                pay_stmt = pay_stmt.where(Payment.employee_id == employee_id)
+            if zone_id:
+                pay_stmt = pay_stmt.where(Customer.territory_id == zone_id)
+            if area_id:
+                pay_stmt = pay_stmt.where(Customer.area_id == area_id)
+            if month:
+                try:
+                    y, m = [int(x) for x in month.split("-")]
+                    pay_stmt = pay_stmt.where(
+                        and_(
+                            func.extract("year", Payment.payment_date) == y,
+                            func.extract("month", Payment.payment_date) == m,
+                        )
+                    )
+                except Exception:
+                    pass
+            total_collection = (await session.execute(pay_stmt)).scalar() or Decimal("0.00")
 
-            # FOS aggregation (exactly once per (snapshot, FOS) assignment)
-            fos_entry_key = (snap_id, f_label)
-            if fos_entry_key not in seen_fos_entries:
-                seen_fos_entries.add(fos_entry_key)
-                f_key = f"{b_name}::{f_label}"
-                if f_key not in fos_map:
-                    fos_map[f_key] = _init_agg(f_label, b_name)
-                _add_to_agg(fos_map[f_key], snap, snap.customer_id)
+            seen_invoices: set[uuid.UUID] = set()
+            for inv, c_name, dms, z_name, a_name, f_name in inv_records:
+                b_name = resolve_canonical_brand_name(inv.brand) if inv.brand else "General"
+                z_label = z_name or "Unknown Zone"
+                a_label = a_name or "Unknown Area"
+                f_label = f_name or "Unassigned"
+                inv_id = inv.id
+
+                if inv_id not in seen_invoices:
+                    seen_invoices.add(inv_id)
+                    unique_outlets.add(inv.customer_id)
+                    inv_amt = inv.amount or Decimal("0.00")
+                    inv_os = inv.imported_outstanding_amount if inv.imported_outstanding_amount is not None else inv_amt
+                    total_sales += inv_amt
+                    total_market_os += inv_os
+
+                    # Ageing calculation from invoice date
+                    age_days = (today - inv.invoice_date).days if inv.invoice_date else 0
+                    b_lt_15 = inv_os if age_days <= 15 else Decimal("0.00")
+                    b_15_30 = inv_os if 16 <= age_days <= 30 else Decimal("0.00")
+                    b_30_45 = inv_os if 31 <= age_days <= 45 else Decimal("0.00")
+                    b_45_60 = inv_os if 46 <= age_days <= 60 else Decimal("0.00")
+                    b_60_75 = inv_os if 61 <= age_days <= 75 else Decimal("0.00")
+                    b_75_90 = inv_os if 76 <= age_days <= 90 else Decimal("0.00")
+                    b_gt_90 = inv_os if age_days > 90 else Decimal("0.00")
+
+                    total_gt_90 += b_gt_90
+
+                    raw_rows.append(
+                        BusinessSummaryRow(
+                            brand=b_name,
+                            dimension_name=c_name,
+                            dms_code=dms or "",
+                            outlet_name=c_name,
+                            zone_name=z_label,
+                            area_name=a_label,
+                            fos_name=f_label,
+                            outlets_count=1,
+                            sales=inv_amt,
+                            collection=Decimal("0.00"),
+                            market_outstanding=inv_os,
+                            bucket_lt_15=b_lt_15,
+                            bucket_15_30=b_15_30,
+                            bucket_30_45=b_30_45,
+                            bucket_45_60=b_45_60,
+                            bucket_60_75=b_60_75,
+                            bucket_75_90=b_75_90,
+                            bucket_gt_90=b_gt_90,
+                        )
+                    )
+
+                    def _add_inv_to_agg(agg: dict, cust_id: uuid.UUID):
+                        agg["outlets"].add(cust_id)
+                        agg["sales"] += inv_amt
+                        agg["market_os"] += inv_os
+                        agg["b_lt_15"] += b_lt_15
+                        agg["b_15_30"] += b_15_30
+                        agg["b_30_45"] += b_30_45
+                        agg["b_45_60"] += b_45_60
+                        agg["b_60_75"] += b_60_75
+                        agg["b_75_90"] += b_75_90
+                        agg["b_gt_90"] += b_gt_90
+
+                    if b_name not in brand_map:
+                        brand_map[b_name] = _init_agg(b_name, b_name)
+                    _add_inv_to_agg(brand_map[b_name], inv.customer_id)
+
+                    z_key = f"{b_name}::{z_label}"
+                    if z_key not in zone_map:
+                        zone_map[z_key] = _init_agg(z_label, b_name)
+                    _add_inv_to_agg(zone_map[z_key], inv.customer_id)
+
+                    a_key = f"{b_name}::{a_label}"
+                    if a_key not in area_map:
+                        area_map[a_key] = _init_agg(a_label, b_name)
+                    _add_inv_to_agg(area_map[a_key], inv.customer_id)
+
+                fos_entry_key = (inv_id, f_label)
+                if fos_entry_key not in seen_fos_entries:
+                    seen_fos_entries.add(fos_entry_key)
+                    f_key = f"{b_name}::{f_label}"
+                    if f_key not in fos_map:
+                        fos_map[f_key] = _init_agg(f_label, b_name)
+                    _add_inv_to_agg(fos_map[f_key], inv.customer_id)
+
+            # Populate brand collections from verified PaymentBrandAllocations
+            pay_brand_stmt = (
+                select(
+                    PaymentBrandAllocation.brand,
+                    func.coalesce(func.sum(PaymentBrandAllocation.allocated_amount), Decimal("0.00")),
+                )
+                .select_from(Payment)
+                .join(Customer, Payment.customer_id == Customer.id)
+                .join(PaymentBrandAllocation, PaymentBrandAllocation.payment_id == Payment.id)
+                .where(Payment.status == PaymentStatus.VERIFIED)
+            )
+            if zone_id:
+                pay_brand_stmt = pay_brand_stmt.where(Customer.territory_id == zone_id)
+            if area_id:
+                pay_brand_stmt = pay_brand_stmt.where(Customer.area_id == area_id)
+            if employee_id:
+                pay_brand_stmt = pay_brand_stmt.where(Payment.employee_id == employee_id)
+            pay_brand_stmt = pay_brand_stmt.group_by(PaymentBrandAllocation.brand)
+            pb_rows = (await session.execute(pay_brand_stmt)).all()
+            for b_raw, b_col in pb_rows:
+                canon_b = resolve_canonical_brand_name(b_raw) if b_raw else "General"
+                if canon_b in brand_map:
+                    brand_map[canon_b]["collection"] = b_col
+                else:
+                    agg_new = _init_agg(canon_b, canon_b)
+                    agg_new["collection"] = b_col
+                    brand_map[canon_b] = agg_new
 
         def _to_rows(d_map: dict) -> list[BusinessSummaryRow]:
             out = []
@@ -1029,85 +1224,10 @@ class ReportService:
     @staticmethod
     async def get_monthly_periods(session: AsyncSession) -> list[MonthlyPeriodRead]:
         """
-        Discovers snapshot months from database, computes and syncs monthly period records.
+        Discovers snapshot months and invoice/payment months from database, computes and syncs monthly period records.
         """
-        # Find distinct year-month pairs from outlet_financial_snapshots
-        snap_stmt = select(
-            func.extract("year", OutletFinancialSnapshot.snapshot_date).label("s_year"),
-            func.extract("month", OutletFinancialSnapshot.snapshot_date).label("s_month"),
-            func.count(OutletFinancialSnapshot.id).label("snap_cnt"),
-            func.count(func.distinct(OutletFinancialSnapshot.customer_id)).label("outlets_cnt"),
-            func.sum(OutletFinancialSnapshot.sales).label("s_sales"),
-            func.sum(OutletFinancialSnapshot.collection).label("s_collection"),
-            func.sum(OutletFinancialSnapshot.market_outstanding).label("s_os"),
-            func.sum(OutletFinancialSnapshot.bucket_gt_90).label("s_gt90"),
-        ).group_by(
-            func.extract("year", OutletFinancialSnapshot.snapshot_date),
-            func.extract("month", OutletFinancialSnapshot.snapshot_date),
-        ).order_by(
-            func.extract("year", OutletFinancialSnapshot.snapshot_date).desc(),
-            func.extract("month", OutletFinancialSnapshot.snapshot_date).desc(),
-        )
-
-        res = await session.execute(snap_stmt)
-        snap_months = res.all()
-
-        month_names = [
-            "", "January", "February", "March", "April", "May", "June",
-            "July", "August", "September", "October", "November", "December"
-        ]
-
-        # Batch fetch all existing periods to avoid N+1 queries
-        existing_res = await session.execute(select(MonthlyReportingPeriod))
-        existing_periods = {
-            (p.period_year, p.period_month): p for p in existing_res.scalars().all()
-        }
-
-        # Sync or ensure MonthlyReportingPeriod exists for each month
-        for s_year, s_month, snap_cnt, out_cnt, tot_s, tot_c, tot_os, tot_gt90 in snap_months:
-            y = int(s_year)
-            m = int(s_month)
-            p_name = f"{month_names[m]} {y}"
-
-            period = existing_periods.get((y, m))
-
-            if not period:
-                period = MonthlyReportingPeriod(
-                    period_year=y,
-                    period_month=m,
-                    period_name=p_name,
-                    status=MonthlyPeriodStatus.OPEN,
-                    snapshot_count=snap_cnt or 0,
-                    total_outlets=out_cnt or 0,
-                    total_sales=tot_s or Decimal("0.00"),
-                    total_collection=tot_c or Decimal("0.00"),
-                    total_market_os=tot_os or Decimal("0.00"),
-                    total_overdue_gt_90=tot_gt90 or Decimal("0.00"),
-                )
-                session.add(period)
-                existing_periods[(y, m)] = period
-            else:
-                # Update counts only if OPEN (preserve finalized numbers if locked)
-                if period.status == MonthlyPeriodStatus.OPEN:
-                    period.snapshot_count = snap_cnt or 0
-                    period.total_outlets = out_cnt or 0
-                    period.total_sales = tot_s or Decimal("0.00")
-                    period.total_collection = tot_c or Decimal("0.00")
-                    period.total_market_os = tot_os or Decimal("0.00")
-                    period.total_overdue_gt_90 = tot_gt90 or Decimal("0.00")
-
-        await session.flush()
-
-        # Fetch all periods
-        all_periods = (
-            await session.execute(
-                select(MonthlyReportingPeriod).order_by(
-                    MonthlyReportingPeriod.period_year.desc(),
-                    MonthlyReportingPeriod.period_month.desc(),
-                )
-            )
-        ).scalars().all()
-
+        from app.services import period_service
+        periods = await period_service.ensure_monthly_periods_synced(session)
         return [
             MonthlyPeriodRead(
                 id=p.id,
@@ -1121,12 +1241,16 @@ class ReportService:
                 total_collection=p.total_collection,
                 total_market_os=p.total_market_os,
                 total_overdue_gt_90=p.total_overdue_gt_90,
+                opened_at=p.opened_at,
                 finalized_at=p.finalized_at,
                 finalized_by=p.finalized_by,
+                reopened_at=p.reopened_at,
+                reopened_by=p.reopened_by,
+                reopen_reason=p.reopen_reason,
                 created_at=p.created_at,
                 updated_at=p.updated_at,
             )
-            for p in all_periods
+            for p in periods
         ]
 
     @staticmethod

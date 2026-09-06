@@ -13,6 +13,7 @@ import com.fieldtrackpro.android.data.api.NotificationApi
 import com.fieldtrackpro.android.data.api.RequirementApi
 import com.fieldtrackpro.android.data.api.SignatureApi
 import com.fieldtrackpro.android.data.api.VisitApi
+import com.fieldtrackpro.android.data.api.VisitPlanningApi
 import com.fieldtrackpro.android.data.api.WorkdayApi
 import com.fieldtrackpro.android.data.local.TokenManager
 import okhttp3.Interceptor
@@ -153,4 +154,7 @@ object ApiClient {
 
     fun createWorkdayApi(tokenManager: TokenManager): WorkdayApi =
         getRetrofit(tokenManager).create(WorkdayApi::class.java)
+
+    fun createVisitPlanningApi(tokenManager: TokenManager): VisitPlanningApi =
+        getRetrofit(tokenManager).create(VisitPlanningApi::class.java)
 }

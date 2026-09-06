@@ -78,7 +78,7 @@ async def list_customers(
     territory_id: uuid.UUID | None = Query(default=None),
     area_id: uuid.UUID | None = Query(default=None),
     skip: int = Query(default=0, ge=0),
-    limit: int = Query(default=50, le=200),
+    limit: int = Query(default=50, le=5000),
 ):
     """
     P0-1: an ADMIN sees the full outlet directory; an EMPLOYEE is confined
@@ -113,6 +113,9 @@ async def list_customer_map_locations(
                 id=c.id,
                 name=c.name,
                 outlet_code=c.outlet_code,
+                address=c.address,
+                contact_person=c.contact_person,
+                contact_number=c.contact_number,
                 latitude=lat,
                 longitude=lng,
                 geofence_radius_m=c.geofence_radius_m or 75,

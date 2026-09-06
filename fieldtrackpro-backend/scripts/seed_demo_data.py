@@ -37,48 +37,9 @@ def run() -> None:
             {"id": admin_id, "pw": pw_hash},
         )
 
-        # 2. Ensure Harsh Tripathi user & employee profile exists
-        harsh_user_id = "ac2abf41-e62c-4147-a42b-e507232aac38"
-        harsh_pw_hash = hash_password(HARSH_PASSWORD)
-        conn.execute(
-            text("""
-                INSERT INTO users (id, email, mobile_number, password_hash, role, is_active, created_at, updated_at)
-                VALUES (:id, 'imharshofficial322@gmail.com', '9565249244', :pw, 'EMPLOYEE', true, now(), now())
-                ON CONFLICT (email) DO UPDATE SET 
-                    mobile_number = EXCLUDED.mobile_number,
-                    password_hash = EXCLUDED.password_hash,
-                    role = 'EMPLOYEE',
-                    is_active = true,
-                    updated_at = now();
-            """),
-            {"id": harsh_user_id, "pw": harsh_pw_hash}
-        )
-
-        # Fetch the actual user id for Harsh
-        actual_user = conn.execute(text("SELECT id FROM users WHERE email = 'imharshofficial322@gmail.com'")).first()
-        if actual_user:
-            uid = actual_user[0]
-            harsh_emp = conn.execute(text("SELECT id FROM employees WHERE user_id = :uid"), {"uid": uid}).first()
-            if not harsh_emp:
-                conn.execute(text("""
-                    INSERT INTO employees (
-                        id, user_id, full_name, employee_code, working_profile, cug, date_of_birth, address, must_change_password
-                    ) VALUES (
-                        :id, :uid, 'Harsh Tripathi', 'HARSH01', 'Sales Specialist', '9565249244', '1995-08-15', 'Lucknow, Uttar Pradesh', false
-                    )
-                    ON CONFLICT (employee_code) DO NOTHING;
-                """), {"id": uid, "uid": uid})
-
-    # 3. Trigger standard idempotent import
-    try:
-        try:
-            from scripts.import_real_client_data import run_import
-        except ModuleNotFoundError:
-            from import_real_client_data import run_import
-        run_import()
-    except Exception as e:
-        print(f"Data import note (non-fatal): {e}")
+    print("Super-admin account verified.")
 
 
 if __name__ == "__main__":
     run()
+

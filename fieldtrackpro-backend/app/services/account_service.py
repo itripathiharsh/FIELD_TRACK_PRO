@@ -192,7 +192,6 @@ async def get_account_summary(
                 brand = alloc.brand or "Unbranded"
                 totals = get_brand_entry(brand)
                 totals["paid"] += alloc.allocated_amount
-                totals["outstanding"] = max(totals["outstanding"] - alloc.allocated_amount, Decimal("0.00"))
                 totals["payment_count"] += 1
                 if totals["latest_payment_date"] is None or p.payment_date > totals["latest_payment_date"]:
                     totals["latest_payment_date"] = p.payment_date
@@ -200,7 +199,13 @@ async def get_account_summary(
             brand = invoice_brand_by_id.get(p.invoice_id, "Unbranded")
             totals = get_brand_entry(brand)
             totals["paid"] += p.amount
-            totals["outstanding"] = max(totals["outstanding"] - p.amount, Decimal("0.00"))
+            totals["payment_count"] += 1
+            if totals["latest_payment_date"] is None or p.payment_date > totals["latest_payment_date"]:
+                totals["latest_payment_date"] = p.payment_date
+        else:
+            # Unallocated on-account payment / customer advance
+            totals = get_brand_entry("Unbranded")
+            totals["paid"] += p.amount
             totals["payment_count"] += 1
             if totals["latest_payment_date"] is None or p.payment_date > totals["latest_payment_date"]:
                 totals["latest_payment_date"] = p.payment_date
@@ -228,8 +233,10 @@ async def get_account_summary(
 
     # Compute overall account aggregates
     total_invoiced = sum((b.total_invoiced for b in brand_summary), Decimal("0.00"))
-    total_paid = sum((b.total_paid for b in brand_summary), Decimal("0.00"))
-    total_outstanding = sum((b.total_outstanding for b in brand_summary), Decimal("0.00"))
+    total_paid = sum((p.amount for p in verified_payments), Decimal("0.00"))
+    total_settled = sum((inv.verified_paid_amount for inv in invoice_reads), Decimal("0.00"))
+    total_outstanding = sum((inv.remaining_amount for inv in invoice_reads), Decimal("0.00"))
+    advance_amount = max(total_paid - total_settled, Decimal("0.00"))
     overdue_amount = sum((b.overdue_amount for b in brand_summary), Decimal("0.00"))
 
     # Snapshot aging buckets aggregation
@@ -273,6 +280,7 @@ async def get_account_summary(
         total_invoiced=total_invoiced,
         total_paid=total_paid,
         total_outstanding=total_outstanding,
+        advance_amount=advance_amount,
         overdue_amount=overdue_amount,
         max_days_outstanding=max_days_outstanding,
         collection_status=collection_status,

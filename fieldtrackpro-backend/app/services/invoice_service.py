@@ -25,9 +25,21 @@ from app.services.period_service import assert_period_open_for_date
 
 
 async def _verified_paid_amount(invoice_id: uuid.UUID, session: AsyncSession) -> Decimal:
+    from app.models.payment_invoice_allocation import PaymentInvoiceAllocation
+    from sqlalchemy import select, func
+
+    # Check explicit and FIFO allocations first
+    alloc_stmt = select(func.coalesce(func.sum(PaymentInvoiceAllocation.allocated_amount), Decimal("0.00"))).where(
+        PaymentInvoiceAllocation.invoice_id == invoice_id
+    )
+    alloc_sum = (await session.execute(alloc_stmt)).scalar() or Decimal("0.00")
+    if alloc_sum > Decimal("0.00"):
+        return alloc_sum
+
+    # Fallback to direct invoice_id payments
     repo = PaymentRepository(session)
     payments = await repo.list_by_invoice(invoice_id, status=PaymentStatus.VERIFIED)
-    return sum((p.amount for p in payments), Decimal("0"))
+    return sum((p.amount for p in payments), Decimal("0.00"))
 
 
 async def to_invoice_read(invoice: Invoice, session: AsyncSession, today: date | None = None) -> InvoiceRead:

@@ -48,6 +48,8 @@ import {
   BusinessSummaryRow,
   TodayFieldActivityOverview,
   Brand,
+  EmployeeMonthlyAnalytics,
+  TallyIntegrationStatus,
 } from '../types';
 import { generatePDFContent } from '../utils/pdf-report';
 
@@ -77,8 +79,10 @@ export const DashboardPage: React.FC = () => {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [dashboardBI, setDashboardBI] = useState<DashboardSummaryResponse | null>(null);
   const [dayDashboard, setDayDashboard] = useState<EmployeeDayDashboardResponse | null>(null);
+  const [employeeAnalytics, setEmployeeAnalytics] = useState<EmployeeMonthlyAnalytics | null>(null);
   const [fieldOverview, setFieldOverview] = useState<TodayFieldActivityOverview | null>(null);
   const [exceptions, setExceptions] = useState<FieldException[]>([]);
+  const [tallyStatus, setTallyStatus] = useState<TallyIntegrationStatus | null>(null);
 
   const todayStr = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const [selectedWorkDate, setSelectedWorkDate] = useState<string>(todayStr);
@@ -93,9 +97,21 @@ export const DashboardPage: React.FC = () => {
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
 
   // Monthly Period Lifecycle & Review State
+  // Authoritative Tally transaction months: only show periods that have real data
+  const availablePeriodsWithData = useMemo(() => {
+    return monthlyPeriods.filter(
+      (p) =>
+        Number(p.total_sales) > 0 ||
+        Number(p.total_collection) > 0 ||
+        (p.snapshot_count ?? 0) > 0 ||
+        (p.total_outlets ?? 0) > 0
+    );
+  }, [monthlyPeriods]);
+
+  // Monthly Period Lifecycle & Review State: Target the latest completed month with real transaction data
   const pendingClosePeriod = useMemo(
-    () => monthlyPeriods.find((p) => p.status === 'PENDING_CLOSE'),
-    [monthlyPeriods]
+    () => availablePeriodsWithData.find((p) => p.status === 'PENDING_CLOSE') || monthlyPeriods.find((p) => p.status === 'PENDING_CLOSE'),
+    [availablePeriodsWithData, monthlyPeriods]
   );
   const currentOpenPeriod = useMemo(
     () => monthlyPeriods.find((p) => p.status === 'OPEN'),
@@ -144,7 +160,7 @@ export const DashboardPage: React.FC = () => {
     Promise.all([
       apiClient.getTerritories().catch(() => [] as Territory[]),
       apiClient.getAreas().catch(() => [] as Area[]),
-      apiClient.getEmployees().catch(() => [] as Employee[]),
+      apiClient.getEmployees({ limit: 1500 }).catch(() => [] as Employee[]),
       apiClient.getMonthlyPeriods().catch(() => [] as MonthlyReportingPeriod[]),
       apiClient.getBrands(true).catch(() => [] as Brand[]),
     ]).then(([tList, aList, eList, pList, bList]) => {
@@ -191,16 +207,17 @@ export const DashboardPage: React.FC = () => {
 
       // Kept only for fallback in test environments where /dashboard/summary is unmocked
       const customersPromise = apiClient.getCustomers().catch(() => [] as Customer[]);
-      const employeesPromise = apiClient.getEmployees().catch(() => [] as Employee[]);
+      const employeesPromise = apiClient.getEmployees({ limit: 1500 }).catch(() => [] as Employee[]);
       const overviewPromise = apiClient
         .getTodayFieldOverview(selectedWorkDate !== todayStr ? selectedWorkDate : undefined)
         .catch(() => null);
       const periodsPromise = apiClient
         .getMonthlyPeriods()
         .catch(() => [] as MonthlyReportingPeriod[]);
+      const tallyPromise = apiClient.getTallyStatus().catch(() => null);
 
-      Promise.all([visitsPromise, biPromise, customersPromise, employeesPromise, overviewPromise, periodsPromise])
-        .then(([vList, biData, cList, eList, ovData, pList]) => {
+      Promise.all([visitsPromise, biPromise, customersPromise, employeesPromise, overviewPromise, periodsPromise, tallyPromise])
+        .then(([vList, biData, cList, eList, ovData, pList, tallyData]) => {
           setVisits(vList || []);
           setDashboardBI(biData);
           setCustomers(cList || []);
@@ -210,6 +227,7 @@ export const DashboardPage: React.FC = () => {
           if (pList && pList.length > 0) {
             setMonthlyPeriods(pList);
           }
+          setTallyStatus(tallyData);
         })
         .catch((err: Error) => {
           setError(err.message || 'Unable to load dashboard data');
@@ -220,12 +238,19 @@ export const DashboardPage: React.FC = () => {
       const visitsPromise = apiClient.getMyTodayVisits().catch(() => [] as Visit[]);
       const dayPromise = apiClient.getEmployeeDayDashboard().catch(() => null);
       const customersPromise = apiClient.getCustomers().catch(() => [] as Customer[]);
+      const tallyPromise = apiClient.getTallyStatus().catch(() => null);
+      const now = new Date();
+      const analyticsPromise = apiClient
+        .getMyMonthAnalytics({ year: now.getFullYear(), month: now.getMonth() + 1 })
+        .catch(() => null);
 
-      Promise.all([visitsPromise, dayPromise, customersPromise])
-        .then(([vList, dayData, cList]) => {
+      Promise.all([visitsPromise, dayPromise, customersPromise, analyticsPromise, tallyPromise])
+        .then(([vList, dayData, cList, anData, tallyData]) => {
           setVisits(vList || []);
           setDayDashboard(dayData);
           setCustomers(cList || []);
+          setEmployeeAnalytics(anData);
+          setTallyStatus(tallyData);
         })
         .catch((err: Error) => {
           setVisits([]);
@@ -503,6 +528,124 @@ export const DashboardPage: React.FC = () => {
         </div>
       )}
 
+      {/* Zero Visits Planned for Today (Phase 2E) - Informational & Neutral */}
+      {!isAdmin && totalVisits === 0 && !isLoading && (
+        <div className="p-4 rounded-2xl bg-surface-container-low border border-outline-variant/60 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
+          <div className="flex items-start gap-3">
+            <div className="p-2 bg-primary/10 text-primary rounded-xl shrink-0 mt-0.5">
+              <Calendar className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-headline-sm text-sm font-bold text-on-surface">
+                  No visits planned for today
+                </span>
+                <span className="px-2 py-0.5 text-[10px] uppercase font-bold tracking-wider rounded-full bg-surface-container-high text-on-surface-variant border border-outline-variant/40">
+                  Information
+                </span>
+              </div>
+              <p className="font-caption text-xs text-on-surface-variant mt-0.5">
+                Zero planned visits is completely valid. You can leave today open for desk work or organize your customer visits in Visit Planning.
+              </p>
+            </div>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => navigate('/visit-planning')}
+            className="text-xs shrink-0 self-end sm:self-auto"
+          >
+            Open Visit Planning
+          </Button>
+        </div>
+      )}
+
+      {/* Missed Planned Visits Alert (Phase 2E) - Prompt Employee to Review/Reschedule */}
+      {!isAdmin && employeeAnalytics && employeeAnalytics.missed > 0 && !isLoading && (
+        <div className="p-4 rounded-2xl bg-rose-50/80 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/50 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
+          <div className="flex items-start gap-3">
+            <div className="p-2 bg-rose-100 dark:bg-rose-900/50 text-rose-700 dark:text-rose-300 rounded-xl shrink-0 mt-0.5">
+              <AlertTriangle className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-headline-sm text-sm font-bold text-rose-950 dark:text-rose-100">
+                  Planned visit{employeeAnalytics.missed > 1 ? 's' : ''} missed
+                </span>
+                <span className="px-2 py-0.5 text-[10px] uppercase font-bold tracking-wider rounded-full bg-rose-200/60 dark:bg-rose-900/60 text-rose-800 dark:text-rose-300 border border-rose-300/50">
+                  Attention Required
+                </span>
+              </div>
+              <p className="font-caption text-xs text-rose-800/90 dark:text-rose-300/90 mt-0.5">
+                You have {employeeAnalytics.missed} planned visit{employeeAnalytics.missed > 1 ? 's' : ''} that were not completed. Review and reschedule them in Visit Planning to ensure customer coverage.
+              </p>
+            </div>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => navigate('/visit-planning')}
+            className="text-xs shrink-0 self-end sm:self-auto border-rose-300 text-rose-800 hover:bg-rose-100 dark:border-rose-800 dark:text-rose-200"
+          >
+            Review Missed Visits
+          </Button>
+        </div>
+      )}
+
+      {/* Tally Prime Dynamic Data Integrity & Freshness Banner */}
+      {tallyStatus && (
+        <div className="p-3.5 rounded-xl bg-surface-container-low border border-outline-variant/60 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className={`p-2 rounded-lg shrink-0 ${
+              tallyStatus.is_connected || tallyStatus.agent_status === 'ONLINE'
+                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+            }`}>
+              <ShieldCheck className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-headline-sm text-xs font-bold text-on-surface">
+                  Financial Source of Truth: Tally Prime
+                </span>
+                <span className={`px-2 py-0.5 text-[10px] uppercase font-bold tracking-wider rounded-full border flex items-center gap-1 ${
+                  tallyStatus.is_connected || tallyStatus.agent_status === 'ONLINE'
+                    ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800'
+                    : 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-800'
+                }`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${
+                    tallyStatus.is_connected || tallyStatus.agent_status === 'ONLINE'
+                      ? 'bg-emerald-500 animate-pulse'
+                      : 'bg-amber-500'
+                  }`} />
+                  {tallyStatus.is_connected || tallyStatus.agent_status === 'ONLINE' ? 'Sync Agent Online' : 'Agent Standby'}
+                </span>
+              </div>
+              <p className="font-caption text-[11px] text-on-surface-variant mt-0.5">
+                Company: <span className="font-semibold text-primary">{tallyStatus.tally_company_name || 'SGRG SERVICES (OPC) PRIVATE LIMITED'}</span>
+                {' • '}Authoritative Invoices: <span className="font-semibold text-primary">{tallyStatus.total_invoices_synced.toLocaleString('en-IN')}</span>
+                {' • '}Receipts: <span className="font-semibold text-primary">{tallyStatus.total_payments_synced.toLocaleString('en-IN')}</span>
+                {tallyStatus.last_sync_at && (
+                  <>
+                    {' • '}Last Sync: <span className="font-semibold text-on-surface">{new Date(tallyStatus.last_sync_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                  </>
+                )}
+              </p>
+            </div>
+          </div>
+          {isAdmin && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => navigate('/settings')}
+              className="text-xs shrink-0 self-end sm:self-auto"
+            >
+              Sync Health
+            </Button>
+          )}
+        </div>
+      )}
+
       {/* Global Filter Engine for Admin */}
       {isAdmin && (
         <Card variant="flat">
@@ -518,7 +661,9 @@ export const DashboardPage: React.FC = () => {
                 <span className="font-caption text-xs text-on-surface-variant">
                   Data Scope:{' '}
                   <span className="font-semibold text-primary">
-                    {selectedMonth === 'ALL' ? '🟢 Current Live Data' : `🔒 Historical Snapshot (${selectedMonth})`}
+                    {selectedMonth === 'ALL'
+                      ? '🟢 Current Live Data'
+                      : `🔒 ${availablePeriodsWithData.find((p) => `${p.period_year}-${String(p.period_month).padStart(2, '0')}` === selectedMonth)?.period_name || selectedMonth}`}
                   </span>
                 </span>
                 <button
@@ -549,7 +694,7 @@ export const DashboardPage: React.FC = () => {
                   onChange={(e) => setSelectedMonth(e.target.value)}
                 >
                   <option value="ALL">Current Live Data</option>
-                  {monthlyPeriods.map((p) => {
+                  {availablePeriodsWithData.map((p) => {
                     const mStr = `${p.period_year}-${String(p.period_month).padStart(2, '0')}`;
                     const tag = p.status === 'FINALIZED' ? '🔒 (Locked)' : p.status === 'PENDING_CLOSE' ? '⏳ (Pending Close)' : '🟢 (Current)';
                     return (

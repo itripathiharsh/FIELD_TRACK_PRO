@@ -23,7 +23,7 @@ from sqlalchemy.orm import selectinload
 from app.core.context import get_current_request_id
 from app.exceptions.custom import BaseAPIException
 from app.models.employee import Employee
-from app.models.payment import Payment, PaymentBrandAllocation, PaymentStatus
+from app.models.payment import Payment, PaymentBrandAllocation, PaymentStatus, PaymentSource
 from app.models.payment_proof import PaymentProof
 from app.models.user import Role, User
 from app.repositories.payment_repo import PaymentProofRepository, PaymentRepository
@@ -52,6 +52,8 @@ def to_payment_read(payment: Payment) -> PaymentRead:
         utr_reference=payment.utr_reference,
         notes=payment.notes,
         status=payment.status,
+        source=payment.source,
+        source_reference=payment.source_reference,
         rejection_reason=payment.rejection_reason,
         reviewed_by=payment.reviewed_by,
         reviewed_at=payment.reviewed_at,
@@ -128,6 +130,7 @@ async def create_payment(data: PaymentCreate, current_user: User, session: Async
         utr_reference=data.utr_reference,
         notes=data.notes,
         status=PaymentStatus.PENDING_VERIFICATION,
+        source=PaymentSource.MANUAL,
         created_by=current_user.id,
         idempotency_key=data.idempotency_key,
     )

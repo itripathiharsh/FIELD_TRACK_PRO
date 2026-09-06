@@ -119,7 +119,8 @@ async def get_form(
     visit_result = await session.execute(select(Visit).where(Visit.id == visit_id))
     visit = visit_result.scalar_one_or_none()
     if visit is None:
-        return None
+        from app.exceptions.custom import ResourceNotFoundException
+        raise ResourceNotFoundException("Visit not found")
 
     await assert_visit_access(visit, current_user, session)
 

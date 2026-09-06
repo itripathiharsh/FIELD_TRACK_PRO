@@ -16,6 +16,7 @@ import com.fieldtrackpro.android.ui.screens.maps.MapScreen
 import com.fieldtrackpro.android.ui.screens.media.AttachmentPreviewScreen
 import com.fieldtrackpro.android.ui.screens.media.MediaUploadScreen
 import com.fieldtrackpro.android.ui.screens.notifications.NotificationsListScreen
+import com.fieldtrackpro.android.ui.screens.planning.MonthlyPlanningScreen
 import com.fieldtrackpro.android.ui.screens.profile.ProfileSettingsScreen
 import com.fieldtrackpro.android.ui.screens.requirements.FormFillScreen
 import com.fieldtrackpro.android.ui.screens.requirements.RequirementFormScreen
@@ -35,6 +36,7 @@ import com.fieldtrackpro.android.ui.viewmodel.CollectionViewModel
 import com.fieldtrackpro.android.ui.viewmodel.FormFillViewModel
 import com.fieldtrackpro.android.ui.viewmodel.GeofenceViewModel
 import com.fieldtrackpro.android.ui.viewmodel.MediaViewModel
+import com.fieldtrackpro.android.ui.viewmodel.MonthlyPlanningViewModel
 import com.fieldtrackpro.android.ui.viewmodel.NotificationViewModel
 import com.fieldtrackpro.android.ui.viewmodel.RequirementViewModel
 import com.fieldtrackpro.android.ui.viewmodel.SignatureViewModel
@@ -61,7 +63,8 @@ fun NavGraph(
     collectionViewModel: CollectionViewModel,
     geofenceViewModel: GeofenceViewModel,
     tokenManager: TokenManager,
-    offlineQueueManager: OfflineQueueManager
+    offlineQueueManager: OfflineQueueManager,
+    monthlyPlanningViewModel: MonthlyPlanningViewModel? = null
 ) {
     NavHost(
         navController = navController,
@@ -114,7 +117,18 @@ fun NavGraph(
                 onNavigateToProfile = { navController.navigate(Screen.ProfileSettings.route) },
                 onNavigateToSync = { navController.navigate(Screen.OfflineQueue.route) },
                 onNavigateToNotifications = { navController.navigate(Screen.Notifications.route) },
-                onNavigateToAddCustomer = { navController.navigate(Screen.AddCustomer.route) }
+                onNavigateToAddCustomer = { navController.navigate(Screen.AddCustomer.route) },
+                onNavigateToMonthlyPlanning = { navController.navigate(Screen.MonthlyPlanning.route) }
+            )
+        }
+
+        composable(Screen.MonthlyPlanning.route) {
+            val planningVm = monthlyPlanningViewModel ?: androidx.lifecycle.viewmodel.compose.viewModel {
+                MonthlyPlanningViewModel(tokenManager)
+            }
+            MonthlyPlanningScreen(
+                viewModel = planningVm,
+                onNavigateBack = { navController.popBackStack() }
             )
         }
 

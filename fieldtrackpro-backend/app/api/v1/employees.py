@@ -48,7 +48,7 @@ async def list_employees(
     session: DbSession,
     territory_id: uuid.UUID | None = Query(default=None),
     skip: int = Query(default=0, ge=0),
-    limit: int = Query(default=50, le=200),
+    limit: int = Query(default=50, le=5000),
     search: str | None = Query(default=None, description="Search across full name, code, email, mobile, CUG"),
     is_active: bool | None = Query(default=None),
     role: str | None = Query(default=None),

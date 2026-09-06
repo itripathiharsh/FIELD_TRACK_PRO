@@ -83,3 +83,26 @@ app.include_router(api_router, prefix=settings.api_v1_prefix)
 async def root_health_check():
     """Root-level health probe for load balancers / Docker HEALTHCHECK."""
     return {"status": "UP"}
+
+
+@app.get("/download/app", tags=["mobile-distribution"])
+@app.get("/app-latest.apk", tags=["mobile-distribution"])
+async def download_latest_apk():
+    """Serves the latest assembled Android APK for direct mobile installation."""
+    from pathlib import Path
+    from fastapi import HTTPException
+    from fastapi.responses import FileResponse
+
+    apk_paths = [
+        Path(r"f:\Field track pro v2 for test\FieldTrackPro-Latest-Debug.apk"),
+        Path(r"f:\Field track pro v2 for test\field track pro\fieldtrackpro-android\app\build\outputs\apk\debug\app-debug.apk"),
+    ]
+    for p in apk_paths:
+        if p.exists():
+            return FileResponse(
+                path=str(p),
+                filename="FieldTrackPro-Latest-Debug.apk",
+                media_type="application/vnd.android.package-archive",
+            )
+    raise HTTPException(status_code=404, detail="APK file not found")
+

@@ -26,6 +26,9 @@ import { StatusBadge } from '../components/ui/StatusBadge';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
 import { Input } from '../components/ui/Input';
+import { Select } from '../components/ui/Select';
+import { Textarea } from '../components/ui/Textarea';
+import { BrandSelect } from '../components/ui/BrandSelect';
 import { AccountSummaryCard } from '../components/ui/AccountSummaryCard';
 import { AddBrandModal } from '../components/ui/AddBrandModal';
 
@@ -63,9 +66,13 @@ export const CustomerDetailPage: React.FC = () => {
   const [isSavingReq, setIsSavingReq] = useState(false);
   const [reqError, setReqError] = useState<string | null>(null);
 
-  // Brand creation modal
+  // Brand creation & management modal
   const [isAddBrandOpen, setIsAddBrandOpen] = useState(false);
   const [brandContext, setBrandContext] = useState<'requirement' | 'customer'>('requirement');
+  const [isManageBrandsOpen, setIsManageBrandsOpen] = useState(false);
+  const [isSavingBrands, setIsSavingBrands] = useState(false);
+  const [brandActionError, setBrandActionError] = useState<string | null>(null);
+  const [customReqType, setCustomReqType] = useState('');
 
   // Rejection modal
   const [rejectingProposal, setRejectingProposal] = useState<LocationProposal | null>(null);
@@ -154,9 +161,14 @@ export const CustomerDetailPage: React.FC = () => {
     setIsSavingReq(true);
     setReqError(null);
     try {
+      const finalReqType =
+        reqForm.requirement_type === 'Other'
+          ? customReqType.trim() || 'Other'
+          : reqForm.requirement_type.trim();
+
       await apiClient.createCustomerRequirement(id, {
         brand: reqForm.brand.trim() || undefined,
-        requirement_type: reqForm.requirement_type.trim() || undefined,
+        requirement_type: finalReqType || undefined,
         product_details: reqForm.product_details.trim() || undefined,
         quantity: reqForm.quantity ? parseInt(reqForm.quantity, 10) : undefined,
         expected_value: reqForm.expected_value ? parseFloat(reqForm.expected_value) : undefined,
@@ -173,11 +185,45 @@ export const CustomerDetailPage: React.FC = () => {
         follow_up_date: '',
         notes: '',
       });
+      setCustomReqType('');
       load();
     } catch (err) {
       setReqError(err instanceof Error ? err.message : 'Failed to create requirement');
     } finally {
       setIsSavingReq(false);
+    }
+  };
+
+  const handleRemoveBrandFromCustomer = async (brandToRemove: string) => {
+    if (!customer) return;
+    const updated = (customer.brands || []).filter(
+      (b) => b.trim().toLowerCase() !== brandToRemove.trim().toLowerCase()
+    );
+    try {
+      setBrandActionError(null);
+      await apiClient.updateCustomer(customer.id, { brands: updated });
+      setCustomer({ ...customer, brands: updated });
+    } catch (err) {
+      setBrandActionError(err instanceof Error ? err.message : 'Failed to remove brand');
+    }
+  };
+
+  const handleBrandsChange = async (newBrands: string[]) => {
+    if (!customer) return;
+    setIsSavingBrands(true);
+    setBrandActionError(null);
+    try {
+      await apiClient.updateCustomer(customer.id, { brands: newBrands });
+      setCustomer({ ...customer, brands: newBrands });
+      newBrands.forEach((b) => {
+        if (!masterBrands.includes(b)) {
+          setMasterBrands((prev) => [...prev, b].sort());
+        }
+      });
+    } catch (err) {
+      setBrandActionError(err instanceof Error ? err.message : 'Failed to update customer brands');
+    } finally {
+      setIsSavingBrands(false);
     }
   };
 
@@ -190,10 +236,11 @@ export const CustomerDetailPage: React.FC = () => {
     } else if (brandContext === 'customer' && customer) {
       const updatedBrands = Array.from(new Set([...(customer.brands || []), newBrand.name]));
       try {
+        setBrandActionError(null);
         await apiClient.updateCustomer(customer.id, { brands: updatedBrands });
         setCustomer({ ...customer, brands: updatedBrands });
-      } catch {
-        // Ignored
+      } catch (err) {
+        setBrandActionError(err instanceof Error ? err.message : 'Failed to associate brand');
       }
     }
   };
@@ -231,7 +278,7 @@ export const CustomerDetailPage: React.FC = () => {
       {/* Profile Card */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between w-full">
             <div>
               <CardTitle>Profile & Master Details</CardTitle>
               <CardSubtitle>Outlet identity, contact information, and brands</CardSubtitle>
@@ -315,16 +362,34 @@ export const CustomerDetailPage: React.FC = () => {
           </div>
         </div>
 
+        {/* Brand Action Error Feedback */}
+        {brandActionError && (
+          <div className="mx-5 mb-2">
+            <ErrorBanner message={brandActionError} />
+          </div>
+        )}
+
         {/* Brand Badges Bar */}
-        <div className="px-5 pb-5 pt-2 border-t border-surface-container-highest flex items-center justify-between gap-2 flex-wrap">
+        <div className="px-5 pb-5 pt-3 border-t border-surface-container-highest flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs font-bold uppercase tracking-wider text-on-surface-variant flex items-center gap-1">
-              <Tag className="w-3.5 h-3.5" /> Associated Brands:
+            <span className="text-xs font-bold uppercase tracking-wider text-on-surface-variant flex items-center gap-1.5">
+              <Tag className="w-3.5 h-3.5 text-primary" /> Associated Brands:
             </span>
             {customer.brands && customer.brands.length > 0 ? (
               customer.brands.map((b) => (
-                <span key={b} className="text-xs font-bold bg-primary/10 text-primary px-2.5 py-1 rounded-md border border-primary/20">
-                  {b}
+                <span
+                  key={b}
+                  className="inline-flex items-center gap-1.5 text-xs font-bold bg-primary/10 text-primary px-2.5 py-1 rounded-md border border-primary/20 shadow-2xs"
+                >
+                  <span>{b}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveBrandFromCustomer(b)}
+                    className="text-primary/50 hover:text-rose-600 hover:bg-rose-100 rounded-full p-0.5 transition-colors cursor-pointer"
+                    title={`Remove ${b} from customer`}
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
                 </span>
               ))
             ) : (
@@ -334,13 +399,13 @@ export const CustomerDetailPage: React.FC = () => {
           <button
             type="button"
             onClick={() => {
-              setBrandContext('customer');
-              setIsAddBrandOpen(true);
+              setBrandActionError(null);
+              setIsManageBrandsOpen(true);
             }}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold text-secondary hover:bg-secondary/10 border border-secondary/30 transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-secondary hover:bg-secondary/10 border border-secondary/30 transition-colors shadow-2xs cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" />
-            <span>+ Add Brand</span>
+            <span>Manage Brands</span>
           </button>
         </div>
       </Card>
@@ -348,7 +413,7 @@ export const CustomerDetailPage: React.FC = () => {
       {/* Location Proposals & Verification Card */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between w-full">
             <div>
               <CardTitle className="flex items-center gap-2">
                 <Navigation className="w-5 h-5 text-primary" />
@@ -454,7 +519,7 @@ export const CustomerDetailPage: React.FC = () => {
       {/* Customer Requirements & Opportunities Card */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 w-full">
             <div>
               <CardTitle className="flex items-center gap-2">
                 <Briefcase className="w-5 h-5 text-primary" />
@@ -462,7 +527,19 @@ export const CustomerDetailPage: React.FC = () => {
               </CardTitle>
               <CardSubtitle>Tracked order demands, product stock requirements, and follow-ups</CardSubtitle>
             </div>
-            <Button variant="secondary" size="sm" icon={Plus} onClick={() => setIsAddReqOpen(true)}>
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={Plus}
+              onClick={() => {
+                setReqError(null);
+                if (!reqForm.brand && customer.brands && customer.brands.length > 0) {
+                  setReqForm((prev) => ({ ...prev, brand: customer.brands![0] }));
+                }
+                setIsAddReqOpen(true);
+              }}
+              className="shrink-0 font-bold shadow-xs"
+            >
               Add Requirement
             </Button>
           </div>
@@ -527,11 +604,13 @@ export const CustomerDetailPage: React.FC = () => {
       {/* Order History */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <PackagePlus className="w-5 h-5" />
-            Order History
-          </CardTitle>
-          <CardSubtitle>{orders.length} order{orders.length !== 1 ? 's' : ''} captured across this outlet's visits</CardSubtitle>
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <PackagePlus className="w-5 h-5 text-primary" />
+              Order History
+            </CardTitle>
+            <CardSubtitle>{orders.length} order{orders.length !== 1 ? 's' : ''} captured across this outlet's visits</CardSubtitle>
+          </div>
         </CardHeader>
         {orders.length === 0 ? (
           <div className="p-5">
@@ -568,11 +647,13 @@ export const CustomerDetailPage: React.FC = () => {
       {/* Visit History */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Calendar className="w-5 h-5" />
-            Visit History
-          </CardTitle>
-          <CardSubtitle>{visitHistory.length} visit{visitHistory.length !== 1 ? 's' : ''} recorded</CardSubtitle>
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Calendar className="w-5 h-5 text-primary" />
+              Visit History
+            </CardTitle>
+            <CardSubtitle>{visitHistory.length} visit{visitHistory.length !== 1 ? 's' : ''} recorded</CardSubtitle>
+          </div>
         </CardHeader>
         {visitHistory.length === 0 ? (
           <div className="p-5">
@@ -627,56 +708,89 @@ export const CustomerDetailPage: React.FC = () => {
         >
           {reqError && <ErrorBanner message={reqError} />}
           <form onSubmit={handleSaveRequirement} className="space-y-4 text-xs">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block font-bold text-on-surface mb-1">Brand</label>
-                <select
-                  value={reqForm.brand}
-                  onChange={(e) => {
-                    if (e.target.value === '__ADD_NEW_BRAND__') {
-                      setBrandContext('requirement');
-                      setIsAddBrandOpen(true);
-                    } else {
-                      setReqForm({ ...reqForm, brand: e.target.value });
-                    }
-                  }}
-                  className="w-full p-2 rounded border border-outline bg-surface text-on-surface"
-                >
-                  <option value="">-- Select Brand --</option>
-                  {masterBrands.map((b) => (
-                    <option key={b} value={b}>{b}</option>
-                  ))}
-                  <option value="__ADD_NEW_BRAND__" className="font-bold text-secondary">
-                    + Add New Brand
-                  </option>
-                </select>
-              </div>
-              <Input
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <Select
+                label="Target Brand"
+                value={reqForm.brand}
+                onChange={(e) => {
+                  if (e.target.value === '__ADD_NEW_BRAND__') {
+                    setBrandContext('requirement');
+                    setIsAddBrandOpen(true);
+                  } else {
+                    setReqForm({ ...reqForm, brand: e.target.value });
+                  }
+                }}
+              >
+                <option value="">-- Select Brand --</option>
+                {customer.brands && customer.brands.length > 0 && (
+                  <optgroup label="Associated Brands">
+                    {customer.brands.map((b) => (
+                      <option key={`assoc-${b}`} value={b}>
+                        ★ {b} (Associated)
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                <optgroup label="All Master Brands">
+                  {masterBrands
+                    .filter((b) => !(customer.brands || []).includes(b))
+                    .map((b) => (
+                      <option key={`master-${b}`} value={b}>
+                        {b}
+                      </option>
+                    ))}
+                </optgroup>
+                <option value="__ADD_NEW_BRAND__" className="font-bold text-secondary">
+                  + Register New Brand...
+                </option>
+              </Select>
+
+              <Select
                 label="Requirement Type"
-                type="text"
                 value={reqForm.requirement_type}
                 onChange={(e) => setReqForm({ ...reqForm, requirement_type: e.target.value })}
-                placeholder="e.g. Stock Refill / Dealership"
-              />
+              >
+                <option value="">-- Select Type --</option>
+                <option value="Initial Dealership & Stock">Initial Dealership &amp; Stock</option>
+                <option value="Regular Stock Refill">Regular Stock Refill</option>
+                <option value="Display Unit / POSM Setup">Display Unit / POSM Setup</option>
+                <option value="Product Replacement / Warranty">Product Replacement / Warranty</option>
+                <option value="Pricing & Scheme Inquiry">Pricing &amp; Scheme Inquiry</option>
+                <option value="Bulk / Festive Demand">Bulk / Festive Demand</option>
+                <option value="New Product Launch">New Product Launch</option>
+                <option value="Other">Other / Custom</option>
+              </Select>
             </div>
 
+            {reqForm.requirement_type === 'Other' && (
+              <Input
+                label="Specify Custom Requirement Type"
+                type="text"
+                value={customReqType}
+                onChange={(e) => setCustomReqType(e.target.value)}
+                placeholder="e.g. Annual Dealership Contract Renewal"
+                autoFocus
+              />
+            )}
+
             <Input
-              label="Product Details"
+              label="Product / SKU Details *"
               type="text"
               required
               value={reqForm.product_details}
               onChange={(e) => setReqForm({ ...reqForm, product_details: e.target.value })}
-              placeholder="e.g. 50 Ceiling Fans, 20 Water Heaters"
+              placeholder="e.g. 50 Ceiling Fans, 20 Water Heaters (Model X)"
+              helperText="Specify models, variants, sizes or specific SKU requirements"
             />
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <Input
                 label="Estimated Quantity"
                 type="number"
                 min={1}
                 value={reqForm.quantity}
                 onChange={(e) => setReqForm({ ...reqForm, quantity: e.target.value })}
-                placeholder="70"
+                placeholder="e.g. 25"
               />
               <Input
                 label="Expected Value (₹)"
@@ -684,29 +798,31 @@ export const CustomerDetailPage: React.FC = () => {
                 step="any"
                 value={reqForm.expected_value}
                 onChange={(e) => setReqForm({ ...reqForm, expected_value: e.target.value })}
-                placeholder="150000"
+                placeholder="e.g. 150000"
+                helperText={
+                  reqForm.expected_value && !isNaN(Number(reqForm.expected_value))
+                    ? `Value: ₹${Number(reqForm.expected_value).toLocaleString('en-IN')}`
+                    : undefined
+                }
               />
             </div>
 
             <Input
-              label="Follow-up Date"
+              label="Follow-up / Target Date"
               type="date"
               value={reqForm.follow_up_date}
               onChange={(e) => setReqForm({ ...reqForm, follow_up_date: e.target.value })}
             />
 
-            <div>
-              <label className="block font-bold text-on-surface mb-1">Field Notes</label>
-              <textarea
-                value={reqForm.notes}
-                onChange={(e) => setReqForm({ ...reqForm, notes: e.target.value })}
-                placeholder="Owner interested in festive bulk discount."
-                rows={2}
-                className="w-full p-2 rounded border border-outline bg-surface text-on-surface"
-              />
-            </div>
+            <Textarea
+              label="Field Notes & Observations"
+              value={reqForm.notes}
+              onChange={(e) => setReqForm({ ...reqForm, notes: e.target.value })}
+              placeholder="e.g. Retailer interested in festive discount scheme; requires delivery by next Friday."
+              rows={3}
+            />
 
-            <div className="flex justify-end gap-2 pt-2">
+            <div className="flex justify-end gap-2 pt-3 border-t border-surface-container-highest">
               <Button variant="outline" onClick={() => setIsAddReqOpen(false)} disabled={isSavingReq}>
                 Cancel
               </Button>
@@ -715,6 +831,39 @@ export const CustomerDetailPage: React.FC = () => {
               </Button>
             </div>
           </form>
+        </Modal>
+      )}
+
+      {/* Manage Associated Brands Modal */}
+      {isManageBrandsOpen && customer && (
+        <Modal
+          isOpen={true}
+          onClose={() => setIsManageBrandsOpen(false)}
+          title={`Manage Brands: ${customer.name}`}
+        >
+          {brandActionError && <ErrorBanner message={brandActionError} />}
+          <div className="space-y-4 text-xs">
+            <p className="text-on-surface-variant">
+              Tag the product brands carried, sold, or serviced by this outlet. Selected brands appear on visit logs, requirement filters, and reporting.
+            </p>
+
+            <BrandSelect
+              label="Associated Brands"
+              selectedBrands={customer.brands || []}
+              onChange={handleBrandsChange}
+              disabled={isSavingBrands}
+              placeholder="Search or select master brands..."
+            />
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-surface-container-highest">
+              <Button
+                variant="primary"
+                onClick={() => setIsManageBrandsOpen(false)}
+              >
+                Done
+              </Button>
+            </div>
+          </div>
         </Modal>
       )}
 
