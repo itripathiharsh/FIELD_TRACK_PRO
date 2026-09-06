@@ -10,6 +10,7 @@ import {
   CustomerMapLocation,
   CustomerProspectCreate,
   CustomerRequirement,
+  RequirementDecisionRequest,
   Employee,
   EmployeeAreaAssignment,
   EmployeeActivity,
@@ -916,6 +917,9 @@ export class ApiClient {
   async getAllRequirements(params?: {
     brand?: string;
     status?: string;
+    customer_id?: string;
+    employee_id?: string;
+    search?: string;
     follow_up_date?: string;
     skip?: number;
     limit?: number;
@@ -924,12 +928,68 @@ export class ApiClient {
     if (params) {
       if (params.brand) searchParams.set('brand', params.brand);
       if (params.status) searchParams.set('status', params.status);
+      if (params.customer_id) searchParams.set('customer_id', params.customer_id);
+      if (params.employee_id) searchParams.set('employee_id', params.employee_id);
+      if (params.search) searchParams.set('search', params.search);
       if (params.follow_up_date) searchParams.set('follow_up_date', params.follow_up_date);
       if (params.skip !== undefined) searchParams.set('skip', String(params.skip));
       if (params.limit !== undefined) searchParams.set('limit', String(params.limit));
     }
     const query = searchParams.toString();
     return this.request<CustomerRequirement[]>(`/api/v1/requirements${query ? `?${query}` : ''}`);
+  }
+
+  async getRequirementById(id: string): Promise<CustomerRequirement> {
+    return this.request<CustomerRequirement>(`/api/v1/requirements/${id}`);
+  }
+
+  async decideRequirement(
+    id: string,
+    data: RequirementDecisionRequest,
+  ): Promise<CustomerRequirement> {
+    return this.request<CustomerRequirement>(`/api/v1/requirements/${id}/decision`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async approveRequirement(
+    id: string,
+    data?: { approved_quantity?: number; approved_value?: number; admin_notes?: string },
+  ): Promise<CustomerRequirement> {
+    return this.request<CustomerRequirement>(`/api/v1/requirements/${id}/approve`, {
+      method: 'POST',
+      body: JSON.stringify(data || {}),
+    });
+  }
+
+  async partiallyApproveRequirement(
+    id: string,
+    data: { approved_quantity: number; approved_value: number; admin_notes?: string },
+  ): Promise<CustomerRequirement> {
+    return this.request<CustomerRequirement>(`/api/v1/requirements/${id}/partially-approve`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async rejectRequirement(
+    id: string,
+    data?: { admin_notes?: string },
+  ): Promise<CustomerRequirement> {
+    return this.request<CustomerRequirement>(`/api/v1/requirements/${id}/reject`, {
+      method: 'POST',
+      body: JSON.stringify(data || {}),
+    });
+  }
+
+  async uploadRequirementPhoto(id: string, file: File): Promise<CustomerRequirement> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.request<CustomerRequirement>(`/api/v1/requirements/${id}/photo`, {
+      method: 'POST',
+      body: formData,
+    });
   }
 
   // -- Requirement Forms (Visit-level) --------------------------------------

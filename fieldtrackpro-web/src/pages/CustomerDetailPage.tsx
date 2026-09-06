@@ -565,8 +565,8 @@ export const CustomerDetailPage: React.FC = () => {
                   <th className="px-4 py-3 font-bold text-primary">Brand</th>
                   <th className="px-4 py-3 font-bold text-primary">Type</th>
                   <th className="px-4 py-3 font-bold text-primary">Product Details</th>
-                  <th className="px-4 py-3 font-bold text-primary">Qty</th>
-                  <th className="px-4 py-3 font-bold text-primary">Expected Value</th>
+                  <th className="px-4 py-3 font-bold text-primary">Requested Qty & Value</th>
+                  <th className="px-4 py-3 font-bold text-primary">Approved Allocation</th>
                   <th className="px-4 py-3 font-bold text-primary">Follow-up Date</th>
                   <th className="px-4 py-3 font-bold text-primary">Status</th>
                 </tr>
@@ -579,17 +579,40 @@ export const CustomerDetailPage: React.FC = () => {
                     </td>
                     <td className="px-4 py-3">{req.requirement_type || 'General'}</td>
                     <td className="px-4 py-3 max-w-xs">{req.product_details || req.notes || '—'}</td>
-                    <td className="px-4 py-3 font-mono">{req.quantity != null ? req.quantity : '—'}</td>
-                    <td className="px-4 py-3 font-mono font-semibold text-emerald-700">
-                      {req.expected_value != null ? `₹${req.expected_value.toLocaleString()}` : '—'}
+                    <td className="px-4 py-3 font-mono">
+                      <div>{req.quantity != null ? `${req.quantity} units` : '—'}</div>
+                      <div className="font-semibold text-primary">
+                        {req.expected_value != null ? `₹${Number(req.expected_value).toLocaleString('en-IN')}` : '—'}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 font-mono">
+                      {req.status === 'PARTIALLY_APPROVED' ? (
+                        <div>
+                          <div className="font-bold text-secondary-container">{req.approved_quantity != null ? `${req.approved_quantity} units` : '—'}</div>
+                          <div className="text-secondary-container font-semibold">
+                            {req.approved_value != null ? `₹${Number(req.approved_value).toLocaleString('en-IN')}` : '—'}
+                          </div>
+                        </div>
+                      ) : req.status === 'APPROVED' ? (
+                        <div>
+                          <div className="font-bold text-emerald-700">{req.approved_quantity != null ? `${req.approved_quantity} units` : `${req.quantity} units`}</div>
+                          <div className="text-emerald-700 font-semibold">
+                            {req.approved_value != null
+                              ? `₹${Number(req.approved_value).toLocaleString('en-IN')}`
+                              : req.expected_value != null
+                              ? `₹${Number(req.expected_value).toLocaleString('en-IN')}`
+                              : '—'}
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-on-surface-variant/50 text-[11px]">—</span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-on-surface-variant font-mono">
                       {req.follow_up_date || '—'}
                     </td>
                     <td className="px-4 py-3">
-                      <span className="inline-flex px-2 py-0.5 text-[10px] font-bold rounded-full bg-surface-container text-on-surface border border-outline-variant">
-                        {req.status}
-                      </span>
+                      <StatusBadge status={req.status} size="sm" />
                     </td>
                   </tr>
                 ))}

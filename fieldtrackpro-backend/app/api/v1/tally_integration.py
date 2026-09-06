@@ -32,7 +32,14 @@ from app.schemas.tally_sync import (
     SyncResultResponse,
     TallyIntegrationStatusResponse,
 )
-from app.services import tally_sync_service
+from app.schemas.tally_writeback import (
+    TallyWritebackAckRequest,
+    TallyWritebackActionResponse,
+    TallyWritebackFailRequest,
+    TallyWritebackJobRead,
+)
+from app.services import tally_sync_service, tally_writeback_service
+
 
 router = APIRouter(prefix="/integrations/tally", tags=["tally-integration"])
 
@@ -121,3 +128,60 @@ async def sync_payments(
 ):
     """Idempotently sync payment / receipt records from Tally."""
     return await tally_sync_service.sync_payments(agent, batch, session)
+
+
+# ---------------------------------------------------------------------------
+# Outbox Endpoints: BE -> Tally Write-Back
+# ---------------------------------------------------------------------------
+
+@router.get("/outbox/pending", response_model=list[TallyWritebackJobRead])
+async def get_pending_outbox_jobs(
+    agent: AuthenticatedAgent,
+    session: DbSession,
+    limit: int = 10,
+):
+    """
+    Fetch and atomically claim pending Tally write-back jobs.
+    Uses database row-level locking to ensure safe concurrency across agent pollers.
+    """
+    jobs = await tally_writeback_service.claim_pending_jobs(session, limit=limit)
+    return [TallyWritebackJobRead.model_validate(j) for j in jobs]
+
+
+@router.post("/outbox/{job_id}/ack", response_model=TallyWritebackActionResponse)
+async def ack_outbox_job(
+    job_id: uuid.UUID,
+    data: TallyWritebackAckRequest,
+    agent: AuthenticatedAgent,
+    session: DbSession,
+):
+    """
+    Acknowledge successful creation of receipt voucher in Tally.
+    Persists Tally GUID and identifiers, prevents duplicate write-backs.
+    """
+    job = await tally_writeback_service.ack_writeback_job(session, job_id, data)
+    return TallyWritebackActionResponse(
+        status="CONFIRMED",
+        job_id=job.id,
+        message="Job successfully acknowledged and confirmed with Tally identifiers.",
+    )
+
+
+@router.post("/outbox/{job_id}/fail", response_model=TallyWritebackActionResponse)
+async def fail_outbox_job(
+    job_id: uuid.UUID,
+    data: TallyWritebackFailRequest,
+    agent: AuthenticatedAgent,
+    session: DbSession,
+):
+    """
+    Record error attempting to write to Tally.
+    Applies exponential backoff for retryable errors or marks terminal failure.
+    """
+    job = await tally_writeback_service.fail_writeback_job(session, job_id, data)
+    return TallyWritebackActionResponse(
+        status=job.status.value if hasattr(job.status, "value") else str(job.status),
+        job_id=job.id,
+        message=f"Job status updated to {job.status}: {data.error_message}",
+    )
+

@@ -25,7 +25,10 @@ from app.schemas.visit import (
     VisitRequiredFormUpdate,
     VisitStatusUpdate,
 )
-from app.services import visit_service
+from sqlalchemy import select
+from app.models.customer_requirement import CustomerRequirement
+from app.schemas.customer_requirement import CustomerRequirementCreate, CustomerRequirementRead
+from app.services import customer_requirement_service, visit_service
 
 router = APIRouter(prefix="/visits", tags=["visits"])
 
@@ -194,3 +197,43 @@ async def bulk_create_visits(
     """Admin: bulk schedule visits for multiple customers."""
     visits = await visit_service.bulk_create_visits(data, current_user.id, session)
     return [VisitRead.model_validate(v) for v in visits]
+
+
+@router.post("/{visit_id}/requirements", response_model=CustomerRequirementRead, status_code=201, dependencies=[AnyAuth])
+async def create_visit_requirement(
+    visit_id: uuid.UUID,
+    data: CustomerRequirementCreate,
+    current_user: CurrentUser,
+    session: DbSession,
+):
+    """
+    Record a customer stock/business requirement captured during a visit.
+    """
+    visit = await visit_service.get_visit_for_user(visit_id, current_user, session)
+    data.visit_id = visit_id
+    return await customer_requirement_service.create_requirement(
+        customer_id=visit.customer_id,
+        data=data,
+        current_user=current_user,
+        session=session,
+    )
+
+
+@router.get("/{visit_id}/requirements", response_model=list[CustomerRequirementRead], dependencies=[AnyAuth])
+async def list_visit_requirements(
+    visit_id: uuid.UUID,
+    current_user: CurrentUser,
+    session: DbSession,
+):
+    """
+    List all requirements captured during a specific visit.
+    """
+    visit = await visit_service.get_visit_for_user(visit_id, current_user, session)
+    res = await session.execute(
+        select(CustomerRequirement)
+        .where(CustomerRequirement.visit_id == visit_id)
+        .order_by(CustomerRequirement.created_at.desc())
+    )
+    reqs = res.scalars().all()
+    return [await customer_requirement_service._enrich_requirement_read(r, session) for r in reqs]
+

@@ -149,6 +149,15 @@ async def create_payment(data: PaymentCreate, current_user: User, session: Async
 
     try:
         await repo.add(payment)
+        await session.flush()
+
+        from app.models.customer import Customer
+        from app.services.tally_writeback_service import enqueue_payment_writeback
+        cust_row = await session.execute(select(Customer).where(Customer.id == payment.customer_id))
+        cust_obj = cust_row.scalar_one_or_none()
+        inv_obj = await get_invoice(data.invoice_id, session) if data.invoice_id else None
+        await enqueue_payment_writeback(session, payment, customer=cust_obj, invoice=inv_obj)
+
         await repo.commit()
     except IntegrityError:
         await session.rollback()
@@ -361,6 +370,15 @@ async def verify_payment(payment_id: uuid.UUID, current_user: User, session: Asy
     payment.reviewed_by = current_user.id
     payment.reviewed_at = datetime.now(tz=timezone.utc)
     session.add(payment)
+
+    # Ensure writeback job is enqueued if not already present (idempotent)
+    from app.models.customer import Customer
+    from app.services.tally_writeback_service import enqueue_payment_writeback
+    cust_row = await session.execute(select(Customer).where(Customer.id == payment.customer_id))
+    cust_obj = cust_row.scalar_one_or_none()
+    inv_obj = await get_invoice(payment.invoice_id, session) if payment.invoice_id else None
+    await enqueue_payment_writeback(session, payment, customer=cust_obj, invoice=inv_obj)
+
     await session.commit()
     logger.info(
         "event=payment_verify result=approved request_id=%s payment_id=%s customer_id=%s amount=%s verified_by=%s",
@@ -406,6 +424,18 @@ async def reject_payment(
     payment.reviewed_by = current_user.id
     payment.reviewed_at = datetime.now(tz=timezone.utc)
     session.add(payment)
+
+    # Cancel any pending writeback job for this rejected payment
+    from app.models.tally_writeback import TallyWritebackQueue, WritebackStatus
+    wb_stmt = select(TallyWritebackQueue).where(
+        TallyWritebackQueue.idempotency_key == f"fieldtrack_payment:{payment.id}",
+        TallyWritebackQueue.status.in_([WritebackStatus.PENDING, WritebackStatus.PROCESSING]),
+    )
+    pending_wb = (await session.execute(wb_stmt)).scalar_one_or_none()
+    if pending_wb:
+        pending_wb.status = WritebackStatus.FAILED
+        pending_wb.last_error = f"Payment rejected by Admin: {rejection_reason.strip()}"
+
     await session.commit()
     logger.info(
         "event=payment_verify result=rejected request_id=%s payment_id=%s customer_id=%s amount=%s rejected_by=%s reason=%s",

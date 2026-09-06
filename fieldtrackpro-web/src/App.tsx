@@ -26,6 +26,7 @@ import { CustomerDetailPage } from './pages/CustomerDetailPage';
 import { UserDetailPage } from './pages/UserDetailPage';
 import { TerritoryDetailPage } from './pages/TerritoryDetailPage';
 import { PaymentReviewPage } from './pages/PaymentReviewPage';
+import { RequirementsPage } from './pages/RequirementsPage';
 import { EmployeeDailyLogsPage } from './pages/EmployeeDailyLogsPage';
 
 const AuthLoadingFallback: React.FC = () => (
@@ -94,6 +95,7 @@ export function AppContent() {
                 <Route path="/reports" element={<AdminRoute><ReportsPage /></AdminRoute>} />
                 <Route path="/collections" element={<Navigate to="/reports?tab=collections_workbench" replace />} />
                 <Route path="/payments" element={<AdminRoute><PaymentReviewPage /></AdminRoute>} />
+                <Route path="/requirements" element={<AdminRoute><RequirementsPage /></AdminRoute>} />
                 <Route path="/settings" element={<AdminRoute><SettingsPage /></AdminRoute>} />
                 <Route path="/profile" element={<ProfilePage />} />
                 <Route path="*" element={<Navigate to="/" replace />} />

@@ -491,6 +491,21 @@ async def sync_payments(
             p_stmt = select(Payment).where(Payment.source_reference == item.source_reference)
             existing_payment = (await session.execute(p_stmt)).scalar_one_or_none()
 
+            # Loop Prevention Fallback: check if narration contains FT:{payment_id}
+            if not existing_payment and item.notes:
+                import re
+                ft_match = re.search(r"FT:([0-9a-fA-F-]{36})", item.notes)
+                if ft_match:
+                    try:
+                        ft_pid = uuid.UUID(ft_match.group(1))
+                        p_stmt_ft = select(Payment).where(Payment.id == ft_pid)
+                        existing_payment = (await session.execute(p_stmt_ft)).scalar_one_or_none()
+                        if existing_payment:
+                            existing_payment.source_reference = item.source_reference
+                    except ValueError:
+                        pass
+
+
             if existing_payment:
                 # Update existing
                 existing_payment.amount = item.amount

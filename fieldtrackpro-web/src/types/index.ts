@@ -87,11 +87,21 @@ export interface LocationProposal {
   updated_at: string;
 }
 
+export type RequirementStatus =
+  | 'PENDING'
+  | 'APPROVED'
+  | 'PARTIALLY_APPROVED'
+  | 'REJECTED'
+  | 'FULFILLED'
+  | 'CANCELLED'
+  | 'OPEN';
+
 export interface CustomerRequirement {
   id: string;
   customer_id: string;
   customer_name?: string | null;
   outlet_code?: string | null;
+  visit_id?: string | null;
   brand?: string | null;
   requirement_type?: string | null;
   product_details?: string | null;
@@ -99,11 +109,29 @@ export interface CustomerRequirement {
   expected_value?: number | null;
   follow_up_date?: string | null;
   notes?: string | null;
-  status: string;
+  photo_storage_key?: string | null;
+  photo_media_id?: string | null;
+  photo_url?: string | null;
+  approved_quantity?: number | null;
+  approved_value?: number | null;
+  admin_notes?: string | null;
+  decided_by?: string | null;
+  decider_name?: string | null;
+  decided_at?: string | null;
+  status: RequirementStatus | string;
   created_by: string;
   creator_name?: string | null;
+  employee_id?: string | null;
+  employee_name?: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface RequirementDecisionRequest {
+  action: 'APPROVE' | 'PARTIALLY_APPROVE' | 'REJECT';
+  approved_quantity?: number | null;
+  approved_value?: number | null;
+  admin_notes?: string | null;
 }
 
 export interface CustomerProspectCreate {

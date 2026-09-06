@@ -14,6 +14,7 @@ import {
   LogOut,
   ShieldCheck,
   Wallet,
+  ClipboardList,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
@@ -36,6 +37,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => 
     { name: 'Customers',            path: '/customers', icon: Building2,       roles: ['ADMIN', 'MANAGER'] },
     { name: 'Visits',               path: '/visits',    icon: CalendarCheck,   roles: ['ADMIN', 'MANAGER', 'EMPLOYEE'] },
     { name: 'Map',                  path: '/map',       icon: Globe2,          roles: ['ADMIN', 'MANAGER'] },
+    { name: 'Customer Requirements',path: '/requirements', icon: ClipboardList, roles: ['ADMIN', 'MANAGER'] },
     { name: 'Requirement Forms',    path: '/forms',     icon: FileText,        roles: ['ADMIN', 'MANAGER'] },
     { name: 'Payment Collections',  path: '/payments',  icon: Wallet,          roles: ['ADMIN', 'MANAGER'] },
     { name: 'Reports & Collections',path: '/reports',   icon: BarChart3,       roles: ['ADMIN', 'MANAGER'] },

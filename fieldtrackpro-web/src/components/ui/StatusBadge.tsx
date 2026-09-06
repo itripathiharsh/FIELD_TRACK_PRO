@@ -23,7 +23,7 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({
   } else if (normalized === 'IN_PROGRESS' || normalized === 'PENDING' || normalized === 'IN_REVIEW' || normalized === 'PENDING_VERIFICATION') {
     styles = 'bg-primary-tint text-primary border-primary-fixed-dim';
     dotColor = 'bg-primary animate-pulse';
-  } else if (normalized === 'FLAGGED' || normalized === 'ON_LEAVE' || normalized === 'MANAGER' || normalized === 'DRAFT' || normalized === 'WARNING' || normalized === 'PARTIALLY_PAID') {
+  } else if (normalized === 'FLAGGED' || normalized === 'ON_LEAVE' || normalized === 'MANAGER' || normalized === 'DRAFT' || normalized === 'WARNING' || normalized === 'PARTIALLY_PAID' || normalized === 'PARTIALLY_APPROVED') {
     styles = 'bg-secondary-fixed text-on-secondary-fixed border-secondary-fixed-dim';
     dotColor = 'bg-secondary-container';
   } else if (normalized === 'MISSED' || normalized === 'DISABLED' || normalized === 'INACTIVE' || normalized === 'ARCHIVED' || normalized === 'UNPAID') {
