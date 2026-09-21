@@ -46,10 +46,43 @@ class TallyIntegrationStatusResponse(BaseModel):
     tally_company_guid: Optional[str] = None
     last_heartbeat_at: Optional[datetime] = None
     last_sync_at: Optional[datetime] = None
+    last_successful_sync_at: Optional[datetime] = None
+    today_read_count: int = 0
+    today_write_count: int = 0
+    failed_operation_count: int = 0
     total_invoices_synced: int = 0
     total_payments_synced: int = 0
     total_customers_synced: int = 0
     message: Optional[str] = None
+
+
+class TallyAuditLogItem(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    timestamp: datetime
+    direction: str  # "READ" or "WRITE"
+    operation: str
+    entity_type: str
+    record_count: int = 0
+    status: str  # "SUCCESS", "FAILED", "PARTIAL", "PROCESSING", "PENDING"
+    duration_ms: Optional[int] = None
+    error_message: Optional[str] = None
+    agent_id: Optional[uuid.UUID] = None
+    agent_name: Optional[str] = None
+    company_name: Optional[str] = None
+    company_guid: Optional[str] = None
+    tally_guid: Optional[str] = None
+    tally_voucher_number: Optional[str] = None
+    writeback_job_id: Optional[uuid.UUID] = None
+    details: Optional[dict[str, Any]] = None
+
+
+class TallyAuditLogListResponse(BaseModel):
+    items: list[TallyAuditLogItem]
+    total: int
+    skip: int
+    limit: int
 
 
 class HeartbeatRequest(BaseModel):

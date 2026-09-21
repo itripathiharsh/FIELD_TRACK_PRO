@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import secrets
+import time
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -8,6 +9,8 @@ from typing import Optional
 
 from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.services import tally_audit_service
 
 from app.core.security import hash_password
 from app.models.brand import Brand
@@ -137,10 +140,16 @@ async def get_integration_status(session: AsyncSession) -> TallyIntegrationStatu
     cust_stmt = select(func.count(Customer.id)).where(Customer.outlet_code.isnot(None))
     total_cust = (await session.execute(cust_stmt)).scalar() or 0
 
+    today_summary = await tally_audit_service.get_today_summary(session)
+
     if not agent:
         return TallyIntegrationStatusResponse(
             is_connected=False,
             agent_status="NOT_CONFIGURED",
+            today_read_count=today_summary["today_read_count"],
+            today_write_count=today_summary["today_write_count"],
+            failed_operation_count=today_summary["failed_operation_count"],
+            last_successful_sync_at=today_summary["last_successful_sync_at"],
             total_invoices_synced=total_inv,
             total_payments_synced=total_pay,
             total_customers_synced=total_cust,
@@ -165,6 +174,10 @@ async def get_integration_status(session: AsyncSession) -> TallyIntegrationStatu
         tally_company_guid=agent.tally_company_guid,
         last_heartbeat_at=agent.last_heartbeat_at,
         last_sync_at=agent.last_sync_at,
+        last_successful_sync_at=today_summary["last_successful_sync_at"],
+        today_read_count=today_summary["today_read_count"],
+        today_write_count=today_summary["today_write_count"],
+        failed_operation_count=today_summary["failed_operation_count"],
         total_invoices_synced=total_inv,
         total_payments_synced=total_pay,
         total_customers_synced=total_cust,
@@ -208,6 +221,7 @@ async def sync_customers(
     Idempotently upsert customer / outlet records from Tally Sundry Debtors.
     Matches primarily on outlet_code (DMS code) or clean name.
     """
+    start_time = time.time()
     system_user_id = await _get_system_user_id(session)
     created_count = 0
     updated_count = 0
@@ -303,6 +317,26 @@ async def sync_customers(
     agent.last_sync_at = datetime.now(timezone.utc)
     await session.commit()
 
+    duration_ms = int((time.time() - start_time) * 1000)
+    audit_status = "SUCCESS" if failed_count == 0 else ("PARTIAL" if (created_count > 0 or updated_count > 0) else "FAILED")
+    err_msg = "; ".join([e.error for e in errors[:3]]) if errors else None
+    await tally_audit_service.record_read_audit(
+        session=session,
+        agent=agent,
+        operation="SYNC_CUSTOMERS",
+        entity_type="CUSTOMERS",
+        record_count=len(batch.customers),
+        status=audit_status,
+        duration_ms=duration_ms,
+        error_message=err_msg,
+        details={
+            "batch_id": batch.batch_id,
+            "created_count": created_count,
+            "updated_count": updated_count,
+            "failed_count": failed_count,
+        },
+    )
+
     return SyncResultResponse(
         status="COMPLETED",
         batch_id=batch.batch_id,
@@ -325,6 +359,7 @@ async def sync_invoices(
     Idempotently upsert Sales Invoices.
     Matches by (customer_id, invoice_number) or source_reference.
     """
+    start_time = time.time()
     system_user_id = await _get_system_user_id(session)
     created_count = 0
     updated_count = 0
@@ -416,6 +451,26 @@ async def sync_invoices(
     agent.last_sync_at = datetime.now(timezone.utc)
     await session.commit()
 
+    duration_ms = int((time.time() - start_time) * 1000)
+    audit_status = "SUCCESS" if failed_count == 0 else ("PARTIAL" if (created_count > 0 or updated_count > 0) else "FAILED")
+    err_msg = "; ".join([e.error for e in errors[:3]]) if errors else None
+    await tally_audit_service.record_read_audit(
+        session=session,
+        agent=agent,
+        operation="SYNC_INVOICES",
+        entity_type="INVOICES",
+        record_count=len(batch.invoices),
+        status=audit_status,
+        duration_ms=duration_ms,
+        error_message=err_msg,
+        details={
+            "batch_id": batch.batch_id,
+            "created_count": created_count,
+            "updated_count": updated_count,
+            "failed_count": failed_count,
+        },
+    )
+
     try:
         from app.services.period_service import ensure_monthly_periods_synced
         await ensure_monthly_periods_synced(session)
@@ -444,6 +499,7 @@ async def sync_payments(
     Idempotently upsert Receipt vouchers from Tally.
     Deduplicates strictly by source_reference.
     """
+    start_time = time.time()
     system_user_id = await _get_system_user_id(session)
     system_emp_id = await _get_system_employee_id(session)
     created_count = 0
@@ -639,6 +695,26 @@ async def sync_payments(
 
     agent.last_sync_at = datetime.now(timezone.utc)
     await session.commit()
+
+    duration_ms = int((time.time() - start_time) * 1000)
+    audit_status = "SUCCESS" if failed_count == 0 else ("PARTIAL" if (created_count > 0 or updated_count > 0) else "FAILED")
+    err_msg = "; ".join([e.error for e in errors[:3]]) if errors else None
+    await tally_audit_service.record_read_audit(
+        session=session,
+        agent=agent,
+        operation="SYNC_PAYMENTS",
+        entity_type="PAYMENTS",
+        record_count=len(batch.payments),
+        status=audit_status,
+        duration_ms=duration_ms,
+        error_message=err_msg,
+        details={
+            "batch_id": batch.batch_id,
+            "created_count": created_count,
+            "updated_count": updated_count,
+            "failed_count": failed_count,
+        },
+    )
 
     try:
         from app.services.period_service import ensure_monthly_periods_synced

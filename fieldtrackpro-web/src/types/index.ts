@@ -333,10 +333,51 @@ export interface TallyIntegrationStatus {
   tally_company_guid?: string | null;
   last_heartbeat_at?: string | null;
   last_sync_at?: string | null;
+  last_successful_sync_at?: string | null;
+  today_read_count?: number;
+  today_write_count?: number;
+  failed_operation_count?: number;
   total_invoices_synced: number;
   total_payments_synced: number;
   total_customers_synced: number;
   message?: string | null;
+}
+
+export interface TallyAuditLogItem {
+  id: string;
+  timestamp: string;
+  direction: 'READ' | 'WRITE';
+  operation: string;
+  entity_type: string;
+  record_count: number;
+  status: 'SUCCESS' | 'FAILED' | 'PARTIAL' | 'PROCESSING' | 'PENDING';
+  duration_ms?: number | null;
+  error_message?: string | null;
+  agent_id?: string | null;
+  agent_name?: string | null;
+  company_name?: string | null;
+  company_guid?: string | null;
+  tally_guid?: string | null;
+  tally_voucher_number?: string | null;
+  writeback_job_id?: string | null;
+  details?: Record<string, any> | null;
+}
+
+export interface TallyAuditLogsResponse {
+  items: TallyAuditLogItem[];
+  total: number;
+  skip: number;
+  limit: number;
+}
+
+export interface TallyAuditLogFilterParams {
+  direction?: 'READ' | 'WRITE';
+  status?: string;
+  entity_type?: string;
+  start_date?: string;
+  end_date?: string;
+  skip?: number;
+  limit?: number;
 }
 
 /** Response of `GET /api/v1/customers/{id}/invoices` and `POST /api/v1/invoices`. */

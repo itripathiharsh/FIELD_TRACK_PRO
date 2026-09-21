@@ -9,17 +9,20 @@ Provides secure endpoints for local Tally Sync Agent bridge service:
 from __future__ import annotations
 
 import uuid
-from typing import Annotated
+from datetime import datetime
+from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps.agent_auth import AuthenticatedAgent
 from app.core.deps.auth import CurrentUser, require_role
 from app.database import get_async_session
+from app.exceptions.custom import ForbiddenException
+from app.models.employee import Employee
 from app.models.sync_agent import SyncAgent
-from app.models.user import Role
+from app.models.user import Role, User
 from app.schemas.tally_sync import (
     CustomerSyncBatch,
     HeartbeatRequest,
@@ -30,6 +33,7 @@ from app.schemas.tally_sync import (
     SyncAgentRead,
     SyncAgentRegistrationResponse,
     SyncResultResponse,
+    TallyAuditLogListResponse,
     TallyIntegrationStatusResponse,
 )
 from app.schemas.tally_writeback import (
@@ -38,13 +42,27 @@ from app.schemas.tally_writeback import (
     TallyWritebackFailRequest,
     TallyWritebackJobRead,
 )
-from app.services import tally_sync_service, tally_writeback_service
+from app.services import tally_audit_service, tally_sync_service, tally_writeback_service
 
 
 router = APIRouter(prefix="/integrations/tally", tags=["tally-integration"])
 
 DbSession = Annotated[AsyncSession, Depends(get_async_session)]
 AdminOnly = Depends(require_role(Role.ADMIN))
+
+
+async def require_admin_or_accountant(user: CurrentUser, session: DbSession) -> User:
+    """Enforces caller is an ADMIN or an EMPLOYEE with accountant/billing profile."""
+    if user.role == Role.ADMIN:
+        return user
+    if user.role == Role.EMPLOYEE:
+        stmt = select(Employee).where(Employee.user_id == user.id)
+        emp = (await session.execute(stmt)).scalar_one_or_none()
+        if emp and emp.working_profile:
+            wp = emp.working_profile.lower()
+            if any(term in wp for term in ["accountant", "billing", "finance", "accounts"]):
+                return user
+    raise ForbiddenException("Access restricted to Administrators and Accountants")
 
 
 # ---------------------------------------------------------------------------
@@ -84,6 +102,38 @@ async def get_tally_status(session: DbSession, user: CurrentUser):
     Accessible to all authenticated users for UI freshness indicators.
     """
     return await tally_sync_service.get_integration_status(session)
+
+
+@router.get(
+    "/audit-logs",
+    response_model=TallyAuditLogListResponse,
+    dependencies=[Depends(require_admin_or_accountant)],
+)
+async def get_tally_audit_logs(
+    session: DbSession,
+    direction: Optional[str] = Query(None, description="Filter by direction: READ or WRITE"),
+    status: Optional[str] = Query(None, description="Filter by status: SUCCESS, FAILED, PARTIAL, PENDING, PROCESSING"),
+    entity_type: Optional[str] = Query(None, description="Filter by entity type: CUSTOMERS, INVOICES, PAYMENTS"),
+    start_date: Optional[datetime] = Query(None, description="Start datetime ISO filter"),
+    end_date: Optional[datetime] = Query(None, description="End datetime ISO filter"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+):
+    """
+    Retrieve unified chronological audit log of all Tally READ and WRITE operations.
+    Combines persistent read audit logs with live writeback queue records.
+    Restricted to Admins and Accountants.
+    """
+    return await tally_audit_service.get_audit_logs(
+        session=session,
+        direction=direction,
+        status=status,
+        entity_type=entity_type,
+        start_date=start_date,
+        end_date=end_date,
+        skip=skip,
+        limit=limit,
+    )
 
 
 # ---------------------------------------------------------------------------

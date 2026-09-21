@@ -56,6 +56,8 @@ import {
   QuestionType,
   SignatureDownloadResponse,
   TallyIntegrationStatus,
+  TallyAuditLogFilterParams,
+  TallyAuditLogsResponse,
   Territory,
   TerritoryAssignmentCreate,
   TerritoryAssignmentHistory,
@@ -2220,6 +2222,20 @@ export class ApiClient {
 
   async getTallyStatus(): Promise<TallyIntegrationStatus> {
     return this.request<TallyIntegrationStatus>('/api/v1/integrations/tally/status');
+  }
+
+  async getTallyAuditLogs(params?: TallyAuditLogFilterParams): Promise<TallyAuditLogsResponse> {
+    const query = new URLSearchParams();
+    if (params?.direction) query.set('direction', params.direction);
+    if (params?.status) query.set('status', params.status);
+    if (params?.entity_type) query.set('entity_type', params.entity_type);
+    if (params?.start_date) query.set('start_date', params.start_date);
+    if (params?.end_date) query.set('end_date', params.end_date);
+    if (params?.skip !== undefined) query.set('skip', String(params.skip));
+    if (params?.limit !== undefined) query.set('limit', String(params.limit));
+
+    const qs = query.toString();
+    return this.request<TallyAuditLogsResponse>(`/api/v1/integrations/tally/audit-logs${qs ? `?${qs}` : ''}`);
   }
 }
 

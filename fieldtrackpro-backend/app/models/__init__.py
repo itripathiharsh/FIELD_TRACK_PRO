@@ -52,6 +52,7 @@ from app.models.monthly_visit_plan import (
 from app.models.sync_agent import SyncAgent
 from app.models.payment_invoice_allocation import PaymentInvoiceAllocation
 from app.models.tally_writeback import TallyWritebackQueue, WritebackStatus
+from app.models.tally_audit import TallyAuditLog
 
 
 
@@ -124,4 +125,5 @@ __all__ = [
     "PaymentInvoiceAllocation",
     "TallyWritebackQueue",
     "WritebackStatus",
+    "TallyAuditLog",
 ]
