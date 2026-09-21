@@ -77,8 +77,7 @@ async def submit_form(
     """
     # P2-1: single authoritative visit-ownership check (was reimplemented
     # inline here) - raises 404 VISIT_NOT_FOUND / 403 VISIT_NOT_ASSIGNED
-    # exactly as before.
-    await get_visit_for_user(visit_id, current_user, session)
+    visit = await get_visit_for_user(visit_id, current_user, session)
 
     form = await requirement_service.submit_form(
         visit_id=visit_id,
@@ -99,6 +98,58 @@ async def submit_form(
     cat = cat_result.scalar_one_or_none()
     if cat:
         result.category_name = cat.name
+
+    # Bridge into CustomerRequirement & RequirementItem pipeline for Admin Review and Tally Sales Order
+    try:
+        from app.models.customer_requirement import CustomerRequirement
+        from app.models.requirement_item import RequirementItem
+        from decimal import Decimal
+        import re
+
+        existing_cr = (await session.execute(
+            select(CustomerRequirement).where(CustomerRequirement.visit_id == visit_id)
+        )).scalars().first()
+
+        brand_name = cat.name.split("(")[0].strip() if (cat and cat.name) else "General"
+        exp_val = Decimal("0.00")
+        if payload.budget_range:
+            nums = re.findall(r"\d+", payload.budget_range.replace(",", ""))
+            if nums:
+                exp_val = Decimal(nums[0])
+
+        if not existing_cr and visit and visit.customer_id:
+            cr = CustomerRequirement(
+                id=uuid.uuid4(),
+                customer_id=visit.customer_id,
+                visit_id=visit.id,
+                brand=brand_name,
+                requirement_type="PRODUCT_REQUEST",
+                product_details=payload.description,
+                quantity=1,
+                expected_value=exp_val,
+                total_requested_value=exp_val,
+                total_approved_value=Decimal("0.00"),
+                status="NEW",
+                notes=f"Timeline: {payload.expected_timeline}. Notes: {payload.notes or ''}".strip(),
+                created_by=current_user.id,
+            )
+            item = RequirementItem(
+                id=uuid.uuid4(),
+                requirement_id=cr.id,
+                brand_name=brand_name,
+                product_model=payload.description,
+                requested_quantity=1,
+                expected_rate=exp_val,
+                requested_amount=exp_val,
+                notes=payload.notes,
+            )
+            session.add(cr)
+            session.add(item)
+            await session.commit()
+    except Exception as ex:
+        import logging
+        logging.getLogger("fieldtrackpro").warning(f"Failed to bridge CustomerRequirement: {ex}")
+
     return result
 
 

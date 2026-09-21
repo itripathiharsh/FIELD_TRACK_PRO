@@ -5,11 +5,13 @@ from datetime import date
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Body, Depends, File, HTTPException, Query, UploadFile, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps.auth import CurrentUser, require_role
 from app.database import get_async_session
 from app.models.user import Role
+from app.models.visit import Visit
 from app.schemas.customer_requirement import (
     CustomerRequirementCreate,
     CustomerRequirementRead,
@@ -39,15 +41,21 @@ async def create_requirement_direct(
 ):
     """
     Direct endpoint to submit a multi-item customer requirement.
-    Requires customer_id in payload.
+    Requires customer_id in payload, or resolves customer_id from visit_id if provided.
     """
-    if not payload.customer_id:
+    customer_id = payload.customer_id
+    if not customer_id and payload.visit_id:
+        v_res = await session.execute(select(Visit).where(Visit.id == payload.visit_id))
+        visit = v_res.scalar_one_or_none()
+        if visit:
+            customer_id = visit.customer_id
+    if not customer_id:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="customer_id is required",
+            detail="customer_id or valid visit_id is required",
         )
     return await customer_requirement_service.create_requirement(
-        customer_id=payload.customer_id,
+        customer_id=customer_id,
         data=payload,
         current_user=current_user,
         session=session,
