@@ -41,7 +41,8 @@ import {
   EmployeeMonthlyAnalytics,
   DailyAnalytics,
   TeamMonthlyAnalytics,
-  OrderRead,
+  Order,
+  VisitOrderPhotoRead,
   OutletMatchStrategy,
   OutletReportRow,
   OutstandingAgeingReportRow,
@@ -69,6 +70,7 @@ import {
   VisitSignature,
   VisitStatus,
   VisitType,
+  RequirementConfirmOrderRequest,
 } from '../types';
 
 /**
@@ -994,6 +996,35 @@ export class ApiClient {
     });
   }
 
+  /** Confirm approved requirement → create formal Order → enqueue Tally Sales Order. */
+  async confirmRequirementOrder(
+    requirementId: string,
+    data?: RequirementConfirmOrderRequest,
+  ): Promise<Order> {
+    return this.request<Order>(`/api/v1/requirements/${requirementId}/confirm-order`, {
+      method: 'POST',
+      body: JSON.stringify(data || {}),
+    });
+  }
+
+  /** List formal confirmed orders (Requirement → Order → Tally Sales Order pipeline). */
+  async getOrders(params?: {
+    customer_id?: string;
+    status?: string;
+    skip?: number;
+    limit?: number;
+  }): Promise<Order[]> {
+    const sp = new URLSearchParams();
+    if (params) {
+      if (params.customer_id) sp.set('customer_id', params.customer_id);
+      if (params.status) sp.set('status', params.status);
+      if (params.skip !== undefined) sp.set('skip', String(params.skip));
+      if (params.limit !== undefined) sp.set('limit', String(params.limit));
+    }
+    const q = sp.toString();
+    return this.request<Order[]>(`/api/v1/orders${q ? `?${q}` : ''}`);
+  }
+
   // -- Requirement Forms (Visit-level) --------------------------------------
 
   async getVisitRequirementForm(visitId: string): Promise<RequirementForm | null> {
@@ -1661,8 +1692,8 @@ export class ApiClient {
   }
 
   /** Every order captured across this outlet's full visit history (P2-B). */
-  async getCustomerOrders(customerId: string): Promise<OrderRead[]> {
-    return this.request<OrderRead[]>(`/api/v1/customers/${customerId}/orders`);
+  async getCustomerOrders(customerId: string): Promise<VisitOrderPhotoRead[]> {
+    return this.request<VisitOrderPhotoRead[]>(`/api/v1/customers/${customerId}/orders`);
   }
 
   async createInvoice(data: {

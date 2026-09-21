@@ -51,6 +51,7 @@ const MOCK_REQUIREMENTS: CustomerRequirement[] = [
     employee_name: 'Ramesh Field Rep',
     created_at: '2026-09-06T10:00:00Z',
     updated_at: '2026-09-06T10:00:00Z',
+    items: [],
   },
   {
     id: 'req-002',
@@ -73,6 +74,7 @@ const MOCK_REQUIREMENTS: CustomerRequirement[] = [
     employee_name: 'Ramesh Field Rep',
     created_at: '2026-09-06T09:00:00Z',
     updated_at: '2026-09-06T11:00:00Z',
+    items: [],
   },
 ];
 

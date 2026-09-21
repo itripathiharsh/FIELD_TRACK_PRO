@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, datetime
+from decimal import Decimal
 from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, String, Text, func
@@ -12,6 +13,7 @@ from app.database import Base
 
 if TYPE_CHECKING:
     from app.models.customer import Customer
+    from app.models.requirement_item import RequirementItem
     from app.models.user import User
     from app.models.visit import Visit
     from app.models.visit_media import VisitMedia
@@ -32,6 +34,11 @@ class CustomerRequirement(Base):
     product_details: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     quantity: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     expected_value: Mapped[Optional[float]] = mapped_column(Numeric(14, 2), nullable=True)
+    
+    # Aggregated totals for multi-item requirements
+    total_requested_value: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2), nullable=True)
+    total_approved_value: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2), nullable=True)
+
     follow_up_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True, index=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     photo_storage_key: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
@@ -40,6 +47,7 @@ class CustomerRequirement(Base):
     )
 
     # Admin Decision
+    # Status: NEW, PENDING, UNDER_REVIEW, APPROVED, PARTIALLY_APPROVED, REJECTED, CONVERTED_TO_ORDER
     status: Mapped[str] = mapped_column(String(50), server_default="PENDING", default="PENDING", nullable=False, index=True)
     approved_quantity: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     approved_value: Mapped[Optional[float]] = mapped_column(Numeric(14, 2), nullable=True)
@@ -64,3 +72,4 @@ class CustomerRequirement(Base):
     decider_user: Mapped[Optional["User"]] = relationship("User", foreign_keys=[decided_by])
     visit: Mapped[Optional["Visit"]] = relationship("Visit", foreign_keys=[visit_id])
     photo_media: Mapped[Optional["VisitMedia"]] = relationship("VisitMedia", foreign_keys=[photo_media_id])
+    items: Mapped[list["RequirementItem"]] = relationship(back_populates="requirement", cascade="all, delete-orphan")

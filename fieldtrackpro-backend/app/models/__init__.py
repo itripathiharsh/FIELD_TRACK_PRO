@@ -42,6 +42,9 @@ from app.models.customer_location_proposal import CustomerLocationProposal, Loca
 from app.models.customer_brand import CustomerBrand
 from app.models.brand import Brand
 from app.models.customer_requirement import CustomerRequirement
+from app.models.requirement_item import RequirementItem
+from app.models.order import Order
+from app.models.order_item import OrderItem
 from app.models.employee_work_session import EmployeeWorkSession, WorkSessionStatus
 from app.models.monthly_visit_plan import (
     MonthlyVisitPlan,
@@ -59,6 +62,10 @@ from app.models.tally_audit import TallyAuditLog
 __all__ = [
     "Base",
     "Brand",
+    "CustomerRequirement",
+    "RequirementItem",
+    "Order",
+    "OrderItem",
     "User",
     "Role",
     "Territory",

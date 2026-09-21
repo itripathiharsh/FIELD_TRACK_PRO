@@ -33,7 +33,7 @@ import { AccountSummaryCard } from '../components/ui/AccountSummaryCard';
 import { AddBrandModal } from '../components/ui/AddBrandModal';
 
 import { apiClient, CustomerHistoryRow } from '../api/client';
-import { AccountSummary, Brand, Customer, CustomerRequirement, LocationProposal, OrderRead, Territory } from '../types';
+import { AccountSummary, Brand, Customer, CustomerRequirement, LocationProposal, VisitOrderPhotoRead, Territory } from '../types';
 
 /**
  * Customer Detail page — shows customer profile, location proposals, requirements, account, and visit history.
@@ -44,7 +44,7 @@ export const CustomerDetailPage: React.FC = () => {
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [visitHistory, setVisitHistory] = useState<CustomerHistoryRow[]>([]);
   const [account, setAccount] = useState<AccountSummary | null>(null);
-  const [orders, setOrders] = useState<OrderRead[]>([]);
+  const [orders, setOrders] = useState<VisitOrderPhotoRead[]>([]);
   const [territories, setTerritories] = useState<Territory[]>([]);
   const [requirements, setRequirements] = useState<CustomerRequirement[]>([]);
   const [proposals, setProposals] = useState<LocationProposal[]>([]);
@@ -92,7 +92,7 @@ export const CustomerDetailPage: React.FC = () => {
         apiClient.getCustomerById(id),
         apiClient.getCustomerVisitHistory(id).catch(() => [] as CustomerHistoryRow[]),
         apiClient.getCustomerAccount(id).catch(() => null),
-        apiClient.getCustomerOrders(id).catch(() => [] as OrderRead[]),
+        apiClient.getCustomerOrders(id).catch(() => [] as VisitOrderPhotoRead[]),
         apiClient.getTerritories().catch(() => [] as Territory[]),
         apiClient.getCustomerRequirements(id).catch(() => [] as CustomerRequirement[]),
         apiClient.getCustomerLocationProposals(id).catch(() => [] as LocationProposal[]),

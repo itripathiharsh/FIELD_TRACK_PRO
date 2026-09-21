@@ -14,7 +14,9 @@ from app.schemas.customer_requirement import (
     CustomerRequirementCreate,
     CustomerRequirementRead,
     CustomerRequirementUpdate,
+    OrderRead,
     RequirementApproveRequest,
+    RequirementConfirmOrderRequest,
     RequirementDecisionAction,
     RequirementDecisionRequest,
     RequirementPartiallyApproveRequest,
@@ -29,12 +31,35 @@ AdminOnly = Depends(require_role(Role.ADMIN))
 AnyAuth = Depends(require_role(Role.ADMIN, Role.EMPLOYEE))
 
 
+@router.post("", response_model=CustomerRequirementRead, dependencies=[AnyAuth], status_code=status.HTTP_201_CREATED)
+async def create_requirement_direct(
+    payload: CustomerRequirementCreate,
+    current_user: CurrentUser,
+    session: DbSession,
+):
+    """
+    Direct endpoint to submit a multi-item customer requirement.
+    Requires customer_id in payload.
+    """
+    if not payload.customer_id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="customer_id is required",
+        )
+    return await customer_requirement_service.create_requirement(
+        customer_id=payload.customer_id,
+        data=payload,
+        current_user=current_user,
+        session=session,
+    )
+
+
 @router.get("", response_model=list[CustomerRequirementRead], dependencies=[AnyAuth])
 async def list_all_requirements(
     session: DbSession,
     current_user: CurrentUser,
     brand: Optional[str] = Query(default=None, description="Filter by brand"),
-    status: Optional[str] = Query(default=None, description="Filter by status (PENDING, APPROVED, PARTIALLY_APPROVED, REJECTED, FULFILLED, or ALL)"),
+    status: Optional[str] = Query(default=None, description="Filter by status (NEW, PENDING, APPROVED, PARTIALLY_APPROVED, REJECTED, CONVERTED_TO_ORDER, or ALL)"),
     customer_id: Optional[uuid.UUID] = Query(default=None, description="Filter by customer ID"),
     employee_id: Optional[uuid.UUID] = Query(default=None, description="Filter by employee/creator user ID"),
     search: Optional[str] = Query(default=None, description="Search term for product, notes, customer, or brand"),
@@ -49,7 +74,6 @@ async def list_all_requirements(
     """
     creator_filter = employee_id
     if current_user.role == Role.EMPLOYEE:
-        # Scoped to employee's own submitted requirements
         creator_filter = current_user.id
 
     return await customer_requirement_service.list_all_requirements(
@@ -73,7 +97,7 @@ async def get_requirement(
 ):
     """
     Retrieve single requirement details including requested product/quantity/value,
-    admin decision, and photo URL.
+    multi-item breakdown, admin decision, and photo URL.
     """
     req = await customer_requirement_service.get_requirement_by_id(requirement_id, session)
     if current_user.role == Role.EMPLOYEE and req.created_by != current_user.id:
@@ -97,7 +121,7 @@ async def decide_requirement(
 ):
     """
     Admin decision on requirement: Approve, Partially Approve, or Reject.
-    Preserves original employee request while recording approved quantity, value, and admin notes.
+    Preserves original employee request while recording approved quantity, value, and admin notes per line item.
     """
     return await customer_requirement_service.decide_requirement(
         requirement_id=requirement_id,
@@ -122,18 +146,19 @@ async def approve_requirement(
     admin_notes: Optional[str] = Query(default=None),
 ):
     """
-    Admin helper to approve a requirement. Defaults approved quantity & value to requested.
-    Supports payload via JSON request body or query parameters.
+    Admin helper to approve a requirement.
     """
     qty = payload.approved_quantity if (payload and payload.approved_quantity is not None) else approved_quantity
     val = payload.approved_value if (payload and payload.approved_value is not None) else approved_value
     notes = payload.admin_notes if (payload and payload.admin_notes is not None) else admin_notes
+    items = payload.items if payload else None
 
     decision = RequirementDecisionRequest(
         action=RequirementDecisionAction.APPROVE,
         approved_quantity=qty,
         approved_value=val,
         admin_notes=notes,
+        items=items,
     )
     return await customer_requirement_service.decide_requirement(
         requirement_id=requirement_id,
@@ -158,29 +183,19 @@ async def partially_approve_requirement(
     admin_notes: Optional[str] = Query(default=None),
 ):
     """
-    Admin helper to partially approve a requirement with independent quantity, value, and notes.
-    Supports payload via JSON request body or query parameters.
+    Admin helper to partially approve a requirement with independent quantity, value, and line items.
     """
     qty = payload.approved_quantity if (payload and payload.approved_quantity is not None) else approved_quantity
     val = payload.approved_value if (payload and payload.approved_value is not None) else approved_value
     notes = payload.admin_notes if (payload and payload.admin_notes is not None) else admin_notes
-
-    if qty is None or qty <= 0:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="approved_quantity must be greater than 0",
-        )
-    if val is None or val <= 0:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="approved_value must be greater than 0",
-        )
+    items = payload.items if payload else None
 
     decision = RequirementDecisionRequest(
         action=RequirementDecisionAction.PARTIALLY_APPROVE,
         approved_quantity=qty,
         approved_value=val,
         admin_notes=notes,
+        items=items,
     )
     return await customer_requirement_service.decide_requirement(
         requirement_id=requirement_id,
@@ -204,7 +219,6 @@ async def reject_requirement(
 ):
     """
     Admin helper to reject a requirement with reason notes.
-    Supports payload via JSON request body or query parameters.
     """
     notes = payload.admin_notes if (payload and payload.admin_notes is not None) else admin_notes
 
@@ -215,6 +229,30 @@ async def reject_requirement(
     return await customer_requirement_service.decide_requirement(
         requirement_id=requirement_id,
         decision=decision,
+        admin_user=current_user,
+        session=session,
+    )
+
+
+@router.post(
+    "/{requirement_id}/confirm-order",
+    response_model=OrderRead,
+    dependencies=[AdminOnly],
+    status_code=status.HTTP_201_CREATED,
+)
+async def confirm_order_and_send_to_tally(
+    requirement_id: uuid.UUID,
+    current_user: CurrentUser,
+    session: DbSession,
+    payload: Optional[RequirementConfirmOrderRequest] = Body(default=None),
+):
+    """
+    Admin action: Confirms the approved requirement, creates a formal Order with OrderItems,
+    and enqueues a CREATE_SALES_ORDER write-back job to TallyPrime in tally_writeback_queue.
+    """
+    return await customer_requirement_service.confirm_and_create_order(
+        requirement_id=requirement_id,
+        payload=payload,
         admin_user=current_user,
         session=session,
     )

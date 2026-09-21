@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.exceptions.custom import BaseAPIException
 from app.models.customer import Customer
 from app.models.invoice import Invoice
+from app.models.order import Order
 from app.models.payment import Payment, PaymentSource
 from app.models.tally_writeback import TallyWritebackQueue, WritebackStatus
 from app.schemas.tally_writeback import TallyWritebackAckRequest, TallyWritebackFailRequest
@@ -197,7 +198,7 @@ async def ack_writeback_job(
     job.last_error = None
     job.next_retry_at = None
 
-    # Link Tally identifiers to Payment to guarantee loop prevention
+    # Link Tally identifiers to Payment or Order to guarantee loop prevention and status update
     if job.entity_type == "PAYMENT" and data.tally_guid:
         p_stmt = select(Payment).where(Payment.id == job.entity_id).with_for_update()
         payment = (await session.execute(p_stmt)).scalar_one_or_none()
@@ -207,6 +208,21 @@ async def ack_writeback_job(
                 "Linked Tally GUID=%s to payment_id=%s from writeback job=%s",
                 data.tally_guid,
                 payment.id,
+                job.id,
+            )
+    elif job.entity_type == "SALES_ORDER":
+        o_stmt = select(Order).where(Order.id == job.entity_id).with_for_update()
+        order = (await session.execute(o_stmt)).scalar_one_or_none()
+        if order:
+            order.tally_guid = data.tally_guid
+            order.tally_master_id = data.tally_master_id
+            order.tally_voucher_number = data.tally_voucher_number
+            order.status = "TALLY_CONFIRMED"
+            logger.info(
+                "Linked Tally GUID=%s, VchNum=%s to order_id=%s from writeback job=%s",
+                data.tally_guid,
+                data.tally_voucher_number,
+                order.id,
                 job.id,
             )
 
@@ -257,6 +273,11 @@ async def fail_writeback_job(
             job.retry_count,
             data.error_message,
         )
+        if job.entity_type == "SALES_ORDER":
+            o_stmt = select(Order).where(Order.id == job.entity_id).with_for_update()
+            order = (await session.execute(o_stmt)).scalar_one_or_none()
+            if order:
+                order.status = "TALLY_FAILED"
 
     await session.commit()
     return job

@@ -94,7 +94,34 @@ export type RequirementStatus =
   | 'REJECTED'
   | 'FULFILLED'
   | 'CANCELLED'
-  | 'OPEN';
+  | 'OPEN'
+  | 'CONVERTED_TO_ORDER';
+
+export interface RequirementItem {
+  id: string;
+  requirement_id: string;
+  brand_id?: string | null;
+  brand_name: string;
+  product_model: string;
+  requested_quantity: number;
+  expected_rate: number;
+  requested_amount: number;
+  approved_quantity?: number | null;
+  approved_rate?: number | null;
+  approved_amount?: number | null;
+  tally_stock_item_name?: string | null;
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RequirementItemDecisionUpdate {
+  id: string;
+  approved_quantity?: number | null;
+  approved_rate?: number | null;
+  tally_stock_item_name?: string | null;
+  notes?: string | null;
+}
 
 export interface CustomerRequirement {
   id: string;
@@ -107,6 +134,8 @@ export interface CustomerRequirement {
   product_details?: string | null;
   quantity?: number | null;
   expected_value?: number | null;
+  total_requested_value?: number | null;
+  total_approved_value?: number | null;
   follow_up_date?: string | null;
   notes?: string | null;
   photo_storage_key?: string | null;
@@ -125,13 +154,20 @@ export interface CustomerRequirement {
   employee_name?: string | null;
   created_at: string;
   updated_at: string;
+  items: RequirementItem[];
 }
 
 export interface RequirementDecisionRequest {
-  action: 'APPROVE' | 'PARTIALLY_APPROVE' | 'REJECT';
+  action: 'APPROVE' | 'PARTIALLY_APPROVE' | 'REJECT' | 'CONVERT_TO_ORDER';
   approved_quantity?: number | null;
   approved_value?: number | null;
   admin_notes?: string | null;
+  items?: RequirementItemDecisionUpdate[] | null;
+}
+
+export interface RequirementConfirmOrderRequest {
+  admin_notes?: string | null;
+  items?: RequirementItemDecisionUpdate[] | null;
 }
 
 export interface CustomerProspectCreate {
@@ -816,11 +852,11 @@ export interface ImportBatchRead {
   uploaded_by_email: string | null;
 }
 
-// -- P2-B: Order capture -------------------------------------------------------
+// -- P2-B: Order capture (visit media photos) ----------------------------------
 // Mirrors app/schemas/media.py's OrderRead exactly.
 
-/** Response of `GET /api/v1/customers/{id}/orders`. */
-export interface OrderRead {
+/** Response of `GET /api/v1/customers/{id}/orders` - old visit photo/media orders. */
+export interface VisitOrderPhotoRead {
   id: string;
   visit_id: string;
   media_type: MediaType;
@@ -833,6 +869,52 @@ export interface OrderRead {
   uploaded_at: string;
   visit_scheduled_at: string | null;
   employee_name: string | null;
+}
+
+// -- Formal Customer Orders (Requirement → Order → Tally Sales Order) --------
+
+export type OrderStatus =
+  | 'PENDING_TALLY'
+  | 'SENT_TO_TALLY'
+  | 'TALLY_CONFIRMED'
+  | 'TALLY_FAILED'
+  | 'CANCELLED';
+
+export interface OrderItem {
+  id: string;
+  order_id: string;
+  brand_name: string;
+  product_model: string;
+  stock_item_name: string;
+  quantity: number;
+  unit: string;
+  rate: number;
+  amount: number;
+  created_at: string;
+}
+
+/** Formal confirmed order — created from an approved CustomerRequirement. */
+export interface Order {
+  id: string;
+  order_number: string;
+  customer_id: string;
+  customer_name?: string | null;
+  outlet_code?: string | null;
+  requirement_id?: string | null;
+  visit_id?: string | null;
+  employee_id?: string | null;
+  employee_name?: string | null;
+  total_amount: number;
+  status: OrderStatus | string;
+  tally_guid?: string | null;
+  tally_master_id?: string | null;
+  tally_voucher_number?: string | null;
+  admin_notes?: string | null;
+  created_by: string;
+  creator_name?: string | null;
+  created_at: string;
+  updated_at: string;
+  items: OrderItem[];
 }
 
 // -- P2-C: Employee Activity ----------------------------------------------------
