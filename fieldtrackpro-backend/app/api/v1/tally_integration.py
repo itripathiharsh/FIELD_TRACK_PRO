@@ -116,6 +116,7 @@ async def get_tally_audit_logs(
     entity_type: Optional[str] = Query(None, description="Filter by entity type: CUSTOMERS, INVOICES, PAYMENTS"),
     start_date: Optional[datetime] = Query(None, description="Start datetime ISO filter"),
     end_date: Optional[datetime] = Query(None, description="End datetime ISO filter"),
+    sort_order: Optional[str] = Query("desc", description="Sort order: desc or asc"),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
 ):
@@ -131,6 +132,7 @@ async def get_tally_audit_logs(
         entity_type=entity_type,
         start_date=start_date,
         end_date=end_date,
+        sort_order=sort_order,
         skip=skip,
         limit=limit,
     )
@@ -234,4 +236,26 @@ async def fail_outbox_job(
         job_id=job.id,
         message=f"Job status updated to {job.status}: {data.error_message}",
     )
+
+
+@router.post(
+    "/outbox/{job_id}/retry",
+    response_model=TallyWritebackActionResponse,
+    dependencies=[Depends(require_admin_or_accountant)],
+)
+async def retry_outbox_job(
+    job_id: uuid.UUID,
+    session: DbSession,
+):
+    """
+    Manually reset a failed or pending outbox write-back job to PENDING.
+    Clears error and backoff timer so the local Sync Agent picks it up on next cycle.
+    """
+    job = await tally_writeback_service.retry_writeback_job(session, job_id)
+    return TallyWritebackActionResponse(
+        status="PENDING",
+        job_id=job.id,
+        message="Write-back operation reset to PENDING and scheduled for immediate Tally execution.",
+    )
+
 

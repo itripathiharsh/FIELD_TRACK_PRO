@@ -413,6 +413,7 @@ export interface TallyAuditLogFilterParams {
   entity_type?: string;
   start_date?: string;
   end_date?: string;
+  sort_order?: 'desc' | 'asc';
   skip?: number;
   limit?: number;
 }

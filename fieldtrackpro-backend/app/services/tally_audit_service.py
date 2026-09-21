@@ -130,6 +130,7 @@ async def get_audit_logs(
     entity_type: Optional[str] = None,
     start_date: Optional[datetime] = None,
     end_date: Optional[datetime] = None,
+    sort_order: Optional[str] = "desc",
     skip: int = 0,
     limit: int = 50,
 ) -> TallyAuditLogListResponse:
@@ -213,8 +214,9 @@ async def get_audit_logs(
         for job in wb_jobs:
             items.append(_map_writeback_to_audit_item(job, active_agent))
 
-    # 3. Sort merged list chronologically descending
-    items.sort(key=lambda x: x.timestamp, reverse=True)
+    # 3. Sort merged list chronologically based on requested sort order
+    is_reverse = (sort_order or "desc").lower() != "asc"
+    items.sort(key=lambda x: x.timestamp, reverse=is_reverse)
 
     total_count = len(items)
     paginated_items = items[skip : skip + limit]

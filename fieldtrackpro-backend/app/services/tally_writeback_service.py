@@ -281,3 +281,25 @@ async def fail_writeback_job(
 
     await session.commit()
     return job
+
+
+async def retry_writeback_job(
+    session: AsyncSession, job_id: uuid.UUID
+) -> TallyWritebackQueue:
+    """
+    Manually resets a failed or stuck write-back job to PENDING with retry_count=0
+    and next_retry_at=None, allowing the Sync Agent to pick it up immediately.
+    """
+    stmt = select(TallyWritebackQueue).where(TallyWritebackQueue.id == job_id).with_for_update()
+    job = (await session.execute(stmt)).scalar_one_or_none()
+    if job is None:
+        raise BaseAPIException(status_code=404, detail="Writeback job not found", error_code="JOB_NOT_FOUND")
+
+    job.status = WritebackStatus.PENDING
+    job.retry_count = 0
+    job.next_retry_at = None
+    job.last_error = None
+    await session.commit()
+    logger.info("Writeback job=%s manually reset to PENDING for re-processing", job.id)
+    return job
+

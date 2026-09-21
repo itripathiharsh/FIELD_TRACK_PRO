@@ -2262,11 +2262,19 @@ export class ApiClient {
     if (params?.entity_type) query.set('entity_type', params.entity_type);
     if (params?.start_date) query.set('start_date', params.start_date);
     if (params?.end_date) query.set('end_date', params.end_date);
+    if (params?.sort_order) query.set('sort_order', params.sort_order);
     if (params?.skip !== undefined) query.set('skip', String(params.skip));
     if (params?.limit !== undefined) query.set('limit', String(params.limit));
 
     const qs = query.toString();
     return this.request<TallyAuditLogsResponse>(`/api/v1/integrations/tally/audit-logs${qs ? `?${qs}` : ''}`);
+  }
+
+  async retryTallyWritebackJob(jobId: string): Promise<{ status: string; job_id: string; message: string }> {
+    return this.request<{ status: string; job_id: string; message: string }>(
+      `/api/v1/integrations/tally/outbox/${jobId}/retry`,
+      { method: 'POST' }
+    );
   }
 }
 

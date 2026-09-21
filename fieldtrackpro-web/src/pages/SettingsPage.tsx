@@ -23,6 +23,10 @@ import {
   Info,
   ChevronLeft,
   ChevronRight,
+  ArrowUpDown,
+  RotateCw,
+  ChevronsLeft,
+  ChevronsRight,
 } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 import { Card } from '../components/ui/Card';
@@ -72,7 +76,9 @@ export const SettingsPage: React.FC = () => {
   const [auditLogs, setAuditLogs] = useState<TallyAuditLogItem[]>([]);
   const [auditTotal, setAuditTotal] = useState(0);
   const [auditSkip, setAuditSkip] = useState(0);
-  const auditLimit = 15;
+  const [auditLimit, setAuditLimit] = useState(10); // Page size: 10, 20, 50, 100
+  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc'); // Sort order: Newest / Oldest
+  const [retryingJobId, setRetryingJobId] = useState<string | null>(null);
   const [isAuditLoading, setIsAuditLoading] = useState(false);
   const [filterDirection, setFilterDirection] = useState<'ALL' | 'READ' | 'WRITE'>('ALL');
   const [filterStatus, setFilterStatus] = useState<'ALL' | 'SUCCESS' | 'FAILED'>('ALL');
@@ -83,15 +89,16 @@ export const SettingsPage: React.FC = () => {
     loadSettingsData();
   }, []);
 
-  const loadAuditLogs = async (newSkip = auditSkip) => {
+  const loadAuditLogs = async (newSkip = auditSkip, limit = auditLimit, order = sortOrder) => {
     try {
       setIsAuditLoading(true);
       const res = await apiClient.getTallyAuditLogs({
         direction: filterDirection !== 'ALL' ? filterDirection : undefined,
         status: filterStatus !== 'ALL' ? filterStatus : undefined,
         entity_type: filterEntity !== 'ALL' ? filterEntity : undefined,
+        sort_order: order,
         skip: newSkip,
-        limit: auditLimit,
+        limit: limit,
       });
       setAuditLogs(res.items || []);
       setAuditTotal(res.total || 0);
@@ -103,11 +110,25 @@ export const SettingsPage: React.FC = () => {
     }
   };
 
+  const handleRetryJob = async (jobId: string) => {
+    try {
+      setRetryingJobId(jobId);
+      await apiClient.retryTallyWritebackJob(jobId);
+      await loadAuditLogs(auditSkip, auditLimit, sortOrder);
+      const updatedStatus = await apiClient.getTallyStatus().catch(() => null);
+      if (updatedStatus) setTallyStatus(updatedStatus);
+    } catch (err: any) {
+      alert(`Retry failed: ${err?.message || 'Unknown error'}`);
+    } finally {
+      setRetryingJobId(null);
+    }
+  };
+
   useEffect(() => {
     if (activeTab === 'integrations') {
-      loadAuditLogs(0);
+      loadAuditLogs(0, auditLimit, sortOrder);
     }
-  }, [activeTab, filterDirection, filterStatus, filterEntity]);
+  }, [activeTab, filterDirection, filterStatus, filterEntity, auditLimit, sortOrder]);
 
   const loadSettingsData = async () => {
     try {
@@ -830,6 +851,35 @@ export const SettingsPage: React.FC = () => {
 
                   {/* Audit Filter Controls */}
                   <div className="flex flex-wrap items-center gap-2">
+                    {/* Sort Order Toggle */}
+                    <button
+                      onClick={() => setSortOrder((prev) => (prev === 'desc' ? 'asc' : 'desc'))}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-surface-container-highest bg-surface text-xs font-semibold text-on-surface hover:bg-surface-container transition-colors shadow-xs"
+                      title={`Sort order: currently ${sortOrder === 'desc' ? 'Newest First' : 'Oldest First'}. Click to toggle.`}
+                    >
+                      <ArrowUpDown className="w-3.5 h-3.5 text-primary" />
+                      <span>{sortOrder === 'desc' ? 'Newest First' : 'Oldest First'}</span>
+                    </button>
+
+                    {/* Page Size Selector */}
+                    <div className="inline-flex items-center gap-1.5 text-xs text-on-surface-variant font-medium bg-surface border border-surface-container-highest rounded-lg px-2 py-0.5">
+                      <span className="text-[11px]">Show:</span>
+                      <select
+                        value={auditLimit}
+                        onChange={(e) => {
+                          const newLimit = Number(e.target.value);
+                          setAuditLimit(newLimit);
+                          setAuditSkip(0);
+                        }}
+                        className="bg-transparent text-xs py-1 text-on-surface font-bold focus:outline-none cursor-pointer"
+                      >
+                        <option value={10}>10 / page</option>
+                        <option value={20}>20 / page</option>
+                        <option value={50}>50 / page</option>
+                        <option value={100}>100 / page</option>
+                      </select>
+                    </div>
+
                     {/* Direction Filter */}
                     <div className="inline-flex rounded-lg bg-surface border border-surface-container-highest p-0.5 text-xs">
                       {(['ALL', 'READ', 'WRITE'] as const).map((dir) => (
@@ -877,7 +927,7 @@ export const SettingsPage: React.FC = () => {
                     </select>
 
                     <button
-                      onClick={() => loadAuditLogs(0)}
+                      onClick={() => loadAuditLogs(0, auditLimit, sortOrder)}
                       disabled={isAuditLoading}
                       className="p-1.5 rounded-lg border border-surface-container-highest hover:bg-surface-container transition-colors text-on-surface-variant hover:text-primary disabled:opacity-50"
                       title="Refresh Audit Logs"
@@ -1003,7 +1053,18 @@ export const SettingsPage: React.FC = () => {
                                   '—'
                                 )}
                               </td>
-                              <td className="py-2.5 px-3 whitespace-nowrap text-right">
+                              <td className="py-2.5 px-3 whitespace-nowrap text-right space-x-1.5">
+                                {log.direction === 'WRITE' && (log.status === 'FAILED' || log.status === 'PENDING') && (
+                                  <button
+                                    onClick={() => handleRetryJob(log.id)}
+                                    disabled={retryingJobId === log.id || isAuditLoading}
+                                    className="text-[11px] font-semibold text-rose-700 hover:text-rose-900 px-2 py-1 rounded bg-rose-500/10 border border-rose-300 hover:bg-rose-500/20 transition-colors inline-flex items-center gap-1 disabled:opacity-50 shadow-2xs"
+                                    title="Retry writing this record to Tally"
+                                  >
+                                    <RotateCw className={`w-3 h-3 ${retryingJobId === log.id ? 'animate-spin' : ''}`} />
+                                    Retry
+                                  </button>
+                                )}
                                 <button
                                   onClick={() => setSelectedAuditLog(log)}
                                   className="text-[11px] font-semibold text-primary hover:text-secondary hover:underline px-2 py-1 rounded bg-surface-container hover:bg-surface-container-high transition-colors"
@@ -1019,32 +1080,68 @@ export const SettingsPage: React.FC = () => {
                   </table>
                 </div>
 
-                {/* Pagination Controls */}
-                {auditTotal > auditLimit && (
-                  <div className="flex items-center justify-between text-xs text-on-surface-variant pt-1 px-1">
+                {/* Enhanced Pagination Controls */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-on-surface-variant pt-2 px-1 border-t border-surface-container-highest/60">
+                  <div className="flex items-center gap-2">
                     <span>
-                      Showing <strong>{auditSkip + 1}</strong> to{' '}
-                      <strong>{Math.min(auditSkip + auditLimit, auditTotal)}</strong> of{' '}
-                      <strong>{auditTotal}</strong> audit records
+                      {auditTotal > 0 ? (
+                        <>
+                          Showing <strong>{auditSkip + 1}</strong> to{' '}
+                          <strong>{Math.min(auditSkip + auditLimit, auditTotal)}</strong> of{' '}
+                          <strong>{auditTotal}</strong> audit records
+                        </>
+                      ) : (
+                        'No audit records found'
+                      )}
                     </span>
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => loadAuditLogs(Math.max(0, auditSkip - auditLimit))}
-                        disabled={auditSkip === 0 || isAuditLoading}
-                        className="px-2.5 py-1 rounded-lg border border-surface-container-highest hover:bg-surface-container disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 font-semibold"
-                      >
-                        <ChevronLeft className="w-3.5 h-3.5" /> Previous
-                      </button>
-                      <button
-                        onClick={() => loadAuditLogs(auditSkip + auditLimit)}
-                        disabled={auditSkip + auditLimit >= auditTotal || isAuditLoading}
-                        className="px-2.5 py-1 rounded-lg border border-surface-container-highest hover:bg-surface-container disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 font-semibold"
-                      >
-                        Next <ChevronRight className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+                    {auditTotal > 0 && (
+                      <span className="text-[11px] font-semibold bg-surface-container px-2 py-0.5 rounded-md text-on-surface border border-surface-container-highest">
+                        Page {Math.floor(auditSkip / auditLimit) + 1} of {Math.ceil(auditTotal / auditLimit) || 1}
+                      </span>
+                    )}
                   </div>
-                )}
+
+                  <div className="flex items-center gap-1 self-end sm:self-auto">
+                    <button
+                      onClick={() => loadAuditLogs(0, auditLimit, sortOrder)}
+                      disabled={auditSkip === 0 || isAuditLoading}
+                      className="p-1.5 rounded-lg border border-surface-container-highest hover:bg-surface-container disabled:opacity-30 disabled:cursor-not-allowed text-on-surface-variant hover:text-primary transition-colors"
+                      title="First Page"
+                    >
+                      <ChevronsLeft className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => loadAuditLogs(Math.max(0, auditSkip - auditLimit), auditLimit, sortOrder)}
+                      disabled={auditSkip === 0 || isAuditLoading}
+                      className="px-2.5 py-1 rounded-lg border border-surface-container-highest hover:bg-surface-container disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-1 font-semibold text-on-surface-variant hover:text-primary transition-colors"
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5" /> Prev
+                    </button>
+
+                    <span className="px-2.5 py-1 font-bold text-primary text-xs bg-surface-container-low border border-surface-container-highest rounded-lg">
+                      {Math.floor(auditSkip / auditLimit) + 1} / {Math.ceil(auditTotal / auditLimit) || 1}
+                    </span>
+
+                    <button
+                      onClick={() => loadAuditLogs(auditSkip + auditLimit, auditLimit, sortOrder)}
+                      disabled={auditSkip + auditLimit >= auditTotal || isAuditLoading}
+                      className="px-2.5 py-1 rounded-lg border border-surface-container-highest hover:bg-surface-container disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-1 font-semibold text-on-surface-variant hover:text-primary transition-colors"
+                    >
+                      Next <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => {
+                        const lastPageSkip = Math.floor((auditTotal - 1) / auditLimit) * auditLimit;
+                        loadAuditLogs(lastPageSkip, auditLimit, sortOrder);
+                      }}
+                      disabled={auditSkip + auditLimit >= auditTotal || isAuditLoading}
+                      className="p-1.5 rounded-lg border border-surface-container-highest hover:bg-surface-container disabled:opacity-30 disabled:cursor-not-allowed text-on-surface-variant hover:text-primary transition-colors"
+                      title="Last Page"
+                    >
+                      <ChevronsRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -1092,14 +1189,43 @@ export const SettingsPage: React.FC = () => {
                   </div>
 
                   {selectedAuditLog.error_message && (
-                    <div className="p-3 bg-rose-500/10 border border-rose-300 rounded-xl text-xs space-y-1">
-                      <div className="flex items-center gap-1.5 font-bold text-rose-700">
-                        <AlertTriangle className="w-4 h-4" />
-                        Execution Error Detail
+                    <div className="space-y-2">
+                      <div className="p-3 bg-rose-500/10 border border-rose-300 rounded-xl text-xs space-y-1">
+                        <div className="flex items-center gap-1.5 font-bold text-rose-700">
+                          <AlertTriangle className="w-4 h-4" />
+                          Execution Error Detail
+                        </div>
+                        <p className="font-mono text-rose-800 text-[11px] whitespace-pre-wrap">
+                          {selectedAuditLog.error_message}
+                        </p>
                       </div>
-                      <p className="font-mono text-rose-800 text-[11px] whitespace-pre-wrap">
-                        {selectedAuditLog.error_message}
-                      </p>
+
+                      {/* Intelligent Root Cause Diagnosis */}
+                      {(selectedAuditLog.error_message.toLowerCase().includes('voucher date is missing') ||
+                        selectedAuditLog.error_message.toLowerCase().includes('retry split')) && (
+                        <div className="p-3 bg-amber-500/10 border border-amber-300 rounded-xl text-xs space-y-1 text-amber-900">
+                          <div className="flex items-center gap-1.5 font-bold text-amber-800">
+                            <Info className="w-4 h-4 text-amber-600 shrink-0" />
+                            Tally Educational Mode Date Restriction
+                          </div>
+                          <p className="text-[11px] leading-relaxed">
+                            TallyPrime on this host is running in Educational Mode without an active silver/gold license key. In Educational Mode, Tally strictly limits voucher creation to the <strong>1st, 2nd, or end of the month</strong>.
+                            Click <strong>"Retry Operation to Tally Now"</strong> — the Sync Agent will automatically write the voucher with date snapped to the 1st of the month while keeping the exact actual timestamp in narration.
+                          </p>
+                        </div>
+                      )}
+
+                      {selectedAuditLog.error_message.toLowerCase().includes('does not exist') && (
+                        <div className="p-3 bg-amber-500/10 border border-amber-300 rounded-xl text-xs space-y-1 text-amber-900">
+                          <div className="flex items-center gap-1.5 font-bold text-amber-800">
+                            <Info className="w-4 h-4 text-amber-600 shrink-0" />
+                            Missing Master Entity in Tally
+                          </div>
+                          <p className="text-[11px] leading-relaxed">
+                            The item or party ledger referenced by this write-back operation does not yet exist in TallyPrime under the active company. Create or map this item in Tally, then retry.
+                          </p>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -1143,6 +1269,23 @@ export const SettingsPage: React.FC = () => {
                       <pre className="p-3 bg-surface-container rounded-xl border border-surface-container-highest text-[11px] font-mono text-on-surface overflow-x-auto max-h-60">
                         {JSON.stringify(selectedAuditLog.details, null, 2)}
                       </pre>
+                    </div>
+                  )}
+
+                  {/* Modal Action Footer */}
+                  {selectedAuditLog.direction === 'WRITE' && (selectedAuditLog.status === 'FAILED' || selectedAuditLog.status === 'PENDING') && (
+                    <div className="pt-3 border-t border-surface-container-highest flex justify-end gap-2">
+                      <button
+                        onClick={async () => {
+                          await handleRetryJob(selectedAuditLog.id);
+                          setSelectedAuditLog(null);
+                        }}
+                        disabled={retryingJobId === selectedAuditLog.id}
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-on-primary text-xs font-bold hover:bg-primary/90 transition-colors shadow-sm disabled:opacity-50"
+                      >
+                        <RotateCw className={`w-3.5 h-3.5 ${retryingJobId === selectedAuditLog.id ? 'animate-spin' : ''}`} />
+                        Retry Operation to Tally Now
+                      </button>
                     </div>
                   )}
                 </div>
