@@ -692,17 +692,22 @@ export const SettingsPage: React.FC = () => {
                       <Database className="w-5 h-5" />
                     </div>
                     <div>
-                      <h4 className="font-headline-sm text-base font-bold text-primary flex items-center gap-2">
+                      <h4 className="font-headline-sm text-base font-bold text-primary flex items-center gap-2 flex-wrap">
                         Tally Prime Accounting ERP Connector
-                        {tallyStatus?.is_connected || tallyStatus?.agent_status === 'ONLINE' ? (
+                        {tallyStatus?.is_connected && tallyStatus?.tally_status === 'ONLINE' ? (
                           <span className="font-headline-sm text-[10px] font-bold uppercase bg-emerald-500/10 text-emerald-700 border border-emerald-300 px-2 py-0.5 rounded-full flex items-center gap-1.5">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                            Connected • Live Agent
+                            Connected • Live ERP Sync
                           </span>
-                        ) : (
+                        ) : tallyStatus?.agent_status === 'ONLINE' ? (
                           <span className="font-headline-sm text-[10px] font-bold uppercase bg-amber-500/10 text-amber-700 border border-amber-300 px-2 py-0.5 rounded-full flex items-center gap-1.5">
                             <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                            Sync Agent Standby / Offline
+                            Tally App Closed • Agent Standby
+                          </span>
+                        ) : (
+                          <span className="font-headline-sm text-[10px] font-bold uppercase bg-rose-500/10 text-rose-700 border border-rose-300 px-2 py-0.5 rounded-full flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                            Sync Agent Offline
                           </span>
                         )}
                       </h4>
@@ -718,8 +723,12 @@ export const SettingsPage: React.FC = () => {
 
                 <div className="flex flex-wrap items-center gap-3 text-xs text-on-surface-variant">
                   <div className="px-3 py-1.5 rounded-lg bg-surface-container border border-surface-container-highest flex items-center gap-2">
+                    <Database className="w-3.5 h-3.5 text-primary" />
+                    <span>TallyPrime: <strong className={tallyStatus?.tally_status === 'ONLINE' ? 'text-emerald-700' : 'text-amber-700'}>{tallyStatus?.tally_status === 'ONLINE' ? 'LIVE (Port 9000)' : 'STOPPED / CLOSED'}</strong></span>
+                  </div>
+                  <div className="px-3 py-1.5 rounded-lg bg-surface-container border border-surface-container-highest flex items-center gap-2">
                     <Activity className="w-3.5 h-3.5 text-primary" />
-                    <span>Agent: <strong className="text-primary">{tallyStatus?.agent_name || 'SGRG-Tally-Sync-Agent'}</strong> (v{tallyStatus?.agent_version || '1.0.0'})</span>
+                    <span>Agent: <strong className={tallyStatus?.agent_status === 'ONLINE' ? 'text-emerald-700' : 'text-rose-600'}>{tallyStatus?.agent_name || 'SGRG-Tally-Sync-Agent'}</strong> (v{tallyStatus?.agent_version || '1.0.0'})</span>
                   </div>
                   <div className="px-3 py-1.5 rounded-lg bg-surface-container border border-surface-container-highest flex items-center gap-2">
                     <Clock className="w-3.5 h-3.5 text-primary" />
@@ -727,6 +736,16 @@ export const SettingsPage: React.FC = () => {
                   </div>
                 </div>
               </div>
+
+              {/* Tally App Closed Warning Notice when agent is running but Tally is closed */}
+              {tallyStatus?.agent_status === 'ONLINE' && tallyStatus?.tally_status !== 'ONLINE' && (
+                <div className="p-3 bg-amber-500/10 border border-amber-300 rounded-xl flex items-center gap-2.5 text-xs text-amber-900">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>
+                    <strong>TallyPrime is currently closed / port 9000 unreachable.</strong> Launch TallyPrime with company <strong>{tallyStatus?.tally_company_name || 'SGRG SERVICES (OPC) PRIVATE LIMITED'}</strong> on this PC to enable live bi-directional sync. Pending writes are safely queued.
+                  </span>
+                </div>
+              )}
 
               {/* Today's Operational Metrics Grid */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

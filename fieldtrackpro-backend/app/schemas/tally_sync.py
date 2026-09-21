@@ -25,6 +25,7 @@ class SyncAgentRead(BaseModel):
     tally_company_name: Optional[str] = None
     is_active: bool
     agent_version: Optional[str] = None
+    tally_status: Optional[str] = "OFFLINE"
     last_heartbeat_at: Optional[datetime] = None
     last_sync_at: Optional[datetime] = None
     created_at: datetime
@@ -39,6 +40,7 @@ class SyncAgentRegistrationResponse(BaseModel):
 class TallyIntegrationStatusResponse(BaseModel):
     is_connected: bool
     agent_status: str  # "ONLINE", "OFFLINE", "NOT_CONFIGURED"
+    tally_status: str = "OFFLINE"  # "ONLINE", "OFFLINE"
     agent_id: Optional[uuid.UUID] = None
     agent_name: Optional[str] = None
     agent_version: Optional[str] = None

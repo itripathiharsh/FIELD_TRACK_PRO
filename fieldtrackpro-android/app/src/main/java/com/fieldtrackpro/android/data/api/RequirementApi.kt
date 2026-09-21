@@ -1,5 +1,7 @@
 package com.fieldtrackpro.android.data.api
 
+import com.fieldtrackpro.android.data.model.CreateRequirementRequest
+import com.fieldtrackpro.android.data.model.CustomerRequirementDto
 import com.fieldtrackpro.android.data.model.RequirementCategoryDto
 import com.fieldtrackpro.android.data.model.RequirementFormDto
 import com.fieldtrackpro.android.data.model.RequirementFormRequest
@@ -28,4 +30,9 @@ interface RequirementApi {
     suspend fun getForm(
         @Path("visit_id") visitId: String
     ): Response<RequirementFormDto>
+
+    @POST("api/v1/requirements")
+    suspend fun createRequirement(
+        @Body request: CreateRequirementRequest
+    ): Response<CustomerRequirementDto>
 }

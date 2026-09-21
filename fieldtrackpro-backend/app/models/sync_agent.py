@@ -32,6 +32,7 @@ class SyncAgent(Base):
     
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
     agent_version: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    tally_status: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, default="OFFLINE")
     
     last_heartbeat_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     last_sync_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

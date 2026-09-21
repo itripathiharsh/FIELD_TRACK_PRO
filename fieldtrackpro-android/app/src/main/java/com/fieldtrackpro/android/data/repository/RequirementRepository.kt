@@ -1,9 +1,12 @@
 package com.fieldtrackpro.android.data.repository
 
 import com.fieldtrackpro.android.data.api.RequirementApi
+import com.fieldtrackpro.android.data.model.CreateRequirementRequest
+import com.fieldtrackpro.android.data.model.CustomerRequirementDto
 import com.fieldtrackpro.android.data.model.RequirementCategoryDto
 import com.fieldtrackpro.android.data.model.RequirementFormDto
 import com.fieldtrackpro.android.data.model.RequirementFormRequest
+import com.fieldtrackpro.android.data.model.RequirementItemRequest
 
 class RequirementRepository(private val requirementApi: RequirementApi) {
 
@@ -43,6 +46,31 @@ class RequirementRepository(private val requirementApi: RequirementApi) {
                 Resource.Success(response.body()!!)
             } else {
                 val err = response.errorBody()?.string() ?: "Form submission failed"
+                Resource.Error("Submit failed (${response.code()}): $err", response.code())
+            }
+        } catch (e: Exception) {
+            Resource.Error("Submit failed: ${e.localizedMessage}")
+        }
+    }
+
+    suspend fun createMultiItemRequirement(
+        visitId: String,
+        items: List<RequirementItemRequest>,
+        priority: String = "MEDIUM",
+        notes: String? = null
+    ): Resource<CustomerRequirementDto> {
+        return try {
+            val request = CreateRequirementRequest(
+                visitId = visitId,
+                priority = priority,
+                notes = notes,
+                items = items
+            )
+            val response = requirementApi.createRequirement(request)
+            if (response.isSuccessful && response.body() != null) {
+                Resource.Success(response.body()!!)
+            } else {
+                val err = response.errorBody()?.string() ?: "Requirement submission failed"
                 Resource.Error("Submit failed (${response.code()}): $err", response.code())
             }
         } catch (e: Exception) {

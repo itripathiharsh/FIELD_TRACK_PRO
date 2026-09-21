@@ -362,6 +362,7 @@ export type PaymentStatus = 'PENDING_VERIFICATION' | 'VERIFIED' | 'REJECTED';
 export interface TallyIntegrationStatus {
   is_connected: boolean;
   agent_status: 'ONLINE' | 'OFFLINE' | 'NOT_CONFIGURED';
+  tally_status?: 'ONLINE' | 'OFFLINE';
   agent_id?: string | null;
   agent_name?: string | null;
   agent_version?: string | null;

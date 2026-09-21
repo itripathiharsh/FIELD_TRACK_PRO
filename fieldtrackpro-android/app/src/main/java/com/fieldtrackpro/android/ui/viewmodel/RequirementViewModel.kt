@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.fieldtrackpro.android.data.local.TokenManager
 import com.fieldtrackpro.android.data.model.RequirementCategoryDto
 import com.fieldtrackpro.android.data.model.RequirementFormDto
+import com.fieldtrackpro.android.data.model.RequirementItemRequest
 import com.fieldtrackpro.android.data.remote.ApiClient
 import com.fieldtrackpro.android.data.repository.RequirementRepository
 import com.fieldtrackpro.android.data.repository.Resource
@@ -89,6 +90,28 @@ class RequirementViewModel(private val tokenManager: TokenManager) : ViewModel()
                 priority = priority,
                 expectedTimeline = expectedTimeline,
                 budgetRange = budgetRange,
+                notes = notes
+            )
+            _state.value = when (res) {
+                is Resource.Success -> RequirementState.FormSubmitted
+                is Resource.Error -> RequirementState.Error(res.message)
+                else -> RequirementState.Error("Unknown error")
+            }
+        }
+    }
+
+    fun submitMultiItemRequirement(
+        visitId: String,
+        items: List<RequirementItemRequest>,
+        priority: String = "MEDIUM",
+        notes: String? = null
+    ) {
+        viewModelScope.launch {
+            _state.value = RequirementState.Loading
+            val res = repository.createMultiItemRequirement(
+                visitId = visitId,
+                items = items,
+                priority = priority,
                 notes = notes
             )
             _state.value = when (res) {

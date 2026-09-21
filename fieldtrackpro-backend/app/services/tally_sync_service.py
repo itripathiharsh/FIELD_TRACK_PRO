@@ -110,6 +110,7 @@ async def record_heartbeat(
     now = datetime.now(timezone.utc)
     agent.last_heartbeat_at = now
     agent.agent_version = data.agent_version
+    agent.tally_status = data.tally_status or "OFFLINE"
     if data.company_name:
         agent.tally_company_name = data.company_name
     if data.company_guid:
@@ -146,6 +147,7 @@ async def get_integration_status(session: AsyncSession) -> TallyIntegrationStatu
         return TallyIntegrationStatusResponse(
             is_connected=False,
             agent_status="NOT_CONFIGURED",
+            tally_status="OFFLINE",
             today_read_count=today_summary["today_read_count"],
             today_write_count=today_summary["today_write_count"],
             failed_operation_count=today_summary["failed_operation_count"],
@@ -158,15 +160,27 @@ async def get_integration_status(session: AsyncSession) -> TallyIntegrationStatu
 
     now = datetime.now(timezone.utc)
     # Heartbeat considered online if received within last 3 minutes (180s)
-    is_online = False
+    is_agent_online = False
     if agent.last_heartbeat_at:
         diff = (now - agent.last_heartbeat_at).total_seconds()
         if diff <= 180:
-            is_online = True
+            is_agent_online = True
+
+    # TallyPrime is only considered online if the agent is active AND reporting Tally running
+    tally_status_val = (agent.tally_status or "OFFLINE").upper()
+    is_tally_online = is_agent_online and (tally_status_val in ["RUNNING", "ONLINE"])
+
+    if is_tally_online:
+        msg = "TallyPrime live & bi-directional sync operational."
+    elif is_agent_online:
+        msg = "Sync Agent online, but local TallyPrime application is closed / port 9000 unreachable."
+    else:
+        msg = "Tally Sync Agent offline or waiting for heartbeat."
 
     return TallyIntegrationStatusResponse(
-        is_connected=is_online,
-        agent_status="ONLINE" if is_online else "OFFLINE",
+        is_connected=is_tally_online,
+        agent_status="ONLINE" if is_agent_online else "OFFLINE",
+        tally_status="ONLINE" if is_tally_online else "OFFLINE",
         agent_id=agent.id,
         agent_name=agent.name,
         agent_version=agent.agent_version,
@@ -181,7 +195,7 @@ async def get_integration_status(session: AsyncSession) -> TallyIntegrationStatu
         total_invoices_synced=total_inv,
         total_payments_synced=total_pay,
         total_customers_synced=total_cust,
-        message="Tally Sync Agent active and communicating." if is_online else "Tally Sync Agent offline or waiting for heartbeat.",
+        message=msg,
     )
 
 
