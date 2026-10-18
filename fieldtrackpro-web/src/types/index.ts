@@ -8,11 +8,12 @@
  */
 
 /**
- * FT-038: the backend Role enum has exactly two members. A third 'MANAGER'
- * role existed only in the frontend; selecting it produced a user the API
- * would never accept.
+ * The backend Role enum is exactly these three members, least to most privileged:
+ * EMPLOYEE < ADMIN < SUPER_ADMIN. SUPER_ADMIN is a superset of ADMIN that can also manage roles.
+ * (FT-038: a frontend-only 'MANAGER' role once existed; selecting it produced a user the API would
+ * never accept - do not add roles here that the backend does not have.)
  */
-export type UserRole = 'ADMIN' | 'EMPLOYEE';
+export type UserRole = 'SUPER_ADMIN' | 'ADMIN' | 'EMPLOYEE';
 
 /** Response of `GET /api/v1/auth/me`. */
 export interface User {
@@ -26,6 +27,8 @@ export interface User {
   /** Present when the user has an employee profile. */
   territory_id?: string | null;
   employee_id?: string | null;
+  /** True while the server requires a password change before any other action. */
+  must_change_password?: boolean;
 }
 
 /** Response of `GET /api/v1/employees` (employees.id, not users.id). */
@@ -50,7 +53,33 @@ export interface Employee {
     mobile_number: string | null;
     role: UserRole;
     is_active: boolean;
+    /** Non-secret: set while an admin-issued temporary password is pending. */
+    temp_password_expires_at?: string | null;
   };
+}
+
+/** Response of `POST /api/v1/employees/{id}/reset-password`. Shown ONCE; never persisted. */
+export interface AdminPasswordReset {
+  employee_id: string;
+  user_id: string;
+  temporary_password: string;
+  expires_at: string;
+  expires_in_minutes: number;
+  must_change_password: boolean;
+}
+
+/** One row of `GET /api/v1/security-audit-logs` (Super Admin only). No credentials are ever included. */
+export interface SecurityAuditLog {
+  id: string;
+  created_at: string;
+  event_type: string;
+  outcome: 'SUCCESS' | 'DENIED' | 'FAILED' | string;
+  actor_user_id: string | null;
+  target_user_id: string | null;
+  previous_role: string | null;
+  new_role: string | null;
+  reason_code: string | null;
+  details: Record<string, unknown> | null;
 }
 
 /** Geographic point as exchanged with the API. */
@@ -221,6 +250,120 @@ export interface Customer {
   brands?: string[];
   created_by: string;
   created_at: string;
+  /** True only for an outlet approved from a CustomerProspect submission - there is no
+   * Tally writeback for customers, so an admin must add it to Tally by hand. */
+  needs_tally_entry?: boolean;
+  /** Live outlet proof (additive, filled by the backend). */
+  primary_outlet_image_available?: boolean;
+  primary_outlet_proof_id?: string | null;
+  outlet_proof_count?: number;
+  outlet_location_confirmations?: number;
+}
+
+export type OutletProofKind = 'INITIAL' | 'CONFIRMATION' | 'CHANGE_REQUEST';
+export type OutletProofStatus = 'UNATTACHED' | 'PENDING' | 'CONFIRMED' | 'APPROVED' | 'REJECTED' | 'SUPERSEDED';
+
+/** One live outlet proof: a camera photo plus the GPS fix taken at the same click. */
+export interface OutletProof {
+  id: string;
+  customer_id: string | null;
+  prospect_id: string | null;
+  kind: OutletProofKind;
+  status: OutletProofStatus;
+  is_primary: boolean;
+  latitude: number;
+  longitude: number;
+  accuracy_m: number;
+  captured_at: string;
+  received_at: string;
+  is_mock_location: boolean;
+  device_info?: string | null;
+  content_type?: string;
+  size_bytes?: number;
+  submitted_by: string;
+  submitted_by_name?: string | null;
+  distance_from_verified_m?: number | null;
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
+  rejection_reason?: string | null;
+  /** Short-lived signed URL (may be null). Prefer the authenticated image route. */
+  image_url?: string | null;
+  created_at: string;
+  // admin extras
+  customer_name?: string | null;
+  customer_outlet_code?: string | null;
+  territory_name?: string | null;
+  area_name?: string | null;
+  prospect_name?: string | null;
+  customer_latitude?: number | null;
+  customer_longitude?: number | null;
+  nearby_pending_proofs?: number | null;
+}
+
+export type OutletProofStatusFilter = OutletProofStatus | 'ALL';
+
+export type ProspectStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+
+export interface ProspectRequirement {
+  brand?: string | null;
+  requirement_type?: string | null;
+  product_details?: string | null;
+  quantity?: number | null;
+  expected_value?: number | null;
+  follow_up_date?: string | null;
+  notes?: string | null;
+}
+
+/** A new outlet submitted by a field employee, held for admin review before it becomes a
+ * real Customer - see POST /api/v1/customers/prospects/{id}/approve. */
+export interface CustomerProspect {
+  id: string;
+  status: ProspectStatus;
+  name: string;
+  contact_number: string;
+  contact_person: string | null;
+  gst_number: string | null;
+  address: string;
+  outlet_code: string | null;
+  territory_id: string | null;
+  area_id: string | null;
+  territory_name?: string | null;
+  area_name?: string | null;
+  brands: string[];
+  requirement: ProspectRequirement | null;
+  location: GeoPoint | null;
+  gps_accuracy_meters?: number | null;
+  location_notes?: string | null;
+  submitted_by: string;
+  submitted_by_name?: string | null;
+  submitted_at: string;
+  reviewed_by?: string | null;
+  reviewed_by_name?: string | null;
+  reviewed_at?: string | null;
+  rejection_reason?: string | null;
+  resulting_customer_id?: string | null;
+}
+
+export interface CustomerProspectUpdate {
+  name?: string;
+  contact_number?: string;
+  contact_person?: string | null;
+  gst_number?: string | null;
+  address?: string;
+  outlet_code?: string | null;
+  territory_id?: string | null;
+  area_id?: string | null;
+  brands?: string[];
+  requirement?: ProspectRequirement | null;
+  proposed_latitude?: number;
+  proposed_longitude?: number;
+}
+
+export interface CustomerProspectSubmitResponse {
+  status: 'CREATED' | 'PENDING_APPROVAL';
+  message: string;
+  customer: Customer | null;
+  prospect_id: string | null;
 }
 
 export interface CustomerMapLocation {
@@ -314,6 +457,13 @@ export interface Visit {
   area_name?: string | null;
   territory_name?: string | null;
   geo_failure_count?: number;
+  /** Always present (derived from visit_type). */
+  is_adhoc?: boolean;
+  /** ADMIN only - null/absent for employees. */
+  outside_assignment?: boolean | null;
+  /** ADMIN only - 'AD-HOC' | 'AD-HOC · OUTSIDE ASSIGNMENT' | null. */
+  review_label?: string | null;
+  customer_outlet_code?: string | null;
   /** The form template an employee must fill for this visit, if any. */
   required_form_id: string | null;
   required_form_name: string | null;
@@ -397,7 +547,7 @@ export interface TallyAuditLogItem {
   tally_guid?: string | null;
   tally_voucher_number?: string | null;
   writeback_job_id?: string | null;
-  details?: Record<string, any> | null;
+  details?: Record<string, unknown> | null;
 }
 
 export interface TallyAuditLogsResponse {
@@ -432,7 +582,10 @@ export interface Invoice {
   created_by: string;
   created_at: string;
   // Computed aging - always from the backend, never recomputed here.
+  /** POSTED-to-Tally only (or Tally-sourced). */
   verified_paid_amount: string;
+  /** Verified by admin but not yet posted to Tally; does not reduce remaining. */
+  verified_awaiting_tally_amount?: string;
   remaining_amount: string;
   days_outstanding: number;
   payment_status: PaymentStatusLabel;
@@ -460,7 +613,17 @@ export interface PaymentBrandAllocation {
 
 export interface BrandAllocationInput {
   brand: string;
-  amount: number;
+  /** Exact 2-decimal string (e.g. "1250.50"); the backend parses it as Decimal. */
+  amount: string;
+}
+
+export type TallyStatus = 'NOT_APPLICABLE' | 'AWAITING_TALLY' | 'POSTED' | 'FAILED';
+
+/** Body of the optional bank-verification record on `POST /payments/{id}/verify`. */
+export interface PaymentVerifyInput {
+  bank_reference?: string | null;
+  bank_verified_on?: string | null;
+  verified_note?: string | null;
 }
 
 /** Response of `GET/POST /api/v1/payments*` (the "Collection"). */
@@ -485,16 +648,52 @@ export interface Payment {
   created_at: string;
   proofs: PaymentProof[];
   allocations?: PaymentBrandAllocation[];
+  tally_status?: TallyStatus;
+  tally_voucher_number?: string | null;
+  tally_posted_at?: string | null;
+  /** ADMIN only. */
+  tally_error?: string | null;
+  /** ADMIN only: FAILED, or AWAITING_TALLY for 30+ minutes. */
+  tally_stuck?: boolean | null;
+  /** ADMIN only. */
+  bank_reference?: string | null;
+  bank_verified_on?: string | null;
+  verified_note?: string | null;
   customer_name?: string | null;
   outlet_code?: string | null;
   employee_name?: string | null;
   territory_name?: string | null;
 }
 
-export interface BrandSummary {
+/** Backend ageing split of total_outstanding; the five buckets sum to it. */
+export interface AgeingBreakdown {
+  normal: string;
+  warning: string;
+  overdue: string;
+  baseline_current: string;
+  baseline_overdue: string;
+}
+
+/**
+ * Shared money-position fields (additive; optional so an older backend that
+ * omits them still type-checks). Identity:
+ * opening_balance + total_invoiced - paid_in_tally == total_outstanding.
+ */
+export interface PositionFields {
+  opening_balance?: string;
+  baseline_invoiced?: string;
+  baseline_collected?: string;
+  paid_in_tally?: string;
+  advance_credit?: string;
+  ageing?: AgeingBreakdown;
+  reconciles?: boolean;
+}
+
+export interface BrandSummary extends PositionFields {
   brand: string;
   total_invoiced: string;
   total_paid: string;
+  verified_awaiting_tally_amount?: string;
   total_outstanding: string;
   overdue_amount: string;
   invoice_count: number;
@@ -504,12 +703,13 @@ export interface BrandSummary {
 }
 
 /** Response of `GET /api/v1/customers/{id}/account` - the Outlet Account panel. */
-export interface AccountSummary {
+export interface AccountSummary extends PositionFields {
   customer_id: string;
   customer_name: string;
   outlet_code: string | null;
   total_invoiced: string;
   total_paid: string;
+  verified_awaiting_tally_amount?: string;
   total_outstanding: string;
   overdue_amount: string;
   max_days_outstanding: number;
@@ -525,7 +725,7 @@ export interface AccountSummary {
 }
 
 /** One row of `GET /api/v1/collections/overview` - the outlet-list financial overview (Meeting 2). */
-export interface OutletCollectionRow {
+export interface OutletCollectionRow extends PositionFields {
   customer_id: string;
   outlet_code: string | null;
   customer_name: string;
@@ -543,6 +743,7 @@ export interface OutletCollectionRow {
 
   total_invoiced: string;
   total_paid: string;
+  verified_awaiting_tally_amount?: string;
   total_outstanding: string;
   overdue_amount: string;
   max_days_outstanding: number;
@@ -556,19 +757,27 @@ export interface OutletCollectionRow {
   most_recent_payment_employee_name: string | null;
   most_recent_visit_date: string | null;
   most_recent_visit_employee_name: string | null;
+  /** Only when a date range was requested: live invoices by invoice date in the range. */
+  invoiced_in_period?: string | null;
+  /** Only when a date range was requested: payments POSTED to Tally by payment date in the range. */
+  collected_in_period?: string | null;
 }
 
-export interface CollectionsOverviewTotals {
+export interface CollectionsOverviewTotals extends PositionFields {
   total_outlets: number;
   total_invoiced: string;
   total_paid: string;
+  verified_awaiting_tally_amount?: string;
   total_outstanding: string;
+  overdue_amount?: string;
   current_amount: string;
   bucket_0_15: string;
   bucket_16_30: string;
   bucket_31_60: string;
   bucket_61_90: string;
   bucket_90_plus: string;
+  invoiced_in_period?: string | null;
+  collected_in_period?: string | null;
 }
 
 /** Response of `GET /api/v1/collections/overview`. */
@@ -578,6 +787,11 @@ export interface CollectionsOverviewResponse {
   total_count: number;
   skip: number;
   limit: number;
+  /** Echo of the applied date range (inclusive IST dates). */
+  period_start?: string | null;
+  period_end?: string | null;
+  /** Outstanding / overdue / ageing are always as of this date (today), never the range. */
+  as_of_date?: string | null;
 }
 
 export interface LoginResponse {
@@ -823,12 +1037,27 @@ export interface ImportSummary {
   duplicate_outlet_codes_with_inconsistent_names?: { outlet_code: string; names_seen: string[] }[];
   warnings?: ImportRowWarning[];
   rows_with_warnings?: number;
-  plan_rows?: any[];
+  plan_rows?: ImportPlanRow[];
   detected_type?: string;
   unmatched_fos_names?: string[];
   total_rows?: number;
   valid_rows?: number;
-  [key: string]: any;
+  [key: string]: unknown;
+}
+
+/** One row of an import plan preview (employee master or outlet/market data). All values are strings from the sheet. */
+export interface ImportPlanRow {
+  employee_code?: string | null;
+  full_name?: string | null;
+  working_profile?: string | null;
+  dms_code?: string | null;
+  outlet_name?: string | null;
+  zone_name?: string | null;
+  area_name?: string | null;
+  raw_fos_name?: string | null;
+  market_outstanding?: string | null;
+  bucket_gt_90?: string | null;
+  [key: string]: string | null | undefined;
 }
 
 /** Response of `POST /api/v1/imports/validate`, `.../commit`, `GET /api/v1/imports[/{id}]`. */
@@ -1038,10 +1267,22 @@ export interface BusinessSummaryRow {
   bucket_60_75: string;
   bucket_75_90: string;
   bucket_gt_90: string;
+  /** Latest snapshot date of a raw outlet row's stock figures. */
+  as_of_date?: string | null;
 }
 
 export interface BusinessBIDashboard {
   snapshot_date?: string | null;
+  month_period?: string | null;
+  /** SNAPSHOT (outlet financial snapshots) or LIVE_INVOICES (fallback when the period has no snapshot). */
+  data_source?: 'SNAPSHOT' | 'LIVE_INVOICES';
+  data_source_note?: string | null;
+  /** Latest snapshot date backing the stock figures (market OS / ageing). */
+  as_of_date?: string | null;
+  period_start?: string | null;
+  period_end?: string | null;
+  period_source?: 'DATES' | 'MONTH' | 'ALL';
+  month_ignored?: boolean;
   total_outlets: number;
   total_sales: string;
   total_collection: string;
@@ -1065,6 +1306,7 @@ export interface FOSEmployeeMappingRead {
 
 export interface EmployeeReportRow {
   employee_id: string;
+  employee_code?: string | null;
   employee_name: string;
   total_visits: number;
   completed_visits: number;
@@ -1145,6 +1387,7 @@ export interface OutletReportRow {
   collection: string;
   market_outstanding: string;
   overdue_gt_90: string;
+  as_of_date?: string | null;
 }
 
 export interface OutstandingAgeingReportRow {
@@ -1164,6 +1407,7 @@ export interface OutstandingAgeingReportRow {
   bucket_75_90: string;
   bucket_gt_90: string;
   highest_overdue_bucket: string;
+  as_of_date?: string | null;
 }
 
 export interface CollectionReportRow {
@@ -1279,6 +1523,8 @@ export interface DashboardExecutiveKPIs {
   total_outlets: number;
   total_sales: string;
   total_collection: string;
+  total_collection_posted_in_tally?: string;
+  total_collection_verified_awaiting_tally?: string;
   total_market_outstanding: string;
   total_overdue_gt_90: string;
   total_employees: number;
@@ -1578,6 +1824,7 @@ export interface NotificationItem {
   user_id: string;
   visit_id?: string | null;
   planned_visit_id?: string | null;
+  payment_id?: string | null;
   type: NotificationType;
   title?: string | null;
   message: string;

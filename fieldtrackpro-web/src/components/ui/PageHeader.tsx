@@ -15,7 +15,7 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
 }) => {
   return (
     <div className="mb-space-6 flex flex-col md:flex-row md:items-center md:justify-between gap-space-4 pb-space-4 border-b border-surface-container-highest">
-      <div>
+      <div className="min-w-0">
         {breadcrumbs && breadcrumbs.length > 0 && (
           <div className="flex items-center gap-space-2 text-xs font-label-md text-on-surface-variant uppercase tracking-wider mb-space-1">
             {breadcrumbs.map((b, idx) => (
@@ -39,7 +39,7 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
       </div>
 
       {actions && (
-        <div className="flex items-center gap-space-3 shrink-0">
+        <div className="flex flex-wrap items-center gap-space-3 min-w-0 md:shrink-0">
           {actions}
         </div>
       )}

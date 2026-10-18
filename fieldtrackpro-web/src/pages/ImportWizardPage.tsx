@@ -23,9 +23,11 @@ import { Button } from '../components/ui/Button';
 import { ErrorBanner } from '../components/ui/ErrorBanner';
 import { MetricCard } from '../components/ui/MetricCard';
 import { apiClient } from '../api/client';
+import { formatMoney } from '../utils/money';
 import {
   ImportBatchRead,
   ImportPreviewResponse,
+  ImportPlanRow,
   Employee,
 } from '../types';
 
@@ -164,7 +166,7 @@ export const ImportWizardPage: React.FC = () => {
   };
 
   const summary = batch?.summary || {};
-  const planRows: any[] = summary?.plan_rows || [];
+  const planRows: ImportPlanRow[] = summary?.plan_rows || [];
   const detectedType = summary?.detected_type || preview?.detected_type || 'generic';
   const isEmployeeType = detectedType === 'employee_master';
   const unmatchedFosList: string[] = summary?.unmatched_fos_names || [];
@@ -435,10 +437,10 @@ export const ImportWizardPage: React.FC = () => {
                           <td className="px-space-4 py-space-2.5 text-on-surface-variant">{row.zone_name} · {row.area_name}</td>
                           <td className="px-space-4 py-space-2.5 text-on-surface-variant">{row.raw_fos_name || 'Office / Unassigned'}</td>
                           <td className="px-space-4 py-space-2.5 font-mono font-semibold text-on-surface">
-                            {row.market_outstanding ? `₹${parseFloat(row.market_outstanding).toLocaleString('en-IN')}` : '₹0'}
+                            {formatMoney(row.market_outstanding ?? '0')}
                           </td>
                           <td className="px-space-4 py-space-2.5 font-mono text-secondary">
-                            {row.bucket_gt_90 && parseFloat(row.bucket_gt_90) > 0 ? `₹${parseFloat(row.bucket_gt_90).toLocaleString('en-IN')}` : '—'}
+                            {row.bucket_gt_90 && parseFloat(row.bucket_gt_90) > 0 ? formatMoney(row.bucket_gt_90) : '—'}
                           </td>
                         </>
                       )}

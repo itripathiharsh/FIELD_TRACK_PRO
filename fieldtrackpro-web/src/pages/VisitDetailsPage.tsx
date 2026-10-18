@@ -7,6 +7,7 @@ import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { ErrorBanner } from '../components/ui/ErrorBanner';
 import { useAuth } from '../context/AuthContext';
+import { isAdmin as isAdminRole } from '../utils/roles';
 import { apiClient } from '../api/client';
 import {
   AccountSummary,
@@ -26,12 +27,13 @@ import { SignatureThumbnail } from '../components/ui/SignatureThumbnail';
 import { AccountSummaryCard } from '../components/ui/AccountSummaryCard';
 import { CollectPaymentModal } from '../components/ui/CollectPaymentModal';
 import { formatIstDateTime } from '../utils/date';
+import { VisitReviewBadge } from '../components/ui/VisitReviewBadge';
 
 export const VisitDetailsPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const isAdmin = user?.role === 'ADMIN';
+  const isAdmin = isAdminRole(user);
 
   const [visit, setVisit] = useState<Visit | null>(null);
   const [customer, setCustomer] = useState<Customer | null>(null);
@@ -328,6 +330,7 @@ export const VisitDetailsPage: React.FC = () => {
                 PLANNED VISIT
               </span>
             )}
+            <VisitReviewBadge label={visit.review_label} size="md" />
             <StatusBadge status={visit.status} />
           </div>
         </div>

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Menu, ShieldCheck, Wifi, WifiOff } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { roleLabel } from '../../utils/roles';
 import { apiClient } from '../../api/client';
 import { NotificationBell } from './NotificationBell';
 
@@ -67,7 +68,7 @@ export const Header: React.FC<HeaderProps> = ({ onMobileMenuToggle }) => {
         <div className="hidden lg:flex items-center gap-space-2 pl-space-2 border-l border-surface-container-highest">
           <ShieldCheck className="w-4 h-4 text-primary" />
           <span className="font-label-md text-label-md uppercase text-on-surface-variant bg-primary-fixed border border-primary-fixed-dim px-space-2 py-space-1 rounded-md">
-            {user?.role || 'User'}
+            {user?.role ? roleLabel(user.role) : 'User'}
           </span>
         </div>
       </div>

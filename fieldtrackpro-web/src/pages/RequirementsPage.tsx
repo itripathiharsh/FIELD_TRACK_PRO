@@ -33,15 +33,11 @@ import {
   RequirementItemDecisionUpdate,
   Order,
 } from '../types';
+import { formatMoney as formatCurrency } from '../utils/money';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-const formatCurrency = (val?: number | null): string => {
-  if (val == null) return '—';
-  return `₹${Number(val).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
-};
 
 const formatDate = (isoStr?: string | null): string => {
   if (!isoStr) return '—';
@@ -198,7 +194,7 @@ export const RequirementsPage: React.FC = () => {
   // ---------------------------------------------------------------------------
 
   const kpis = useMemo(() => {
-    let total = requirements.length;
+    const total = requirements.length;
     let pending = 0;
     let partiallyApproved = 0;
     let approved = 0;

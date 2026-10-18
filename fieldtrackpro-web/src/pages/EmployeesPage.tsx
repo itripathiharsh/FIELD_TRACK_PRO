@@ -11,11 +11,17 @@ import { StatusBadge } from '../components/ui/StatusBadge';
 import { EmptyState } from '../components/ui/EmptyState';
 import { ErrorBanner } from '../components/ui/ErrorBanner';
 import { apiClient } from '../api/client';
+import { useAuth } from '../context/AuthContext';
+import { isSuperAdmin, roleLabel } from '../utils/roles';
 import { Employee, Territory, UserRole } from '../types';
 import { validatePhoneNumber } from '../utils/phoneValidation';
+import { fieldErrorsOf } from '../utils/errors';
 
 export const EmployeesPage: React.FC = () => {
   const navigate = useNavigate();
+  const { user: currentUser } = useAuth();
+  // Only a Super Admin may create an Admin; the backend refuses it for anyone else, so don't offer it.
+  const canCreateAdmin = isSuperAdmin(currentUser);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [territories, setTerritories] = useState<Territory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -153,9 +159,10 @@ export const EmployeesPage: React.FC = () => {
       setPassword('');
       setFieldErrors({});
       fetchEmployees(1);
-    } catch (err: any) {
-      if (err?.fieldErrors) {
-        setFieldErrors(err.fieldErrors);
+    } catch (err: unknown) {
+      const fe = fieldErrorsOf(err);
+      if (fe) {
+        setFieldErrors(fe);
       }
       setFormError(err instanceof Error ? err.message : 'Failed to create employee');
     } finally {
@@ -196,7 +203,7 @@ export const EmployeesPage: React.FC = () => {
       header: 'Role & Profile',
       accessor: (emp) => (
         <div className="space-y-1">
-          <StatusBadge status={emp.user?.role ?? 'EMPLOYEE'} size="sm" showDot={false} />
+          <StatusBadge status={emp.user?.role ?? 'EMPLOYEE'} size="sm" showDot={false} label={roleLabel(emp.user?.role)} />
           {emp.working_profile && (
             <span className="inline-block px-2 py-0.5 text-[10px] font-semibold bg-surface-container border border-outline-variant text-on-surface rounded">
               {emp.working_profile}
@@ -353,6 +360,7 @@ export const EmployeesPage: React.FC = () => {
           <option value="">All Roles</option>
           <option value="EMPLOYEE">Field Rep</option>
           <option value="ADMIN">Admin</option>
+          <option value="SUPER_ADMIN">Super Admin</option>
         </Select>
 
         <Select
@@ -533,7 +541,7 @@ export const EmployeesPage: React.FC = () => {
             onChange={(e) => setRole(e.target.value as UserRole)}
           >
             <option value="EMPLOYEE">Field Representative (EMPLOYEE)</option>
-            <option value="ADMIN">System Administrator (ADMIN)</option>
+            {canCreateAdmin && <option value="ADMIN">System Administrator (ADMIN)</option>}
           </Select>
           <Input
             label="Password"

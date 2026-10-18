@@ -33,6 +33,7 @@ import { Card, CardHeader, CardTitle, CardSubtitle } from '../components/ui/Card
 import { Button } from '../components/ui/Button';
 import { ErrorBanner } from '../components/ui/ErrorBanner';
 import { useAuth } from '../context/AuthContext';
+import { isAdmin as isAdminRole } from '../utils/roles';
 import { apiClient } from '../api/client';
 import {
   Customer,
@@ -52,11 +53,12 @@ import {
   TallyIntegrationStatus,
 } from '../types';
 import { generatePDFContent } from '../utils/pdf-report';
+import { formatMoney as formatCurrency } from '../utils/money';
 
 export const DashboardPage: React.FC = () => {
   const navigate = useNavigate();
   const { user, isLoading: isAuthLoading } = useAuth();
-  const isAdmin = user?.role === 'ADMIN';
+  const isAdmin = isAdminRole(user);
 
   // Master & Filter States
   const [selectedMonth, setSelectedMonth] = useState<string>('ALL');
@@ -194,6 +196,7 @@ export const DashboardPage: React.FC = () => {
       // Admin dashboard uses dashboardBI as authoritative single source of truth for KPIs & exceptions
       const visitsPromise = apiClient.getVisits();
 
+      const biFailure: { message: string | null } = { message: null };
       const biPromise = apiClient
         .getDashboardSummary({
           brand: brandParam,
@@ -203,7 +206,11 @@ export const DashboardPage: React.FC = () => {
           ageing_bucket: ageingParam,
           month: monthParam,
         })
-        .catch(() => null);
+        .catch((err: unknown) => {
+          // Surface the failure instead of silently hiding every KPI section.
+          biFailure.message = err instanceof Error ? err.message : 'request failed';
+          return null;
+        });
 
       // Kept only for fallback in test environments where /dashboard/summary is unmocked
       const customersPromise = apiClient.getCustomers().catch(() => [] as Customer[]);
@@ -228,6 +235,9 @@ export const DashboardPage: React.FC = () => {
             setMonthlyPeriods(pList);
           }
           setTallyStatus(tallyData);
+          if (!biData && biFailure.message) {
+            setError(`Executive dashboard figures could not be loaded: ${biFailure.message}`);
+          }
         })
         .catch((err: Error) => {
           setError(err.message || 'Unable to load dashboard data');
@@ -318,16 +328,6 @@ export const DashboardPage: React.FC = () => {
     totalVisits > 0
       ? Math.max(0, Math.min(100, Math.round(((totalVisits - flaggedVisits) / totalVisits) * 100)))
       : null;
-
-  const formatCurrency = (val: string | number | undefined) => {
-    const num = typeof val === 'string' ? parseFloat(val) : Number(val || 0);
-    if (isNaN(num)) return '₹0.00';
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      maximumFractionDigits: 2,
-    }).format(num);
-  };
 
   const handleReviewException = async (exceptionId: string, status: 'APPROVED' | 'REJECTED') => {
     const notes = window.prompt(`Enter review notes for ${status.toLowerCase()}:`, '');
@@ -430,7 +430,7 @@ export const DashboardPage: React.FC = () => {
             : "Today's assigned visits, collections, and check-in status."
         }
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               variant="outline"
               size="sm"
@@ -883,6 +883,37 @@ export const DashboardPage: React.FC = () => {
             icon={AlertOctagon}
             color="rose"
           />
+        </div>
+      )}
+
+      {/* Total Collection split: counted at verification, balances change only once Tally confirms */}
+      {isAdmin && dashboardBI && (
+        <div data-testid="collection-tally-split" className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <MetricCard
+            title="Posted in Tally"
+            value={formatCurrency(dashboardBI.kpis.total_collection_posted_in_tally)}
+            subtitle="Verified and confirmed in Tally"
+            icon={CheckCircle2}
+            color="emerald"
+          />
+          <MetricCard
+            title="Verified, awaiting Tally"
+            value={formatCurrency(dashboardBI.kpis.total_collection_verified_awaiting_tally)}
+            subtitle="Verified by admin, will reduce outstanding once posted to Tally"
+            icon={Clock}
+            color="amber"
+          />
+          {Number(dashboardBI.kpis.total_collection_verified_awaiting_tally ?? 0) > 0 && (
+            <button
+              type="button"
+              onClick={() => navigate('/payments?stuck=true')}
+              className="sm:col-span-2 inline-flex items-center gap-2 self-start w-fit px-3 py-1.5 rounded-full border border-amber-400 bg-amber-100 text-amber-900 text-xs font-bold cursor-pointer hover:bg-amber-200"
+            >
+              <AlertTriangle className="w-3.5 h-3.5" />
+              Collections awaiting Tally - review stuck posts
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       )}
 

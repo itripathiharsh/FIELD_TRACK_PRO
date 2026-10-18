@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { getTileProviderConfig, MAPLIBRE_WORKER_URL } from './tileConfig';
+import { getBoundsForMarkersAndCircles, isValidCoordinate } from './mapGeometry';
 
 // Initialize MapLibre worker URL if supported
 try {
@@ -89,19 +90,6 @@ export interface FieldTrackMapProps {
 
 const LOADING_TIMEOUT_MS = 15000;
 
-export function isValidCoordinate(lat?: number | null, lng?: number | null): boolean {
-  return (
-    lat != null &&
-    lng != null &&
-    !isNaN(lat) &&
-    !isNaN(lng) &&
-    lat >= -90 &&
-    lat <= 90 &&
-    lng >= -180 &&
-    lng <= 180
-  );
-}
-
 function createGeoJSONCircle(
   center: [number, number],
   radiusKm: number,
@@ -143,61 +131,14 @@ function createGeoJSONCircle(
   };
 }
 
-/**
- * Extract a bounding box for all valid markers, employee location, and territory circles.
- */
-export function getBoundsForMarkersAndCircles(
-  markers: MapMarker[] = [],
-  territoryCircles: TerritoryCircle[] = [],
-  currentLocation?: CurrentUserLocation | null,
-): [[number, number], [number, number]] | null {
-  const points: [number, number][] = [];
-
-  for (const m of markers) {
-    if (isValidCoordinate(m.latitude, m.longitude)) {
-      points.push([m.longitude, m.latitude]);
-    }
-  }
-
-  if (currentLocation && isValidCoordinate(currentLocation.latitude, currentLocation.longitude)) {
-    points.push([currentLocation.longitude, currentLocation.latitude]);
-  }
-
-  for (const c of territoryCircles) {
-    if (isValidCoordinate(c.centerLat, c.centerLng)) {
-      const radiusKm = c.radiusKm || 10;
-      const latDelta = radiusKm / 110.574;
-      const cosLat = Math.cos((c.centerLat * Math.PI) / 180);
-      const lngDelta = radiusKm / (111.32 * (Math.abs(cosLat) > 0.001 ? Math.abs(cosLat) : 1));
-      points.push([c.centerLng - lngDelta, c.centerLat - latDelta]);
-      points.push([c.centerLng + lngDelta, c.centerLat + latDelta]);
-    }
-  }
-
-  if (points.length === 0) return null;
-
-  let minLng = points[0][0];
-  let maxLng = points[0][0];
-  let minLat = points[0][1];
-  let maxLat = points[0][1];
-
-  for (const [lng, lat] of points) {
-    if (lng < minLng) minLng = lng;
-    if (lng > maxLng) maxLng = lng;
-    if (lat < minLat) minLat = lat;
-    if (lat > maxLat) maxLat = lat;
-  }
-
-  return [
-    [minLng, minLat],
-    [maxLng, maxLat],
-  ];
-}
-
+/** Escape text for safe interpolation into innerHTML, in element AND attribute (quoted) contexts. */
 function escapeHtml(text: string): string {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 // Injected CSS for marker animations and radar wave
@@ -484,6 +425,8 @@ export function FieldTrackMap({
       handleMapError(msg);
     }
 
+    // The ref's Map is created once and only mutated; capture it for the cleanup below.
+    const activeMarkers = activeMarkersRef.current;
     return () => {
       if (loadTimeoutRef.current) {
         clearTimeout(loadTimeoutRef.current);
@@ -494,8 +437,8 @@ export function FieldTrackMap({
         popupRef.current = null;
       }
       // Remove all active DOM markers
-      activeMarkersRef.current.forEach((marker) => marker.remove());
-      activeMarkersRef.current.clear();
+      activeMarkers.forEach((marker) => marker.remove());
+      activeMarkers.clear();
       if (employeeMarkerRef.current) {
         employeeMarkerRef.current.remove();
         employeeMarkerRef.current = null;
@@ -717,7 +660,7 @@ export function FieldTrackMap({
                       <div style="font-weight: 600; font-size: 11px; color: #0f172a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(item.label || 'Outlet')}</div>
                       ${item.outletCode ? `<div style="font-size: 9px; color: #64748b;">Code: <strong>${escapeHtml(item.outletCode)}</strong></div>` : ''}
                     </div>
-                    <button data-select-outlet="${item.id}" style="padding: 2px 6px; background: #ffa515; color: #14213D; font-size: 10px; font-weight: 700; border: none; border-radius: 3px; cursor: pointer; flex-shrink: 0;">
+                    <button data-select-outlet="${escapeHtml(String(item.id))}" style="padding: 2px 6px; background: #ffa515; color: #14213D; font-size: 10px; font-weight: 700; border: none; border-radius: 3px; cursor: pointer; flex-shrink: 0;">
                       Inspect
                     </button>
                   </div>

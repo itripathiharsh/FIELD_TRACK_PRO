@@ -9,12 +9,12 @@ import { StatusBadge } from '../components/ui/StatusBadge';
 import { ErrorBanner } from '../components/ui/ErrorBanner';
 import { EmptyState } from '../components/ui/EmptyState';
 import { apiClient } from '../api/client';
+import { PasswordStrengthHint } from '../components/auth/PasswordStrengthHint';
+import { PASSWORD_MIN_LENGTH, validateNewPassword } from '../utils/passwordRules';
 import { Employee } from '../types';
 
-const MIN_PASSWORD_LENGTH = 8;
-
 export const ProfilePage: React.FC = () => {
-  const { user, logout } = useAuth();
+  const { user, logout, changePassword } = useAuth();
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [isLoadingEmployee, setIsLoadingEmployee] = useState(true);
   const [employeeError, setEmployeeError] = useState<string | null>(null);
@@ -57,25 +57,25 @@ export const ProfilePage: React.FC = () => {
     e.preventDefault();
     setStatus(null);
 
-    if (newPassword.length < MIN_PASSWORD_LENGTH) {
-      setStatus({ ok: false, text: `New password must be at least ${MIN_PASSWORD_LENGTH} characters.` });
+    const problems = validateNewPassword(newPassword, oldPassword);
+    if (problems.length > 0) {
+      setStatus({ ok: false, text: problems[0] });
       return;
     }
     if (newPassword !== confirmPassword) {
       setStatus({ ok: false, text: 'The new passwords do not match.' });
       return;
     }
-    if (newPassword === oldPassword) {
-      setStatus({ ok: false, text: 'The new password must be different from the current one.' });
-      return;
-    }
 
     setIsSaving(true);
     try {
-      await apiClient.changePassword(oldPassword, newPassword);
+      const result = await changePassword(oldPassword, newPassword);
       setStatus({
         ok: true,
-        text: 'Password updated. Sessions on your other devices have been signed out.',
+        text:
+          result === 'reauthenticated'
+            ? 'Password updated. Sessions on your other devices have been signed out.'
+            : 'Password updated. Please sign in again with your new password.',
       });
       setOldPassword('');
       setNewPassword('');
@@ -223,12 +223,12 @@ export const ProfilePage: React.FC = () => {
             label="New Password"
             type="password"
             required
-            minLength={MIN_PASSWORD_LENGTH}
             autoComplete="new-password"
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
-            helperText={`Minimum ${MIN_PASSWORD_LENGTH} characters.`}
+            helperText={`Minimum ${PASSWORD_MIN_LENGTH} characters, at most 72 bytes.`}
           />
+          <PasswordStrengthHint password={newPassword} />
           <Input
             label="Confirm New Password"
             type="password"

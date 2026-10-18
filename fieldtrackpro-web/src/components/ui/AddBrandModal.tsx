@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Tag, X, Plus, AlertCircle, Loader2 } from 'lucide-react';
 import { apiClient } from '../../api/client';
 import { Brand } from '../../types';
+import { errorMessage } from '../../utils/errors';
 
 interface AddBrandModalProps {
   isOpen: boolean;
@@ -47,13 +48,8 @@ export const AddBrandModal: React.FC<AddBrandModalProps> = ({
         onBrandCreated(created);
       }
       onClose();
-    } catch (err: any) {
-      const message =
-        err?.response?.data?.error?.message ||
-        err?.data?.error?.message ||
-        err?.message ||
-        'Failed to add brand. Please try again.';
-      setError(message);
+    } catch (err: unknown) {
+      setError(errorMessage(err, 'Failed to add brand. Please try again.'));
     } finally {
       setIsLoading(false);
     }

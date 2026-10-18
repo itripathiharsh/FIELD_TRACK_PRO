@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   CheckCircle2,
@@ -8,7 +8,6 @@ import {
   Calendar,
   Building2,
   Search,
-  FileSpreadsheet,
   Lock,
   Unlock,
   Filter,
@@ -25,13 +24,27 @@ import { Card, CardHeader, CardTitle, CardSubtitle } from '../components/ui/Card
 import { ErrorBanner } from '../components/ui/ErrorBanner';
 import { Button } from '../components/ui/Button';
 import { StatusBadge } from '../components/ui/StatusBadge';
+import { AppliedFiltersStrip } from '../components/reports/AppliedFiltersStrip';
+import { ExportButtons, ExportFormat } from '../components/reports/ExportButtons';
+import { useReportExport } from '../components/reports/useReportExport';
 import { CollectionsOverviewPage } from './CollectionsOverviewPage';
 import { apiClient } from '../api/client';
-import { generatePDFContent } from '../utils/pdf-report';
+import { formatCalendarDate, formatIstDate, formatIstDateTime, formatIstTime } from '../utils/ist';
+import {
+  FILTER_TOOLTIP_NOT_APPLICABLE,
+  FilterKey,
+  MONTH_DISABLED_TOOLTIP,
+  ReportFilterState,
+  ReportTabId,
+  VisitSubView,
+  applicableFilters,
+  buildReportRequest,
+  describeAppliedFilters,
+  tabSemanticsNotes,
+} from '../utils/reportFilters';
 import {
   BusinessBIDashboard,
   EmployeeReportRow,
-  EmployeeMasterReportRow,
   GeoReportRow,
   OutletReportRow,
   OutstandingAgeingReportRow,
@@ -43,37 +56,38 @@ import {
   Employee,
   Brand,
 } from '../types';
+import { formatMoney as formatCurrency } from '../utils/money';
 
 interface DateRange {
   startDate: string;
   endDate: string;
 }
 
-export type TabType =
-  | 'financial_bi'
-  | 'business_bi'
-  | 'collections_workbench'
-  | 'outstanding'
-  | 'outlets'
-  | 'employees'
-  | 'visits'
-  | 'monthly';
+export type TabType = ReportTabId | 'business_bi';
+
+const TAB_IDS: TabType[] = ['financial_bi', 'business_bi', 'collections_workbench', 'outstanding', 'outlets', 'employees', 'visits', 'monthly'];
+
+const SEARCH_DEBOUNCE_MS = 350;
+
+const CONTROL_CLASS =
+  'w-full h-9 bg-surface border border-outline-variant rounded-lg px-2.5 py-1.5 text-xs text-on-surface font-body-md focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-surface-container-low';
 
 export const ReportsPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const rawTab = searchParams.get('tab') as TabType | null;
-  const initialTab: TabType = rawTab && ['financial_bi', 'business_bi', 'collections_workbench', 'outstanding', 'outlets', 'employees', 'visits', 'monthly'].includes(rawTab)
+  const initialTab: TabType = rawTab && TAB_IDS.includes(rawTab)
     ? (rawTab === 'business_bi' ? 'financial_bi' : rawTab)
     : 'financial_bi';
 
   // Navigation State
   const [activeTab, setActiveTab] = useState<TabType>(initialTab);
   const [biSubTab, setBiSubTab] = useState<'brand' | 'zone' | 'area' | 'fos' | 'raw'>('brand');
-  const [visitSubView, setVisitSubView] = useState<'register' | 'geo'>('register');
+  const [visitSubView, setVisitSubView] = useState<VisitSubView>('register');
+  const tabId: ReportTabId = activeTab === 'business_bi' ? 'financial_bi' : activeTab;
 
   useEffect(() => {
     const tabParam = searchParams.get('tab') as TabType;
-    if (tabParam && ['financial_bi', 'business_bi', 'collections_workbench', 'outstanding', 'outlets', 'employees', 'visits', 'monthly'].includes(tabParam)) {
+    if (tabParam && TAB_IDS.includes(tabParam)) {
       setActiveTab(tabParam === 'business_bi' ? 'financial_bi' : tabParam);
     }
   }, [searchParams]);
@@ -94,10 +108,20 @@ export const ReportsPage: React.FC = () => {
   const [selectedAreaId, setSelectedAreaId] = useState<string>('ALL');
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>('ALL');
   const [selectedAgeingBucket, setSelectedAgeingBucket] = useState<string>('ALL');
+  const [collectionStatus, setCollectionStatus] = useState<string>('');
+  const [visitStatus, setVisitStatus] = useState<string>('ALL');
+  const [locationStatus, setLocationStatus] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [debouncedSearch, setDebouncedSearch] = useState<string>('');
   const [dateRange, setDateRange] = useState<DateRange>({ startDate: '', endDate: '' });
   const [appliedDateRange, setAppliedDateRange] = useState<DateRange>({ startDate: '', endDate: '' });
   const [dateError, setDateError] = useState<string | null>(null);
+
+  // Typing in the search box refetches after a short pause (not on every keystroke).
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchQuery), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
 
   // Master Data Options for Filters
   const [territories, setTerritories] = useState<Territory[]>([]);
@@ -120,7 +144,6 @@ export const ReportsPage: React.FC = () => {
   // Report Datasets
   const [businessBI, setBusinessBI] = useState<BusinessBIDashboard | null>(null);
   const [employeeReport, setEmployeeReport] = useState<EmployeeReportRow[]>([]);
-  const [employeeMasterList, setEmployeeMasterList] = useState<EmployeeMasterReportRow[]>([]);
   const [outletsList, setOutletsList] = useState<OutletReportRow[]>([]);
   const [outstandingList, setOutstandingList] = useState<OutstandingAgeingReportRow[]>([]);
   const [visitsList, setVisitsList] = useState<VisitDetailedReportRow[]>([]);
@@ -128,9 +151,15 @@ export const ReportsPage: React.FC = () => {
 
   // Status & Async State
   const [isLoading, setIsLoading] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  const { exporting, run: runExport } = useReportExport(
+    (message) => setError(message),
+    (filename) => {
+      setActionSuccess(`Exported ${filename}`);
+      setTimeout(() => setActionSuccess(null), 4000);
+    },
+  );
 
   // Load Reference Data (Territories, Areas, Employees, Monthly Periods)
   useEffect(() => {
@@ -161,78 +190,76 @@ export const ReportsPage: React.FC = () => {
     return areas.filter((a) => a.territory_id === selectedZoneId);
   }, [areas, selectedZoneId]);
 
-  // Main Data Loader based on Active Tab and Applied Filters
+  // ---------------------------------------------------------------------------
+  // The ONE request per tab: the same (report, params) pair loads the table and
+  // is sent to the export endpoint, and the "Applied filters" strip is derived
+  // from it - so nothing can be shown that was not applied.
+  // ---------------------------------------------------------------------------
+  const filters: ReportFilterState = useMemo(
+    () => ({
+      month: selectedMonth,
+      brand: selectedBrand,
+      zoneId: selectedZoneId,
+      areaId: selectedAreaId,
+      employeeId: selectedEmployeeId,
+      ageingBucket: selectedAgeingBucket,
+      search: debouncedSearch,
+      startDate: appliedDateRange.startDate,
+      endDate: appliedDateRange.endDate,
+      collectionStatus,
+      visitStatus,
+      locationStatus,
+    }),
+    [
+      selectedMonth, selectedBrand, selectedZoneId, selectedAreaId, selectedEmployeeId, selectedAgeingBucket,
+      debouncedSearch, appliedDateRange, collectionStatus, visitStatus, locationStatus,
+    ],
+  );
+  const request = useMemo(() => buildReportRequest(tabId, filters, visitSubView), [tabId, filters, visitSubView]);
+  const requestKey = JSON.stringify(request);
+  const applies = useMemo(() => new Set<FilterKey>(applicableFilters(tabId, visitSubView)), [tabId, visitSubView]);
+  const hasDates = !!appliedDateRange.startDate || !!appliedDateRange.endDate;
+
+  const loadSeq = useRef(0);
+
+  // Main Data Loader based on Active Tab and the tab's request
   const loadActiveReport = useCallback(async () => {
+    const seq = ++loadSeq.current;
+    const req = JSON.parse(requestKey) as typeof request;
     setIsLoading(true);
+    setError(null);
     try {
-      const brandParam = selectedBrand !== 'ALL' ? selectedBrand : undefined;
-      const zoneParam = selectedZoneId !== 'ALL' ? selectedZoneId : undefined;
-      const areaParam = selectedAreaId !== 'ALL' ? selectedAreaId : undefined;
-      const employeeParam = selectedEmployeeId !== 'ALL' ? selectedEmployeeId : undefined;
-      const ageingParam = selectedAgeingBucket !== 'ALL' ? selectedAgeingBucket : undefined;
-      const monthParam = selectedMonth !== 'ALL' ? selectedMonth : undefined;
-
-      const [empRes, geoRes] = await Promise.all([
-        apiClient.getEmployeeReport(appliedDateRange.startDate || undefined, appliedDateRange.endDate || undefined).catch(() => [] as EmployeeReportRow[]),
-        apiClient.getGeoVerificationReport(appliedDateRange.startDate || undefined, appliedDateRange.endDate || undefined).catch(() => [] as GeoReportRow[]),
-      ]);
-
-      setEmployeeReport(empRes || []);
-      setGeoReport(geoRes || []);
-
-      // Load additional endpoints based on active tab
-      if (activeTab === 'financial_bi' || activeTab === 'business_bi' || activeTab === 'monthly') {
-        const biRes = await apiClient.getBusinessSummary(brandParam, zoneParam, areaParam, employeeParam, monthParam).catch(() => null);
-        setBusinessBI(biRes);
-      } else if (activeTab === 'employees') {
-        const masterRes = await apiClient.getEmployeesMasterReport({ query: searchQuery || undefined }).catch(() => [] as EmployeeMasterReportRow[]);
-        setEmployeeMasterList(masterRes || []);
-      } else if (activeTab === 'outlets') {
-        const outRes = await apiClient.getOutletsReport({
-          brand: brandParam,
-          zone_id: zoneParam,
-          area_id: areaParam,
-          employee_id: employeeParam,
-          query: searchQuery || undefined,
-        }).catch(() => [] as OutletReportRow[]);
-        setOutletsList(outRes || []);
-      } else if (activeTab === 'outstanding') {
-        const osRes = await apiClient.getOutstandingReport({
-          brand: brandParam,
-          zone_id: zoneParam,
-          area_id: areaParam,
-          employee_id: employeeParam,
-          ageing_bucket: ageingParam,
-          month: monthParam,
-          query: searchQuery || undefined,
-        }).catch(() => [] as OutstandingAgeingReportRow[]);
-        setOutstandingList(osRes || []);
-      } else if (activeTab === 'visits') {
-        const visRes = await apiClient.getVisitsDetailedReport({
-          start_date: appliedDateRange.startDate || undefined,
-          end_date: appliedDateRange.endDate || undefined,
-          employee_id: employeeParam,
-          zone_id: zoneParam,
-          area_id: areaParam,
-        }).catch(() => [] as VisitDetailedReportRow[]);
-        setVisitsList(visRes || []);
+      switch (req.report) {
+        case 'business_summary':
+          setBusinessBI(await apiClient.getReport<BusinessBIDashboard>('business_summary', req.params));
+          break;
+        case 'outstanding':
+          setOutstandingList(await apiClient.getReport<OutstandingAgeingReportRow[]>('outstanding', req.params));
+          break;
+        case 'outlets':
+          setOutletsList(await apiClient.getReport<OutletReportRow[]>('outlets', req.params));
+          break;
+        case 'staff':
+          setEmployeeReport(await apiClient.getReport<EmployeeReportRow[]>('staff', req.params));
+          break;
+        case 'visits':
+          setVisitsList(await apiClient.getReport<VisitDetailedReportRow[]>('visits', req.params));
+          break;
+        case 'geo':
+          setGeoReport(await apiClient.getReport<GeoReportRow[]>('geo', req.params));
+          break;
+        default:
+          break; // monthly periods are loaded once with the master data; the collections tab loads itself
       }
     } catch (err) {
-      console.error('Report loader error', err);
+      if (seq !== loadSeq.current) return;
+      // A failed request must not masquerade as an empty report.
+      const message = err instanceof Error ? err.message : 'Failed to load report';
+      setError(`Could not load this report: ${message}. The figures shown may be incomplete.`);
     } finally {
-      setIsLoading(false);
+      if (seq === loadSeq.current) setIsLoading(false);
     }
-  }, [
-    activeTab,
-    selectedBrand,
-    selectedZoneId,
-    selectedAreaId,
-    selectedEmployeeId,
-    selectedAgeingBucket,
-    selectedMonth,
-    searchQuery,
-    appliedDateRange,
-  ]);
+  }, [requestKey]);
 
   useEffect(() => {
     loadActiveReport();
@@ -268,22 +295,16 @@ export const ReportsPage: React.FC = () => {
     setSelectedAreaId('ALL');
     setSelectedEmployeeId('ALL');
     setSelectedAgeingBucket('ALL');
+    setCollectionStatus('');
+    setVisitStatus('ALL');
+    setLocationStatus('ALL');
     setSearchQuery('');
+    setDebouncedSearch('');
     clearDateFilter();
   };
 
-  const formatCurrency = (val: string | number | undefined) => {
-    const num = typeof val === 'string' ? parseFloat(val) : Number(val || 0);
-    if (isNaN(num)) return '₹0.00';
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      maximumFractionDigits: 2,
-    }).format(num);
-  };
-
   // ---------------------------------------------------------------------------
-  // Export Handlers
+  // Export Handlers (server-side Excel / PDF, ALL filtered rows)
   // ---------------------------------------------------------------------------
   const exportCSV = (data: Record<string, unknown>[], filenamePrefix: string) => {
     if (!data.length) return;
@@ -310,257 +331,32 @@ export const ReportsPage: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
-  const handleExportExcel = async () => {
-    setIsExporting(true);
-    try {
-      let objectUrl = '';
-      const dateTag = new Date().toISOString().slice(0, 10);
-      let filename = `FieldTrack_${activeTab}_${dateTag}.xlsx`;
-
-      const brandParam = selectedBrand !== 'ALL' ? selectedBrand : undefined;
-      const zoneParam = selectedZoneId !== 'ALL' ? selectedZoneId : undefined;
-      const areaParam = selectedAreaId !== 'ALL' ? selectedAreaId : undefined;
-      const employeeParam = selectedEmployeeId !== 'ALL' ? selectedEmployeeId : undefined;
-      const ageingParam = selectedAgeingBucket !== 'ALL' ? selectedAgeingBucket : undefined;
-      const monthParam = selectedMonth !== 'ALL' ? selectedMonth : undefined;
-
-      switch (activeTab) {
-        case 'financial_bi':
-        case 'business_bi':
-          objectUrl = await apiClient.exportBusinessSummaryExcelObjectUrl(
-            brandParam,
-            zoneParam,
-            areaParam,
-            employeeParam,
-            monthParam
-          );
-          filename = `financial-bi-report-${dateTag}.xlsx`;
-          break;
-        case 'employees':
-          objectUrl = await apiClient.exportEmployeesMasterExcelObjectUrl({
-            query: searchQuery || undefined,
-          });
-          filename = `employee-report-${dateTag}.xlsx`;
-          break;
-        case 'outlets':
-          objectUrl = await apiClient.exportOutletsExcelObjectUrl({
-            brand: brandParam,
-            zone_id: zoneParam,
-            area_id: areaParam,
-            employee_id: employeeParam,
-            query: searchQuery || undefined,
-          });
-          filename = `outlet-report-${dateTag}.xlsx`;
-          break;
-        case 'outstanding':
-          objectUrl = await apiClient.exportOutstandingExcelObjectUrl({
-            brand: brandParam,
-            zone_id: zoneParam,
-            area_id: areaParam,
-            employee_id: employeeParam,
-            ageing_bucket: ageingParam,
-            month: monthParam,
-            query: searchQuery || undefined,
-          });
-          filename = `outstanding-ageing-report-${dateTag}.xlsx`;
-          break;
-        case 'collections_workbench':
-          objectUrl = await apiClient.exportCollectionsExcelObjectUrl({
-            brand: brandParam,
-            zone_id: zoneParam,
-            area_id: areaParam,
-            employee_id: employeeParam,
-            month: monthParam,
-            query: searchQuery || undefined,
-          });
-          filename = `collections-report-${dateTag}.xlsx`;
-          break;
-        case 'visits':
-          objectUrl = await apiClient.exportVisitsDetailedExcelObjectUrl({
-            start_date: appliedDateRange.startDate || undefined,
-            end_date: appliedDateRange.endDate || undefined,
-            employee_id: employeeParam,
-            zone_id: zoneParam,
-            area_id: areaParam,
-          });
-          filename = `visits-report-${dateTag}.xlsx`;
-          break;
-        case 'monthly':
-          objectUrl = await apiClient.exportBusinessSummaryExcelObjectUrl(
-            brandParam,
-            zoneParam,
-            areaParam,
-            employeeParam,
-            selectedMonth !== 'ALL' ? selectedMonth : undefined
-          );
-          filename = `monthly-snapshot-${selectedMonth}-${dateTag}.xlsx`;
-          break;
-        default:
-          objectUrl = await apiClient.exportBusinessSummaryExcelObjectUrl();
-          break;
-      }
-
-      if (objectUrl) {
-        const link = document.createElement('a');
-        link.href = objectUrl;
-        link.download = filename;
-        link.click();
-        URL.revokeObjectURL(objectUrl);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Excel export failed');
-    } finally {
-      setIsExporting(false);
-    }
+  const handleExport = (format: ExportFormat) => {
+    // Same request as the table; the PDF of the BI tab prints the selected summary view.
+    const extra = request.report === 'business_summary' && format === 'pdf' ? { view: biSubTab } : undefined;
+    void runExport(request, format, extra);
   };
 
-  const handleExportPDF = () => {
-    setIsExporting(true);
-    try {
-      let title = 'Report';
-      let filenamePrefix = 'report';
-      let headers: string[] = [];
-      let rows: string[][] = [];
-      const filterSummary: Record<string, string> = {
-        Brand: selectedBrand,
-        Month: selectedMonth,
-        Bucket: selectedAgeingBucket,
-      };
-
-      const summaryKPIs: Array<{ label: string; value: string }> = [];
-
-      if (businessBI) {
-        summaryKPIs.push({ label: 'Outlets', value: String(businessBI.total_outlets) });
-        summaryKPIs.push({ label: 'Sales', value: formatCurrency(businessBI.total_sales) });
-        summaryKPIs.push({ label: 'OS', value: formatCurrency(businessBI.total_market_outstanding) });
-      }
-
-      if ((activeTab === 'financial_bi' || activeTab === 'business_bi') && businessBI) {
-        title = 'Financial & Business Intelligence Report';
-        filenamePrefix = 'financial-bi-report';
-        headers = ['Brand', 'Dimension', 'Outlets', 'Sales', 'Collection', 'Market OS', '>90d'];
-        const activeRows =
-          biSubTab === 'brand'
-            ? businessBI.brand_summaries
-            : biSubTab === 'zone'
-            ? businessBI.zone_summaries
-            : biSubTab === 'area'
-            ? businessBI.area_summaries
-            : biSubTab === 'fos'
-            ? businessBI.fos_summaries
-            : businessBI.raw_outlet_rows;
-
-        rows = activeRows.map((r) => [
-          r.brand,
-          r.dimension_name,
-          String(r.outlets_count),
-          formatCurrency(r.sales),
-          formatCurrency(r.collection),
-          formatCurrency(r.market_outstanding),
-          formatCurrency(r.bucket_gt_90),
-        ]);
-      } else if (activeTab === 'outlets') {
-        title = 'Outlets Directory Report';
-        filenamePrefix = 'outlet-report';
-        headers = ['DMS Code', 'Outlet Name', 'Zone', 'Area', 'FOS', 'Location Status', 'Market OS'];
-        rows = outletsList.map((o) => [
-          o.dms_code || '',
-          o.outlet_name,
-          o.zone_name || '',
-          o.area_name || '',
-          o.fos_name || '',
-          o.location_status,
-          formatCurrency(o.market_outstanding),
-        ]);
-      } else if (activeTab === 'outstanding') {
-        title = 'Market Outstanding & Ageing Report';
-        filenamePrefix = 'outstanding-ageing-report';
-        headers = ['Brand', 'DMS Code', 'Outlet Name', 'Zone', 'FOS', 'Total OS', '>90d Overdue', 'Severity'];
-        rows = outstandingList.map((o) => [
-          o.brand,
-          o.dms_code || '',
-          o.outlet_name,
-          o.zone_name || '',
-          o.fos_name || '',
-          formatCurrency(o.market_outstanding),
-          formatCurrency(o.bucket_gt_90),
-          o.highest_overdue_bucket,
-        ]);
-      } else if (activeTab === 'employees') {
-        title = 'Employee Report';
-        filenamePrefix = 'employee-report';
-        headers = ['Employee ID', 'Employee Name', 'Total Visits', 'Completed Visits', 'Pending Visits', 'Missed Visits', 'Flagged Visits', 'Completion Rate'];
-        rows = employeeReport.map((e) => [
-          e.employee_id,
-          e.employee_name,
-          String(e.total_visits),
-          String(e.completed_visits),
-          String(e.pending_visits),
-          String(e.missed_visits),
-          String(e.flagged_visits),
-          `${e.completion_rate}%`,
-        ]);
-      } else if (activeTab === 'visits') {
-        if (visitSubView === 'geo') {
-          title = 'Geo Verification Report';
-          filenamePrefix = 'geo-verification-report';
-          headers = ['Visit ID', 'Employee Name', 'Customer Name', 'Attempted At', 'Verification Type', 'Valid', 'Distance (m)', 'Failure Reason'];
-          rows = geoReport.map((g) => [
-            g.visit_id,
-            g.employee_name,
-            g.customer_name,
-            g.attempted_at,
-            g.verification_type,
-            g.is_valid ? 'Yes' : 'No',
-            String(g.distance_m),
-            g.failure_reason || '',
-          ]);
-        } else {
-          title = 'Operational Visits Report';
-          filenamePrefix = 'visits-report';
-          headers = ['Scheduled Date', 'Employee', 'Outlet', 'DMS Code', 'Zone', 'Status', 'Check-In', 'Check-Out', 'Duration', 'GPS'];
-          rows = visitsList.map((v) => [
-            new Date(v.scheduled_at).toLocaleDateString(),
-            v.employee_name,
-            v.customer_name,
-            v.dms_code || '',
-            v.zone_name || '',
-            v.status,
-            v.check_in_at ? new Date(v.check_in_at).toLocaleTimeString() : '',
-            v.check_out_at ? new Date(v.check_out_at).toLocaleTimeString() : '',
-            v.duration_minutes ? `${v.duration_minutes}m` : '',
-            v.is_gps_verified ? 'Yes' : 'No',
-          ]);
-        }
-      } else {
-        title = `${activeTab.toUpperCase()} Report`;
-        filenamePrefix = `${activeTab}-report`;
-        headers = ['Metric', 'Value'];
-        rows = [['Status', 'Active'], ['Generated', new Date().toLocaleString()]];
-      }
-
-      const pdfBytes = generatePDFContent({
-        title,
-        headers,
-        rows,
-        dateRange: appliedDateRange,
-        filters: filterSummary,
-        summaryKPIs,
-      });
-
-      const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${filenamePrefix}-${new Date().toISOString().slice(0, 10)}.pdf`;
-      link.click();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'PDF export failed');
-    } finally {
-      setIsExporting(false);
-    }
+  const rowCount: Record<ReportTabId, number> = {
+    financial_bi: businessBI?.raw_outlet_rows.length ?? 0,
+    collections_workbench: 1, // the Collections tab owns its own export buttons
+    outstanding: outstandingList.length,
+    outlets: outletsList.length,
+    employees: employeeReport.length,
+    visits: visitSubView === 'geo' ? geoReport.length : visitsList.length,
+    monthly: availablePeriodsWithData.length,
   };
+  const exportButtons = (extra?: React.ReactNode) => (
+    <ExportButtons
+      onExport={handleExport}
+      exporting={exporting}
+      loading={isLoading}
+      empty={rowCount[tabId] === 0}
+      emptyReason="No rows match the current filters - nothing to export"
+    >
+      {extra}
+    </ExportButtons>
+  );
 
   // Monthly Period Review & Reopen Modal States
   const [reviewPeriod, setReviewPeriod] = useState<MonthlyReportingPeriod | null>(null);
@@ -634,6 +430,15 @@ export const ReportsPage: React.FC = () => {
     }
   };
 
+  const na = (key: FilterKey) => !applies.has(key);
+  const tip = (key: FilterKey) => (na(key) ? FILTER_TOOLTIP_NOT_APPLICABLE : undefined);
+  const appliedItems = describeAppliedFilters(request, {
+    zones: territories,
+    areas,
+    employees: employeeOptions,
+  });
+  const semanticsNotes = tabSemanticsNotes(tabId, filters, visitSubView);
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -650,203 +455,276 @@ export const ReportsPage: React.FC = () => {
         </div>
       )}
 
-      {/* Global Filter Engine */}
-      <Card variant="flat">
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <Filter className="w-4 h-4 text-primary" />
-              <span className="font-label-md text-xs uppercase tracking-wider font-bold text-primary">
-                Global Filter Engine
-              </span>
-            </div>
-            <button
-              onClick={resetAllFilters}
-              className="font-label-md text-xs uppercase tracking-wider text-on-surface-variant hover:text-primary flex items-center gap-1 transition-colors cursor-pointer"
-            >
-              <RefreshCw className="w-3 h-3" /> Reset Filters
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-            {/* Month Filter */}
-            <div>
-              <label className="font-label-md text-xs text-on-surface uppercase tracking-wider block font-semibold mb-1">
-                Month Period
-              </label>
-              <select
-                className="w-full h-9 bg-surface border border-outline-variant rounded-lg px-2.5 py-1.5 text-xs text-on-surface font-body-md focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 transition-all"
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(e.target.value)}
+      {/* Global Filter Engine - one bar, every control either applies to the active tab or is disabled with a reason */}
+      {tabId !== 'monthly' ? (
+        <Card variant="flat">
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Filter className="w-4 h-4 text-primary" />
+                <span className="font-label-md text-xs uppercase tracking-wider font-bold text-primary">
+                  Global Filter Engine
+                </span>
+              </div>
+              <button
+                onClick={resetAllFilters}
+                className="font-label-md text-xs uppercase tracking-wider text-on-surface-variant hover:text-primary flex items-center gap-1 transition-colors cursor-pointer"
               >
-                <option value="ALL">All Available Months</option>
-                {availablePeriodsWithData.map((p) => {
-                  const mStr = `${p.period_year}-${String(p.period_month).padStart(2, '0')}`;
-                  const tag = p.status === 'FINALIZED' ? '🔒 (Locked)' : p.status === 'PENDING_CLOSE' ? '⏳ (Pending Close)' : '🟢 (Current)';
-                  return (
-                    <option key={p.id} value={mStr}>
-                      {p.period_name} {tag}
+                <RefreshCw className="w-3 h-3" /> Reset Filters
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+              {/* Month Filter */}
+              <div title={na('month') ? FILTER_TOOLTIP_NOT_APPLICABLE : hasDates ? MONTH_DISABLED_TOOLTIP : undefined}>
+                <label htmlFor="rf-month" className="font-label-md text-xs text-on-surface uppercase tracking-wider block font-semibold mb-1">
+                  Month Period
+                </label>
+                <select
+                  id="rf-month"
+                  className={CONTROL_CLASS}
+                  value={selectedMonth}
+                  disabled={na('month') || hasDates}
+                  onChange={(e) => setSelectedMonth(e.target.value)}
+                >
+                  <option value="ALL">All Available Months</option>
+                  {availablePeriodsWithData.map((p) => {
+                    const mStr = `${p.period_year}-${String(p.period_month).padStart(2, '0')}`;
+                    const tag = p.status === 'FINALIZED' ? '🔒 (Locked)' : p.status === 'PENDING_CLOSE' ? '⏳ (Pending Close)' : '🟢 (Current)';
+                    return (
+                      <option key={p.id} value={mStr}>
+                        {p.period_name} {tag}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              {/* Brand Filter */}
+              <div title={tip('brand')}>
+                <label htmlFor="rf-brand" className="font-label-md text-xs text-on-surface uppercase tracking-wider block font-semibold mb-1">
+                  Brand
+                </label>
+                <select
+                  id="rf-brand"
+                  className={CONTROL_CLASS}
+                  value={selectedBrand}
+                  disabled={na('brand')}
+                  onChange={(e) => setSelectedBrand(e.target.value)}
+                >
+                  <option value="ALL">All Brands</option>
+                  {masterBrands.map((b) => (
+                    <option key={b.id} value={b.name}>
+                      {b.name}
                     </option>
-                  );
-                })}
-              </select>
+                  ))}
+                </select>
+              </div>
+
+              {/* Zone Filter */}
+              <div title={tip('zone')}>
+                <label htmlFor="rf-zone" className="font-label-md text-xs text-on-surface uppercase tracking-wider block font-semibold mb-1">
+                  Zone (Territory)
+                </label>
+                <select
+                  id="rf-zone"
+                  className={CONTROL_CLASS}
+                  value={selectedZoneId}
+                  disabled={na('zone')}
+                  onChange={(e) => {
+                    setSelectedZoneId(e.target.value);
+                    setSelectedAreaId('ALL');
+                  }}
+                >
+                  <option value="ALL">All Zones ({territories.length})</option>
+                  {territories.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Area Filter */}
+              <div title={tip('area')}>
+                <label htmlFor="rf-area" className="font-label-md text-xs text-on-surface uppercase tracking-wider block font-semibold mb-1">
+                  Area
+                </label>
+                <select
+                  id="rf-area"
+                  className={CONTROL_CLASS}
+                  value={selectedAreaId}
+                  disabled={na('area')}
+                  onChange={(e) => setSelectedAreaId(e.target.value)}
+                >
+                  <option value="ALL">All Areas ({availableAreas.length})</option>
+                  {availableAreas.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* FOS / Employee Filter */}
+              <div title={tip('employee')}>
+                <label htmlFor="rf-employee" className="font-label-md text-xs text-on-surface uppercase tracking-wider block font-semibold mb-1">
+                  FOS / Field Officer
+                </label>
+                <select
+                  id="rf-employee"
+                  className={CONTROL_CLASS}
+                  value={selectedEmployeeId}
+                  disabled={na('employee')}
+                  onChange={(e) => setSelectedEmployeeId(e.target.value)}
+                >
+                  <option value="ALL">All Field Officers ({employeeOptions.length})</option>
+                  {employeeOptions.map((emp) => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.full_name} ({emp.employee_code})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Ageing Bucket Filter (snapshot buckets - Outstanding tab only) */}
+              <div title={tip('ageing')}>
+                <label htmlFor="rf-ageing" className="font-label-md text-xs text-on-surface uppercase tracking-wider block font-semibold mb-1">
+                  Ageing Bucket
+                </label>
+                <select
+                  id="rf-ageing"
+                  className={CONTROL_CLASS}
+                  value={selectedAgeingBucket}
+                  disabled={na('ageing')}
+                  onChange={(e) => setSelectedAgeingBucket(e.target.value)}
+                >
+                  <option value="ALL">All Overdue Buckets</option>
+                  <option value=">90">Critical (&gt;90 Days)</option>
+                  <option value="75-90">Severe (75-90 Days)</option>
+                  <option value="60-75">High (60-75 Days)</option>
+                  <option value="45-60">Medium (45-60 Days)</option>
+                  <option value="30-45">Low (30-45 Days)</option>
+                  <option value="15-30">Early (15-30 Days)</option>
+                  <option value="<15">Normal (&lt;15 Days)</option>
+                </select>
+              </div>
+
+              {/* Tab specific selects */}
+              {applies.has('collectionStatus') && (
+                <div>
+                  <label htmlFor="rf-collection-status" className="font-label-md text-xs text-on-surface uppercase tracking-wider block font-semibold mb-1">
+                    Collection Status
+                  </label>
+                  <select
+                    id="rf-collection-status"
+                    className={CONTROL_CLASS}
+                    value={collectionStatus}
+                    onChange={(e) => setCollectionStatus(e.target.value)}
+                  >
+                    <option value="">All Statuses</option>
+                    <option value="NORMAL">Current / Not Due</option>
+                    <option value="WARNING">Warning (21-25 days)</option>
+                    <option value="OVERDUE">Overdue (26+ days)</option>
+                    <option value="PAID">Paid</option>
+                  </select>
+                </div>
+              )}
+              {applies.has('visitStatus') && (
+                <div>
+                  <label htmlFor="rf-visit-status" className="font-label-md text-xs text-on-surface uppercase tracking-wider block font-semibold mb-1">
+                    Visit Status
+                  </label>
+                  <select
+                    id="rf-visit-status"
+                    className={CONTROL_CLASS}
+                    value={visitStatus}
+                    onChange={(e) => setVisitStatus(e.target.value)}
+                  >
+                    <option value="ALL">All Statuses</option>
+                    <option value="PENDING">Pending</option>
+                    <option value="IN_PROGRESS">In progress</option>
+                    <option value="COMPLETED">Completed</option>
+                    <option value="MISSED">Missed</option>
+                    <option value="FLAGGED">Flagged</option>
+                  </select>
+                </div>
+              )}
+              {applies.has('locationStatus') && (
+                <div>
+                  <label htmlFor="rf-location-status" className="font-label-md text-xs text-on-surface uppercase tracking-wider block font-semibold mb-1">
+                    Location Status
+                  </label>
+                  <select
+                    id="rf-location-status"
+                    className={CONTROL_CLASS}
+                    value={locationStatus}
+                    onChange={(e) => setLocationStatus(e.target.value)}
+                  >
+                    <option value="ALL">All</option>
+                    <option value="VERIFIED">Verified</option>
+                    <option value="PENDING">Pending</option>
+                    <option value="MISSING">Missing</option>
+                  </select>
+                </div>
+              )}
             </div>
 
-            {/* Brand Filter */}
-            <div>
-              <label className="font-label-md text-xs text-on-surface uppercase tracking-wider block font-semibold mb-1">
-                Brand
-              </label>
-              <select
-                className="w-full h-9 bg-surface border border-outline-variant rounded-lg px-2.5 py-1.5 text-xs text-on-surface font-body-md focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 transition-all"
-                value={selectedBrand}
-                onChange={(e) => setSelectedBrand(e.target.value)}
-              >
-                <option value="ALL">All Brands</option>
-                {masterBrands.map((b) => (
-                  <option key={b.id} value={b.name}>
-                    {b.name}
-                  </option>
-                ))}
-              </select>
+            {/* Search bar & Date Filter */}
+            <div className="pt-2 border-t border-surface-container-highest flex flex-wrap items-center justify-between gap-3">
+              <div className="relative flex-1 min-w-[200px] max-w-sm" title={tip('search')}>
+                <Search className="w-3.5 h-3.5 absolute left-3 top-3 text-on-surface-variant" />
+                <input
+                  type="text"
+                  aria-label="Search"
+                  placeholder="Search DMS code, outlet, or officer..."
+                  value={searchQuery}
+                  disabled={na('search')}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full h-9 bg-surface border border-outline-variant rounded-lg pl-8 pr-3 py-1.5 text-xs text-on-surface font-body-md focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2" title={tip('dates')}>
+                <span className="font-label-md text-xs uppercase tracking-wider text-on-surface-variant font-semibold">Date Range (IST):</span>
+                <input
+                  type="date"
+                  aria-label="Start date"
+                  value={dateRange.startDate}
+                  disabled={na('dates')}
+                  onChange={(e) => handleDateChange('startDate', e.target.value)}
+                  className="h-8 bg-surface border border-outline-variant rounded-md px-2 py-1 text-xs text-on-surface font-body-md focus:outline-none focus:border-primary-container disabled:opacity-50"
+                />
+                <span className="text-on-surface-variant text-xs font-caption">to</span>
+                <input
+                  type="date"
+                  aria-label="End date"
+                  value={dateRange.endDate}
+                  disabled={na('dates')}
+                  onChange={(e) => handleDateChange('endDate', e.target.value)}
+                  className="h-8 bg-surface border border-outline-variant rounded-md px-2 py-1 text-xs text-on-surface font-body-md focus:outline-none focus:border-primary-container disabled:opacity-50"
+                />
+                <Button size="sm" variant="secondary" onClick={applyDateFilter} disabled={na('dates')} className="h-8 text-xs py-1">
+                  Apply Filter
+                </Button>
+                <Button size="sm" variant="outline" onClick={clearDateFilter} disabled={na('dates')} className="h-8 text-xs py-1">
+                  Clear
+                </Button>
+              </div>
             </div>
 
-            {/* Zone Filter */}
-            <div>
-              <label className="font-label-md text-xs text-on-surface uppercase tracking-wider block font-semibold mb-1">
-                Zone (Territory)
-              </label>
-              <select
-                className="w-full h-9 bg-surface border border-outline-variant rounded-lg px-2.5 py-1.5 text-xs text-on-surface font-body-md focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 transition-all"
-                value={selectedZoneId}
-                onChange={(e) => {
-                  setSelectedZoneId(e.target.value);
-                  setSelectedAreaId('ALL');
-                }}
-              >
-                <option value="ALL">All Zones ({territories.length})</option>
-                {territories.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {/* Date Error */}
+            {dateError && (
+              <p className="text-xs text-error font-medium pt-1">{dateError}</p>
+            )}
 
-            {/* Area Filter */}
-            <div>
-              <label className="font-label-md text-xs text-on-surface uppercase tracking-wider block font-semibold mb-1">
-                Area
-              </label>
-              <select
-                className="w-full h-9 bg-surface border border-outline-variant rounded-lg px-2.5 py-1.5 text-xs text-on-surface font-body-md focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 transition-all"
-                value={selectedAreaId}
-                onChange={(e) => setSelectedAreaId(e.target.value)}
-              >
-                <option value="ALL">All Areas ({availableAreas.length})</option>
-                {availableAreas.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* FOS / Employee Filter */}
-            <div>
-              <label className="font-label-md text-xs text-on-surface uppercase tracking-wider block font-semibold mb-1">
-                FOS / Field Officer
-              </label>
-              <select
-                className="w-full h-9 bg-surface border border-outline-variant rounded-lg px-2.5 py-1.5 text-xs text-on-surface font-body-md focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 transition-all"
-                value={selectedEmployeeId}
-                onChange={(e) => setSelectedEmployeeId(e.target.value)}
-              >
-                <option value="ALL">All Field Officers ({employeeOptions.length})</option>
-                {employeeOptions.map((emp) => (
-                  <option key={emp.id} value={emp.id}>
-                    {emp.full_name} ({emp.employee_code})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Ageing Bucket Filter */}
-            <div>
-              <label className="font-label-md text-xs text-on-surface uppercase tracking-wider block font-semibold mb-1">
-                Ageing Bucket
-              </label>
-              <select
-                className="w-full h-9 bg-surface border border-outline-variant rounded-lg px-2.5 py-1.5 text-xs text-on-surface font-body-md focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 transition-all"
-                value={selectedAgeingBucket}
-                onChange={(e) => setSelectedAgeingBucket(e.target.value)}
-              >
-                <option value="ALL">All Overdue Buckets</option>
-                <option value=">90">Critical (&gt;90 Days)</option>
-                <option value="75-90">Severe (75-90 Days)</option>
-                <option value="60-75">High (60-75 Days)</option>
-                <option value="45-60">Medium (45-60 Days)</option>
-                <option value="30-45">Low (30-45 Days)</option>
-                <option value="15-30">Early (15-30 Days)</option>
-                <option value="<15">Normal (&lt;15 Days)</option>
-              </select>
-            </div>
+            {/* Applied filters - derived from the exact params sent for this tab */}
+            <AppliedFiltersStrip items={appliedItems} notes={semanticsNotes} />
           </div>
-
-          {/* Search bar & Operational Date Filter */}
-          <div className="pt-2 border-t border-surface-container-highest flex flex-wrap items-center justify-between gap-3">
-            <div className="relative flex-1 min-w-[200px] max-w-sm">
-              <Search className="w-3.5 h-3.5 absolute left-3 top-3 text-on-surface-variant" />
-              <input
-                type="text"
-                placeholder="Search DMS code, outlet, or officer..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full h-9 bg-surface border border-outline-variant rounded-lg pl-8 pr-3 py-1.5 text-xs text-on-surface font-body-md focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 transition-all"
-              />
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-label-md text-xs uppercase tracking-wider text-on-surface-variant font-semibold">Date Range:</span>
-              <input
-                type="date"
-                aria-label="Start date"
-                value={dateRange.startDate}
-                onChange={(e) => handleDateChange('startDate', e.target.value)}
-                className="h-8 bg-surface border border-outline-variant rounded-md px-2 py-1 text-xs text-on-surface font-body-md focus:outline-none focus:border-primary-container"
-              />
-              <span className="text-on-surface-variant text-xs font-caption">to</span>
-              <input
-                type="date"
-                aria-label="End date"
-                value={dateRange.endDate}
-                onChange={(e) => handleDateChange('endDate', e.target.value)}
-                className="h-8 bg-surface border border-outline-variant rounded-md px-2 py-1 text-xs text-on-surface font-body-md focus:outline-none focus:border-primary-container"
-              />
-              <Button size="sm" variant="secondary" onClick={applyDateFilter} className="h-8 text-xs py-1">
-                Apply Filter
-              </Button>
-              <Button size="sm" variant="outline" onClick={clearDateFilter} className="h-8 text-xs py-1">
-                Clear
-              </Button>
-            </div>
-          </div>
-
-          {/* Date Error */}
-          {dateError && (
-            <p className="text-xs text-error font-medium pt-1">{dateError}</p>
-          )}
-
-          {/* Active Filter Indicator */}
-          {(appliedDateRange.startDate || appliedDateRange.endDate || selectedBrand !== 'ALL' || selectedMonth !== 'ALL') && (
-            <div className="font-caption text-xs text-primary font-medium pt-1">
-              Active filter: {appliedDateRange.startDate || 'Start'} to {appliedDateRange.endDate || 'End'}{' '}
-              {selectedBrand !== 'ALL' ? `| Brand: ${selectedBrand}` : ''}{' '}
-              {selectedMonth !== 'ALL' ? `| Month: ${selectedMonth}` : ''}
-            </div>
-          )}
-        </div>
-      </Card>
+        </Card>
+      ) : (
+        <AppliedFiltersStrip items={[]} notes={semanticsNotes} />
+      )}
 
       {/* Navigation Tabs */}
       <div className="flex flex-wrap gap-1.5 border-b border-surface-container-highest pb-2">
@@ -904,12 +782,31 @@ export const ReportsPage: React.FC = () => {
                 </button>
               ))}
             </div>
-            {businessBI && (
-              <div className="font-caption text-xs text-on-surface-variant">
-                Total Outlets: <span className="font-semibold text-primary">{businessBI.total_outlets}</span> | Total OS: <span className="font-semibold text-primary font-headline-sm">{formatCurrency(businessBI.total_market_outstanding)}</span>
-              </div>
-            )}
+            <div className="flex flex-wrap items-center gap-3">
+              {businessBI && (
+                <div className="font-caption text-xs text-on-surface-variant" data-testid="bi-totals">
+                  Total Outlets: <span className="font-semibold text-primary">{businessBI.total_outlets}</span> | Total OS: <span className="font-semibold text-primary font-headline-sm">{formatCurrency(businessBI.total_market_outstanding)}</span>
+                  {businessBI.as_of_date && businessBI.data_source !== 'LIVE_INVOICES' ? (
+                    <span data-testid="bi-as-of"> (as of {formatCalendarDate(businessBI.as_of_date)})</span>
+                  ) : null}
+                </div>
+              )}
+              {exportButtons()}
+            </div>
           </div>
+
+          {businessBI?.data_source === 'LIVE_INVOICES' && (
+            <div
+              role="status"
+              data-testid="bi-live-note"
+              className="p-3 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-xs flex items-start gap-2"
+            >
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <span>
+                <strong>Live invoices, not a snapshot.</strong> {businessBI.data_source_note}
+              </span>
+            </div>
+          )}
 
           <Card>
             <div className="overflow-x-auto">
@@ -997,7 +894,7 @@ export const ReportsPage: React.FC = () => {
 
       {/* TAB 2: COLLECTIONS WORKBENCH */}
       {activeTab === 'collections_workbench' && (
-        <CollectionsOverviewPage hideHeader />
+        <CollectionsOverviewPage hideHeader externalRequest={request} />
       )}
 
       {/* TAB 3: OUTSTANDING & AGEING */}
@@ -1005,31 +902,12 @@ export const ReportsPage: React.FC = () => {
         <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h3 className="font-headline-sm text-sm font-bold text-primary">Market Outstanding &amp; 7 Ageing Buckets</h3>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                icon={FileSpreadsheet}
-                onClick={handleExportExcel}
-                disabled={isLoading || isExporting}
-              >
-                Export Excel
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                icon={Download}
-                onClick={handleExportPDF}
-                disabled={isLoading || isExporting}
-              >
-                Export PDF
-              </Button>
-            </div>
+            {exportButtons()}
           </div>
           <Card>
             <CardHeader>
               <CardTitle>Market Outstanding &amp; Ageing Buckets</CardTitle>
-              <CardSubtitle>Accounts with open balances grouped across 7 overdue intervals</CardSubtitle>
+              <CardSubtitle>Accounts with open balances grouped across 7 overdue intervals (latest snapshot in the period, as of the date shown)</CardSubtitle>
             </CardHeader>
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
@@ -1049,12 +927,13 @@ export const ReportsPage: React.FC = () => {
                     <th className="px-3 py-2 text-right font-bold text-primary">75-90d</th>
                     <th className="px-3 py-2 text-right font-bold text-primary">&gt;90d</th>
                     <th className="px-3 py-2 text-center font-bold text-primary">Severity</th>
+                    <th className="px-3 py-2 text-center font-bold text-primary">As of</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-surface-container-highest font-body-md">
                   {outstandingList.length === 0 ? (
                     <tr>
-                      <td colSpan={14} className="text-center py-8 text-on-surface-variant font-caption">
+                      <td colSpan={15} className="text-center py-8 text-on-surface-variant font-caption">
                         No outstanding accounts found matching the current filters.
                       </td>
                     </tr>
@@ -1087,6 +966,7 @@ export const ReportsPage: React.FC = () => {
                             {r.highest_overdue_bucket}
                           </span>
                         </td>
+                        <td className="px-3 py-2 text-center text-on-surface-variant font-caption">{formatCalendarDate(r.as_of_date)}</td>
                       </tr>
                     ))
                   )}
@@ -1102,22 +982,12 @@ export const ReportsPage: React.FC = () => {
         <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h3 className="font-headline-sm text-sm font-bold text-primary">Outlets Master Directory ({outletsList.length} Outlets)</h3>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                icon={FileSpreadsheet}
-                onClick={handleExportExcel}
-                disabled={isLoading || isExporting}
-              >
-                Export Excel
-              </Button>
-            </div>
+            {exportButtons()}
           </div>
           <Card>
             <CardHeader>
               <CardTitle>Outlets Master Directory</CardTitle>
-              <CardSubtitle>Directory of {outletsList.length} client outlets with coordinates and financial totals</CardSubtitle>
+              <CardSubtitle>Directory of {outletsList.length} client outlets (one row each) with financial totals for the selected period; market OS is the latest snapshot per brand</CardSubtitle>
             </CardHeader>
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
@@ -1132,12 +1002,13 @@ export const ReportsPage: React.FC = () => {
                     <th className="px-3 py-2 text-right font-bold text-primary">Sales</th>
                     <th className="px-3 py-2 text-right font-bold text-primary">Collections</th>
                     <th className="px-3 py-2 text-right font-bold text-primary">Market OS</th>
+                    <th className="px-3 py-2 text-center font-bold text-primary">As of</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-surface-container-highest font-body-md">
                   {outletsList.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="text-center py-8 text-on-surface-variant font-caption">
+                      <td colSpan={10} className="text-center py-8 text-on-surface-variant font-caption">
                         No outlets found matching query.
                       </td>
                     </tr>
@@ -1155,6 +1026,7 @@ export const ReportsPage: React.FC = () => {
                         <td className="px-3 py-2 text-right font-headline-sm text-xs font-semibold text-primary">{formatCurrency(o.sales)}</td>
                         <td className="px-3 py-2 text-right font-headline-sm text-xs font-semibold text-primary">{formatCurrency(o.collection)}</td>
                         <td className="px-3 py-2 text-right font-headline-sm text-xs font-bold text-primary">{formatCurrency(o.market_outstanding)}</td>
+                        <td className="px-3 py-2 text-center text-on-surface-variant font-caption">{formatCalendarDate(o.as_of_date)}</td>
                       </tr>
                     ))
                   )}
@@ -1170,28 +1042,33 @@ export const ReportsPage: React.FC = () => {
         <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h3 className="font-headline-sm text-sm font-bold text-primary">
-              Field Staff Performance ({employeeMasterList.length > 0 ? `${employeeMasterList.length} Real Field Staff` : 'All Officers'})
+              Field Staff Performance ({employeeReport.length} {employeeReport.length === 1 ? 'officer' : 'officers'})
             </h3>
-            <div className="flex items-center gap-2">
+            {exportButtons(
               <Button
                 variant="outline"
                 size="sm"
                 icon={Download}
-                onClick={() => exportCSV(employeeReport as any, 'employee-report')}
+                onClick={() =>
+                  exportCSV(
+                    employeeReport.map((e) => ({
+                      employee_code: e.employee_code ?? '',
+                      employee_name: e.employee_name,
+                      total_visits: e.total_visits,
+                      completed_visits: e.completed_visits,
+                      pending_visits: e.pending_visits,
+                      missed_visits: e.missed_visits,
+                      flagged_visits: e.flagged_visits,
+                      completion_rate: e.completion_rate,
+                    })),
+                    'employee-report',
+                  )
+                }
                 disabled={employeeReport.length === 0}
               >
                 Export CSV
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                icon={Download}
-                onClick={handleExportPDF}
-                disabled={employeeReport.length === 0}
-              >
-                Export PDF
-              </Button>
-            </div>
+              </Button>,
+            )}
           </div>
 
           <Card>
@@ -1199,7 +1076,7 @@ export const ReportsPage: React.FC = () => {
               <table className="w-full text-xs">
                 <thead className="bg-surface-container-low text-on-surface-variant font-label-md uppercase text-[10px] tracking-wider border-b border-surface-container-highest">
                   <tr>
-                    <th className="px-3 py-2 text-left font-bold text-primary">Employee ID</th>
+                    <th className="px-3 py-2 text-left font-bold text-primary">Employee Code</th>
                     <th className="px-3 py-2 text-left font-bold text-primary">Employee Name</th>
                     <th className="px-3 py-2 text-right font-bold text-primary">Total Visits</th>
                     <th className="px-3 py-2 text-right font-bold text-primary">Completed Visits</th>
@@ -1219,7 +1096,7 @@ export const ReportsPage: React.FC = () => {
                   ) : (
                     employeeReport.map((e, i) => (
                       <tr key={i} className="hover:bg-surface-container-low/70 transition-colors">
-                        <td className="px-3 py-2 font-mono text-xs text-primary font-bold">{e.employee_id}</td>
+                        <td className="px-3 py-2 font-mono text-xs text-primary font-bold">{e.employee_code || '-'}</td>
                         <td className="px-3 py-2 font-semibold text-on-surface">{e.employee_name}</td>
                         <td className="px-3 py-2 text-right text-on-surface">{e.total_visits}</td>
                         <td className="px-3 py-2 text-right font-headline-sm text-xs font-semibold text-primary">{e.completed_visits}</td>
@@ -1264,64 +1141,32 @@ export const ReportsPage: React.FC = () => {
               </button>
             </div>
 
-            <div className="flex items-center gap-2">
-              {visitSubView === 'register' ? (
-                <>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    icon={FileSpreadsheet}
-                    onClick={handleExportExcel}
-                    disabled={isLoading || isExporting}
-                  >
-                    Export Excel
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    icon={Download}
-                    onClick={handleExportPDF}
-                    disabled={isLoading || isExporting}
-                  >
-                    Export PDF
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    icon={Download}
-                    onClick={() => exportCSV(geoReport as any, 'geo-verification-report')}
-                    disabled={geoReport.length === 0}
-                  >
-                    Export CSV
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    icon={Download}
-                    onClick={handleExportPDF}
-                    disabled={geoReport.length === 0}
-                  >
-                    Export PDF
-                  </Button>
-                </>
-              )}
-            </div>
+            {exportButtons(
+              visitSubView === 'geo' ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  icon={Download}
+                  onClick={() => exportCSV(geoReport as unknown as Record<string, unknown>[], 'geo-verification-report')}
+                  disabled={geoReport.length === 0}
+                >
+                  Export CSV
+                </Button>
+              ) : null,
+            )}
           </div>
 
           {visitSubView === 'register' ? (
             <Card>
               <CardHeader>
                 <CardTitle>Operational Visits Register</CardTitle>
-                <CardSubtitle>Field visits execution, check-in timestamps, and duration</CardSubtitle>
+                <CardSubtitle>Field visits execution, check-in timestamps, and duration (all dates and times are IST)</CardSubtitle>
               </CardHeader>
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead className="bg-surface-container-low text-on-surface-variant font-label-md uppercase text-[10px] tracking-wider border-b border-surface-container-highest">
                     <tr>
-                      <th className="px-3 py-2 text-left font-bold text-primary">Scheduled Date</th>
+                      <th className="px-3 py-2 text-left font-bold text-primary">Scheduled Date (IST)</th>
                       <th className="px-3 py-2 text-left font-bold text-primary">Employee</th>
                       <th className="px-3 py-2 text-left font-bold text-primary">Outlet</th>
                       <th className="px-3 py-2 text-left font-bold text-primary">DMS Code</th>
@@ -1343,7 +1188,7 @@ export const ReportsPage: React.FC = () => {
                     ) : (
                       visitsList.map((v, i) => (
                         <tr key={i} className="hover:bg-surface-container-low/70 transition-colors">
-                          <td className="px-3 py-2 text-on-surface-variant font-caption">{new Date(v.scheduled_at).toLocaleDateString()}</td>
+                          <td className="px-3 py-2 text-on-surface-variant font-caption">{formatIstDate(v.scheduled_at)}</td>
                           <td className="px-3 py-2 font-headline-sm text-xs font-bold text-primary">{v.employee_name}</td>
                           <td className="px-3 py-2 text-on-surface">{v.customer_name}</td>
                           <td className="px-3 py-2 font-mono text-xs text-primary font-semibold">{v.dms_code || '-'}</td>
@@ -1351,8 +1196,8 @@ export const ReportsPage: React.FC = () => {
                           <td className="px-3 py-2">
                             <StatusBadge status={v.status} size="sm" />
                           </td>
-                          <td className="px-3 py-2 text-center font-mono text-xs text-on-surface-variant">{v.check_in_at ? new Date(v.check_in_at).toLocaleTimeString() : '-'}</td>
-                          <td className="px-3 py-2 text-center font-mono text-xs text-on-surface-variant">{v.check_out_at ? new Date(v.check_out_at).toLocaleTimeString() : '-'}</td>
+                          <td className="px-3 py-2 text-center font-mono text-xs text-on-surface-variant">{v.check_in_at ? formatIstTime(v.check_in_at) : '-'}</td>
+                          <td className="px-3 py-2 text-center font-mono text-xs text-on-surface-variant">{v.check_out_at ? formatIstTime(v.check_out_at) : '-'}</td>
                           <td className="px-3 py-2 text-right font-mono text-xs text-on-surface">{v.duration_minutes ? `${v.duration_minutes}m` : '-'}</td>
                           <td className="px-3 py-2 text-center">
                             <span className={`inline-block px-1.5 py-0.5 rounded font-label-md text-[10px] font-bold ${v.is_gps_verified ? 'bg-primary-tint text-primary' : 'text-outline'}`}>
@@ -1376,7 +1221,7 @@ export const ReportsPage: React.FC = () => {
                 <table className="w-full text-xs">
                   <thead className="bg-surface-container-low text-on-surface-variant font-label-md uppercase text-[10px] tracking-wider border-b border-surface-container-highest">
                     <tr>
-                      <th className="px-3 py-2 text-left font-bold text-primary">Attempt Time</th>
+                      <th className="px-3 py-2 text-left font-bold text-primary">Attempt Time (IST)</th>
                       <th className="px-3 py-2 text-left font-bold text-primary">Employee</th>
                       <th className="px-3 py-2 text-left font-bold text-primary">Customer / Outlet</th>
                       <th className="px-3 py-2 text-left font-bold text-primary">Verification Type</th>
@@ -1395,7 +1240,7 @@ export const ReportsPage: React.FC = () => {
                     ) : (
                       geoReport.map((g, i) => (
                         <tr key={i} className="hover:bg-surface-container-low/70 transition-colors">
-                          <td className="px-3 py-2 text-on-surface-variant font-caption">{new Date(g.attempted_at).toLocaleString()}</td>
+                          <td className="px-3 py-2 text-on-surface-variant font-caption">{formatIstDateTime(g.attempted_at)}</td>
                           <td className="px-3 py-2 font-headline-sm text-xs font-bold text-primary">{g.employee_name}</td>
                           <td className="px-3 py-2 text-on-surface">{g.customer_name}</td>
                           <td className="px-3 py-2 text-on-surface-variant font-caption">{g.verification_type}</td>
@@ -1418,15 +1263,18 @@ export const ReportsPage: React.FC = () => {
       {/* TAB 10: PHASE 4 - MONTHLY REPORTS & HISTORICAL SNAPSHOTS */}
       {activeTab === 'monthly' && (
         <div className="space-y-6">
-          <CardHeader className="px-0">
-            <CardTitle className="flex items-center gap-2">
-              <Calendar className="w-5 h-5 text-secondary-container" />
-              Monthly Accounting Periods &amp; Finalization
-            </CardTitle>
-            <CardSubtitle>
-              Historical monthly snapshots and accounting ledgers are protected and immutable once locked by Admin.
-            </CardSubtitle>
-          </CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <CardHeader className="px-0">
+              <CardTitle className="flex items-center gap-2">
+                <Calendar className="w-5 h-5 text-secondary-container" />
+                Monthly Accounting Periods &amp; Finalization
+              </CardTitle>
+              <CardSubtitle>
+                Historical monthly snapshots and accounting ledgers are protected and immutable once locked by Admin.
+              </CardSubtitle>
+            </CardHeader>
+            {exportButtons()}
+          </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {availablePeriodsWithData.map((period) => {
@@ -1502,7 +1350,8 @@ export const ReportsPage: React.FC = () => {
                     <button
                       onClick={() => {
                         setSelectedMonth(mStr);
-                        setActiveTab('business_bi');
+                        clearDateFilter(); // an applied date range would override the month
+                        handleTabChange('financial_bi');
                       }}
                       className="font-label-md text-xs uppercase tracking-wider font-semibold text-primary hover:text-secondary flex items-center gap-1 cursor-pointer transition-colors"
                     >

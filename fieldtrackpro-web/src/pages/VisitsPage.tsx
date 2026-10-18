@@ -26,7 +26,9 @@ import { Select } from '../components/ui/Select';
 import { EmptyState } from '../components/ui/EmptyState';
 import { ErrorBanner } from '../components/ui/ErrorBanner';
 import { Card } from '../components/ui/Card';
+import { VisitReviewBadge } from '../components/ui/VisitReviewBadge';
 import { useAuth } from '../context/AuthContext';
+import { isAdmin as isAdminRole } from '../utils/roles';
 import { apiClient } from '../api/client';
 import {
   Area,
@@ -60,11 +62,12 @@ export const VisitsPage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
-  const isAdmin = user?.role === 'ADMIN';
+  const isAdmin = isAdminRole(user);
 
   // Read URL query state
   const urlStatus = (searchParams.get('status') as VisitStatus | 'ALL') || 'ALL';
   const urlVisitType = (searchParams.get('visit_type') as VisitType | 'ALL') || 'ALL';
+  const urlOutsideOnly = isAdmin && searchParams.get('outside_assignment') === 'true';
   const urlSearch = searchParams.get('search') || '';
   const urlEmployeeId = searchParams.get('employee_id') || '';
   const urlTerritoryId = searchParams.get('territory_id') || '';
@@ -165,6 +168,7 @@ export const VisitsPage: React.FC = () => {
       const resp = await apiClient.getVisitsPaginated({
         status: urlStatus === 'ALL' ? undefined : urlStatus,
         visit_type: urlVisitType === 'ALL' ? undefined : urlVisitType,
+        outside_assignment: urlOutsideOnly ? true : undefined,
         search: urlSearch.trim() || undefined,
         employee_id: urlEmployeeId || undefined,
         territory_id: urlTerritoryId || undefined,
@@ -187,6 +191,7 @@ export const VisitsPage: React.FC = () => {
   }, [
     urlStatus,
     urlVisitType,
+    urlOutsideOnly,
     urlSearch,
     urlEmployeeId,
     urlTerritoryId,
@@ -234,6 +239,13 @@ export const VisitsPage: React.FC = () => {
         id: 'visit_type',
         label: `Type: ${urlVisitType === 'AD_HOC' ? 'Ad-Hoc' : 'Planned'}`,
         onRemove: () => updateUrlParams({ visit_type: 'ALL' }),
+      });
+    }
+    if (urlOutsideOnly) {
+      list.push({
+        id: 'outside_assignment',
+        label: 'Outside assignment only',
+        onRemove: () => updateUrlParams({ outside_assignment: '' }),
       });
     }
     if (urlSearch) {
@@ -285,6 +297,8 @@ export const VisitsPage: React.FC = () => {
     return list;
   }, [
     urlStatus,
+    urlVisitType,
+    urlOutsideOnly,
     urlSearch,
     urlEmployeeId,
     urlTerritoryId,
@@ -460,6 +474,21 @@ export const VisitsPage: React.FC = () => {
               );
             })}
           </div>
+
+          {isAdmin && (
+            <button
+              type="button"
+              aria-pressed={urlOutsideOnly}
+              onClick={() => updateUrlParams({ outside_assignment: urlOutsideOnly ? '' : 'true' })}
+              className={`px-2.5 py-1.5 rounded-lg border font-label-md text-xs uppercase tracking-wider font-bold whitespace-nowrap cursor-pointer transition-all ${
+                urlOutsideOnly
+                  ? 'bg-amber-100 text-amber-900 border-amber-400'
+                  : 'bg-surface border-outline-variant text-on-surface-variant hover:bg-surface-container-low'
+              }`}
+            >
+              Outside assignment only
+            </button>
+          )}
 
           {/* Advanced Filter Popover Toggle */}
           <Button
@@ -716,9 +745,14 @@ export const VisitsPage: React.FC = () => {
                       <td className="px-space-4 py-space-3.5">
                         {visit.visit_type === 'AD_HOC' ? (
                           <div className="inline-flex flex-col items-start gap-0.5">
-                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
-                              AD-HOC
-                            </span>
+                            {isAdmin && visit.review_label ? (
+                              <VisitReviewBadge label={visit.review_label} />
+                            ) : (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                                AD-HOC
+                              </span>
+                            )}
+
                             {visit.adhoc_reason && (
                               <span className="text-[11px] text-amber-800 font-medium max-w-[130px] truncate" title={visit.adhoc_reason}>
                                 {visit.adhoc_reason}

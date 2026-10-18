@@ -20,7 +20,7 @@ export const SignatureThumbnail: React.FC<SignatureThumbnailProps> = ({ signatur
       setIsDownloading(true);
       setLoadError(null);
       const { download_url } = await apiClient.getSignatureDownloadUrl(signature.id);
-      window.open(download_url, '_blank');
+      window.open(download_url, '_blank', 'noopener,noreferrer');
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : 'Download failed');
     } finally {

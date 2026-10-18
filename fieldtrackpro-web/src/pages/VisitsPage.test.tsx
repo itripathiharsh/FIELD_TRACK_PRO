@@ -525,3 +525,53 @@ describe('VisitsPage - visit_type (Planned vs Ad-Hoc)', () => {
 
 
 
+
+describe('VisitsPage - ad-hoc review flags', () => {
+  const ADHOC_OUTSIDE: Visit = {
+    ...VISIT,
+    id: '99999999-9999-9999-9999-999999999999',
+    visit_type: 'AD_HOC',
+    is_adhoc: true,
+    adhoc_reason: 'Cheque Bounce',
+    outside_assignment: true,
+    review_label: 'AD-HOC · OUTSIDE ASSIGNMENT',
+    customer_name: 'Far Outlet',
+  };
+
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('admin sees the review label and can filter to outside-assignment visits', async () => {
+    signIn(ADMIN_USER);
+    const urls: string[] = [];
+    mockApi({
+      ...baseRoutes(ADMIN_USER),
+      '/api/v1/customers': [CUSTOMER],
+      '/api/v1/employees': [EMPLOYEE],
+      '/api/v1/visits': route((url) => {
+        urls.push(url);
+        return json([ADHOC_OUTSIDE]);
+      }),
+    });
+
+    renderWithProviders(<VisitsPage />);
+    expect(await screen.findByTestId('visit-review-badge')).toHaveTextContent('AD-HOC · OUTSIDE ASSIGNMENT');
+
+    await userEvent.click(screen.getByRole('button', { name: /outside assignment only/i }));
+    await waitFor(() => expect(urls.some((u) => u.includes('outside_assignment=true'))).toBe(true));
+  });
+
+  it('employee sees no review label or outside-assignment toggle', async () => {
+    signIn(EMPLOYEE_USER);
+    mockApi({
+      ...baseRoutes(EMPLOYEE_USER),
+      '/api/v1/visits': [{ ...ADHOC_OUTSIDE, outside_assignment: null, review_label: null }],
+    });
+
+    renderWithProviders(<VisitsPage />);
+    expect(await screen.findByText('Far Outlet')).toBeInTheDocument();
+    expect(screen.queryByTestId('visit-review-badge')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /outside assignment only/i })).not.toBeInTheDocument();
+  });
+});

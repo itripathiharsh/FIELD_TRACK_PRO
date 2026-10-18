@@ -1,5 +1,5 @@
 import React from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
   Users,
@@ -15,8 +15,11 @@ import {
   ShieldCheck,
   Wallet,
   ClipboardList,
+  SearchCheck,
+  Camera,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { isAdmin, resolveRole } from '../../utils/roles';
 
 interface SidebarProps {
   isOpen?: boolean;
@@ -25,27 +28,32 @@ interface SidebarProps {
 
 export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => {
   const { user, logout } = useAuth();
-  const isEmployee = user?.role === 'EMPLOYEE';
-  const visitPlanningPath = user?.role === 'ADMIN' ? '/admin/visit-planning' : '/visit-planning';
+  const { pathname } = useLocation();
+  const userIsAdmin = isAdmin(user);
+  const visitPlanningPath = userIsAdmin ? '/admin/visit-planning' : '/visit-planning';
 
   const navItems = [
-    { name: 'Dashboard',            path: '/',          icon: LayoutDashboard, roles: ['ADMIN', 'MANAGER', 'EMPLOYEE'] },
-    { name: 'Visit Planning',       path: visitPlanningPath, icon: CalendarDays, roles: ['ADMIN', 'MANAGER', 'EMPLOYEE'] },
-    { name: 'Employees',            path: '/employees', icon: Users,           roles: ['ADMIN', 'MANAGER'] },
-    { name: 'Employee Daily Logs',  path: '/daily-logs',icon: CalendarClock,   roles: ['ADMIN', 'MANAGER'] },
-    { name: 'Territories',          path: '/territories', icon: Globe2,        roles: ['ADMIN', 'MANAGER'] },
-    { name: 'Customers',            path: '/customers', icon: Building2,       roles: ['ADMIN', 'MANAGER'] },
-    { name: 'Visits',               path: '/visits',    icon: CalendarCheck,   roles: ['ADMIN', 'MANAGER', 'EMPLOYEE'] },
-    { name: 'Map',                  path: '/map',       icon: Globe2,          roles: ['ADMIN', 'MANAGER'] },
-    { name: 'Customer Requirements',path: '/requirements', icon: ClipboardList, roles: ['ADMIN', 'MANAGER'] },
-    { name: 'Requirement Forms',    path: '/forms',     icon: FileText,        roles: ['ADMIN', 'MANAGER'] },
-    { name: 'Payment Collections',  path: '/payments',  icon: Wallet,          roles: ['ADMIN', 'MANAGER'] },
-    { name: 'Reports & Collections',path: '/reports',   icon: BarChart3,       roles: ['ADMIN', 'MANAGER'] },
+    { name: 'Dashboard',            path: '/',          icon: LayoutDashboard, roles: ['ADMIN', 'EMPLOYEE'] },
+    { name: 'Visit Planning',       path: visitPlanningPath, icon: CalendarDays, roles: ['ADMIN', 'EMPLOYEE'] },
+    { name: 'Employees',            path: '/employees', icon: Users,           roles: ['ADMIN'] },
+    { name: 'Employee Daily Logs',  path: '/daily-logs',icon: CalendarClock,   roles: ['ADMIN'] },
+    { name: 'Territories',          path: '/territories', icon: Globe2,        roles: ['ADMIN'] },
+    { name: 'Customers',            path: '/customers', icon: Building2,       roles: ['ADMIN'] },
+    { name: 'Outlet Verification',  path: '/customers/outlet-verification', icon: Camera, roles: ['ADMIN'] },
+    { name: 'Visits',               path: '/visits',    icon: CalendarCheck,   roles: ['ADMIN', 'EMPLOYEE'] },
+    { name: 'Ad-hoc Review',        path: '/visits/adhoc-review', icon: SearchCheck, roles: ['ADMIN'] },
+    { name: 'Map',                  path: '/map',       icon: Globe2,          roles: ['ADMIN'] },
+    { name: 'Customer Requirements',path: '/requirements', icon: ClipboardList, roles: ['ADMIN'] },
+    { name: 'Requirement Forms',    path: '/forms',     icon: FileText,        roles: ['ADMIN'] },
+    { name: 'Payment Collections',  path: '/payments',  icon: Wallet,          roles: ['ADMIN'] },
+    { name: 'Reports & Collections',path: '/reports',   icon: BarChart3,       roles: ['ADMIN'] },
   ];
 
   const visibleNavItems = navItems.filter((item) => {
-    if (!user?.role) return item.roles.includes('ADMIN');
-    return item.roles.includes(user.role);
+    // Least privilege: no/unknown role sees nothing beyond the EMPLOYEE set. A Super Admin sees
+    // everything an Admin sees (nav items are declared per ADMIN/EMPLOYEE tier).
+    const tier = userIsAdmin ? 'ADMIN' : resolveRole(user?.role);
+    return item.roles.includes(tier);
   });
 
   return (
@@ -72,7 +80,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => 
             <h1 className="font-headline-md text-headline-md text-primary tracking-tight">FieldTrack Pro</h1>
           </div>
           <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">
-            {isEmployee ? 'Employee Portal' : 'Admin Dashboard'}
+            {!userIsAdmin ? 'Employee Portal' : 'Admin Dashboard'}
           </p>
         </div>
 
@@ -85,7 +93,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => 
               onClick={onClose}
               className={({ isActive }) =>
                 `flex items-center gap-space-3 px-space-3 py-space-2 rounded-lg transition-colors ${
-                  isActive
+                  isActive &&
+                  !(item.path === '/visits' && pathname.startsWith('/visits/adhoc-review')) &&
+                  !(item.path === '/customers' && pathname.startsWith('/customers/outlet-verification'))
                     ? 'bg-primary-container text-secondary-container font-headline-sm border-r-4 border-secondary-container opacity-95 shadow-xs'
                     : 'text-on-surface-variant hover:bg-surface-container'
                 }`
@@ -99,7 +109,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => 
 
         {/* Bottom Tabs & User Profile */}
         <div className="mt-auto pt-space-4 border-t border-surface-container-highest flex flex-col gap-space-2">
-          {user?.role === 'ADMIN' && (
+          {userIsAdmin && (
             <NavLink
               to="/settings"
               onClick={onClose}

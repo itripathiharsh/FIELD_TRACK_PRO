@@ -221,3 +221,77 @@ describe('PDF Report Generation', () => {
         }
     });
 });
+
+
+describe('PDF Report Generation (fallback) - validity fixes', () => {
+    const decode = (pdf: Uint8Array) => new TextDecoder('latin1').decode(pdf);
+
+    it('stream /Length and xref offsets are byte counts even with non-ASCII text (rupee, accents, CJK)', () => {
+        const pdf = generatePDFContent({
+            title: 'Rupee é Report 日本',
+            headers: ['Name', 'Amount'],
+            rows: [['Zoë Ünal', '₹1,23,456.00'], ['日本語', '₹9']],
+        });
+        const s = decode(pdf);
+        // every "N 0 obj" is found exactly at its xref offset
+        const xrefStart = parseInt(s.slice(s.lastIndexOf('startxref') + 9).trim().split(/\s/)[0], 10);
+        const xref = s.slice(xrefStart);
+        const m = xref.match(/^xref\s+0 (\d+)\s*\n/)!;
+        const entries = xref.slice(m[0].length).split('\n').filter((l) => /^\d{10} \d{5} [nf]/.test(l));
+        for (let k = 1; k < entries.length; k++) {
+            const off = parseInt(entries[k].slice(0, 10), 10);
+            expect(decode(pdf.slice(off, off + 12)).startsWith(`${k} 0 obj`)).toBe(true);
+        }
+        // declared stream length == actual bytes between "stream\n" and "\nendstream"
+        const re = /<< \/Length (\d+) >>\nstream\n/g;
+        let match: RegExpExecArray | null;
+        let streams = 0;
+        while ((match = re.exec(s))) {
+            const start = match.index + match[0].length;
+            const end = s.indexOf('\nendstream', start);
+            expect(end - start).toBe(parseInt(match[1], 10));
+            streams++;
+        }
+        expect(streams).toBeGreaterThan(0);
+        // output is pure single-byte: no UTF-8 multi-byte sequences were written
+        expect(pdf.length).toBe(s.length);
+    });
+
+    it('prints the rupee sign as "Rs." instead of garbage', () => {
+        const s = decode(generatePDFContent({ title: 'T', headers: ['A'], rows: [['₹500']] }));
+        expect(s).toContain('(Rs.500)');
+        expect(s).not.toContain('â\u0082¹'); // no mojibake of the UTF-8 rupee bytes
+    });
+
+    it('is landscape A4 and wraps long cells instead of running off the page', () => {
+        const long = 'Sri Venkateshwara Traders and Electronics Mega Store with a very long name '.repeat(4).trim();
+        const pdf = generatePDFContent({
+            title: 'Wide',
+            headers: ['Brand', 'Outlet', 'Zone', 'Area', 'FOS', 'OS', 'B1', 'B2', 'B3', 'B4'],
+            rows: [['USHA', long, 'Z', 'A', 'F', '1', '2', '3', '4', '5']],
+        });
+        const s = decode(pdf);
+        expect(s).toContain('/MediaBox [0 0 842 595]');
+        // the long cell is split over several Tj lines
+        const tj = s.match(/\([^)]*(Sri|Venkateshwara|Store|Traders)[^)]*\) Tj/g) ?? [];
+        expect(tj.length).toBeGreaterThan(1);
+        // no text origin beyond the page width
+        const xs = [...s.matchAll(/([\d.]+) [\d.]+ Td/g)].map((x) => parseFloat(x[1]));
+        expect(Math.max(...xs)).toBeLessThan(842);
+    });
+
+    it('repeats the header row on every page and numbers the pages', () => {
+        const rows = Array.from({ length: 120 }, (_, i) => [`Employee ${i}`, String(i), String(i)]);
+        const s = decode(generatePDFContent({ title: 'Long', headers: ['Employee', 'Total', 'Completed'], rows }));
+        const pages = (s.match(/\/Type \/Page /g) || []).length;
+        expect(pages).toBeGreaterThan(2);
+        expect((s.match(/\(Employee\) Tj/g) || []).length).toBe(pages);
+        expect(s).toContain(`(Page 1 of ${pages}) Tj`);
+        expect(s).toContain(`(Page ${pages} of ${pages}) Tj`);
+    });
+
+    it('renders an empty table with a "no rows" message (valid file)', () => {
+        const pdf = generatePDFContent({ title: 'Empty', headers: ['A', 'B'], rows: [] });
+        expect(verifyPDFContent(pdf, ['No rows match the selected filters.']).valid).toBe(true);
+    });
+});

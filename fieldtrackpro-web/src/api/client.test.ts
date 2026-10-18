@@ -279,3 +279,204 @@ describe('ApiClient - error surfacing', () => {
     });
   });
 });
+
+describe('ApiClient - expired session notification', () => {
+  beforeEach(() => localStorage.clear());
+
+  it('notifies listeners when a 401 cannot be refreshed mid-session', async () => {
+    const client = new ApiClient();
+    const listener = vi.fn();
+    client.onSessionExpired(listener);
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    fetchSpy.mockResolvedValueOnce(jsonResponse(TOKENS)); // login
+    await client.login('user@example.com', 'pw');
+
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ detail: 'expired' }, 401)); // data call
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ detail: 'nope' }, 401)); // refresh fails
+
+    await expect(client.getHealth()).rejects.toBeInstanceOf(ApiError);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(client.getAccessToken()).toBeNull();
+  });
+
+  it('does not notify when there was no session (plain unauthenticated 401)', async () => {
+    const client = new ApiClient();
+    const listener = vi.fn();
+    client.onSessionExpired(listener);
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ detail: 'x' }, 401));
+
+    await expect(client.getHealth()).rejects.toBeInstanceOf(ApiError);
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('does NOT log out on a transient refresh failure (5xx / Render cold start)', async () => {
+    const client = new ApiClient();
+    const listener = vi.fn();
+    client.onSessionExpired(listener);
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    fetchSpy.mockResolvedValueOnce(jsonResponse(TOKENS)); // login
+    await client.login('user@example.com', 'pw');
+
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ detail: 'expired' }, 401)); // data call
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ detail: 'bad gateway' }, 502)); // refresh: transient
+
+    await expect(client.getHealth()).rejects.toBeInstanceOf(ApiError);
+    expect(listener).not.toHaveBeenCalled();
+    // Session is NOT cleared on a transient failure - still "logged in" in-memory.
+    expect(client.getAccessToken()).toBe(TOKENS.access_token);
+  });
+
+  it('does NOT log out on a network error during refresh', async () => {
+    const client = new ApiClient();
+    const listener = vi.fn();
+    client.onSessionExpired(listener);
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    fetchSpy.mockResolvedValueOnce(jsonResponse(TOKENS)); // login
+    await client.login('user@example.com', 'pw');
+
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ detail: 'expired' }, 401)); // data call
+    fetchSpy.mockRejectedValueOnce(new TypeError('network error')); // refresh: network failure
+
+    await expect(client.getHealth()).rejects.toBeInstanceOf(ApiError);
+    expect(listener).not.toHaveBeenCalled();
+    expect(client.getAccessToken()).toBe(TOKENS.access_token);
+  });
+
+  it('DOES log out when the refresh is genuinely rejected (403 account disabled)', async () => {
+    const client = new ApiClient();
+    const listener = vi.fn();
+    client.onSessionExpired(listener);
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    fetchSpy.mockResolvedValueOnce(jsonResponse(TOKENS)); // login
+    await client.login('user@example.com', 'pw');
+
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ detail: 'expired' }, 401)); // data call
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ detail: 'disabled' }, 403)); // refresh: rejected
+
+    await expect(client.getHealth()).rejects.toBeInstanceOf(ApiError);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(client.getAccessToken()).toBeNull();
+  });
+});
+
+
+describe('ApiClient - payment Tally lifecycle & ad-hoc review endpoints', () => {
+  let client: ApiClient;
+  beforeEach(() => {
+    localStorage.clear();
+    client = new ApiClient();
+  });
+
+  it('verifyPayment sends no body when the bank fields are blank, and trimmed fields otherwise', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => jsonResponse({ id: 'p1' }));
+    await client.verifyPayment('p1', { bank_reference: '  ', verified_note: '' });
+    let [url, init] = fetchSpy.mock.calls.at(-1)!;
+    expect(String(url)).toContain('/api/v1/payments/p1/verify');
+    expect((init as RequestInit).body).toBeUndefined();
+
+    await client.verifyPayment('p1', { bank_reference: ' R1 ', bank_verified_on: '2026-08-01' });
+    [url, init] = fetchSpy.mock.calls.at(-1)!;
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({
+      bank_reference: 'R1',
+      bank_verified_on: '2026-08-01',
+    });
+  });
+
+  it('getPaymentReviewQueue sends tally_status and stuck; retryPaymentTally POSTs to /tally-retry', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => jsonResponse([]));
+    await client.getPaymentReviewQueue('VERIFIED', { tally_status: 'FAILED', stuck: true });
+    expect(String(fetchSpy.mock.calls.at(-1)![0])).toContain(
+      '/api/v1/payments/queue?status=VERIFIED&tally_status=FAILED&stuck=true',
+    );
+
+    await client.retryPaymentTally('p9');
+    const [url, init] = fetchSpy.mock.calls.at(-1)!;
+    expect(String(url)).toContain('/api/v1/payments/p9/tally-retry');
+    expect((init as RequestInit).method).toBe('POST');
+  });
+
+  it('getAdhocReviewVisits reads X-Total-Count and sends outside_assignment', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(
+      async () =>
+        new Response(JSON.stringify([{ id: 'v1' }]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json', 'X-Total-Count': '42' },
+        }),
+    );
+    const res = await client.getAdhocReviewVisits({ outside_assignment: true, skip: 20, limit: 20 });
+    expect(res.total).toBe(42);
+    expect(res.items).toHaveLength(1);
+    expect(String(fetchSpy.mock.calls.at(-1)![0])).toContain(
+      '/api/v1/visits/adhoc-review?outside_assignment=true&skip=20&limit=20',
+    );
+  });
+});
+
+describe('ApiClient - single-flight refresh & session hint', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  it('shares ONE network refresh between N concurrent restore calls', async () => {
+    localStorage.setItem('fieldtrack_session_hint', '1');
+    const client = new ApiClient();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      await gate;
+      return jsonResponse(TOKENS);
+    });
+
+    const calls = Array.from({ length: 6 }, () => client.tryRestoreSession());
+    release();
+    const results = await Promise.all(calls);
+
+    expect(results.every(Boolean)).toBe(true);
+    const refreshCalls = fetchSpy.mock.calls.filter(([u]) => String(u).includes('/auth/refresh'));
+    expect(refreshCalls).toHaveLength(1);
+  });
+
+  it('clears the in-flight promise so a later refresh sends a new request', async () => {
+    localStorage.setItem('fieldtrack_session_hint', '1');
+    const client = new ApiClient();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => jsonResponse(TOKENS));
+    await client.tryRestoreSession();
+    (client as unknown as { accessToken: string | null }).accessToken = null;
+    await client.tryRestoreSession();
+    const refreshCalls = fetchSpy.mock.calls.filter(([u]) => String(u).includes('/auth/refresh'));
+    expect(refreshCalls).toHaveLength(2);
+  });
+
+  it('parallel 401s trigger exactly one refresh', async () => {
+    const client = new ApiClient();
+    let refreshed = false;
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes('/auth/refresh')) {
+        refreshed = true;
+        return jsonResponse(TOKENS);
+      }
+      return refreshed ? jsonResponse({ ok: true }) : new Response('{}', { status: 401 });
+    });
+    await Promise.all([client.getHealth(), client.getHealth(), client.getHealth()]);
+    const refreshCalls = fetchSpy.mock.calls.filter(([u]) => String(u).includes('/auth/refresh'));
+    expect(refreshCalls).toHaveLength(1);
+  });
+
+  it('anonymous restore (no session hint) sends no refresh request', async () => {
+    const client = new ApiClient();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse(TOKENS));
+    expect(await client.tryRestoreSession()).toBe(false);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('login sets the hint and clearSession removes it', async () => {
+    const client = new ApiClient();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse(TOKENS));
+    await client.login('u@example.com', 'pw');
+    expect(localStorage.getItem('fieldtrack_session_hint')).toBe('1');
+    client.clearSession();
+    expect(localStorage.getItem('fieldtrack_session_hint')).toBeNull();
+  });
+});

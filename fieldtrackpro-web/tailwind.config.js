@@ -66,6 +66,15 @@ export default {
         "on-error-container": "#93000a",
         "error-tint": "#ffdad6",
         "warning-tint": "#ffddb8",
+
+        // Login / Command Portal split layout
+        "portal-navy": "#07182a",
+        "portal-navy-mid": "#0b2440",
+        "portal-orange": "#ffa31e",
+        "portal-field": "#edf5fe",
+        "portal-field-border": "#d6e1f2",
+        "portal-card": "#fef8f1",
+        "portal-card-border": "#fdeccb",
       },
       borderRadius: {
         "DEFAULT": "0.125rem",
@@ -99,6 +108,7 @@ export default {
         "space-12": "48px",
       },
       fontFamily: {
+        "portal": ["Plus Jakarta Sans", "Inter", "system-ui", "sans-serif"],
         "headline-lg": ["League Spartan", "sans-serif"],
         "headline-md": ["League Spartan", "sans-serif"],
         "headline-sm": ["League Spartan", "sans-serif"],

@@ -55,7 +55,7 @@ describe('Routing - unauthenticated', () => {
   });
 
   it('shows a loading screen while a saved session is being restored', async () => {
-    localStorage.setItem('fieldtrack_refresh_token', 'test-refresh-token');
+    localStorage.setItem('fieldtrack_session_hint', '1');
     let resolveAuthMe!: (value: Response) => void;
     const pendingAuthMe = new Promise<Response>((resolve) => {
       resolveAuthMe = resolve;
@@ -169,8 +169,8 @@ describe('Routing - employee (RBAC guards)', () => {
     expect(screen.getByText('Visits')).toBeInTheDocument();
   });
 
-  it.each(['/customers', '/employees', '/territories', '/settings', '/forms'])(
-    'redirects away from admin-only route %s',
+  it.each(['/customers', '/employees', '/territories', '/settings', '/forms', '/payments', '/reports'])(
+    'shows a not-authorized page for admin-only route %s',
     async (route) => {
       mockApi({
         ...baseRoutes(EMPLOYEE_USER),
@@ -180,8 +180,7 @@ describe('Routing - employee (RBAC guards)', () => {
 
       renderApp(route);
 
-      // Lands on the dashboard rather than the admin page.
-      await waitFor(() => expect(screen.getByText('My Day')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('Not authorized')).toBeInTheDocument());
       expect(screen.queryByText('Customer Accounts Directory')).not.toBeInTheDocument();
       expect(screen.queryByText('Field Representatives & Staff')).not.toBeInTheDocument();
     },

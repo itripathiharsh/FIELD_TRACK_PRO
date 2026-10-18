@@ -111,6 +111,41 @@ describe('DashboardPage - admin', () => {
   });
 });
 
+describe('DashboardPage - Tally collection split', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    signIn(ADMIN_USER);
+  });
+
+  it('shows Posted in Tally vs Verified, awaiting Tally and an alert chip linking to stuck payments', async () => {
+    const kpis = {
+      total_outlets: 1, total_sales: '1000', total_collection: '700',
+      total_collection_posted_in_tally: '500', total_collection_verified_awaiting_tally: '200',
+      total_market_outstanding: '300', total_overdue_gt_90: '0', total_employees: 1, total_visits: 1,
+      completed_visits: 1, pending_visits: 0, flagged_visits: 0, gps_verified_visits: 1, total_exceptions: 0,
+      pending_exceptions: 0, total_collections_count: 2, total_orders_count: 0,
+    };
+    mockApi({
+      ...baseRoutes(ADMIN_USER),
+      '/api/v1/visits': [VISIT],
+      '/api/v1/customers': [CUSTOMER],
+      '/api/v1/employees': [EMPLOYEE],
+      '/api/v1/dashboard/summary': {
+        period: 'LIVE', is_historical: false, kpis, brand_breakdown: [], fos_breakdown: [],
+        zone_breakdown: [], area_breakdown: [], ageing_distribution: {}, recent_exceptions: [],
+      },
+    });
+
+    renderWithProviders(<DashboardPage />);
+    const split = await screen.findByTestId('collection-tally-split');
+    expect(split).toHaveTextContent('Posted in Tally');
+    expect(split).toHaveTextContent('₹500');
+    expect(split).toHaveTextContent('Verified, awaiting Tally');
+    expect(split).toHaveTextContent('₹200');
+    expect(screen.getByRole('button', { name: /awaiting tally - review stuck posts/i })).toBeInTheDocument();
+  });
+});
+
 describe('DashboardPage - employee', () => {
   beforeEach(() => {
     localStorage.clear();

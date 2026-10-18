@@ -31,8 +31,10 @@ import { Textarea } from '../components/ui/Textarea';
 import { BrandSelect } from '../components/ui/BrandSelect';
 import { AccountSummaryCard } from '../components/ui/AccountSummaryCard';
 import { AddBrandModal } from '../components/ui/AddBrandModal';
+import { CustomerOutletProofSection } from '../components/outlet-proofs/CustomerOutletProofSection';
 
 import { apiClient, CustomerHistoryRow } from '../api/client';
+import { formatMoney } from '../utils/money';
 import { AccountSummary, Brand, Customer, CustomerRequirement, LocationProposal, VisitOrderPhotoRead, Territory } from '../types';
 
 /**
@@ -106,7 +108,7 @@ export const CustomerDetailPage: React.FC = () => {
       setRequirements(Array.isArray(reqs) ? reqs : []);
       setProposals(Array.isArray(propsList) ? propsList : []);
       const brandNames = Array.isArray(brandsList)
-        ? brandsList.map((b: any) => (typeof b === 'string' ? b : b.name))
+        ? (brandsList as Array<string | { name: string }>).map((b) => (typeof b === 'string' ? b : b.name))
         : [];
       setMasterBrands(brandNames);
     } catch (err) {
@@ -410,6 +412,8 @@ export const CustomerDetailPage: React.FC = () => {
         </div>
       </Card>
 
+      <CustomerOutletProofSection customer={customer} />
+
       {/* Location Proposals & Verification Card */}
       <Card>
         <CardHeader>
@@ -582,7 +586,7 @@ export const CustomerDetailPage: React.FC = () => {
                     <td className="px-4 py-3 font-mono">
                       <div>{req.quantity != null ? `${req.quantity} units` : '—'}</div>
                       <div className="font-semibold text-primary">
-                        {req.expected_value != null ? `₹${Number(req.expected_value).toLocaleString('en-IN')}` : '—'}
+                        {req.expected_value != null ? formatMoney(req.expected_value) : '—'}
                       </div>
                     </td>
                     <td className="px-4 py-3 font-mono">
@@ -590,7 +594,7 @@ export const CustomerDetailPage: React.FC = () => {
                         <div>
                           <div className="font-bold text-secondary-container">{req.approved_quantity != null ? `${req.approved_quantity} units` : '—'}</div>
                           <div className="text-secondary-container font-semibold">
-                            {req.approved_value != null ? `₹${Number(req.approved_value).toLocaleString('en-IN')}` : '—'}
+                            {req.approved_value != null ? formatMoney(req.approved_value) : '—'}
                           </div>
                         </div>
                       ) : req.status === 'APPROVED' ? (
@@ -598,9 +602,9 @@ export const CustomerDetailPage: React.FC = () => {
                           <div className="font-bold text-emerald-700">{req.approved_quantity != null ? `${req.approved_quantity} units` : `${req.quantity} units`}</div>
                           <div className="text-emerald-700 font-semibold">
                             {req.approved_value != null
-                              ? `₹${Number(req.approved_value).toLocaleString('en-IN')}`
+                              ? formatMoney(req.approved_value)
                               : req.expected_value != null
-                              ? `₹${Number(req.expected_value).toLocaleString('en-IN')}`
+                              ? formatMoney(req.expected_value)
                               : '—'}
                           </div>
                         </div>
@@ -824,7 +828,7 @@ export const CustomerDetailPage: React.FC = () => {
                 placeholder="e.g. 150000"
                 helperText={
                   reqForm.expected_value && !isNaN(Number(reqForm.expected_value))
-                    ? `Value: ₹${Number(reqForm.expected_value).toLocaleString('en-IN')}`
+                    ? `Value: ${formatMoney(reqForm.expected_value)}`
                     : undefined
                 }
               />

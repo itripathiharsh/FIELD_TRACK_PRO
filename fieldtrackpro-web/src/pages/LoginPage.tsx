@@ -1,30 +1,35 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
-  ShieldCheck,
   ArrowRight,
   Lock,
   Mail,
   Smartphone,
-  ShieldAlert,
   KeyRound,
   CheckCircle2,
-  Eye,
-  EyeOff,
   RefreshCw,
   ArrowLeft,
   Check,
   X,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { isAdmin as isAdminRole } from '../utils/roles';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { apiClient } from '../api/client';
+import { LoginBrandPanel } from '../components/auth/LoginBrandPanel';
+import { ApkDownloadCard } from '../components/auth/ApkDownloadCard';
 
 type RecoveryStep = 'login' | 'request_otp' | 'verify_otp' | 'set_password' | 'success';
 
+const isPhoneLike = (v: string) => v.trim() !== '' && /^[\d+\s-]+$/.test(v.trim());
+
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const navReason = (location.state as { reason?: string } | null)?.reason;
+  const sessionExpiredNotice = navReason === 'session_expired';
+  const passwordChangedNotice = navReason === 'password_changed';
   const { login } = useAuth();
 
   const [step, setStep] = useState<RecoveryStep>('login');
@@ -32,7 +37,6 @@ export const LoginPage: React.FC = () => {
   // Input states
   const [identity, setIdentity] = useState('');
   const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
 
   const [otp, setOtp] = useState('');
   const [maskedDestination, setMaskedDestination] = useState<string | null>(null);
@@ -40,8 +44,6 @@ export const LoginPage: React.FC = () => {
 
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [showNewPassword, setShowNewPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   // Status & Feedback
   const [error, setError] = useState<string | null>(null);
@@ -67,13 +69,14 @@ export const LoginPage: React.FC = () => {
     setIsSubmitting(true);
     try {
       const user = await login(identity.trim(), password);
-      navigate(user.role === 'ADMIN' ? '/' : '/visits', { replace: true });
-    } catch (err: any) {
+      navigate(isAdminRole(user) ? '/' : '/visits', { replace: true });
+    } catch (err: unknown) {
+      const lowered = (err instanceof Error ? err.message : '').toLowerCase();
       if (
-        err?.code === 'AUTH_ACCOUNT_DISABLED' ||
-        err?.message?.toLowerCase().includes('account is disabled') ||
-        err?.message?.toLowerCase().includes('account disabled') ||
-        err?.message?.toLowerCase().includes('deactivated')
+        (typeof err === 'object' && err !== null && (err as { code?: unknown }).code === 'AUTH_ACCOUNT_DISABLED') ||
+        lowered.includes('account is disabled') ||
+        lowered.includes('account disabled') ||
+        lowered.includes('deactivated')
       ) {
         setError('Your account has been deactivated. Please contact your administrator.');
       } else {
@@ -105,7 +108,7 @@ export const LoginPage: React.FC = () => {
       setStep('verify_otp');
       setResendCooldown(60);
       setOtp('');
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError(
         err instanceof Error
           ? err.message
@@ -129,7 +132,7 @@ export const LoginPage: React.FC = () => {
     try {
       await apiClient.verifyOtp(identity.trim(), cleanOtp);
       setStep('set_password');
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError(
         err instanceof Error
           ? err.message
@@ -150,7 +153,7 @@ export const LoginPage: React.FC = () => {
       setMaskedDestination(resp.destination || identity.trim());
       setResendCooldown(60);
       setSuccessMsg('A new verification code has been dispatched.');
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError(
         err instanceof Error
           ? err.message
@@ -181,7 +184,7 @@ export const LoginPage: React.FC = () => {
       setOtp('');
       setNewPassword('');
       setConfirmPassword('');
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError(
         err instanceof Error
           ? err.message
@@ -206,58 +209,40 @@ export const LoginPage: React.FC = () => {
   const isPasswordValid = newPassword.length >= 8;
   const doPasswordsMatch = newPassword.length > 0 && newPassword === confirmPassword;
 
+  const isLogin = step === 'login';
+
   return (
-    <div className="min-h-screen bg-surface-container-highest flex items-center justify-center p-space-4 md:p-space-8 font-body-md text-on-surface select-none">
-      <div className="max-w-4xl w-full bg-surface-container-lowest border border-outline-variant rounded-2xl shadow-xl overflow-hidden grid grid-cols-1 md:grid-cols-2 animate-in fade-in-0 zoom-in-95 duration-300">
-        
-        {/* Left Hero Panel (Corporate Navy Identity) */}
-        <div className="bg-primary p-space-8 md:p-space-12 text-on-primary flex flex-col justify-between relative overflow-hidden">
-          <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#ffffff_1px,transparent_1px)] [background-size:16px_16px] pointer-events-none" />
+    <div className="relative min-h-screen lg:flex font-portal text-on-surface bg-white">
+      <LoginBrandPanel />
 
-          <div>
-            <div className="flex items-center gap-space-3 mb-space-8">
-              <div className="w-10 h-10 bg-secondary-container rounded-xl flex items-center justify-center text-primary shadow-sm shrink-0">
-                <ShieldCheck className="w-6 h-6 text-primary" />
-              </div>
-              <span className="font-headline-lg text-xl font-bold tracking-tight text-on-primary">
-                FieldTrack Pro
-              </span>
-            </div>
+      {/* Right panel (white) with the curved diagonal edge on desktop */}
+      <main className="relative lg:ml-auto lg:w-[40.8%] bg-white flex flex-col justify-center max-lg:-mt-5 max-lg:rounded-t-3xl px-6 py-8 md:px-14 lg:pt-[3.9vw] lg:pb-10 lg:pl-[1.7vw] lg:pr-[3.2vw] lg:min-h-screen">
+        <svg
+          className="hidden lg:block absolute top-0 right-[calc(100%-1px)] h-full w-[calc(3.77vw+1px)] pointer-events-none"
+          viewBox="0 0 63 941"
+          preserveAspectRatio="none"
+          aria-hidden="true"
+        >
+          <path d="M63 0 L50 0 C20 120 0 300 0 440 C0 600 25 800 63 941 Z" fill="#ffffff" />
+        </svg>
 
-            <h2 className="font-headline-lg text-2xl font-bold mb-space-3 leading-tight">
-              Precision Field Intelligence
-            </h2>
-            <p className="font-body-lg text-sm text-inverse-primary/90 leading-relaxed">
-              Enterprise geolocation verification, real-time telemetry, and field force command
-              center.
-            </p>
-          </div>
-
-          <div className="mt-space-8 pt-space-6 border-t border-primary-container/80 transition-all duration-200">
-            <div className="flex items-center gap-space-2 text-secondary-container font-label-md text-xs font-bold uppercase tracking-wider">
-              <ShieldAlert className="w-4 h-4 shrink-0 text-secondary-container" />
-              <span>Secure Authentication</span>
-            </div>
-            <p className="text-xs text-inverse-primary/80 font-caption mt-space-1.5 leading-relaxed">
-              Protected by multi-tier rate limiting, token rotation, and single-use security codes.
-            </p>
-          </div>
-        </div>
-
-        {/* Right Interactive Form Panel */}
-        <div className="p-space-8 md:p-space-10 flex flex-col justify-center bg-surface-container-lowest">
-          
+        <div className="w-full max-w-[600px] mx-auto lg:mx-0">
           {/* Header Texts */}
-          <div className="mb-space-6">
-            <h1 className="font-headline-md text-2xl font-bold text-primary mb-space-1">
+          <div className="mb-space-6 lg:mb-[41px]">
+            {isLogin && (
+              <p className="font-portal text-[13px] lg:text-[15px] tracking-[0.2em] text-[#5b6577] uppercase mb-2">
+                Welcome to
+              </p>
+            )}
+            <h1 className="font-portal text-[34px] lg:text-[clamp(34px,2.55vw,50px)] leading-[1.1] font-extrabold text-primary tracking-[-0.01em] mb-space-2">
               {step === 'login' && 'Command Portal'}
               {step === 'request_otp' && 'Reset Password'}
               {step === 'verify_otp' && 'Verify Code'}
               {step === 'set_password' && 'New Password'}
               {step === 'success' && 'Password Updated'}
             </h1>
-            <p className="font-caption text-xs text-on-surface-variant">
-              {step === 'login' && 'Sign in using your registered email address or mobile number.'}
+            <p className="font-portal text-[15px] lg:text-[clamp(15px,1.14vw,22px)] text-[#5b6577]">
+              {step === 'login' && 'Sign in to manage your operations, teams and field data.'}
               {step === 'request_otp' && 'Enter your email or mobile number to receive a 6-digit OTP.'}
               {step === 'verify_otp' && 'Enter the 6-digit security code dispatched to your device.'}
               {step === 'set_password' && 'Create a new secure password for your account.'}
@@ -275,6 +260,24 @@ export const LoginPage: React.FC = () => {
             </div>
           )}
 
+          {sessionExpiredNotice && !error && step === 'login' && (
+            <div
+              role="status"
+              className="mb-space-4 p-space-3 bg-secondary-fixed border border-secondary-fixed-dim text-on-secondary-fixed rounded-xl font-body-md text-xs"
+            >
+              Your session has expired. Please sign in again.
+            </div>
+          )}
+
+          {passwordChangedNotice && !error && step === 'login' && (
+            <div
+              role="status"
+              className="mb-space-4 p-space-3 bg-secondary-fixed border border-secondary-fixed-dim text-on-secondary-fixed rounded-xl font-body-md text-xs"
+            >
+              Your password was changed. Please sign in with your new password.
+            </div>
+          )}
+
           {successMsg && (
             <div
               role="status"
@@ -289,23 +292,25 @@ export const LoginPage: React.FC = () => {
           {/* 1. LOGIN MODE */}
           {/* ================================================================= */}
           {step === 'login' && (
-            <form onSubmit={handleLoginSubmit} className="space-y-space-4">
+            <>
+            <form onSubmit={handleLoginSubmit} className="space-y-6">
               <Input
+                variant="portal"
                 label="WORK EMAIL OR MOBILE"
                 type="text"
                 required
                 autoComplete="username"
-                icon={identity.includes('@') ? Mail : Smartphone}
+                icon={isPhoneLike(identity) ? Smartphone : Mail}
                 value={identity}
                 onChange={(e) => setIdentity(e.target.value)}
-                placeholder="name@company.com or 9876543210"
+                placeholder="Enter your work email or mobile number"
               />
 
               <div>
-                <div className="flex items-center justify-between mb-space-1">
+                <div className="flex items-center justify-between mb-space-1.5">
                   <label
                     htmlFor="login-password"
-                    className="font-label-md text-xs text-on-surface uppercase tracking-wider block font-semibold"
+                    className="font-portal text-[13px] lg:text-[15px] text-primary uppercase tracking-[0.04em] block font-bold"
                   >
                     PASSWORD
                   </label>
@@ -316,44 +321,46 @@ export const LoginPage: React.FC = () => {
                       setError(null);
                       setSuccessMsg(null);
                     }}
-                    className="text-primary hover:text-primary/80 font-body-sm text-xs focus:outline-none focus:underline font-medium"
+                    className="font-portal text-[14px] lg:text-[16px] text-[#1a5fd0] underline underline-offset-2 hover:text-[#144aa3] focus:outline-none focus:ring-2 focus:ring-[#1a5fd0]/40 rounded font-medium"
                   >
                     Forgot Password?
                   </button>
                 </div>
-                <div className="relative">
-                  <Input
-                    id="login-password"
-                    type={showPassword ? 'text' : 'password'}
-                    required
-                    autoComplete="current-password"
-                    icon={Lock}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Enter password"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface p-1"
-                    title={showPassword ? 'Hide password' : 'Show password'}
-                  >
-                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
+                <Input
+                  variant="portal"
+                  id="login-password"
+                  type="password"
+                  required
+                  autoComplete="current-password"
+                  icon={Lock}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Enter your password"
+                />
               </div>
 
               <Button
                 type="submit"
                 variant="secondary"
                 size="lg"
-                className="w-full mt-space-2"
+                className="w-full !h-[56px] lg:!h-[64px] !rounded-md !bg-portal-orange hover:!bg-[#ff9a0a] !font-portal !text-[16px] lg:!text-[18px] !font-bold tracking-[0.02em] shadow-[0_6px_16px_rgba(255,163,30,0.3)] !mt-[26px]"
                 isLoading={isSubmitting}
               >
-                <span>{isSubmitting ? 'Authenticating...' : 'Sign In To Command Center'}</span>
-                <ArrowRight className="w-4 h-4 ml-1" />
+                <span className="inline-flex items-center gap-3 whitespace-nowrap">
+                  {isSubmitting ? 'Authenticating...' : 'Sign In To Command Center'}
+                  {!isSubmitting && <ArrowRight className="w-5 h-5" aria-hidden="true" />}
+                </span>
               </Button>
             </form>
+
+            <div className="flex items-center gap-4 mt-7 mb-6 lg:mt-9 lg:mb-[26px] lg:-mx-2.5" role="separator" aria-label="or">
+              <span className="h-px flex-1 bg-[#e4eaf1]" />
+              <span className="font-portal text-[13px] font-semibold tracking-wider text-[#5b6577]">OR</span>
+              <span className="h-px flex-1 bg-[#e4eaf1]" />
+            </div>
+
+            <ApkDownloadCard className="lg:-mx-2.5 lg:w-auto" />
+            </>
           )}
 
           {/* ================================================================= */}
@@ -362,11 +369,12 @@ export const LoginPage: React.FC = () => {
           {step === 'request_otp' && (
             <form onSubmit={handleRequestOtp} className="space-y-space-4">
               <Input
+                variant="portal"
                 label="WORK EMAIL OR MOBILE"
                 type="text"
                 required
                 autoComplete="username"
-                icon={identity.includes('@') ? Mail : Smartphone}
+                icon={isPhoneLike(identity) ? Smartphone : Mail}
                 value={identity}
                 onChange={(e) => setIdentity(e.target.value)}
                 placeholder="name@company.com or 9876543210"
@@ -425,6 +433,7 @@ export const LoginPage: React.FC = () => {
 
               <div>
                 <Input
+                  variant="portal"
                   label="6-DIGIT VERIFICATION CODE"
                   type="text"
                   required
@@ -489,8 +498,9 @@ export const LoginPage: React.FC = () => {
             <form onSubmit={handleResetPassword} className="space-y-space-4">
               <div className="relative">
                 <Input
+                  variant="portal"
                   label="NEW PASSWORD"
-                  type={showNewPassword ? 'text' : 'password'}
+                  type="password"
                   required
                   icon={Lock}
                   value={newPassword}
@@ -498,32 +508,19 @@ export const LoginPage: React.FC = () => {
                   placeholder="At least 8 characters"
                   minLength={8}
                 />
-                <button
-                  type="button"
-                  onClick={() => setShowNewPassword(!showNewPassword)}
-                  className="absolute right-3 top-9 text-on-surface-variant hover:text-on-surface p-1"
-                >
-                  {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
               </div>
 
               <div className="relative">
                 <Input
+                  variant="portal"
                   label="CONFIRM NEW PASSWORD"
-                  type={showConfirmPassword ? 'text' : 'password'}
+                  type="password"
                   required
                   icon={Lock}
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="Re-type new password"
                 />
-                <button
-                  type="button"
-                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                  className="absolute right-3 top-9 text-on-surface-variant hover:text-on-surface p-1"
-                >
-                  {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
               </div>
 
               {/* Password Requirement Indicators */}
@@ -598,16 +595,17 @@ export const LoginPage: React.FC = () => {
                 variant="secondary"
                 size="lg"
                 onClick={resetToLogin}
-                className="w-full"
+                icon={ArrowRight}
+                iconPosition="right"
+                className="w-full whitespace-nowrap"
               >
-                <span>Back to Sign In</span>
-                <ArrowRight className="w-4 h-4 ml-1" />
+                Back to Sign In
               </Button>
             </div>
           )}
 
         </div>
-      </div>
+      </main>
     </div>
   );
 };

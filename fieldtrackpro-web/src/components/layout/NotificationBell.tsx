@@ -9,6 +9,7 @@ import {
   Clock,
   Info,
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../../api/client';
 import { NotificationItem, NotificationType } from '../../types';
 
@@ -18,6 +19,7 @@ export const NotificationBell: React.FC = () => {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
 
   const fetchUnreadCount = async () => {
     try {
@@ -77,6 +79,22 @@ export const NotificationBell: React.FC = () => {
     } catch {
       // Silent error handling
     }
+  };
+
+  // Admin-facing ad-hoc alerts carry a visit_id (no payment_id) and open the review page.
+  const isAdhocAlert = (n: NotificationItem) =>
+    !n.payment_id && !!n.visit_id && /ad-?hoc/i.test(n.title ?? '');
+  const isActionable = (n: NotificationItem) => !!n.payment_id || isAdhocAlert(n);
+
+  const handleOpenNotification = (n: NotificationItem) => {
+    if (!isActionable(n)) return;
+    if (!n.is_read) {
+      void apiClient.markNotificationRead(n.id).catch(() => undefined);
+      setNotifications((prev) => prev.map((x) => (x.id === n.id ? { ...x, is_read: true } : x)));
+      setUnreadCount((prev) => Math.max(0, prev - 1));
+    }
+    setIsOpen(false);
+    navigate(n.payment_id ? '/payments' : '/visits/adhoc-review');
   };
 
   const handleMarkAllAsRead = async () => {
@@ -170,7 +188,10 @@ export const NotificationBell: React.FC = () => {
               notifications.map((n) => (
                 <div
                   key={n.id}
+                  onClick={isActionable(n) ? () => handleOpenNotification(n) : undefined}
                   className={`p-3.5 px-4 flex items-start gap-3 transition-colors ${
+                    isActionable(n) ? 'cursor-pointer' : ''
+                  } ${
                     !n.is_read
                       ? 'bg-amber-500/5 hover:bg-amber-500/10'
                       : 'hover:bg-surface-container'

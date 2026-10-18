@@ -9,6 +9,12 @@ import { ErrorBanner } from './ErrorBanner';
 import { AddBrandModal } from './AddBrandModal';
 import { apiClient } from '../../api/client';
 import { PaymentMethod, Invoice, BrandSummary, Brand } from '../../types';
+import {
+  clampAmountInput,
+  formatMoney as formatCurrency,
+  paiseToAmountString,
+  parseAmountToPaise,
+} from '../../utils/money';
 
 interface CollectPaymentModalProps {
   isOpen: boolean;
@@ -25,14 +31,6 @@ function todayIso(): string {
   return new Date().toISOString().split('T')[0];
 }
 
-const formatCurrency = (value: string | number): string => {
-  const num = typeof value === 'string' ? parseFloat(value) || 0 : value;
-  return new Intl.NumberFormat('en-IN', {
-    style: 'currency',
-    currency: 'INR',
-    maximumFractionDigits: 2,
-  }).format(num);
-};
 
 /**
  * Employee-side payment collection with strict Brand-Wise Allocation support.
@@ -83,7 +81,10 @@ export const CollectPaymentModal: React.FC<CollectPaymentModalProps> = ({
 
   const activeOutstandingInvoices = useMemo(() => {
     if (outstandingInvoices.length > 0) return outstandingInvoices;
-    return invoices.filter((i) => parseFloat(i.remaining_amount) > 0);
+    return invoices.filter((i) => {
+      const r = parseAmountToPaise(i.remaining_amount);
+      return r.ok ? r.paise > 0 : Number(i.remaining_amount) > 0;
+    });
   }, [invoices, outstandingInvoices]);
 
   // Extract distinct brand list from summaries, invoices, or master brands
@@ -131,15 +132,33 @@ export const CollectPaymentModal: React.FC<CollectPaymentModalProps> = ({
     return list;
   }, [availableBrands, extraBrands]);
 
-  // Compute total amount strictly from brand breakdown
-  const computedTotal = useMemo(() => {
-    let sum = 0;
+  // Total is computed strictly from the brand breakdown in integer paise, so
+  // 0.1 + 0.2 is exactly 0.30 and the allocation sum always equals the total.
+  const allocationState = useMemo(() => {
+    const entries: { brand: string; paise: number }[] = [];
+    let totalPaise = 0;
+    let invalidBrand: string | null = null;
+    let invalidReason: 'invalid' | 'too_many_decimals' | 'too_large' | null = null;
     for (const b of allBrands) {
-      const val = parseFloat(brandAmounts[b.brand] || '0');
-      if (!isNaN(val) && val > 0) sum += val;
+      const raw = brandAmounts[b.brand] ?? '';
+      if (raw.trim() === '') continue;
+      const parsed = parseAmountToPaise(raw);
+      if (!parsed.ok) {
+        if (invalidBrand === null && parsed.reason !== 'empty') {
+          invalidBrand = b.brand;
+          invalidReason = parsed.reason;
+        }
+        continue;
+      }
+      if (parsed.paise > 0) {
+        entries.push({ brand: b.brand, paise: parsed.paise });
+        totalPaise += parsed.paise;
+      }
     }
-    return sum;
+    return { entries, totalPaise, invalidBrand, invalidReason };
   }, [allBrands, brandAmounts]);
+  const computedTotal = allocationState.totalPaise;
+  const computedTotalString = paiseToAmountString(computedTotal);
 
   const handleClose = () => {
     setBrandAmounts({});
@@ -158,13 +177,22 @@ export const CollectPaymentModal: React.FC<CollectPaymentModalProps> = ({
   const handleBrandAmountChange = (brand: string, value: string) => {
     setBrandAmounts((prev) => ({
       ...prev,
-      [brand]: value,
+      [brand]: clampAmountInput(value),
     }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    if (allocationState.invalidBrand) {
+      setError(
+        allocationState.invalidReason === 'too_many_decimals'
+          ? `Amount for ${allocationState.invalidBrand} can have at most 2 decimal places.`
+          : `Enter a valid amount for ${allocationState.invalidBrand}.`,
+      );
+      return;
+    }
 
     if (computedTotal <= 0) {
       setError('Please allocate payment against at least one brand.');
@@ -183,12 +211,10 @@ export const CollectPaymentModal: React.FC<CollectPaymentModalProps> = ({
 
     setIsSubmitting(true);
     try {
-      const allocations = allBrands
-        .map((b) => {
-          const amt = parseFloat(brandAmounts[b.brand] || '0');
-          return amt > 0 ? { brand: b.brand, amount: amt } : null;
-        })
-        .filter((a): a is { brand: string; amount: number } => a !== null);
+      const allocations = allocationState.entries.map((e) => ({
+        brand: e.brand,
+        amount: paiseToAmountString(e.paise),
+      }));
 
       if (allocations.length === 0) {
         setError('Please allocate an amount for at least one brand.');
@@ -198,7 +224,7 @@ export const CollectPaymentModal: React.FC<CollectPaymentModalProps> = ({
 
       const payment = await apiClient.createPayment({
         visit_id: visitId,
-        amount: computedTotal,
+        amount: computedTotalString,
         payment_method: method,
         payment_date: paymentDate,
         cheque_number: method === 'CHEQUE' ? chequeNumber : undefined,
@@ -288,10 +314,9 @@ export const CollectPaymentModal: React.FC<CollectPaymentModalProps> = ({
                 </div>
                 <div>
                   <Input
-                    type="number"
+                    type="text"
+                    inputMode="decimal"
                     placeholder="₹ 0.00"
-                    min="0"
-                    step="0.01"
                     value={brandAmounts[b.brand] || ''}
                     onChange={(e) => handleBrandAmountChange(b.brand, e.target.value)}
                   />
@@ -332,7 +357,7 @@ export const CollectPaymentModal: React.FC<CollectPaymentModalProps> = ({
           <div className="flex items-center justify-between pt-space-3 border-t border-outline-variant">
             <span className="font-bold text-sm text-on-surface">Total Payment Amount:</span>
             <span className="font-mono font-bold text-lg text-primary">
-              {formatCurrency(computedTotal)}
+              {formatCurrency(computedTotalString)}
             </span>
           </div>
         </div>
@@ -406,7 +431,7 @@ export const CollectPaymentModal: React.FC<CollectPaymentModalProps> = ({
             Cancel
           </Button>
           <Button type="submit" variant="primary" isLoading={isSubmitting} disabled={computedTotal <= 0}>
-            Submit Payment ({formatCurrency(computedTotal)})
+            Submit Payment ({formatCurrency(computedTotalString)})
           </Button>
         </div>
       </form>

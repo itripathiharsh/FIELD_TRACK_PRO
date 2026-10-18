@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "apk-meta": "node scripts/generate-apk-meta.mjs",
+    "prebuild": "npm run apk-meta",
     "build": "tsc && vite build",
     "lint": "eslint . --ext .ts,.tsx --max-warnings 0",
     "test": "vitest run",

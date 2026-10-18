@@ -45,13 +45,13 @@ describe('AccountSummaryCard', () => {
   it('shows the Total Billed tile using total_invoiced', () => {
     render(<MemoryRouter><AccountSummaryCard account={BASE_ACCOUNT} /></MemoryRouter>);
     expect(screen.getByText('Total Billed')).toBeInTheDocument();
-    expect(screen.getByText('₹10,000')).toBeInTheDocument();
+    expect(screen.getByText('₹10,000.00')).toBeInTheDocument();
   });
 
   it('shows Last Payment and Last Visit summary lines', () => {
     render(<MemoryRouter><AccountSummaryCard account={BASE_ACCOUNT} /></MemoryRouter>);
     expect(screen.getByText('Last Payment')).toBeInTheDocument();
-    expect(screen.getByText(/₹4,000.*2026-08-01/)).toBeInTheDocument();
+    expect(screen.getByText(/₹4,000.00.*2026-08-01/)).toBeInTheDocument();
     expect(screen.getByText('Last Visit')).toBeInTheDocument();
     expect(screen.getByText(/Sandeep/)).toBeInTheDocument();
   });
@@ -80,7 +80,7 @@ describe('AccountSummaryCard', () => {
     fireEvent.click(proofButton);
 
     await waitFor(() => expect(apiClient.getPaymentProofObjectUrl).toHaveBeenCalledWith('proof-1'));
-    expect(windowOpenSpy).toHaveBeenCalledWith('blob:proof-url', '_blank');
+    expect(windowOpenSpy).toHaveBeenCalledWith('blob:proof-url', '_blank', 'noopener,noreferrer');
     windowOpenSpy.mockRestore();
   });
 
@@ -88,5 +88,66 @@ describe('AccountSummaryCard', () => {
     const account: AccountSummary = { ...BASE_ACCOUNT, recent_payments: [BASE_ACCOUNT.most_recent_payment!] };
     render(<MemoryRouter><AccountSummaryCard account={account} /></MemoryRouter>);
     expect(screen.queryByRole('button', { name: /proof/i })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    [20, 'text-primary'],
+    [21, 'text-amber-600'],
+    [25, 'text-amber-600'],
+    [26, 'text-rose-600'],
+  ])('colours Days Due for %i days with %s', (days, cls) => {
+    render(<MemoryRouter><AccountSummaryCard account={{ ...BASE_ACCOUNT, max_days_outstanding: days }} /></MemoryRouter>);
+    expect(screen.getByTestId('days-due')).toHaveClass(cls);
+  });
+
+  it('shows Verified, awaiting Tally next to Paid when > 0, using backend values as-is', () => {
+    const account: AccountSummary = {
+      ...BASE_ACCOUNT,
+      verified_awaiting_tally_amount: '2500.00',
+      brand_summary: [{
+        brand: 'USHA', total_invoiced: '10000.00', total_paid: '4000.00', verified_awaiting_tally_amount: '2500.00',
+        total_outstanding: '6000.00', overdue_amount: '0.00', invoice_count: 1, payment_count: 2,
+        latest_invoice_date: null, latest_payment_date: null,
+      }],
+    };
+    render(<MemoryRouter><AccountSummaryCard account={account} /></MemoryRouter>);
+    expect(screen.getAllByText('Paid (in Tally)').length).toBeGreaterThan(0);
+    const chips = screen.getAllByTestId('awaiting-tally-amount');
+    expect(chips.length).toBeGreaterThanOrEqual(1);
+    expect(chips[0]).toHaveTextContent('Verified, awaiting Tally: ₹2,500');
+    expect(chips[0]).toHaveAttribute('title', 'Verified by admin, will reduce outstanding once posted to Tally');
+    // Outstanding is the backend's number, not total_invoiced - total_paid - awaiting.
+    expect(screen.getAllByText('₹6,000.00').length).toBeGreaterThan(0);
+  });
+
+  it('hides the awaiting-Tally amount when it is zero or absent', () => {
+    render(
+      <MemoryRouter>
+        <AccountSummaryCard account={{ ...BASE_ACCOUNT, verified_awaiting_tally_amount: '0.00' }} />
+      </MemoryRouter>,
+    );
+    expect(screen.queryByTestId('awaiting-tally-amount')).not.toBeInTheDocument();
+  });
+
+  it('shows the reconciliation equation and ageing table when the backend sends position fields', () => {
+    const account: AccountSummary = {
+      ...BASE_ACCOUNT,
+      total_outstanding: '11000.00',
+      opening_balance: '5000.00',
+      paid_in_tally: '4000.00',
+      reconciles: true,
+      ageing: { normal: '11000.00', warning: '0.00', overdue: '0.00', baseline_current: '0.00', baseline_overdue: '0.00' },
+      brand_summary: [{
+        brand: 'Aquafina', total_invoiced: '10000.00', total_paid: '0.00', total_outstanding: '11000.00',
+        overdue_amount: '0.00', invoice_count: 1, payment_count: 0, latest_invoice_date: null, latest_payment_date: null,
+        opening_balance: '5000.00', paid_in_tally: '4000.00', reconciles: false,
+      }],
+    };
+    render(<MemoryRouter><AccountSummaryCard account={account} /></MemoryRouter>);
+    expect(screen.getByTestId('pos-opening')).toHaveTextContent('₹5,000.00');
+    expect(screen.getByTestId('pos-outstanding')).toHaveTextContent('₹11,000.00');
+    expect(screen.getByTestId('ageing-total')).toBeInTheDocument();
+    expect(screen.getByTestId('brand-opening-Aquafina')).toHaveTextContent('₹5,000');
+    expect(screen.getByTestId('reconcile-warning')).toBeInTheDocument();
   });
 });

@@ -26,7 +26,7 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { ErrorBanner } from '../components/ui/ErrorBanner';
 import { FieldTrackMap, MapMarker, TerritoryCircle, CurrentUserLocation } from '../components/maps/FieldTrackMap';
 import { apiClient } from '../api/client';
-import { Customer, Territory, Area, Employee } from '../types';
+import { Customer, CustomerMapLocation, LocationStatus, Territory, Area, Employee } from '../types';
 
 const MARKER_COLOR = '#ffa515';
 
@@ -128,33 +128,35 @@ export const MapPage: React.FC = () => {
     try {
       setIsLoading(true);
       setError(null);
-      let mapPins: any[] = await apiClient.getCustomerMapLocations().catch(() => []);
+      let mapPins: Array<Customer | CustomerMapLocation> = await apiClient.getCustomerMapLocations().catch(() => [] as CustomerMapLocation[]);
       if (!mapPins || mapPins.length === 0) {
-        mapPins = await apiClient.getCustomers({ limit: 500 }).catch(() => []);
+        mapPins = await apiClient.getCustomers({ limit: 500 }).catch(() => [] as Customer[]);
       }
       const [terrData, areaData, empData] = await Promise.all([
         apiClient.getTerritories().catch(() => [] as Territory[]),
         apiClient.getAreas().catch(() => [] as Area[]),
         apiClient.getEmployees().catch(() => [] as Employee[]),
       ]);
-      const mappedCustomers: Customer[] = (Array.isArray(mapPins) ? mapPins : []).map((item: any) => {
-        if (item && item.location !== undefined) {
-          return item as Customer;
+      const mappedCustomers: Customer[] = (Array.isArray(mapPins) ? mapPins : []).map((item): Customer => {
+        if ('location' in item && item.location !== undefined) {
+          return item;
         }
+        // Slim map-pin row (CustomerMapLocation): flat latitude/longitude.
+        const pin = item as CustomerMapLocation;
         return {
-          id: item.id,
-          name: item.name,
-          contact_number: item.contact_number || '',
-          contact_person: item.contact_person || null,
-          address: item.address || '',
-          location: { latitude: item.latitude, longitude: item.longitude },
-          geofence_radius_m: item.geofence_radius_m || 75,
-          location_status: item.location_status || 'VERIFIED',
-          territory_id: item.territory_id || null,
+          id: pin.id,
+          name: pin.name,
+          contact_number: pin.contact_number || '',
+          contact_person: pin.contact_person || null,
+          address: pin.address || '',
+          location: { latitude: pin.latitude, longitude: pin.longitude },
+          geofence_radius_m: pin.geofence_radius_m || 75,
+          location_status: (pin.location_status as LocationStatus) || 'VERIFIED',
+          territory_id: pin.territory_id || null,
           territory_name: null,
-          area_id: item.area_id || null,
+          area_id: pin.area_id || null,
           area_name: null,
-          outlet_code: item.outlet_code || null,
+          outlet_code: pin.outlet_code || null,
           created_by: '',
           created_at: '',
         };

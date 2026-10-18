@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Building2,
   Users,
@@ -28,6 +28,7 @@ import {
   ChevronsRight,
 } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
+import { ErrorBanner } from '../components/ui/ErrorBanner';
 import { Card } from '../components/ui/Card';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { AddBrandModal } from '../components/ui/AddBrandModal';
@@ -43,6 +44,7 @@ import {
   TallyIntegrationStatus,
   TallyAuditLogItem,
 } from '../types';
+import { errorMessage } from '../utils/errors';
 
 type SettingsTab =
   | 'organization'
@@ -88,7 +90,9 @@ export const SettingsPage: React.FC = () => {
     loadSettingsData();
   }, []);
 
-  const loadAuditLogs = async (newSkip = auditSkip, limit = auditLimit, order = sortOrder) => {
+  // Every caller passes skip/limit/order explicitly, so only the filters are dependencies:
+  // the identity changes exactly when a filter does (which is when the list must reload).
+  const loadAuditLogs = useCallback(async (newSkip: number, limit: number, order: typeof sortOrder) => {
     try {
       setIsAuditLoading(true);
       const res = await apiClient.getTallyAuditLogs({
@@ -107,7 +111,7 @@ export const SettingsPage: React.FC = () => {
     } finally {
       setIsAuditLoading(false);
     }
-  };
+  }, [filterDirection, filterStatus, filterEntity]);
 
   const handleRetryJob = async (jobId: string) => {
     try {
@@ -116,8 +120,8 @@ export const SettingsPage: React.FC = () => {
       await loadAuditLogs(auditSkip, auditLimit, sortOrder);
       const updatedStatus = await apiClient.getTallyStatus().catch(() => null);
       if (updatedStatus) setTallyStatus(updatedStatus);
-    } catch (err: any) {
-      alert(`Retry failed: ${err?.message || 'Unknown error'}`);
+    } catch (err: unknown) {
+      alert(`Retry failed: ${errorMessage(err, 'Unknown error')}`);
     } finally {
       setRetryingJobId(null);
     }
@@ -127,19 +131,28 @@ export const SettingsPage: React.FC = () => {
     if (activeTab === 'integrations') {
       loadAuditLogs(0, auditLimit, sortOrder);
     }
-  }, [activeTab, filterDirection, filterStatus, filterEntity, auditLimit, sortOrder]);
+  }, [activeTab, loadAuditLogs, auditLimit, sortOrder]);
+
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const loadSettingsData = async () => {
+    // Failed requests must not silently render as zero counts.
+    const failures: string[] = [];
+    const failed = <T,>(label: string, fallback: T) => (): T => {
+      failures.push(label);
+      return fallback;
+    };
     try {
       setIsLoading(true);
+      setLoadError(null);
       const [healthData, orgData, empData, terrData, areaData, custPaginated, brandsData, tallyData] = await Promise.all([
         apiClient.getHealth().catch((err) => ({ status: 'OFFLINE', error: err.message })),
-        apiClient.getOrganizationProfile().catch(() => null),
-        apiClient.getEmployees().catch(() => [] as Employee[]),
-        apiClient.getTerritories().catch(() => [] as Territory[]),
-        apiClient.getAreas().catch(() => [] as Area[]),
-        apiClient.getCustomersPaginated({ skip: 0, limit: 1 }).catch(() => ({ items: [], total: 0 })),
-        apiClient.getBrands(false).catch(() => [] as Brand[]),
+        apiClient.getOrganizationProfile().catch(failed('organization profile', null)),
+        apiClient.getEmployees().catch(failed('employees', [] as Employee[])),
+        apiClient.getTerritories().catch(failed('territories', [] as Territory[])),
+        apiClient.getAreas().catch(failed('areas', [] as Area[])),
+        apiClient.getCustomersPaginated({ skip: 0, limit: 1 }).catch(failed('customers', { items: [], total: 0 })),
+        apiClient.getBrands(false).catch(failed('brands', [] as Brand[])),
         apiClient.getTallyStatus().catch(() => null),
       ]);
 
@@ -162,9 +175,13 @@ export const SettingsPage: React.FC = () => {
       setCustomerTotal(custPaginated?.total || orgData?.total_customers || 0);
       setBrands(Array.isArray(brandsData) ? brandsData : []);
       setTallyStatus(tallyData);
+      if (failures.length > 0) {
+        setLoadError(`Could not load: ${failures.join(', ')}. Counts shown may be incomplete.`);
+      }
     } catch {
       setHealth('offline');
       setHealthDetail('Configuration load error');
+      setLoadError('Failed to load settings data.');
     } finally {
       setIsLoading(false);
     }
@@ -182,6 +199,8 @@ export const SettingsPage: React.FC = () => {
     }
   };
 
+  // Business job titles are display-only groupings. They never grant access:
+  // authorization depends solely on the backend-issued role (ADMIN | EMPLOYEE).
   const adminCount = employees.filter(
     (e) =>
       e.working_profile?.toLowerCase().includes('director') ||
@@ -224,6 +243,8 @@ export const SettingsPage: React.FC = () => {
           </button>
         }
       />
+
+      {loadError && <ErrorBanner message={loadError} onRetry={loadSettingsData} onDismiss={() => setLoadError(null)} />}
 
       {/* Brand Navigation Tabs */}
       <div className="flex flex-wrap gap-2 border-b border-surface-container-highest pb-3">
@@ -476,15 +497,15 @@ export const SettingsPage: React.FC = () => {
             <div className="p-space-4 bg-surface-container-low rounded-xl border border-surface-container-highest">
               <div className="flex items-center justify-between mb-2">
                 <span className="font-headline-sm text-xs font-bold uppercase tracking-wider text-secondary">
-                  Leadership &amp; Admins
+                  Leadership (by job title)
                 </span>
                 <span className="font-headline-sm text-xs font-bold bg-secondary-container/20 text-on-secondary-container px-2 py-0.5 rounded">
-                  Admin
+                  Job title
                 </span>
               </div>
               <p className="font-headline-lg text-3xl font-black text-primary mb-1">{adminCount}</p>
               <p className="font-caption text-xs text-on-surface-variant leading-relaxed">
-                Directors, Sales Managers, and ASMs with full administrative command and reporting authority.
+                Directors, Sales Managers, and ASMs, counted by job title only. Job titles grant no access; application access is strictly ADMIN or EMPLOYEE.
               </p>
             </div>
 
@@ -890,7 +911,7 @@ export const SettingsPage: React.FC = () => {
                       {/* Entity Filter */}
                       <select
                         value={filterEntity}
-                        onChange={(e) => setFilterEntity(e.target.value as any)}
+                        onChange={(e) => setFilterEntity(e.target.value as typeof filterEntity)}
                         className="bg-surface border border-surface-container-highest text-xs rounded-lg px-2.5 py-1.5 text-on-surface focus:outline-none focus:ring-1 focus:ring-primary font-medium shadow-2xs"
                       >
                         <option value="ALL">All Entities</option>

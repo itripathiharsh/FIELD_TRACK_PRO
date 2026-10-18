@@ -1,6 +1,10 @@
 import { ENV } from '../config/env';
+import { lastRotatedAt, markRotated, openTabChannel, withRefreshLock, type TabChannel, type TabMessage } from './tabSync';
+import { filenameFromContentDisposition } from '../utils/download';
+import { REPORT_ENDPOINTS, ReportKey } from '../utils/reportFilters';
 import {
   AccountSummary,
+  AdminPasswordReset,
   Area,
   Brand,
   BrandAllocationInput,
@@ -8,7 +12,14 @@ import {
   CollectionsOverviewResponse,
   Customer,
   CustomerMapLocation,
+  CustomerProspect,
   CustomerProspectCreate,
+  CustomerProspectSubmitResponse,
+  CustomerProspectUpdate,
+  OutletProof,
+  OutletProofKind,
+  OutletProofStatusFilter,
+  ProspectStatus,
   CustomerRequirement,
   RequirementDecisionRequest,
   Employee,
@@ -51,6 +62,8 @@ import {
   PaymentMethod,
   PaymentProof,
   PaymentStatus,
+  PaymentVerifyInput,
+  TallyStatus,
   PlannedVisit,
   Priority,
   QuestionOption,
@@ -64,6 +77,8 @@ import {
   TerritoryAssignmentHistory,
   TerritoryAssignmentRead,
   User,
+  UserRole,
+  SecurityAuditLog,
   Visit,
   VisitDetailedReportRow,
   VisitMedia,
@@ -80,6 +95,31 @@ import {
  * - Requests use credentials: 'include' for secure cookie exchange.
  */
 const LEGACY_REFRESH_TOKEN_KEY = 'fieldtrack_refresh_token';
+/**
+ * Non-secret hint ("1") that this browser holds a signed-in session, so an
+ * anonymous visit to /login does not fire a doomed POST /auth/refresh. It is NOT
+ * a credential: the HttpOnly refresh cookie remains the only thing the server trusts.
+ */
+const SESSION_HINT_KEY = 'fieldtrack_session_hint';
+
+function setSessionHint(on: boolean): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    if (on) localStorage.setItem(SESSION_HINT_KEY, '1');
+    else localStorage.removeItem(SESSION_HINT_KEY);
+  } catch {
+    // storage unavailable: behave as if no hint (restore simply attempts refresh)
+  }
+}
+
+function hasSessionHint(): boolean {
+  try {
+    if (typeof localStorage === 'undefined') return true;
+    return localStorage.getItem(SESSION_HINT_KEY) === '1';
+  } catch {
+    return true; // unknown -> attempt the refresh rather than lock the user out
+  }
+}
 
 /**
  * Error carrying the HTTP status and the backend's error code, so callers can
@@ -89,24 +129,32 @@ const LEGACY_REFRESH_TOKEN_KEY = 'fieldtrack_refresh_token';
 export class ApiError extends Error {
   readonly status: number;
   readonly code?: string;
-  readonly details?: any;
+  readonly details?: unknown;
   readonly fieldErrors?: Record<string, string>;
   readonly requestId?: string;
+  /**
+   * True when trying again later can plausibly succeed (network failure, timeout,
+   * 5xx, 429, or a session refresh that could not be attempted). Never true for a
+   * definitive rejection such as bad credentials.
+   */
+  readonly retryable: boolean;
 
-  constructor(message: string, status: number, code?: string, details?: any, requestId?: string) {
+  constructor(message: string, status: number, code?: string, details?: unknown, requestId?: string) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
     this.details = details;
     this.requestId = requestId;
+    this.retryable =
+      status === 0 || status === 408 || status === 429 || status >= 500 || code === 'REFRESH_UNAVAILABLE';
 
     // Extract field-specific validation errors from FastAPI/Pydantic details array:
     // details: [{ loc: ['body', 'contact_number'], msg: '...', type: '...' }]
     if (Array.isArray(details)) {
       const fe: Record<string, string> = {};
-      for (const item of details) {
-        if (Array.isArray(item.loc) && item.loc.length > 0 && item.msg) {
+      for (const item of details as Array<{ loc?: unknown; msg?: unknown }>) {
+        if (Array.isArray(item?.loc) && item.loc.length > 0 && typeof item.msg === 'string') {
           const field = String(item.loc[item.loc.length - 1]);
           fe[field] = item.msg.replace(/^Value error,\s*/i, '');
         }
@@ -116,19 +164,45 @@ export class ApiError extends Error {
   }
 }
 
+/** Result of a refresh attempt: only 'rejected' (genuine 401/403) ends the session. */
+type RefreshOutcome = 'success' | 'rejected' | 'transient';
+
+/** Outcome of trying to restore a session on page load. */
+export type RestoreOutcome = 'restored' | 'anonymous' | 'rejected' | 'transient';
+
+/** Error code the backend returns while a forced password change is pending. */
+export const PASSWORD_CHANGE_REQUIRED_CODE = 'PASSWORD_CHANGE_REQUIRED';
+
+/** How long a single /auth/refresh may take (Render cold starts are slow) before it counts as transient. */
+const REFRESH_TIMEOUT_MS = 20_000;
+
+/** How long the refreshing tab keeps the lock after success so peers receive the new token first. */
+const TOKEN_HANDOFF_MS = 100;
+
 export class ApiClient {
   private readonly baseUrl: string;
 
   /** In-memory access token. Deliberately never persisted (FT-040). */
   private accessToken: string | null = null;
 
+  private sessionExpiredListeners = new Set<() => void>();
+  private remoteLogoutListeners = new Set<() => void>();
+  private passwordChangeListeners = new Set<() => void>();
+
+  /** Cross-tab state (see tabSync.ts). Started by startTabSync(); inert otherwise. */
+  private readonly tabId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  private tabChannel: TabChannel | null = null;
+  /** Incremented whenever ANOTHER tab hands us a freshly rotated access token. */
+  private sharedTokenSeq = 0;
 
   constructor() {
     // FT-055: one normalisation, applied once. VITE_API_BASE_URL may or may not
     // already include the /api/v1 suffix; every request path in this client is
     // absolute from the server root, so the suffix is stripped here and never
     // re-derived per call site.
-    const raw = ENV.API_BASE_URL || 'http://127.0.0.1:8000';
+    // No silent fallback: env.ts supplies a localhost default in dev only, and the
+    // app refuses to start in production when the URL is missing (ConfigErrorScreen).
+    const raw = ENV.API_BASE_URL;
     this.baseUrl = raw.replace(/\/api\/v1\/?$/, '').replace(/\/+$/, '');
 
     // Cleanup any legacy plaintext refresh tokens in localStorage
@@ -164,16 +238,83 @@ export class ApiClient {
    * or exchanging the HttpOnly refresh token cookie.
    */
   async tryRestoreSession(): Promise<boolean> {
-    if (this.accessToken) return true;
-    return this.tryRefresh();
+    return (await this.restoreSession()) === 'restored';
+  }
+
+  /**
+   * Like tryRestoreSession but keeps "no session" and "could not reach the
+   * server" apart: only 'rejected' (a definitive 401/403 from /auth/refresh)
+   * means the session is over; 'transient' keeps the hint and any in-memory state.
+   */
+  async restoreSession(): Promise<RestoreOutcome> {
+    if (this.accessToken) return 'restored';
+    // Anonymous visitor (no session hint): nothing to restore, avoid a guaranteed 401.
+    if (!hasSessionHint()) return 'anonymous';
+    const outcome = await this.tryRefresh();
+    if (outcome === 'success') return 'restored';
+    return outcome === 'rejected' ? 'rejected' : 'transient';
+  }
+
+  /**
+   * Start listening to other tabs (token hand-off + logout). Idempotent; returns a
+   * stop function. Called by AuthProvider; unit tests call it with a mocked channel.
+   */
+  startTabSync(): () => void {
+    if (this.tabChannel) return () => this.stopTabSync();
+    this.tabChannel = openTabChannel((m) => {
+      if (m.type === 'token') {
+        // Another tab rotated the refresh cookie and shared the new access token.
+        this.accessToken = m.token;
+        this.sharedTokenSeq += 1;
+      } else if (m.type === 'logout') {
+        this.clearSession();
+        this.remoteLogoutListeners.forEach((l) => l());
+      }
+    });
+    return () => this.stopTabSync();
+  }
+
+  stopTabSync(): void {
+    this.tabChannel?.close();
+    this.tabChannel = null;
+  }
+
+  /** Subscribe to a logout performed in ANOTHER tab. */
+  onRemoteLogout(listener: () => void): () => void {
+    this.remoteLogoutListeners.add(listener);
+    return () => {
+      this.remoteLogoutListeners.delete(listener);
+    };
+  }
+
+  /** Subscribe to the server demanding a password change (403 PASSWORD_CHANGE_REQUIRED). */
+  onPasswordChangeRequired(listener: () => void): () => void {
+    this.passwordChangeListeners.add(listener);
+    return () => {
+      this.passwordChangeListeners.delete(listener);
+    };
+  }
+
+  /** Subscribe to mid-session expiry (401 and refresh failed). Returns an unsubscribe function. */
+  onSessionExpired(listener: () => void): () => void {
+    this.sessionExpiredListeners.add(listener);
+    return () => {
+      this.sessionExpiredListeners.delete(listener);
+    };
+  }
+
+  private notifySessionExpired(): void {
+    this.sessionExpiredListeners.forEach((l) => l());
   }
 
   private storeSession(tokens: LoginResponse): void {
     this.accessToken = tokens.access_token;
+    setSessionHint(true);
   }
 
   clearSession(): void {
     this.accessToken = null;
+    setSessionHint(false);
     try {
       if (typeof localStorage !== 'undefined') {
         localStorage.removeItem(LEGACY_REFRESH_TOKEN_KEY);
@@ -193,7 +334,7 @@ export class ApiClient {
   private async parseError(response: Response): Promise<ApiError> {
     let message = response.statusText || `Request failed (${response.status})`;
     let code: string | undefined;
-    let details: any = undefined;
+    let details: unknown = undefined;
     let requestId: string | undefined = response.headers?.get('x-request-id') || undefined;
     try {
       const body = await response.json();
@@ -214,7 +355,34 @@ export class ApiClient {
     } catch {
       // Non-JSON body; keep the status text.
     }
+    if (response.status === 403 && code === PASSWORD_CHANGE_REQUIRED_CODE) {
+      message = 'You must set a new password before you can continue.';
+      this.passwordChangeListeners.forEach((l) => l());
+    }
     return new ApiError(message, response.status, code, details, requestId);
+  }
+
+  /**
+   * A request got 401. Try to recover the session. Returns 'retry' when the
+   * original request should be re-sent (token refreshed here or by another tab)
+   * and 'fail' when the 401 stands. Throws a retryable error when the refresh
+   * could not be attempted (network/5xx/429/timeout) - the session is kept.
+   */
+  private async recoverFrom401(sentToken: string | null): Promise<'retry' | 'fail'> {
+    // Another tab (or an earlier call) already replaced the token we sent: just retry with it.
+    if (sentToken !== null && this.accessToken !== null && this.accessToken !== sentToken) return 'retry';
+    const hadSession = Boolean(this.accessToken);
+    const outcome = await this.tryRefresh();
+    if (outcome === 'success') return 'retry';
+    if (outcome === 'transient') {
+      throw new ApiError(
+        'Could not refresh your session right now. Check your connection and try again.',
+        0,
+        'REFRESH_UNAVAILABLE',
+      );
+    }
+    if (hadSession) this.notifySessionExpired();
+    return 'fail';
   }
 
   /**
@@ -229,6 +397,7 @@ export class ApiClient {
     allowRefresh = true,
   ): Promise<T> {
     const isFormData = options.body instanceof FormData;
+    const sentToken = this.accessToken;
     const headers: Record<string, string> = {
       ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
       ...this.authHeader(),
@@ -252,8 +421,10 @@ export class ApiClient {
     }
 
     if (response.status === 401 && allowRefresh) {
-      const refreshed = await this.tryRefresh();
-      if (refreshed) {
+      // Only a genuine rejection (refresh token invalid/expired) ends the
+      // session. A transient failure (network error, 5xx, 429, timeout) keeps
+      // the session and surfaces a retryable error instead of forcing a logout.
+      if ((await this.recoverFrom401(sentToken)) === 'retry') {
         return this.request<T>(endpoint, options, false);
       }
     }
@@ -275,6 +446,7 @@ export class ApiClient {
     allowRefresh = true,
   ): Promise<{ data: T; total: number }> {
     const token = this.getAccessToken();
+    const sentToken = token;
     const headers: Record<string, string> = {
       ...(options.headers as Record<string, string>),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -296,8 +468,7 @@ export class ApiClient {
     }
 
     if (response.status === 401 && allowRefresh) {
-      const refreshed = await this.tryRefresh();
-      if (refreshed) {
+      if ((await this.recoverFrom401(sentToken)) === 'retry') {
         return this.requestWithTotal<T>(endpoint, options, false);
       }
     }
@@ -323,6 +494,16 @@ export class ApiClient {
     options: RequestInit = {},
     allowRefresh = true,
   ): Promise<Blob> {
+    return (await this.requestBlobWithMeta(endpoint, options, allowRefresh)).blob;
+  }
+
+  /** Like requestBlob, but also returns the response headers (e.g. Content-Disposition for the file name). */
+  async requestBlobWithMeta(
+    endpoint: string,
+    options: RequestInit = {},
+    allowRefresh = true,
+  ): Promise<{ blob: Blob; headers: Headers }> {
+    const sentToken = this.accessToken;
     const headers: Record<string, string> = {
       ...this.authHeader(),
       ...((options.headers as Record<string, string>) || {}),
@@ -344,9 +525,8 @@ export class ApiClient {
     }
 
     if (response.status === 401 && allowRefresh) {
-      const refreshed = await this.tryRefresh();
-      if (refreshed) {
-        return this.requestBlob(endpoint, options, false);
+      if ((await this.recoverFrom401(sentToken)) === 'retry') {
+        return this.requestBlobWithMeta(endpoint, options, false);
       }
     }
 
@@ -354,7 +534,7 @@ export class ApiClient {
       throw await this.parseError(response);
     }
 
-    return response.blob();
+    return { blob: await response.blob(), headers: response.headers };
   }
 
   async requestBlobObjectUrl(
@@ -365,26 +545,110 @@ export class ApiClient {
     return URL.createObjectURL(blob);
   }
 
-  /** Exchange the HttpOnly refresh token cookie for a new pair. Returns false if not possible. */
-  private async tryRefresh(): Promise<boolean> {
+  /** The single in-flight refresh, shared by every concurrent caller in THIS tab. */
+  private refreshInFlight: Promise<RefreshOutcome> | null = null;
+
+  private broadcast(message: TabMessage): void {
+    this.tabChannel?.post(message);
+  }
+
+  /**
+   * POST /auth/refresh with a timeout. Network errors, timeouts, 5xx and 429 are
+   * 'transient' (the session is kept); only 401/403 is 'rejected'.
+   */
+  private async refreshFetchOnce(): Promise<'success' | 'rejected' | 'transient' | 'unauthorized-raw'> {
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => controller.abort(), REFRESH_TIMEOUT_MS) : null;
+    let response: Response;
     try {
-      const response = await fetch(this.url('/api/v1/auth/refresh'), {
+      response = await fetch(this.url('/api/v1/auth/refresh'), {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
+        ...(controller ? { signal: controller.signal } : {}),
       });
-      if (!response.ok) {
-        this.clearSession();
-        return false;
-      }
+    } catch {
+      return 'transient';
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+    if (response.status === 401 || response.status === 403) return 'unauthorized-raw';
+    if (!response.ok) return 'transient';
+    try {
       const tokens = (await response.json()) as LoginResponse;
       this.storeSession(tokens);
-      return true;
+      markRotated();
+      this.broadcast({ type: 'token', token: tokens.access_token, from: this.tabId });
+      return 'success';
     } catch {
-      this.clearSession();
-      return false;
+      return 'transient';
     }
+  }
+
+  /**
+   * The refresh body, run while holding the cross-tab lock.
+   *
+   * 1. If ANOTHER tab handed us a fresh access token while we waited for the lock,
+   *    it already rotated the cookie: adopt that token, no network call.
+   * 2. Otherwise refresh. A 401/403 is only believed after one more check: if the
+   *    cookie was rotated by another tab while our request was in flight (a race
+   *    the lock normally prevents, but not in the no-Locks fallback), retry ONCE
+   *    with the new cookie instead of declaring the session dead.
+   */
+  private async refreshUnderLock(seqBeforeWait: number): Promise<RefreshOutcome> {
+    if (this.sharedTokenSeq !== seqBeforeWait && this.accessToken) return 'success';
+    const startedAt = Date.now();
+    const seqAtStart = this.sharedTokenSeq;
+    let result = await this.refreshFetchOnce();
+    if (result === 'unauthorized-raw') {
+      if (this.sharedTokenSeq !== seqAtStart && this.accessToken) return 'success';
+      if (lastRotatedAt() >= startedAt) result = await this.refreshFetchOnce();
+    }
+    if (result === 'unauthorized-raw') {
+      this.clearSession();
+      return 'rejected';
+    }
+    return result;
+  }
+
+  /**
+   * Single-flight refresh. The backend rotates the refresh token on every use and
+   * (outside its own short grace window) revokes the whole family on reuse, so
+   * two concurrent POSTs with the same cookie risk logging the user out. All
+   * concurrent callers in this tab await ONE request, and that request is
+   * itself serialised against other tabs via the cross-tab lock.
+   *
+   * Only a genuine rejection (401/403 - refresh token actually invalid/expired/
+   * revoked) clears the session. Any other failure (network error, timeout, 5xx,
+   * 429, Render cold start) is transient: the caller keeps whatever session it
+   * had (hint and in-memory token) and can retry.
+   */
+  private tryRefresh(): Promise<RefreshOutcome> {
+    if (this.refreshInFlight) return this.refreshInFlight;
+    const seqBeforeWait = this.sharedTokenSeq;
+    const run = async (): Promise<RefreshOutcome> => {
+      let settle!: (o: RefreshOutcome) => void;
+      const outcome = new Promise<RefreshOutcome>((resolve) => (settle = resolve));
+      // The caller gets its answer as soon as the refresh is done, but after a successful
+      // rotation the lock is held a moment longer so the BroadcastChannel hand-off reaches
+      // the tabs queued behind us BEFORE they acquire the lock (they then adopt the shared
+      // token instead of sending another refresh).
+      void withRefreshLock(async () => {
+        const o = await this.refreshUnderLock(seqBeforeWait);
+        settle(o);
+        if (o === 'success') await new Promise((r) => setTimeout(r, TOKEN_HANDOFF_MS));
+      })
+        .catch(() => undefined)
+        .finally(() => settle('transient'));
+      try {
+        return await outcome;
+      } finally {
+        this.refreshInFlight = null;
+      }
+    };
+    this.refreshInFlight = run();
+    return this.refreshInFlight;
   }
 
   async getHealth(): Promise<{ status: string; service?: string }> {
@@ -427,8 +691,15 @@ export class ApiClient {
    */
   async getCurrentUser(): Promise<User> {
     if (!this.accessToken) {
-      const restored = await this.tryRefresh();
-      if (!restored) {
+      const outcome = await this.tryRefresh();
+      if (outcome === 'transient') {
+        throw new ApiError(
+          'Could not reach the server to restore your session. Check your connection and try again.',
+          0,
+          'REFRESH_UNAVAILABLE',
+        );
+      }
+      if (outcome !== 'success') {
         throw new ApiError('Session expired. Please sign in again.', 401, 'SESSION_EXPIRED');
       }
     }
@@ -455,14 +726,25 @@ export class ApiClient {
       // Revocation failed (offline, already revoked). Still clear locally.
     } finally {
       this.clearSession();
+      this.broadcast({ type: 'logout', from: this.tabId });
     }
   }
 
-  async changePassword(oldPassword: string, newPassword: string): Promise<void> {
-    return this.request<void>('/api/v1/users/me/password', {
+  async changePassword(oldPassword: string, newPassword: string): Promise<boolean> {
+    // Existing endpoint (also used by the Android app). The backend exempts it from the
+    // PASSWORD_CHANGE_REQUIRED lockout and may answer with a fresh token pair; older
+    // builds answer 204. Returns true when new tokens were stored (session still valid).
+    const body = await this.request<Partial<LoginResponse> | undefined>('/api/v1/users/me/password', {
       method: 'PATCH',
       body: JSON.stringify({ old_password: oldPassword, new_password: newPassword }),
     });
+    if (body && typeof body.access_token === 'string' && body.access_token) {
+      this.storeSession(body as LoginResponse);
+      markRotated();
+      this.broadcast({ type: 'token', token: body.access_token, from: this.tabId });
+      return true;
+    }
+    return false;
   }
 
 
@@ -603,6 +885,40 @@ export class ApiClient {
       method: 'PATCH',
       body: JSON.stringify(data),
     });
+  }
+
+  /**
+   * Admin: issue a single-use temporary password for an employee (valid ~30 min). The plaintext is in
+   * THIS response only - the caller must show it once and drop it; it is never retrievable again.
+   * Never cached, logged or stored by this client.
+   */
+  async resetEmployeePassword(employeeId: string): Promise<AdminPasswordReset> {
+    return this.request<AdminPasswordReset>(`/api/v1/employees/${employeeId}/reset-password`, {
+      method: 'POST',
+      cache: 'no-store',
+    });
+  }
+
+  /**
+   * Super Admin: change an account's role. Requires the acting Super Admin's own password and, for any
+   * change that grants or removes SUPER_ADMIN, `confirm: true`. The backend decides; this only sends.
+   */
+  async changeUserRole(
+    userId: string,
+    data: { role: UserRole; current_password: string; confirm: boolean },
+  ): Promise<{ id: string; role: UserRole; is_active: boolean }> {
+    return this.request<{ id: string; role: UserRole; is_active: boolean }>(`/api/v1/users/${userId}/role`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  /** Super Admin: recent security events (password resets, role changes, ...). */
+  async getSecurityAuditLogs(params: { target_user_id?: string; limit?: number } = {}): Promise<SecurityAuditLog[]> {
+    const q = new URLSearchParams();
+    if (params.target_user_id) q.set('target_user_id', params.target_user_id);
+    q.set('limit', String(params.limit ?? 20));
+    return this.request<SecurityAuditLog[]>(`/api/v1/security-audit-logs?${q.toString()}`);
   }
 
   // -- P2-C: employee activity -------------------------------------------------
@@ -781,8 +1097,13 @@ export class ApiClient {
     });
   }
 
-  async createCustomerProspect(data: CustomerProspectCreate): Promise<Customer> {
-    return this.request<Customer>('/api/v1/customers/prospect', {
+  /**
+   * An ADMIN caller still gets the outlet created immediately (status: 'CREATED', customer
+   * populated). An EMPLOYEE caller's submission is held for review instead
+   * (status: 'PENDING_APPROVAL', prospect_id populated, customer null).
+   */
+  async createCustomerProspect(data: CustomerProspectCreate): Promise<CustomerProspectSubmitResponse> {
+    return this.request<CustomerProspectSubmitResponse>('/api/v1/customers/prospect', {
       method: 'POST',
       body: JSON.stringify(data),
     });
@@ -862,11 +1183,97 @@ export class ApiClient {
     return this.request<LocationProposal[]>(`/api/v1/customers/${customerId}/location-proposals`);
   }
 
+  // -- new-outlet (customer prospect) approval queue --------------------------
+
+  async getCustomerProspects(params?: { status?: ProspectStatus }): Promise<CustomerProspect[]> {
+    const searchParams = new URLSearchParams();
+    if (params?.status) searchParams.set('status', params.status);
+    const query = searchParams.toString();
+    return this.request<CustomerProspect[]>(`/api/v1/customers/prospects${query ? `?${query}` : ''}`);
+  }
+
+  async getCustomerProspect(prospectId: string): Promise<CustomerProspect> {
+    return this.request<CustomerProspect>(`/api/v1/customers/prospects/${prospectId}`);
+  }
+
+  async updateCustomerProspect(prospectId: string, data: CustomerProspectUpdate): Promise<CustomerProspect> {
+    return this.request<CustomerProspect>(`/api/v1/customers/prospects/${prospectId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async approveCustomerProspect(prospectId: string): Promise<Customer> {
+    return this.request<Customer>(`/api/v1/customers/prospects/${prospectId}/approve`, {
+      method: 'POST',
+    });
+  }
+
+  async rejectCustomerProspect(prospectId: string, reason: string): Promise<CustomerProspect> {
+    return this.request<CustomerProspect>(`/api/v1/customers/prospects/${prospectId}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  // -- live outlet proofs (photo + GPS at the same click) ----------------------
+
+  async getOutletProofs(params?: {
+    status?: OutletProofStatusFilter;
+    kind?: OutletProofKind;
+    customer_id?: string;
+    skip?: number;
+    limit?: number;
+  }): Promise<{ items: OutletProof[]; total: number }> {
+    const sp = new URLSearchParams();
+    if (params?.status) sp.set('status', params.status);
+    if (params?.kind) sp.set('kind', params.kind);
+    if (params?.customer_id) sp.set('customer_id', params.customer_id);
+    if (params?.skip !== undefined) sp.set('skip', String(params.skip));
+    if (params?.limit !== undefined) sp.set('limit', String(params.limit));
+    const query = sp.toString();
+    const { data, total } = await this.requestWithTotal<OutletProof[]>(
+      `/api/v1/customers/outlet-proofs${query ? `?${query}` : ''}`,
+    );
+    return { items: data, total };
+  }
+
+  async getCustomerOutletProofs(customerId: string): Promise<OutletProof[]> {
+    return this.request<OutletProof[]>(`/api/v1/customers/${customerId}/outlet-proofs`);
+  }
+
+  async approveOutletProof(proofId: string): Promise<OutletProof> {
+    return this.request<OutletProof>(`/api/v1/customers/outlet-proofs/${proofId}/approve`, { method: 'POST' });
+  }
+
+  async rejectOutletProof(proofId: string, reason: string): Promise<OutletProof> {
+    return this.request<OutletProof>(`/api/v1/customers/outlet-proofs/${proofId}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  /** Authenticated image bytes of one proof as an object URL (caller must revoke it). */
+  async getOutletProofImageUrl(proofId: string): Promise<string> {
+    return this.requestBlobObjectUrl(`/api/v1/customers/outlet-proofs/${proofId}/image`);
+  }
+
+  /** Authenticated primary outlet photo as an object URL (caller must revoke it). */
+  async getCustomerOutletImageUrl(customerId: string): Promise<string> {
+    return this.requestBlobObjectUrl(`/api/v1/customers/${customerId}/outlet-image`);
+  }
+
+  async markCustomerTallyEntryDone(customerId: string): Promise<Customer> {
+    return this.request<Customer>(`/api/v1/customers/${customerId}/mark-tally-entry-done`, {
+      method: 'POST',
+    });
+  }
+
   // -- Brands ---------------------------------------------------------------
 
   async getBrands(activeOnly?: boolean): Promise<Brand[]> {
     const query = activeOnly !== undefined ? `?active_only=${activeOnly}` : '';
-    const res = await this.request<any[]>(`/api/v1/brands${query}`);
+    const res = await this.request<Array<string | Brand>>(`/api/v1/brands${query}`);
     return (res || []).map((b) =>
       typeof b === 'string'
         ? { id: b, name: b, normalized_name: b.toLowerCase(), is_active: true }
@@ -1154,6 +1561,8 @@ export class ApiClient {
   async getVisitsPaginated(params?: {
     status?: VisitStatus | VisitStatus[];
     visit_type?: VisitType;
+    /** ADMIN only: true = ad-hoc visits outside the employee's assignment. */
+    outside_assignment?: boolean;
     employee_id?: string;
     territory_id?: string;
     area_id?: string;
@@ -1168,6 +1577,9 @@ export class ApiClient {
     if (params) {
       if (params.search) searchParams.set('search', params.search);
       if (params.visit_type) searchParams.set('visit_type', params.visit_type);
+      if (params.outside_assignment !== undefined) {
+        searchParams.set('outside_assignment', String(params.outside_assignment));
+      }
       if (params.employee_id) searchParams.set('employee_id', params.employee_id);
       if (params.territory_id) searchParams.set('territory_id', params.territory_id);
       if (params.area_id) searchParams.set('area_id', params.area_id);
@@ -1187,6 +1599,25 @@ export class ApiClient {
     const query = searchParams.toString();
     const { data, total } = await this.requestWithTotal<Visit[]>(
       `/api/v1/visits${query ? `?${query}` : ''}`,
+    );
+    return { items: data, total };
+  }
+
+  /** Admin: ad-hoc visit review list (employee, outlet, reason, notes, review_label). */
+  async getAdhocReviewVisits(params?: {
+    outside_assignment?: boolean;
+    skip?: number;
+    limit?: number;
+  }): Promise<{ items: Visit[]; total: number }> {
+    const searchParams = new URLSearchParams();
+    if (params?.outside_assignment !== undefined) {
+      searchParams.set('outside_assignment', String(params.outside_assignment));
+    }
+    if (params?.skip !== undefined) searchParams.set('skip', String(params.skip));
+    if (params?.limit !== undefined) searchParams.set('limit', String(params.limit));
+    const query = searchParams.toString();
+    const { data, total } = await this.requestWithTotal<Visit[]>(
+      `/api/v1/visits/adhoc-review${query ? `?${query}` : ''}`,
     );
     return { items: data, total };
   }
@@ -1342,10 +1773,15 @@ export class ApiClient {
 
   // -- reports ---------------------------------------------------------------
 
-  async getEmployeeReport(startDate?: string, endDate?: string): Promise<EmployeeReportRow[]> {
+  async getEmployeeReport(
+    startDate?: string,
+    endDate?: string,
+    extra?: { employee_id?: string; zone_id?: string; area_id?: string; query?: string },
+  ): Promise<EmployeeReportRow[]> {
     const params = new URLSearchParams();
     if (startDate) params.set('start_date', startDate);
     if (endDate) params.set('end_date', endDate);
+    Object.entries(extra ?? {}).forEach(([k, v]) => { if (v) params.set(k, v); });
     const query = params.toString();
     return this.request<EmployeeReportRow[]>(
       `/api/v1/reports/employees${query ? `?${query}` : ''}`
@@ -1360,10 +1796,15 @@ export class ApiClient {
     return this.request<ProductivityDashboardData>('/api/v1/reports/productivity');
   }
 
-  async getGeoVerificationReport(startDate?: string, endDate?: string): Promise<GeoReportRow[]> {
+  async getGeoVerificationReport(
+    startDate?: string,
+    endDate?: string,
+    extra?: { employee_id?: string; zone_id?: string; area_id?: string; query?: string },
+  ): Promise<GeoReportRow[]> {
     const params = new URLSearchParams();
     if (startDate) params.set('start_date', startDate);
     if (endDate) params.set('end_date', endDate);
+    Object.entries(extra ?? {}).forEach(([k, v]) => { if (v) params.set(k, v); });
     const query = params.toString();
     return this.request<GeoReportRow[]>(
       `/api/v1/reports/geo-verification${query ? `?${query}` : ''}`
@@ -1394,6 +1835,8 @@ export class ApiClient {
     area_id?: string,
     employee_id?: string,
     month?: string,
+    start_date?: string,
+    end_date?: string,
   ): Promise<BusinessBIDashboard> {
     const params = new URLSearchParams();
     if (brand && brand !== 'ALL') params.set('brand', brand);
@@ -1401,6 +1844,8 @@ export class ApiClient {
     if (area_id && area_id !== 'ALL') params.set('area_id', area_id);
     if (employee_id && employee_id !== 'ALL') params.set('employee_id', employee_id);
     if (month && month !== 'ALL') params.set('month', month);
+    if (start_date) params.set('start_date', start_date);
+    if (end_date) params.set('end_date', end_date);
     const query = params.toString();
     return this.request<BusinessBIDashboard>(
       `/api/v1/reports/business-summary${query ? `?${query}` : ''}`
@@ -1430,6 +1875,9 @@ export class ApiClient {
     area_id?: string;
     employee_id?: string;
     location_status?: string;
+    month?: string;
+    start_date?: string;
+    end_date?: string;
     query?: string;
   }): Promise<OutletReportRow[]> {
     const q = params
@@ -1450,6 +1898,8 @@ export class ApiClient {
     employee_id?: string;
     ageing_bucket?: string;
     month?: string;
+    start_date?: string;
+    end_date?: string;
     query?: string;
   }): Promise<OutstandingAgeingReportRow[]> {
     const q = params
@@ -1469,6 +1919,8 @@ export class ApiClient {
     area_id?: string;
     employee_id?: string;
     month?: string;
+    start_date?: string;
+    end_date?: string;
     query?: string;
   }): Promise<CollectionReportRow[]> {
     const q = params
@@ -1489,6 +1941,7 @@ export class ApiClient {
     zone_id?: string;
     area_id?: string;
     status?: string;
+    query?: string;
   }): Promise<VisitDetailedReportRow[]> {
     const q = params
       ? '?' +
@@ -1499,6 +1952,27 @@ export class ApiClient {
         ).toString()
       : '';
     return this.request<VisitDetailedReportRow[]>(`/api/v1/reports/visits-detailed${q}`);
+  }
+
+  /** Generic loader used by the Reports page: the same (report, params) pair is later used for the export. */
+  async getReport<T>(report: ReportKey, params: Record<string, string>): Promise<T> {
+    const q = new URLSearchParams(params).toString();
+    return this.request<T>(`${REPORT_ENDPOINTS[report]}${q ? `?${q}` : ''}`);
+  }
+
+  /**
+   * Download a report as Excel or PDF with the SAME params as the JSON endpoint (server-side files,
+   * ALL filtered rows). `filename` comes from Content-Disposition.
+   */
+  async downloadReportFile(
+    report: ReportKey,
+    params: Record<string, string>,
+    format: 'xlsx' | 'pdf',
+    extra?: Record<string, string>,
+  ): Promise<{ blob: Blob; filename: string | null }> {
+    const q = new URLSearchParams({ ...params, ...(extra ?? {}), format }).toString();
+    const { blob, headers } = await this.requestBlobWithMeta(`${REPORT_ENDPOINTS[report]}/export?${q}`);
+    return { blob, filename: filenameFromContentDisposition(headers.get('Content-Disposition')) };
   }
 
   async getMonthlyPeriods(onlyWithData?: boolean): Promise<MonthlyReportingPeriod[]> {
@@ -1541,115 +2015,6 @@ export class ApiClient {
     return this.requestBlobObjectUrl(`/api/v1/reports/overview/export${q}`);
   }
 
-  async exportBusinessSummaryExcelObjectUrl(
-    brand?: string,
-    zone_id?: string,
-    area_id?: string,
-    employee_id?: string,
-    month?: string,
-  ): Promise<string> {
-    const params = new URLSearchParams();
-    if (brand && brand !== 'ALL') params.set('brand', brand);
-    if (zone_id && zone_id !== 'ALL') params.set('zone_id', zone_id);
-    if (area_id && area_id !== 'ALL') params.set('area_id', area_id);
-    if (employee_id && employee_id !== 'ALL') params.set('employee_id', employee_id);
-    if (month && month !== 'ALL') params.set('month', month);
-    const q = params.toString();
-    return this.requestBlobObjectUrl(`/api/v1/reports/business-summary/export${q ? `?${q}` : ''}`);
-  }
-
-  async exportEmployeesMasterExcelObjectUrl(params?: {
-    working_profile?: string;
-    role?: string;
-    is_active?: boolean;
-    query?: string;
-  }): Promise<string> {
-    const q = params
-      ? '?' +
-        new URLSearchParams(
-          Object.entries(params)
-            .filter(([, v]) => v !== undefined && v !== '')
-            .map(([k, v]) => [k, String(v)]),
-        ).toString()
-      : '';
-    return this.requestBlobObjectUrl(`/api/v1/reports/employees-master/export${q}`);
-  }
-
-  async exportOutletsExcelObjectUrl(params?: {
-    brand?: string;
-    zone_id?: string;
-    area_id?: string;
-    employee_id?: string;
-    query?: string;
-  }): Promise<string> {
-    const q = params
-      ? '?' +
-        new URLSearchParams(
-          Object.entries(params)
-            .filter(([, v]) => v !== undefined && v !== '')
-            .map(([k, v]) => [k, String(v)]),
-        ).toString()
-      : '';
-    return this.requestBlobObjectUrl(`/api/v1/reports/outlets/export${q}`);
-  }
-
-  async exportOutstandingExcelObjectUrl(params?: {
-    brand?: string;
-    zone_id?: string;
-    area_id?: string;
-    employee_id?: string;
-    ageing_bucket?: string;
-    month?: string;
-    query?: string;
-  }): Promise<string> {
-    const q = params
-      ? '?' +
-        new URLSearchParams(
-          Object.entries(params)
-            .filter(([, v]) => v !== undefined && v !== '')
-            .map(([k, v]) => [k, String(v)]),
-        ).toString()
-      : '';
-    return this.requestBlobObjectUrl(`/api/v1/reports/outstanding/export${q}`);
-  }
-
-  async exportCollectionsExcelObjectUrl(params?: {
-    brand?: string;
-    zone_id?: string;
-    area_id?: string;
-    employee_id?: string;
-    month?: string;
-    query?: string;
-  }): Promise<string> {
-    const q = params
-      ? '?' +
-        new URLSearchParams(
-          Object.entries(params)
-            .filter(([, v]) => v !== undefined && v !== '')
-            .map(([k, v]) => [k, String(v)]),
-        ).toString()
-      : '';
-    return this.requestBlobObjectUrl(`/api/v1/reports/collections/export${q}`);
-  }
-
-  async exportVisitsDetailedExcelObjectUrl(params?: {
-    start_date?: string;
-    end_date?: string;
-    employee_id?: string;
-    zone_id?: string;
-    area_id?: string;
-  }): Promise<string> {
-    const q = params
-      ? '?' +
-        new URLSearchParams(
-          Object.entries(params)
-            .filter(([, v]) => v !== undefined && v !== '')
-            .map(([k, v]) => [k, String(v)]),
-        ).toString()
-      : '';
-    return this.requestBlobObjectUrl(`/api/v1/reports/visits-detailed/export${q}`);
-  }
-
 
   // -- signatures -------------------------------------------------------------
 
@@ -1674,6 +2039,8 @@ export class ApiClient {
     area_id?: string;
     employee_id?: string;
     collection_status?: string;
+    start_date?: string;
+    end_date?: string;
     skip?: number;
     limit?: number;
   }): Promise<CollectionsOverviewResponse> {
@@ -1714,7 +2081,8 @@ export class ApiClient {
   async createPayment(data: {
     visit_id: string;
     invoice_id?: string | null;
-    amount: number;
+    /** Exact 2-decimal string (e.g. "1250.50"), never a float. */
+    amount: string;
     payment_method: PaymentMethod;
     payment_date: string;
     cheque_number?: string | null;
@@ -1762,13 +2130,36 @@ export class ApiClient {
     return URL.createObjectURL(await fileResponse.blob());
   }
 
-  async getPaymentReviewQueue(status?: PaymentStatus): Promise<Payment[]> {
-    const query = status ? `?status=${status}` : '';
-    return this.request<Payment[]>(`/api/v1/payments/queue${query}`);
+  async getPaymentReviewQueue(
+    status?: PaymentStatus,
+    filters?: { tally_status?: TallyStatus; stuck?: boolean },
+  ): Promise<Payment[]> {
+    const params = new URLSearchParams();
+    if (status) params.set('status', status);
+    if (filters?.tally_status) params.set('tally_status', filters.tally_status);
+    if (filters?.stuck) params.set('stuck', 'true');
+    const query = params.toString();
+    return this.request<Payment[]>(`/api/v1/payments/queue${query ? `?${query}` : ''}`);
   }
 
-  async verifyPayment(paymentId: string): Promise<Payment> {
-    return this.request<Payment>(`/api/v1/payments/${paymentId}/verify`, { method: 'POST' });
+  /** Verify a payment. The bank-verification record is optional; with no/blank body it still verifies. */
+  async verifyPayment(paymentId: string, bank?: PaymentVerifyInput): Promise<Payment> {
+    const body: PaymentVerifyInput = {};
+    if (bank?.bank_reference?.trim()) body.bank_reference = bank.bank_reference.trim();
+    if (bank?.bank_verified_on) body.bank_verified_on = bank.bank_verified_on;
+    if (bank?.verified_note?.trim()) body.verified_note = bank.verified_note.trim();
+    if (Object.keys(body).length === 0) {
+      return this.request<Payment>(`/api/v1/payments/${paymentId}/verify`, { method: 'POST' });
+    }
+    return this.request<Payment>(`/api/v1/payments/${paymentId}/verify`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
+  /** Admin: re-queue a FAILED Tally write-back (409 PAYMENT_TALLY_NOT_FAILED otherwise). */
+  async retryPaymentTally(paymentId: string): Promise<Payment> {
+    return this.request<Payment>(`/api/v1/payments/${paymentId}/tally-retry`, { method: 'POST' });
   }
 
   async rejectPayment(paymentId: string, rejectionReason: string): Promise<Payment> {

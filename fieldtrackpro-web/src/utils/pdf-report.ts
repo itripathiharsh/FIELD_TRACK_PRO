@@ -1,8 +1,16 @@
 /**
- * PDF report generation utility.
+ * Client-side PDF generation utility (FALLBACK ONLY).
  *
- * Generates valid PDF 1.4 documents from tabular report data.
- * Supports multi-page output with automatic page breaks.
+ * The Reports and Collections pages download real server-side PDFs
+ * (reportlab; see backend app/services/report_exports.py). This helper remains
+ * only for screens that have no server export (e.g. the executive dashboard).
+ *
+ * Generates valid PDF 1.4 documents from tabular data:
+ *  - landscape A4, real table columns with wrapped cells and a repeating header row,
+ *  - "Page x of y" footer,
+ *  - byte-exact xref offsets and stream lengths (the document is pure Latin-1, so one
+ *    character == one byte; characters outside Latin-1 are transliterated),
+ *  - the rupee sign is printed as "Rs." because the built-in Helvetica has no glyph for it.
  */
 
 export interface PDFExportOptions {
@@ -17,160 +25,213 @@ export interface PDFExportOptions {
     summaryKPIs?: Array<{ label: string; value: string }>;
 }
 
+const PAGE_WIDTH = 842; // A4 landscape
+const PAGE_HEIGHT = 595;
+const MARGIN_X = 28;
+const MARGIN_TOP = 34;
+const MARGIN_BOTTOM = 34;
+const CELL_PAD = 3;
+
+/** Make text safe for a WinAnsi/Latin-1 Helvetica string: rupee -> Rs., anything else outside Latin-1 -> '?'. */
+export function toLatin1(text: string): string {
+    return text
+        .replace(/₹/g, 'Rs.')
+        .replace(/[‐-―−]/g, '-')
+        .replace(/[‘’]/g, "'")
+        .replace(/[“”]/g, '"')
+        .replace(/…/g, '...')
+        .split('')
+        .map((ch) => (ch.charCodeAt(0) > 0xff ? '?' : ch))
+        .join('');
+}
+
+const escapePDF = (str: string) =>
+    str.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)').replace(/\r|\n/g, ' ');
+
+// Approximate Helvetica advance widths (per 1000 em) - good enough for wrapping decisions.
+const NARROW = new Set('iljtfI.,:;|!\'"()[] '.split(''));
+const WIDE = new Set('mwMW@%'.split(''));
+const charWidth = (ch: string, size: number): number => {
+    if (NARROW.has(ch)) return size * 0.28;
+    if (WIDE.has(ch)) return size * 0.85;
+    if (ch >= 'A' && ch <= 'Z') return size * 0.68;
+    return size * 0.54;
+};
+const textWidth = (s: string, size: number) => {
+    let w = 0;
+    for (const ch of s) w += charWidth(ch, size);
+    return w;
+};
+
+function wrap(text: string, maxWidth: number, size: number): string[] {
+    const out: string[] = [];
+    for (const para of text.split(/\n/)) {
+        let line = '';
+        for (const word of para.split(/\s+/).filter(Boolean)) {
+            let w = word;
+            // hard-break a word that cannot fit on a line of its own
+            while (textWidth(w, size) > maxWidth && w.length > 1) {
+                let cut = 1;
+                while (cut < w.length && textWidth(w.slice(0, cut + 1), size) <= maxWidth) cut++;
+                if (line) {
+                    out.push(line);
+                    line = '';
+                }
+                out.push(w.slice(0, cut));
+                w = w.slice(cut);
+            }
+            const candidate = line ? `${line} ${w}` : w;
+            if (textWidth(candidate, size) <= maxWidth) {
+                line = candidate;
+            } else {
+                if (line) out.push(line);
+                line = w;
+            }
+        }
+        out.push(line);
+    }
+    return out.length ? out : [''];
+}
+
 export function generatePDFContent(options: PDFExportOptions): Uint8Array {
     const { title, headers, rows, dateRange, filters, summaryKPIs } = options;
+    const clean = (s: unknown) => toLatin1(String(s ?? ''));
 
-    const escapePDF = (str: string) =>
-        str.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+    const usable = PAGE_WIDTH - 2 * MARGIN_X;
+    const ncols = Math.max(headers.length, 1);
+    const fontSize = ncols <= 8 ? 8 : ncols <= 12 ? 7 : 6.2;
+    const lineH = fontSize + 2.2;
 
-    const LINE_HEIGHT = 14;
-    const MARGIN_TOP = 60;
-    const MARGIN_BOTTOM = 40;
-    const PAGE_HEIGHT = 842;
-    const PAGE_WIDTH = 595;
+    // ---- column widths: natural content width, then scale down to fit ------------------
+    const cleanHeaders = headers.map(clean);
+    const cleanRows = rows.map((r) => headers.map((_, i) => clean(r[i])));
+    const natural = cleanHeaders.map((h, i) => {
+        let longest = textWidth(h, fontSize);
+        for (const r of cleanRows) longest = Math.max(longest, Math.min(textWidth(r[i], fontSize), 170));
+        return longest + 2 * CELL_PAD + 2;
+    });
+    const total = natural.reduce((a, b) => a + b, 0);
+    const colW = total > usable ? natural.map((w) => Math.max(34, (w / total) * usable)) : natural.map((w) => w + (usable - total) / ncols);
+    const colX: number[] = [];
+    colW.reduce((x, w, i) => {
+        colX[i] = x;
+        return x + w;
+    }, MARGIN_X);
 
-    interface PageBlock {
-        lines: string[];
-    }
-
-    const blocks: PageBlock[] = [];
-    let current: PageBlock = { lines: [] };
+    // ---- pages -------------------------------------------------------------------------
+    const pages: string[][] = [];
+    let ops: string[] = [];
     let y = PAGE_HEIGHT - MARGIN_TOP;
 
-    const pushText = (text: string, fontSize: number) => {
-        if (y < MARGIN_BOTTOM) {
-            blocks.push(current);
-            current = { lines: [] };
-            y = PAGE_HEIGHT - MARGIN_TOP;
-        }
-        current.lines.push('BT');
-        current.lines.push(`/F1 ${fontSize} Tf`);
-        current.lines.push(`50 ${Math.round(y)} Td`);
-        current.lines.push(`(${escapePDF(text)}) Tj`);
-        current.lines.push('ET');
-        y -= LINE_HEIGHT * (fontSize / 10);
+    const text = (s: string, x: number, yy: number, size: number, bold = false, white = false) => {
+        ops.push('BT', `/${bold ? 'F2' : 'F1'} ${size} Tf`, white ? '1 1 1 rg' : '0 0 0 rg', `${x.toFixed(1)} ${yy.toFixed(1)} Td`, `(${escapePDF(s)}) Tj`, 'ET');
+    };
+    const newPage = () => {
+        pages.push(ops);
+        ops = [];
+        y = PAGE_HEIGHT - MARGIN_TOP;
     };
 
-    // Title
-    pushText(`FieldTrack - ${title}`, 15);
-    y -= 4;
+    const header = () => {
+        const h = Math.max(...cleanHeaders.map((hd, i) => wrap(hd, colW[i] - 2 * CELL_PAD, fontSize).length)) * lineH + 4;
+        ops.push('0.12 0.23 0.54 rg', `${MARGIN_X} ${(y - h).toFixed(1)} ${usable.toFixed(1)} ${h.toFixed(1)} re f`);
+        cleanHeaders.forEach((hd, i) => {
+            wrap(hd, colW[i] - 2 * CELL_PAD, fontSize).forEach((ln, k) => {
+                text(ln, colX[i] + CELL_PAD, y - 2 - fontSize - k * lineH + 1, fontSize, true, true);
+            });
+        });
+        y -= h;
+    };
 
-    // Generated timestamp in IST (Asia/Kolkata)
-    pushText(`Generated: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST`, 8);
+    const note = (s: string, size: number, bold = false) => {
+        for (const ln of wrap(s, usable, size)) {
+            text(ln, MARGIN_X, y - size, size, bold);
+            y -= size + 3;
+        }
+    };
+
+    note(`FieldTrack - ${clean(title)}`, 15, true);
     y -= 2;
-
-    // Date range / Filters
+    note(`Generated: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST`, 8);
     if (dateRange?.startDate || dateRange?.endDate) {
-        pushText(`Period: ${dateRange.startDate || 'Start'} to ${dateRange.endDate || 'End'}`, 9);
-        y -= 2;
+        note(`Period: ${dateRange.startDate || 'Start'} to ${dateRange.endDate || 'End'}`, 9);
     }
     if (filters) {
         const filterStr = Object.entries(filters)
             .filter(([, v]) => !!v && v !== 'ALL')
             .map(([k, v]) => `${k}: ${v}`)
             .join(' | ');
-        if (filterStr) {
-            pushText(`Filters Applied: ${filterStr}`, 8);
-            y -= 2;
-        }
+        if (filterStr) note(`Filters Applied: ${clean(filterStr)}`, 8);
     }
-
-    // Summary KPIs
     if (summaryKPIs && summaryKPIs.length > 0) {
-        const kpiStr = summaryKPIs.map((k) => `${k.label}: ${k.value}`).join('   |   ');
-        pushText(`Summary: ${kpiStr}`, 9);
+        note(`Summary: ${clean(summaryKPIs.map((k) => `${k.label}: ${k.value}`).join('   |   '))}`, 9, true);
+    }
+    y -= 6;
+    header();
+
+    cleanRows.forEach((r, ri) => {
+        const cellLines = r.map((c, i) => wrap(c, colW[i] - 2 * CELL_PAD, fontSize));
+        const h = Math.max(...cellLines.map((l) => l.length)) * lineH + 3;
+        if (y - h < MARGIN_BOTTOM) {
+            newPage();
+            header();
+        }
+        if (ri % 2 === 1) {
+            ops.push('0.95 0.96 0.97 rg', `${MARGIN_X} ${(y - h).toFixed(1)} ${usable.toFixed(1)} ${h.toFixed(1)} re f`);
+        }
+        cellLines.forEach((lines, i) => {
+            lines.forEach((ln, k) => text(ln, colX[i] + CELL_PAD, y - 1.5 - fontSize - k * lineH + 1, fontSize));
+        });
+        ops.push('0.82 0.84 0.86 RG', '0.25 w', `${MARGIN_X} ${(y - h).toFixed(1)} m ${(MARGIN_X + usable).toFixed(1)} ${(y - h).toFixed(1)} l S`);
+        y -= h;
+    });
+    if (rows.length === 0) {
         y -= 4;
+        note('No rows match the selected filters.', 8);
     }
+    pages.push(ops);
 
-    pushText('='.repeat(Math.min(95, Math.max(40, headers.length * 14))), 8);
-    y -= 4;
+    // page footers
+    const contents = pages.map((p, i) => {
+        const footer: string[] = [];
+        const label = `Page ${i + 1} of ${pages.length}`;
+        footer.push('BT', '/F1 7 Tf', '0.4 0.4 0.4 rg', `${(PAGE_WIDTH - MARGIN_X - textWidth(label, 7)).toFixed(1)} 16 Td`, `(${label}) Tj`, 'ET');
+        footer.push('BT', '/F1 7 Tf', '0.4 0.4 0.4 rg', `${MARGIN_X} 16 Td`, `(FieldTrack - ${escapePDF(clean(title))}) Tj`, 'ET');
+        return ['q', ...p, ...footer, 'Q'].join('\n');
+    });
 
-    // Table header
-    pushText(headers.join('  |  '), 8);
-    y -= 2;
-
-    pushText('-'.repeat(Math.min(95, Math.max(40, headers.length * 14))), 8);
-    y -= 4;
-
-    // Table rows
-    for (const row of rows) {
-        pushText(row.join('  |  '), 8);
+    // ---- serialise: Latin-1, one char == one byte, so offsets/lengths are exact bytes ---------
+    // Object numbering: 1 Catalog, 2 Pages, 3..(2+n) Page, (3+n)..(2+2n) Content, (3+2n) F1, (4+2n) F2
+    const n = contents.length;
+    const pageObj = (i: number) => 3 + i;
+    const contentObj = (i: number) => 3 + n + i;
+    const f1 = 3 + 2 * n;
+    const f2 = f1 + 1;
+    const objects: string[] = [];
+    objects[1] = '<< /Type /Catalog /Pages 2 0 R >>';
+    objects[2] = `<< /Type /Pages /Kids [${contents.map((_, i) => `${pageObj(i)} 0 R`).join(' ')}] /Count ${n} >>`;
+    for (let i = 0; i < n; i++) {
+        objects[pageObj(i)] = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PAGE_WIDTH} ${PAGE_HEIGHT}] /Contents ${contentObj(i)} 0 R /Resources << /Font << /F1 ${f1} 0 R /F2 ${f2} 0 R >> >> >>`;
+        objects[contentObj(i)] = `<< /Length ${contents[i].length} >>\nstream\n${contents[i]}\nendstream`;
     }
+    objects[f1] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>';
+    objects[f2] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>';
 
-    blocks.push(current);
-
-    // Build content streams per page
-    const pageContentStreams: string[] = [];
-    for (const block of blocks) {
-        pageContentStreams.push(['q', ...block.lines, 'Q'].join('\n'));
-    }
-
-    // Build PDF with byte-exact xref offsets
-    // Object numbering:
-    //   1 = Catalog
-    //   2 = Pages
-    //   3..(3+numPages-1) = Page objects
-    //   (3+numPages)..(3+2*numPages-1) = Content stream objects
-    //   last = Font object
-    const parts: string[] = [];
+    let body = '%PDF-1.4\n';
     const offsets: number[] = [];
-
-    const addPart = (text: string) => {
-        offsets.push(parts.join('').length);
-        parts.push(text);
-    };
-
-    const numPages = pageContentStreams.length;
-    const pageObjStart = 3;
-    const contentObjStart = pageObjStart + numPages;
-    const fontObjNum = contentObjStart + numPages;
-
-    addPart('%PDF-1.4\n');
-    addPart('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n');
-    addPart(`2 0 obj\n<< /Type /Pages /Kids [${pageContentStreams.map((_, i) => `${pageObjStart + i} 0 R`).join(' ')}] /Count ${numPages} >>\nendobj\n`);
-
-    for (let i = 0; i < numPages; i++) {
-        const pageNum = pageObjStart + i;
-        const contentNum = contentObjStart + i;
-        addPart(`${pageNum} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PAGE_WIDTH} ${PAGE_HEIGHT}] /Contents ${contentNum} 0 R /Resources << /Font << /F1 ${fontObjNum} 0 R >> >> >>\nendobj\n`);
+    for (let k = 1; k < objects.length; k++) {
+        offsets[k] = body.length;
+        body += `${k} 0 obj\n${objects[k]}\nendobj\n`;
     }
+    const xrefStart = body.length;
+    const count = objects.length; // includes the free head entry 0
+    let xref = `xref\n0 ${count}\n0000000000 65535 f \n`;
+    for (let k = 1; k < count; k++) xref += `${String(offsets[k]).padStart(10, '0')} 00000 n \n`;
+    const pdf = `${body}${xref}trailer\n<< /Size ${count} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF`;
 
-    addPart(`${fontObjNum} 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n`);
-
-    for (let i = 0; i < numPages; i++) {
-        const contentNum = contentObjStart + i;
-        const stream = pageContentStreams[i];
-        addPart(`${contentNum} 0 obj\n<< /Length ${stream.length} >>\nstream\n${stream}\nendstream\nendobj\n`);
-    }
-
-    const xrefStart = parts.join('').length;
-    const totalObjs = fontObjNum + 1;
-
-    // Map every PDF object number to the byte offset where it was written.
-    // `offsets` is ordered by addPart() calls: [header, catalog(1), pages(2),
-    // page objects(3..), font(fontObjNum), content objects]. The header is not
-    // an object, so it is excluded from the xref table.
-    const objectOffsets = new Map<number, number>();
-    objectOffsets.set(1, offsets[1]);
-    objectOffsets.set(2, offsets[2]);
-    for (let i = 0; i < numPages; i++) {
-        objectOffsets.set(pageObjStart + i, offsets[3 + i]);
-    }
-    objectOffsets.set(fontObjNum, offsets[3 + numPages]);
-    for (let i = 0; i < numPages; i++) {
-        objectOffsets.set(contentObjStart + i, offsets[4 + numPages + i]);
-    }
-
-    let xref = `xref\n0 ${totalObjs}\n0000000000 65535 f \n`;
-    for (let n = 1; n < totalObjs; n++) {
-        const off = objectOffsets.get(n) ?? 0;
-        xref += `${String(off).padStart(10, '0')} 00000 n \n`;
-    }
-
-    const trailer = `trailer\n<< /Size ${totalObjs} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF`;
-
-    const pdfString = parts.join('') + xref + trailer;
-    return new TextEncoder().encode(pdfString);
+    const bytes = new Uint8Array(pdf.length);
+    for (let i = 0; i < pdf.length; i++) bytes[i] = pdf.charCodeAt(i) & 0xff;
+    return bytes;
 }
 
 /**

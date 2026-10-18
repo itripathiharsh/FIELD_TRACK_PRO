@@ -17,12 +17,7 @@ import {
 } from 'lucide-react';
 import { apiClient } from '../api/client';
 import { TodayFieldActivityOverview, EmployeeWorkdaySessionItem } from '../types';
-
-const formatCurrency = (value: string | number | undefined | null): string => {
-  if (value === undefined || value === null) return '₹0';
-  const num = typeof value === 'number' ? value : parseFloat(value) || 0;
-  return `₹${num.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
-};
+import { formatMoney as formatCurrency } from '../utils/money';
 
 export const EmployeeDailyLogsPage: React.FC = () => {
   const navigate = useNavigate();

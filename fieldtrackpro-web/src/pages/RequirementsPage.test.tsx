@@ -24,7 +24,7 @@ vi.mock('../api/client', () => ({
     logout: vi.fn(),
     getAllRequirements: vi.fn(),
     approveRequirement: vi.fn(),
-    partiallyApproveRequirement: vi.fn(),
+    decideRequirement: vi.fn(),
     rejectRequirement: vi.fn(),
   },
 }));
@@ -88,7 +88,7 @@ describe('RequirementsPage', () => {
   it('renders KPI metrics and customer requirements table', async () => {
     renderWithProviders(<RequirementsPage />);
 
-    expect(await screen.findByText('Customer Requirements')).toBeInTheDocument();
+    expect(await screen.findByText('Customer Requirements & Orders')).toBeInTheDocument();
     expect(screen.getByText('Shree Radhey Appliances')).toBeInTheDocument();
     expect(screen.getByText('Kanpur Electricals')).toBeInTheDocument();
     expect(screen.getByText('10 x Usha Ceiling Fans High-Speed')).toBeInTheDocument();
@@ -101,7 +101,7 @@ describe('RequirementsPage', () => {
 
   it('opens review modal and supports partial approval with preserved original request', async () => {
     const user = userEvent.setup();
-    vi.mocked(apiClient.partiallyApproveRequirement).mockResolvedValue({
+    vi.mocked(apiClient.decideRequirement).mockResolvedValue({
       ...MOCK_REQUIREMENTS[0],
       status: 'PARTIALLY_APPROVED',
       approved_quantity: 4,
@@ -118,10 +118,10 @@ describe('RequirementsPage', () => {
     await user.click(reviewButtons[0]);
 
     // Modal should be open
-    expect(await screen.findByText(/Original Field Request \(Preserved\)/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Original Field Request/i)).toBeInTheDocument();
     // Preserved fields visible
     expect(screen.getAllByText('10 units').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('₹25,000').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('₹25,000.00').length).toBeGreaterThan(0);
 
     // Select Partially Approve tab
     const partialTab = screen.getByRole('button', { name: /^partially approve$/i });
@@ -144,7 +144,8 @@ describe('RequirementsPage', () => {
     await user.click(confirmBtn);
 
     await waitFor(() => {
-      expect(apiClient.partiallyApproveRequirement).toHaveBeenCalledWith('req-001', {
+      expect(apiClient.decideRequirement).toHaveBeenCalledWith('req-001', {
+        action: 'PARTIALLY_APPROVE',
         approved_quantity: 4,
         approved_value: 10000,
         admin_notes: 'Approved 4 units for initial dispatch',

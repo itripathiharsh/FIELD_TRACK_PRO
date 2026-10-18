@@ -11,6 +11,8 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { ErrorBanner } from '../components/ui/ErrorBanner';
 import { MapPicker } from '../components/ui/MapPicker';
 import { LocationApprovalsQueue } from '../components/customers/LocationApprovalsQueue';
+import { NewOutletApprovalsQueue } from '../components/customers/NewOutletApprovalsQueue';
+import { OutletPhotoChip } from '../components/outlet-proofs/OutletPhotoChip';
 import { BrandSelect } from '../components/ui/BrandSelect';
 import { apiClient, ApiError } from '../api/client';
 import { Area, Customer, Territory } from '../types';
@@ -34,8 +36,10 @@ const emptyForm = {
 
 export const CustomersPage: React.FC = () => {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'directory' | 'approvals'>('directory');
+  const [activeTab, setActiveTab] = useState<'directory' | 'approvals' | 'newOutlets'>('directory');
   const [pendingProposalsCount, setPendingProposalsCount] = useState(0);
+  const [pendingProspectsCount, setPendingProspectsCount] = useState(0);
+  const [tallyActionError, setTallyActionError] = useState<string | null>(null);
 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [totalCount, setTotalCount] = useState(0);
@@ -78,6 +82,29 @@ export const CustomersPage: React.FC = () => {
       // Non-blocking
     }
   }, []);
+
+  const fetchPendingProspectsCount = useCallback(async () => {
+    try {
+      const pendingList = await apiClient.getCustomerProspects({ status: 'PENDING' });
+      setPendingProspectsCount(pendingList.length);
+    } catch {
+      // Non-blocking
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchPendingProspectsCount();
+  }, [fetchPendingProspectsCount]);
+
+  const handleMarkTallyEntryDone = async (customerId: string) => {
+    setTallyActionError(null);
+    try {
+      await apiClient.markCustomerTallyEntryDone(customerId);
+      fetchCustomers(page, searchQuery, filterTerritoryId, filterAreaId);
+    } catch (err) {
+      setTallyActionError(err instanceof Error ? err.message : 'Failed to update Tally entry status');
+    }
+  };
 
   const set = <K extends keyof typeof emptyForm>(key: K, value: string) => {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -425,6 +452,14 @@ export const CustomersPage: React.FC = () => {
                 </span>
               )}
             </div>
+            {cust.needs_tally_entry && (
+              <span
+                className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded bg-rose-100 text-rose-900 border border-rose-300"
+                title="Approved from a field submission - not yet added to TallyPrime. There is no automatic Tally sync for new outlets; add it manually, then mark it done here."
+              >
+                Not in Tally
+              </span>
+            )}
             {cust.brands && cust.brands.length > 0 && (
               <div className="flex flex-wrap gap-1">
                 {cust.brands.map((b) => (
@@ -483,6 +518,10 @@ export const CustomersPage: React.FC = () => {
       },
     },
     {
+      header: 'Outlet Photo',
+      accessor: (cust) => <OutletPhotoChip customer={cust} />,
+    },
+    {
       header: 'Contact Number',
       accessor: (cust) => (
         <span className="font-mono text-xs font-semibold text-primary">
@@ -508,6 +547,15 @@ export const CustomersPage: React.FC = () => {
           >
             <Pencil className="w-4 h-4" />
           </button>
+          {cust.needs_tally_entry && (
+            <button
+              onClick={() => handleMarkTallyEntryDone(cust.id)}
+              className="px-2 py-1 text-[10px] font-bold text-rose-700 hover:bg-rose-50 border border-rose-300 rounded-md transition-colors cursor-pointer whitespace-nowrap"
+              title="Confirm you've manually added this outlet to TallyPrime"
+            >
+              Mark Added to Tally
+            </button>
+          )}
         </div>
       ),
     },
@@ -538,6 +586,21 @@ export const CustomersPage: React.FC = () => {
           Outlets Directory ({totalCount})
         </button>
         <button
+          onClick={() => setActiveTab('newOutlets')}
+          className={`px-4 py-2 text-xs font-bold rounded-lg transition-colors cursor-pointer flex items-center gap-2 ${
+            activeTab === 'newOutlets'
+              ? 'bg-primary text-on-primary shadow-xs'
+              : 'bg-surface text-on-surface-variant hover:text-on-surface'
+          }`}
+        >
+          <span>New Outlet Approvals</span>
+          {pendingProspectsCount > 0 && (
+            <span className="px-2 py-0.5 text-[11px] font-black rounded-full bg-amber-400 text-amber-950">
+              {pendingProspectsCount}
+            </span>
+          )}
+        </button>
+        <button
           onClick={() => setActiveTab('approvals')}
           className={`px-4 py-2 text-xs font-bold rounded-lg transition-colors cursor-pointer flex items-center gap-2 ${
             activeTab === 'approvals'
@@ -555,8 +618,11 @@ export const CustomersPage: React.FC = () => {
       </div>
 
       {error && <ErrorBanner message={error} />}
+      {tallyActionError && <ErrorBanner message={tallyActionError} onRetry={() => setTallyActionError(null)} />}
 
-      {activeTab === 'approvals' ? (
+      {activeTab === 'newOutlets' ? (
+        <NewOutletApprovalsQueue onProspectReviewed={fetchPendingProspectsCount} />
+      ) : activeTab === 'approvals' ? (
         <LocationApprovalsQueue onProposalReviewed={fetchPendingProposalsCount} />
       ) : (
         <>

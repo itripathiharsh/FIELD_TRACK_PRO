@@ -1,57 +1,50 @@
-import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider, useAuth } from './context/AuthContext';
+import React, { lazy, Suspense } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { AuthProvider } from './context/AuthContext';
+import { AdminRoute, ProtectedRoute } from './components/auth/RouteGuards';
 import { Layout } from './components/layout/Layout';
 import { LoginPage } from './pages/LoginPage';
-import { DashboardPage } from './pages/DashboardPage';
-import { EmployeesPage } from './pages/EmployeesPage';
-import { TerritoriesPage } from './pages/TerritoriesPage';
-import { CustomersPage } from './pages/CustomersPage';
-import { VisitsPage } from './pages/VisitsPage';
-import { VisitDetailsPage } from './pages/VisitDetailsPage';
-import { MonthlyVisitPlanningPage } from './pages/MonthlyVisitPlanningPage';
-import { AdminVisitPlanningPage } from './pages/AdminVisitPlanningPage';
-import { FormsPage } from './pages/FormsPage';
-import { FormBuilderPage } from './pages/FormBuilderPage';
-import { FormPreviewPage } from './pages/FormPreviewPage';
-import { FormSubmissionsPage } from './pages/FormSubmissionsPage';
-import { FormSubmissionDetailPage } from './pages/FormSubmissionDetailPage';
-import { FormFillPage } from './pages/FormFillPage';
-import { ReportsPage } from './pages/ReportsPage';
-import { SettingsPage } from './pages/SettingsPage';
-import { ProfilePage } from './pages/ProfilePage';
-import { MapPage } from './pages/MapPage';
-import { EmployeeDetailPage } from './pages/EmployeeDetailPage';
-import { CustomerDetailPage } from './pages/CustomerDetailPage';
-import { UserDetailPage } from './pages/UserDetailPage';
-import { TerritoryDetailPage } from './pages/TerritoryDetailPage';
-import { PaymentReviewPage } from './pages/PaymentReviewPage';
-import { RequirementsPage } from './pages/RequirementsPage';
-import { EmployeeDailyLogsPage } from './pages/EmployeeDailyLogsPage';
+import { RouteFallback } from './components/ui/RouteFallback';
+import { ChunkErrorBoundary } from './components/ui/ChunkErrorBoundary';
 
-const AuthLoadingFallback: React.FC = () => (
-  <div className="min-h-screen bg-background flex flex-col items-center justify-center text-on-surface">
-    <div className="w-10 h-10 border-4 border-primary-container border-t-secondary-container rounded-full animate-spin" />
-    <p className="mt-space-4 font-caption text-caption text-on-surface-variant">
-      Initializing FieldTrack Pro Subsystem...
-    </p>
-  </div>
-);
+// Every page except Login is code-split; the app shell (Layout) stays in the main bundle.
+const DashboardPage = lazy(() => import('./pages/DashboardPage').then((m) => ({ default: m.DashboardPage })));
+const EmployeesPage = lazy(() => import('./pages/EmployeesPage').then((m) => ({ default: m.EmployeesPage })));
+const TerritoriesPage = lazy(() => import('./pages/TerritoriesPage').then((m) => ({ default: m.TerritoriesPage })));
+const CustomersPage = lazy(() => import('./pages/CustomersPage').then((m) => ({ default: m.CustomersPage })));
+const VisitsPage = lazy(() => import('./pages/VisitsPage').then((m) => ({ default: m.VisitsPage })));
+const VisitDetailsPage = lazy(() => import('./pages/VisitDetailsPage').then((m) => ({ default: m.VisitDetailsPage })));
+const AdhocReviewPage = lazy(() => import('./pages/AdhocReviewPage').then((m) => ({ default: m.AdhocReviewPage })));
+const MonthlyVisitPlanningPage = lazy(() => import('./pages/MonthlyVisitPlanningPage').then((m) => ({ default: m.MonthlyVisitPlanningPage })));
+const AdminVisitPlanningPage = lazy(() => import('./pages/AdminVisitPlanningPage').then((m) => ({ default: m.AdminVisitPlanningPage })));
+const FormsPage = lazy(() => import('./pages/FormsPage').then((m) => ({ default: m.FormsPage })));
+const FormBuilderPage = lazy(() => import('./pages/FormBuilderPage').then((m) => ({ default: m.FormBuilderPage })));
+const FormPreviewPage = lazy(() => import('./pages/FormPreviewPage').then((m) => ({ default: m.FormPreviewPage })));
+const FormSubmissionsPage = lazy(() => import('./pages/FormSubmissionsPage').then((m) => ({ default: m.FormSubmissionsPage })));
+const FormSubmissionDetailPage = lazy(() => import('./pages/FormSubmissionDetailPage').then((m) => ({ default: m.FormSubmissionDetailPage })));
+const FormFillPage = lazy(() => import('./pages/FormFillPage').then((m) => ({ default: m.FormFillPage })));
+const ReportsPage = lazy(() => import('./pages/ReportsPage').then((m) => ({ default: m.ReportsPage })));
+const SettingsPage = lazy(() => import('./pages/SettingsPage').then((m) => ({ default: m.SettingsPage })));
+const ProfilePage = lazy(() => import('./pages/ProfilePage').then((m) => ({ default: m.ProfilePage })));
+const MapPage = lazy(() => import('./pages/MapPage').then((m) => ({ default: m.MapPage })));
+const EmployeeDetailPage = lazy(() => import('./pages/EmployeeDetailPage').then((m) => ({ default: m.EmployeeDetailPage })));
+const CustomerDetailPage = lazy(() => import('./pages/CustomerDetailPage').then((m) => ({ default: m.CustomerDetailPage })));
+const UserDetailPage = lazy(() => import('./pages/UserDetailPage').then((m) => ({ default: m.UserDetailPage })));
+const TerritoryDetailPage = lazy(() => import('./pages/TerritoryDetailPage').then((m) => ({ default: m.TerritoryDetailPage })));
+const PaymentReviewPage = lazy(() => import('./pages/PaymentReviewPage').then((m) => ({ default: m.PaymentReviewPage })));
+const RequirementsPage = lazy(() => import('./pages/RequirementsPage').then((m) => ({ default: m.RequirementsPage })));
+const EmployeeDailyLogsPage = lazy(() => import('./pages/EmployeeDailyLogsPage').then((m) => ({ default: m.EmployeeDailyLogsPage })));
+const OutletVerificationPage = lazy(() => import('./pages/OutletVerificationPage').then((m) => ({ default: m.OutletVerificationPage })));
 
-const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { isAuthenticated, isLoading } = useAuth();
-  if (isLoading) return <AuthLoadingFallback />;
-  if (!isAuthenticated) return <Navigate to="/login" replace />;
-  return <>{children}</>;
-};
-
-const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user, isAuthenticated, isLoading } = useAuth();
-  if (isLoading) return <AuthLoadingFallback />;
-  if (!isAuthenticated) return <Navigate to="/login" replace />;
-  if (user?.role !== 'ADMIN') return <Navigate to="/" replace />;
-  return <>{children}</>;
-};
+/** Suspense + chunk-failure boundary for lazy routes; a navigation clears a previous failure. */
+function LazyRoutes({ children }: { children: React.ReactNode }) {
+  const { pathname } = useLocation();
+  return (
+    <ChunkErrorBoundary resetKey={pathname}>
+      <Suspense fallback={<RouteFallback />}>{children}</Suspense>
+    </ChunkErrorBoundary>
+  );
+}
 
 export function AppContent() {
   // FT-057: an `apiStatus` state was computed here, passed to Layout, and then
@@ -66,6 +59,7 @@ export function AppContent() {
         element={
           <ProtectedRoute>
             <Layout>
+              <LazyRoutes>
               <Routes>
                 <Route path="/" element={<DashboardPage />} />
                 <Route path="/employees" element={<AdminRoute><EmployeesPage /></AdminRoute>} />
@@ -74,9 +68,11 @@ export function AppContent() {
                 <Route path="/territories" element={<AdminRoute><TerritoriesPage /></AdminRoute>} />
                 <Route path="/territories/:id" element={<AdminRoute><TerritoryDetailPage /></AdminRoute>} />
                 <Route path="/customers" element={<AdminRoute><CustomersPage /></AdminRoute>} />
+                <Route path="/customers/outlet-verification" element={<AdminRoute><OutletVerificationPage /></AdminRoute>} />
                 <Route path="/visit-planning" element={<MonthlyVisitPlanningPage />} />
                 <Route path="/admin/visit-planning" element={<AdminRoute><AdminVisitPlanningPage /></AdminRoute>} />
                 <Route path="/visits" element={<VisitsPage />} />
+                <Route path="/visits/adhoc-review" element={<AdminRoute><AdhocReviewPage /></AdminRoute>} />
                 <Route path="/visits/:id" element={<VisitDetailsPage />} />
                 <Route path="/map" element={<AdminRoute><MapPage /></AdminRoute>} />
                 <Route path="/employees/:id" element={<AdminRoute><EmployeeDetailPage /></AdminRoute>} />
@@ -100,6 +96,7 @@ export function AppContent() {
                 <Route path="/profile" element={<ProfilePage />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
+              </LazyRoutes>
             </Layout>
           </ProtectedRoute>
         }

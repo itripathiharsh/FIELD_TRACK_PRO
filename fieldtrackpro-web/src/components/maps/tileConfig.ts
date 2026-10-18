@@ -66,8 +66,13 @@ export function isValidUrl(url: string): boolean {
   }
 }
 
-export const MAPLIBRE_WORKER_URL =
-  'https://cdn.jsdelivr.net/npm/maplibre-gl@6.2.0/dist/maplibre-gl-worker.mjs';
+/**
+ * Same-origin MapLibre worker. vite.config.ts copies it (plus the shared chunk it
+ * imports) from the installed maplibre-gl package to /maplibre/ at build time and
+ * serves it from node_modules in dev, so the worker always matches the bundled
+ * library version and no CDN is needed (CSP: script-src/worker-src 'self').
+ */
+export const MAPLIBRE_WORKER_URL = '/maplibre/maplibre-gl-worker.mjs';
 
 function getDefaultConfig(): TileProviderConfig {
   return {

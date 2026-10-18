@@ -86,7 +86,7 @@ describe('SignatureThumbnail', () => {
             expect(apiClient.getSignatureDownloadUrl).toHaveBeenCalledWith(mockSignature.id);
         });
 
-        expect(windowOpenSpy).toHaveBeenCalledWith('https://example.com/download/sig.png', '_blank');
+        expect(windowOpenSpy).toHaveBeenCalledWith('https://example.com/download/sig.png', '_blank', 'noopener,noreferrer');
         windowOpenSpy.mockRestore();
     });
 

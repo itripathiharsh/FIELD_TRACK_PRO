@@ -5,11 +5,11 @@ import {
     MapMarker,
     TerritoryCircle,
     CurrentUserLocation,
-    getBoundsForMarkersAndCircles,
-    isValidCoordinate,
 } from './FieldTrackMap';
+import { getBoundsForMarkersAndCircles, isValidCoordinate } from './mapGeometry';
 
-const { mockFitBounds, mockFlyTo, mockResize } = vi.hoisted(() => ({
+const { mockFitBounds, mockFlyTo, mockResize, popupContents } = vi.hoisted(() => ({
+    popupContents: [] as HTMLElement[],
     mockFitBounds: vi.fn(),
     mockFlyTo: vi.fn(),
     mockResize: vi.fn(),
@@ -59,7 +59,7 @@ vi.mock('maplibre-gl', () => {
     class MockPopup {
         setText() { return this; }
         setLngLat() { return this; }
-        setDOMContent() { return this; }
+        setDOMContent(el: HTMLElement) { popupContents.push(el); return this; }
         addTo() { return this; }
         remove() { return this; }
     }
@@ -131,6 +131,23 @@ describe('FieldTrackMap', () => {
     it('renders with live employee GPS currentLocation marker', () => {
         render(<FieldTrackMap markers={mockMarkers} currentLocation={mockUserLocation} />);
         expect(true).toBe(true);
+    });
+
+    it('escapes outlet ids in the data-select-outlet attribute (no attribute injection)', async () => {
+        popupContents.length = 0;
+        const evilId = 'x" onmouseover="window.__pwned=1" data-x="';
+        const clash: MapMarker[] = [
+            { id: evilId, latitude: 12.9, longitude: 77.5, label: 'Evil <b>one</b>', color: '#ffa515' },
+            { id: 'ok-2', latitude: 12.9, longitude: 77.5, label: 'Second', color: '#ffa515' },
+        ];
+        render(<FieldTrackMap markers={clash} />);
+        await waitFor(() => expect(popupContents.length).toBeGreaterThan(0));
+        const popup = popupContents.find((p) => p.querySelector('[data-select-outlet]'))!;
+        const buttons = Array.from(popup.querySelectorAll('button'));
+        expect(buttons).toHaveLength(2);
+        expect(buttons[0].getAttribute('data-select-outlet')).toBe(evilId);
+        expect(buttons[0].hasAttribute('onmouseover')).toBe(false);
+        expect(popup.querySelector('b')).toBeNull(); // label markup stays text
     });
 
     it('validates coordinates accurately with isValidCoordinate', () => {

@@ -4,20 +4,20 @@ import { Card, CardHeader, CardTitle, CardSubtitle } from './Card';
 import { Button } from './Button';
 import { StatusBadge } from './StatusBadge';
 import { PaymentMethodBadge } from './PaymentMethodBadge';
+import { AwaitingTallyAmount } from './AwaitingTallyAmount';
+import { TallyStatusBadge } from './TallyStatusBadge';
 import { apiClient } from '../../api/client';
 import { AccountSummary } from '../../types';
+import { getAgeingTextClass } from '../../utils/ageing';
+import { PositionBreakdown, AgeingTable, ReconcileWarning } from '../collections/PositionBreakdown';
+import { hasPosition } from '../collections/positionFormat';
+import { formatMoney as formatCurrency } from '../../utils/money';
 
 interface AccountSummaryCardProps {
   account: AccountSummary;
   /** Provided only in the employee/visit context - shows the "Collect Payment" action. */
   onCollectPayment?: () => void;
 }
-
-const formatCurrency = (value: string | number): string => {
-  const n = Number(value);
-  if (isNaN(n)) return '₹0';
-  return `₹${n.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
-};
 
 /**
  * Outlet "Account / Collections" panel: outstanding/due/overdue, aging,
@@ -30,7 +30,7 @@ export const AccountSummaryCard: React.FC<AccountSummaryCardProps> = ({ account,
     setViewingProofId(proofId);
     try {
       const objectUrl = await apiClient.getPaymentProofObjectUrl(proofId);
-      window.open(objectUrl, '_blank');
+      window.open(objectUrl, '_blank', 'noopener,noreferrer');
       setTimeout(() => URL.revokeObjectURL(objectUrl), 30_000);
     } finally {
       setViewingProofId(null);
@@ -47,6 +47,8 @@ export const AccountSummaryCard: React.FC<AccountSummaryCardProps> = ({ account,
 
   const isOverdue = Number(account.overdue_amount) > 0;
   const daysOut = Number(account.max_days_outstanding) || 0;
+  const daysClass = getAgeingTextClass(daysOut);
+  const showPosition = hasPosition(account);
 
   return (
     <Card variant="default" className="space-y-6 overflow-hidden">
@@ -88,11 +90,12 @@ export const AccountSummaryCard: React.FC<AccountSummaryCardProps> = ({ account,
         <div className="min-w-0 p-3.5 bg-surface-container-low rounded-xl border border-outline-variant/60 flex flex-col justify-between hover:border-outline-variant transition-colors shadow-sm">
           <div className="flex items-center gap-1.5 text-on-surface-variant mb-2">
             <Landmark className="w-4 h-4 shrink-0 text-emerald-600" />
-            <span className="text-[11px] font-semibold uppercase tracking-wider truncate">Paid to Date</span>
+            <span className="text-[11px] font-semibold uppercase tracking-wider truncate" title="Verified and posted to Tally">Paid (in Tally)</span>
           </div>
           <p className="text-lg font-bold text-emerald-700 tracking-tight whitespace-nowrap truncate">
-            {formatCurrency(account.total_paid)}
+            {formatCurrency(showPosition ? (account.paid_in_tally ?? account.total_paid) : account.total_paid)}
           </p>
+          <AwaitingTallyAmount amount={account.verified_awaiting_tally_amount} className="mt-1 whitespace-normal" />
         </div>
 
         {/* Overdue */}
@@ -115,15 +118,24 @@ export const AccountSummaryCard: React.FC<AccountSummaryCardProps> = ({ account,
         {/* Days Outstanding */}
         <div className="min-w-0 p-3.5 bg-surface-container-low rounded-xl border border-outline-variant/60 flex flex-col justify-between hover:border-outline-variant transition-colors shadow-sm col-span-2 sm:col-span-1">
           <div className="flex items-center gap-1.5 text-on-surface-variant mb-2">
-            <Clock className={`w-4 h-4 shrink-0 ${daysOut > 30 ? 'text-amber-600' : 'text-primary/70'}`} />
+            <Clock className={`w-4 h-4 shrink-0 ${daysClass}`} />
             <span className="text-[11px] font-semibold uppercase tracking-wider truncate">Days Due</span>
           </div>
           <div className="flex items-baseline gap-1.5">
-            <span className="text-lg font-bold text-primary tracking-tight">{account.max_days_outstanding}</span>
+            <span data-testid="days-due" className={`text-lg font-bold tracking-tight ${daysClass}`}>{account.max_days_outstanding}</span>
             <span className="text-xs text-on-surface-variant/70 font-medium">days</span>
           </div>
         </div>
       </div>
+
+      {showPosition && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          <PositionBreakdown position={account} />
+          <div className="p-3.5 rounded-xl border border-outline-variant/60 bg-surface-container-low">
+            <AgeingTable ageing={account.ageing} totalOutstanding={account.total_outstanding} />
+          </div>
+        </div>
+      )}
 
       {/* Activity Timeline Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
@@ -168,9 +180,10 @@ export const AccountSummaryCard: React.FC<AccountSummaryCardProps> = ({ account,
               <thead>
                 <tr className="bg-surface-container-high/60 text-on-surface-variant font-semibold uppercase text-[11px] tracking-wider border-b border-outline-variant/40">
                   <th className="py-2.5 px-3 text-left">Brand</th>
-                  <th className="py-2.5 px-3 text-right">Invoiced</th>
-                  <th className="py-2.5 px-3 text-right">Paid</th>
-                  <th className="py-2.5 px-3 text-right">Outstanding</th>
+                  {showPosition && <th className="py-2.5 px-3 text-right">Opening (Tally)</th>}
+                  <th className="py-2.5 px-3 text-right">{showPosition ? '+ Invoiced' : 'Invoiced'}</th>
+                  <th className="py-2.5 px-3 text-right">{showPosition ? '− Paid (in Tally)' : 'Paid (in Tally)'}</th>
+                  <th className="py-2.5 px-3 text-right">{showPosition ? '= Outstanding' : 'Outstanding'}</th>
                   <th className="py-2.5 px-3 text-right">Overdue</th>
                   <th className="py-2.5 px-3 text-center">Invoices</th>
                   <th className="py-2.5 px-3 text-right">Latest Invoice</th>
@@ -181,9 +194,14 @@ export const AccountSummaryCard: React.FC<AccountSummaryCardProps> = ({ account,
                   const brandOverdue = Number(b.overdue_amount) > 0;
                   return (
                     <tr key={b.brand} className="hover:bg-surface-container-low/40 transition-colors">
-                      <td className="py-2.5 px-3 font-semibold text-on-surface">{b.brand}</td>
+                      <td className="py-2.5 px-3 font-semibold text-on-surface">{b.brand}
+                        <ReconcileWarning reconciles={b.reconciles} className="block mt-1 w-fit" />
+                      </td>
+                      {showPosition && <td data-testid={`brand-opening-${b.brand}`} className="py-2.5 px-3 text-right text-on-surface-variant whitespace-nowrap">{formatCurrency(b.opening_balance ?? 0)}</td>}
                       <td className="py-2.5 px-3 text-right text-on-surface-variant whitespace-nowrap">{formatCurrency(b.total_invoiced)}</td>
-                      <td className="py-2.5 px-3 text-right text-emerald-700 font-medium whitespace-nowrap">{formatCurrency(b.total_paid)}</td>
+                      <td className="py-2.5 px-3 text-right text-emerald-700 font-medium whitespace-nowrap">{formatCurrency(showPosition ? (b.paid_in_tally ?? b.total_paid) : b.total_paid)}
+                        <AwaitingTallyAmount amount={b.verified_awaiting_tally_amount} className="block whitespace-normal" />
+                      </td>
                       <td className="py-2.5 px-3 text-right font-bold text-primary whitespace-nowrap">{formatCurrency(b.total_outstanding)}</td>
                       <td className={`py-2.5 px-3 text-right font-semibold whitespace-nowrap ${brandOverdue ? 'text-rose-600' : 'text-on-surface-variant/70'}`}>
                         {formatCurrency(b.overdue_amount)}
@@ -200,7 +218,7 @@ export const AccountSummaryCard: React.FC<AccountSummaryCardProps> = ({ account,
       )}
 
       {/* Outstanding Ageing Breakdown */}
-      {account.aging_buckets && Object.keys(account.aging_buckets).length > 0 && (
+      {!account.ageing && account.aging_buckets && Object.keys(account.aging_buckets).length > 0 && (
         <div className="space-y-2.5">
           <p className="text-xs uppercase tracking-wider text-on-surface-variant font-bold">
             Outstanding Ageing
@@ -253,6 +271,7 @@ export const AccountSummaryCard: React.FC<AccountSummaryCardProps> = ({ account,
                   <th className="py-2.5 px-3 text-left">Invoice</th>
                   <th className="py-2.5 px-3 text-left">Date</th>
                   <th className="py-2.5 px-3 text-right">Amount</th>
+                  <th className="py-2.5 px-3 text-right">Paid (in Tally)</th>
                   <th className="py-2.5 px-3 text-right">Remaining</th>
                   <th className="py-2.5 px-3 text-center">Days</th>
                   <th className="py-2.5 px-3 text-center">Status</th>
@@ -264,8 +283,12 @@ export const AccountSummaryCard: React.FC<AccountSummaryCardProps> = ({ account,
                     <td className="py-2.5 px-3 font-semibold text-on-surface font-mono">{inv.invoice_number}</td>
                     <td className="py-2.5 px-3 text-on-surface-variant whitespace-nowrap">{inv.invoice_date}</td>
                     <td className="py-2.5 px-3 text-right font-medium text-on-surface whitespace-nowrap">{formatCurrency(inv.amount)}</td>
+                    <td className="py-2.5 px-3 text-right text-emerald-700 font-medium whitespace-nowrap">
+                      {formatCurrency(inv.verified_paid_amount ?? 0)}
+                      <AwaitingTallyAmount amount={inv.verified_awaiting_tally_amount} className="block whitespace-normal" />
+                    </td>
                     <td className="py-2.5 px-3 text-right font-bold text-primary whitespace-nowrap">{formatCurrency(inv.remaining_amount)}</td>
-                    <td className="py-2.5 px-3 text-center text-on-surface-variant">{inv.days_outstanding}</td>
+                    <td className={`py-2.5 px-3 text-center ${Number(inv.remaining_amount) > 0 ? `${getAgeingTextClass(inv.days_outstanding)} font-semibold` : 'text-on-surface-variant'}`}>{inv.days_outstanding}</td>
                     <td className="py-2.5 px-3 text-center whitespace-nowrap">
                       <StatusBadge status={inv.aging_status} size="sm" />
                     </td>
@@ -306,6 +329,9 @@ export const AccountSummaryCard: React.FC<AccountSummaryCardProps> = ({ account,
                       </Button>
                     )}
                     <StatusBadge status={p.status} size="sm" />
+                    {p.status === 'VERIFIED' && p.tally_status && p.tally_status !== 'NOT_APPLICABLE' && (
+                      <TallyStatusBadge status={p.tally_status} />
+                    )}
                   </div>
                 </div>
 

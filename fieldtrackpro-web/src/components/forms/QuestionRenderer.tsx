@@ -341,7 +341,7 @@ const FileAnswer: React.FC<{
   const handleDownload = async () => {
     if (!value) return;
     const url = await apiClient.getMediaObjectUrl(value);
-    window.open(url, '_blank');
+    window.open(url, '_blank', 'noopener,noreferrer');
   };
 
   return (

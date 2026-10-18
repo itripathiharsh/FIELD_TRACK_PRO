@@ -28,11 +28,15 @@ import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
 import { Select } from '../components/ui/Select';
 import { Input } from '../components/ui/Input';
+import { ResetPasswordControl } from '../components/employees/ResetPasswordControl';
+import { ChangeRoleControl } from '../components/employees/ChangeRoleControl';
+import { RoleBadge } from '../components/employees/RoleBadge';
+import { SecurityActivityPanel } from '../components/employees/SecurityActivityPanel';
 
 import { apiClient } from '../api/client';
 import { Area, AssignmentType, Employee, EmployeeActivity, EmployeeAreaAssignment, EmployeeWorkdayResponse, Territory, TerritoryAssignmentHistory } from '../types';
-
-const formatCurrency = (value: string): string => `₹${Number(value).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+import { formatMoney as formatCurrency } from '../utils/money';
+import { fieldErrorsOf } from '../utils/errors';
 
 /**
  * Employee Detail page — profile, consolidated activity (P2-C), and
@@ -49,6 +53,8 @@ export const EmployeeDetailPage: React.FC = () => {
   const [coverage, setCoverage] = useState<EmployeeAreaAssignment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Bumped after a password reset / role change so the Security activity panel re-reads the audit trail.
+  const [securityRefresh, setSecurityRefresh] = useState(0);
 
   const [isReassignOpen, setIsReassignOpen] = useState(false);
   const [reassignType, setReassignType] = useState<AssignmentType>('PERMANENT');
@@ -100,10 +106,12 @@ export const EmployeeDetailPage: React.FC = () => {
     loadWorkday(selectedWorkDate);
   }, [loadWorkday, selectedWorkDate]);
 
-  const load = useCallback(async () => {
+  // `silent` refreshes the data WITHOUT swapping the page for the loading spinner. The security dialogs
+  // (temporary password, role change result) live inside this page; unmounting it mid-flow would destroy them.
+  const load = useCallback(async (silent = false) => {
     if (!id) return;
     try {
-      setIsLoading(true);
+      if (!silent) setIsLoading(true);
       const [emp, act, history, terrs, allAreas, areaCoverage] = await Promise.all([
         apiClient.getEmployeeById(id),
         apiClient.getEmployeeActivity(id).catch(() => null),
@@ -119,7 +127,8 @@ export const EmployeeDetailPage: React.FC = () => {
       setAreas(allAreas);
       setCoverage(areaCoverage);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load employee');
+      // A failed silent refresh keeps the current page (and any open security dialog); only a real load shows the error.
+      if (!silent) setError(err instanceof Error ? err.message : 'Failed to load employee');
     } finally {
       setIsLoading(false);
     }
@@ -194,9 +203,10 @@ export const EmployeeDetailPage: React.FC = () => {
       });
       setIsEditProfileOpen(false);
       await load();
-    } catch (err: any) {
-      if (err?.fieldErrors) {
-        setEditFieldErrors(err.fieldErrors);
+    } catch (err: unknown) {
+      const fe = fieldErrorsOf(err);
+      if (fe) {
+        setEditFieldErrors(fe);
       }
       setEditProfileError(err instanceof Error ? err.message : 'Failed to update employee profile');
     } finally {
@@ -238,7 +248,7 @@ export const EmployeeDetailPage: React.FC = () => {
       <div className="w-10 h-10 border-4 border-primary-container border-t-secondary-container rounded-full animate-spin" />
     </div>
   );
-  if (error) return <ErrorBanner message={error} onRetry={load} />;
+  if (error) return <ErrorBanner message={error} onRetry={() => void load()} />;
   if (!employee) return <EmptyState title="Employee not found" subtitle="The requested employee could not be found." />;
 
   return (
@@ -263,9 +273,25 @@ export const EmployeeDetailPage: React.FC = () => {
             <CardTitle>Profile</CardTitle>
             <CardSubtitle>Employee information</CardSubtitle>
           </div>
-          <Button variant="outline" size="sm" icon={Edit2} onClick={openEditProfileModal}>
-            Edit Profile
-          </Button>
+          <div className="flex flex-wrap items-center justify-end gap-space-2">
+            <ResetPasswordControl
+              employee={employee}
+              onReset={() => {
+                setSecurityRefresh((n) => n + 1);
+                void load(true);
+              }}
+            />
+            <ChangeRoleControl
+              employee={employee}
+              onChanged={() => {
+                setSecurityRefresh((n) => n + 1);
+                void load(true);
+              }}
+            />
+            <Button variant="outline" size="sm" icon={Edit2} onClick={openEditProfileModal}>
+              Edit Profile
+            </Button>
+          </div>
         </CardHeader>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-space-4 p-space-5">
           <div className="flex items-center gap-space-2">
@@ -286,8 +312,25 @@ export const EmployeeDetailPage: React.FC = () => {
             <Calendar className="w-4 h-4 text-on-surface-variant" />
             <span className="text-sm">Code: {employee.employee_code || '—'}</span>
           </div>
+          <div className="flex items-center gap-space-2">
+            <span className="text-sm text-on-surface-variant">Role:</span>
+            <RoleBadge role={employee.user?.role} />
+          </div>
+          {employee.user?.temp_password_expires_at && (
+            <div className="flex items-center gap-space-2 md:col-span-2">
+              <span className="text-xs text-on-surface-variant" data-testid="temp-password-status">
+                Temporary password issued
+                {new Date(employee.user.temp_password_expires_at).getTime() > Date.now()
+                  ? ` - expires ${new Date(employee.user.temp_password_expires_at).toLocaleString()}`
+                  : ' - expired (reset again to issue a new one)'}
+                . The employee must set a new password at next sign-in.
+              </span>
+            </div>
+          )}
         </div>
       </Card>
+
+      <SecurityActivityPanel targetUserId={employee.user_id} refreshKey={securityRefresh} />
 
       {/* Daily Workday & Field Session Card */}
       <Card className="space-y-space-4">

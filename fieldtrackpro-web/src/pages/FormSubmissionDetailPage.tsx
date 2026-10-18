@@ -40,7 +40,7 @@ export const FormSubmissionDetailPage: React.FC = () => {
     setIsDownloading(true);
     try {
       const url = await apiClient.getSubmissionPdfObjectUrl(submissionId);
-      window.open(url, '_blank');
+      window.open(url, '_blank', 'noopener,noreferrer');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate PDF');
     } finally {

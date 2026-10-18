@@ -11,6 +11,7 @@ import { Modal } from '../components/ui/Modal';
 import { PageHeader } from '../components/ui/PageHeader';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { useAuth } from '../context/AuthContext';
+import { isAdmin as isAdminRole } from '../utils/roles';
 import { apiClient, RequirementCategory } from '../api/client';
 import { Customer, FormStatus, FormSubmission, FormTemplateSummary, Visit } from '../types';
 
@@ -365,5 +366,5 @@ const AdminFormsManager: React.FC = () => {
 /** Role split lives here, not in routing: same /forms concept, role-appropriate UI. */
 export const FormsPage: React.FC = () => {
   const { user } = useAuth();
-  return user?.role === 'EMPLOYEE' ? <EmployeeFormsBrowser /> : <AdminFormsManager />;
+  return isAdminRole(user) ? <AdminFormsManager /> : <EmployeeFormsBrowser />;
 };
