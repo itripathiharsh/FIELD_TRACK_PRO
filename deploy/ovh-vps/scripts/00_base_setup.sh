@@ -31,9 +31,9 @@ else
   echo "swap already present - skipped"
 fi
 
-note "3. firewall: SSH (rate-limited), HTTP, HTTPS only. Also open 80/443 in the OVHcloud panel firewall if one is enabled."
+note "3. firewall: SSH, HTTP, HTTPS only (brute force is handled by fail2ban). Also open 80/443 in the OVHcloud panel firewall if one is enabled."
 run "ufw default deny incoming && ufw default allow outgoing"
-run "ufw limit 22/tcp"
+run "ufw allow 22/tcp"
 run "ufw allow 80/tcp && ufw allow 443/tcp"
 run "ufw --force enable"
 run "systemctl enable --now fail2ban"
@@ -51,8 +51,12 @@ run "add-apt-repository -y ppa:deadsnakes/ppa"
 run "apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y python3.11 python3.11-venv python3.11-dev"
 
 note "6. Caddy (reverse proxy + automatic HTTPS)"
-run "curl -fsSL https://dl.cloudsmith.io/public/caddy/stable/gpg.key | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg"
-run "curl -fsSL https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt | sed 's#^deb #deb [signed-by=/usr/share/keyrings/caddy-stable-archive-keyring.gpg] #' > /etc/apt/sources.list.d/caddy-stable.list"
+# Official Caddy instructions. The published list file ALREADY contains [signed-by=...]; do not edit it (an earlier
+# version of this script added a second signed-by with sed, which made apt reject the file: "Malformed entry ... (URI parse)").
+run "DEBIAN_FRONTEND=noninteractive apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl"
+run "curl -1sLf https://dl.cloudsmith.io/public/caddy/stable/gpg.key | gpg --dearmor --yes -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg"
+run "curl -1sLf https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt -o /etc/apt/sources.list.d/caddy-stable.list"
+run "chmod o+r /usr/share/keyrings/caddy-stable-archive-keyring.gpg /etc/apt/sources.list.d/caddy-stable.list"
 run "apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y caddy"
 
 note "7. service account and directories"
