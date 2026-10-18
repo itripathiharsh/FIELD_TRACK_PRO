@@ -6,7 +6,7 @@
 
 ## 📑 Table of Contents
 1. [🌐 System URLs & Quick Access](#1--system-urls--quick-access)
-2. [🔑 Login Credentials Reference](#2--login-credentials-reference)
+2. [🔑 Signing In & Accounts](#2--signing-in--accounts)
 3. [🏗️ High-Level System Architecture & Data Flow](#3-%EF%B8%8F-high-level-system-architecture--data-flow)
 4. [🧭 Feature-by-Feature Operational Guide](#4--feature-by-feature-operational-guide)
    - [4.1 Command Center & Financial Dashboard](#41-command-center--financial-dashboard)
@@ -38,34 +38,23 @@
 
 ---
 
-## 2. 🔑 Login Credentials Reference
+## 2. 🔑 Signing In & Accounts
 
-> **Pro Tip:** In the login box, you can sign in using **Work Email** OR **Mobile Number (CUG)**.
+> **Pro Tip:** In the login box you can sign in using **Work Email** OR **Mobile Number (CUG)**.
 
-### A. Leadership & Management Accounts (ADMIN Role)
-- **Default Password:** `Password@123!`
+There are exactly **two application roles**: **ADMIN** and **EMPLOYEE** (there is no Manager role). Job titles such as *Director*, *Sales Manager*, *TSE* or *FOS* are only HR descriptions; they do not change what a person can do in the app.
 
-| Full Name | Role / Working Profile | Email | Mobile (CUG) | Emp Code |
-| :--- | :--- | :--- | :--- | :--- |
-| **Neeraj Rajput** | **Sales Manager** | `neeraj.rajput@sgrgservices.com` | `9839011015` | `11015` |
-| **Rohit Pathak** | **Director** | `rohit.pathak@sgrgservices.com` | `9839011030` | `11030` |
-| **Sunil Trivedi** | **Director** | `sunil.trivedi@sgrgservices.com` | `9839011020` | `11020` |
-| **Vinay Chaturvedi** | **Sales Manager** | `vinay.chaturvedi@sgrgservices.com` | `9839011027` | `11027` |
+- **ADMIN** - global access: all employees, territories, outlets, requirements, collections review, ageing reports and the admin tools.
+- **EMPLOYEE** - restricted to their own profile, assigned outlets, their own visits and the requirements/collections they submitted themselves.
 
-### B. System Super-Admin Account
-- **Email:** `admin@fieldtrack.test`
-- **Password:** `AdminPass123!`
+### Credentials are never published in this manual
+- Passwords are **not** listed in any document. Each person receives their initial password from an administrator through a private channel.
+- **First sign-in / forced password change:** accounts that still use a temporary password are flagged (`must_change_password`). When the server runs with `ENFORCE_PASSWORD_CHANGE=true` the app only allows the *Change password* screen until a new password is set (minimum 8 characters, at most 72 bytes, different from the current one). After changing it you are signed out and sign in again with the new password.
+- Forgot your password? Use **Forgot password** on the login screen; a 6-digit code is sent by SMS/e-mail.
+- **The first administrator** is created once, deliberately, with `scripts/bootstrap_admin.py --i-understand-production` (see the Deployment Guide). Nothing is seeded automatically when the server starts.
 
-### C. Field Executives & Officers (FOS / TSE Accounts)
-- **Default Password:** `Password@123!` *(All 30 genuine employees 11001–11030)*
-
-| Full Name | Designation | Email | Mobile (CUG) | Emp Code |
-| :--- | :--- | :--- | :--- | :--- |
-| **Sahil Verma** | FOS | `sahil.verma@sgrgservices.com` | `9839011001` | `11001` |
-| **Raunak Sharma** | FOS | `raunak.sharma@sgrgservices.com` | `9839011002` | `11002` |
-| **Yogesh Kumar** | FOS | `yogesh.kumar@sgrgservices.com` | `9839011003` | `11003` |
-| **Amit Jaiswal** | FOS | `amit.jaiswal@sgrgservices.com` | `9839011004` | `11004` |
-| **Sandeep Mishra** | FOS | `sandeep.mishra@sgrgservices.com` | `9839011005` | `11005` |
+### Roster
+The genuine SGRG roster is 30 staff (employee codes `11001`-`11030`). Look people up in the web portal under **Employees**; this manual intentionally does not repeat names alongside login details.
 
 ---
 
@@ -146,7 +135,7 @@ graph LR
 
 ```mermaid
 sequenceDiagram
-    participant Admin as 👔 Admin / Manager
+    participant Admin as 👔 Admin
     participant App as 🖥️ Web Portal
     participant DB as 🐘 PostgreSQL
     Admin->>App: Navigate to /employees
@@ -160,7 +149,7 @@ sequenceDiagram
 - **Purpose:** Manage the organizational hierarchy, field staff roster, CUG mobile numbers, and application roles.
 - **What It Displays:**
   - Complete list of genuine SGRG employees (30 active staff: Telecom `11001–11020`, Consumer Electronics `11021–11030`).
-  - Columns: **Employee Name**, **Employee Code**, **Working Profile** (Director, Sales Manager, TSE, FOS, Billing, Accountant), **CUG Mobile Number**, **Assigned Territory**, and **Status**.
+  - Columns: **Employee Name**, **Employee Code**, **Working Profile** (job title only: Director, Sales Manager, TSE, FOS, Billing, Accountant - not an application role), **CUG Mobile Number**, **Assigned Territory**, and **Status**.
 - **How to Use:**
   1. Navigate to `/employees`.
   2. Use the top search bar to filter by employee code or name.
@@ -424,7 +413,7 @@ graph LR
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Admin as 👔 Admin / Manager
+    actor Admin as 👔 Admin
     actor FOS as 📱 Field Executive
     actor Customer as 🏪 Retail Customer
     actor Acct as 🧑‍💼 Accountant
@@ -447,4 +436,4 @@ sequenceDiagram
 
 - **System Version:** `v1.2.0-production`
 - **Database Engine:** PostgreSQL 16 with PostGIS extension
-- **Support Contact:** `admin@fieldtrack.test` / SGRG Operations Command Team
+- **Support Contact:** SGRG Operations Command Team (your system administrator)

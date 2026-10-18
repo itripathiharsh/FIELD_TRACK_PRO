@@ -1,3 +1,20 @@
+# Render blueprint for the FieldTrack Pro backend.
+#
+# OPERATIONAL NOTES (read before deploying)
+#  * plan: free  -> the service SLEEPS after ~15 min idle (cold start of 30-60 s on the
+#    next request) and the in-process scheduler (missed-visit sweep) does not run while
+#    asleep. The free instance filesystem is EPHEMERAL: anything written to local disk
+#    (media_storage/, logs) is lost on every deploy/restart. That is why STORAGE_PROVIDER
+#    is MINIO (any S3-compatible bucket: AWS S3, Cloudflare R2, Backblaze B2, MinIO).
+#    Upgrade to a paid plan for production traffic; the plan is intentionally NOT changed here.
+#  * The Render free Postgres database expires after 30 days and has no backups on the
+#    free plan - use a paid database (with backups) for real client data.
+#  * Every variable with `sync: false` is a placeholder: set its value in the Render
+#    dashboard. The app REFUSES TO START in production until the required ones are valid
+#    (MEDIA_SIGNING_SECRET, non-default MINIO_*, non-mock SMS_PROVIDER, SMTP_HOST).
+#  * No demo/seed script runs at deploy. Create the first admin ONCE, deliberately, with
+#    `python scripts/bootstrap_admin.py --i-understand-production` (env ADMIN_BOOTSTRAP_EMAIL /
+#    ADMIN_BOOTSTRAP_PASSWORD) from a Render shell, then remove those variables.
 services:
   - type: web
     name: fieldtrackpro-backend
@@ -7,7 +24,13 @@ services:
     branch: main
     rootDir: fieldtrackpro-backend
     buildCommand: pip install poetry && poetry install --no-root
-    startCommand: poetry run alembic upgrade head && poetry run python scripts/seed_demo_data.py && poetry run uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    # Migrations only. uvicorn must NOT rewrite request.client from X-Forwarded-For:
+    # `--proxy-headers --forwarded-allow-ips='*'` trusts the LEFTMOST (client-controlled) entry,
+    # which lets anyone dodge every per-IP rate limit by sending a fake header. The app reads the
+    # header itself in app/core/client_ip.py and takes the entry TRUSTED_PROXY_HOPS from the RIGHT
+    # (Render's edge appends the real peer address -> 1 hop).
+    startCommand: poetry run alembic upgrade head && poetry run uvicorn app.main:app --host 0.0.0.0 --port $PORT --no-proxy-headers
+    healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
@@ -17,17 +40,76 @@ services:
         value: "false"
       - key: API_V1_PREFIX
         value: /api/v1
-      - key: STORAGE_PROVIDER
-        value: LOCAL
-      - key: MEDIA_STORAGE_PATH
-        value: media_storage
+
+      # --- CORS: EXACT production web origins, comma-separated or a JSON list, e.g.
+      #     https://app.your-domain.com,https://admin.your-domain.com
+      #     No wildcards; localhost entries are not allowed here.
       - key: CORS_ALLOWED_ORIGINS
-        value: '["https://fieldtrack-pro.vercel.app","https://fieldtrack-pro-imharshofficial322-gmailcoms-projects.vercel.app","https://fieldtrack-hedoqegzb-imharshofficial322-gmailcoms-projects.vercel.app","http://localhost:5173"]'
+        sync: false
+
+      # --- Secrets generated once by Render (rotating invalidates sessions / signed URLs)
       - key: JWT_SECRET
         generateValue: true
       - key: MEDIA_SIGNING_SECRET
         generateValue: true
+      - key: OTP_HMAC_SECRET
+        generateValue: true
+
+      # --- Auth hardening
+      # Forced password change: staff still on a temporary/default password get 403
+      # PASSWORD_CHANGE_REQUIRED on everything except /auth/me, /auth/logout, /auth/refresh and
+      # /auth/change-password. Ship the Android/web change-password screen before relying on it.
+      - key: ENFORCE_PASSWORD_CHANGE
+        value: "true"
+      # Reverse-proxy hops in front of the app (Render edge = 1) for per-IP rate-limit keys.
+      - key: TRUSTED_PROXY_HOPS
+        value: "1"
+
       - key: DATABASE_URL
         fromDatabase:
           name: fieldtrackpro-db
           property: connectionString
+
+      # --- Object storage (S3-compatible). Local disk is NOT durable on Render.
+      - key: STORAGE_PROVIDER
+        value: MINIO
+      - key: MINIO_ENDPOINT      # host[:port] only, no scheme, e.g. s3.ap-south-1.amazonaws.com
+        sync: false
+      - key: MINIO_ACCESS_KEY
+        sync: false
+      - key: MINIO_SECRET_KEY
+        sync: false
+      - key: MINIO_BUCKET        # must not contain "dev"
+        sync: false
+      - key: MINIO_SECURE        # "true" for https endpoints
+        sync: false
+
+      # --- SMS (password-reset OTP). SMS_PROVIDER: msg91 | twilio | fast2sms (mock is rejected in production)
+      - key: SMS_PROVIDER
+        sync: false
+      - key: SMS_API_KEY
+        sync: false
+      - key: SMS_SENDER_ID
+        sync: false
+      - key: SMS_TEMPLATE_ID
+        sync: false
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_FROM_NUMBER
+        sync: false
+
+      # --- SMTP (password-reset email)
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_FROM_EMAIL
+        sync: false
+      # Port 465 = implicit TLS, 587 = STARTTLS. Credentials are never sent in clear text;
+      # SMTP_ALLOW_INSECURE is for local dev only and is ignored in production.
