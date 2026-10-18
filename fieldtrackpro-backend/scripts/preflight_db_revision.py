@@ -23,7 +23,6 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
-from urllib.parse import urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -77,8 +76,13 @@ def classify_purge(order: list[str], current: str | None) -> str:
 
 
 def _masked(url: str) -> str:
-    u = urlparse(url.replace("postgresql+asyncpg://", "postgresql://"))
-    return f"{u.hostname}:{u.port or 5432}/{u.path.lstrip('/')} (user {u.username})"
+    """host:port/db (user ...) with the password never shown. Plain string handling, not urlparse: a password containing
+    '#', '?' or '/' would make urlparse mis-split (or raise) and must not be able to crash - or leak through - this report."""
+    tail = url.split("://", 1)[-1]
+    user = tail.split(":", 1)[0] if "@" in tail else "?"
+    hostdb = tail.rsplit("@", 1)[-1].split("?", 1)[0]
+    host, _, db = hostdb.partition("/")
+    return f"{host if ':' in host else host + ':5432'}/{db} (user {user})"
 
 
 def main() -> int:

@@ -53,3 +53,10 @@ def test_script_is_select_only():
     writes = re.compile(r"(INSERT\s+INTO|UPDATE\s+\w+\s+SET|DELETE\s+FROM|DROP\s+(TABLE|DATABASE)|ALTER\s+TABLE|TRUNCATE|CREATE\s+(TABLE|INDEX))", re.I)
     assert not writes.search(body)
     assert "SET TRANSACTION READ ONLY" in body and "default_transaction_read_only=on" in body
+
+
+@pytest.mark.parametrize("pw", ["plain", "with#hash", "a?b/c:d@e", "p%40ss"])
+def test_masked_url_never_crashes_or_leaks_the_password(pw):
+    out = chk._masked(f"postgresql+asyncpg://fieldtrack_owner:{pw}@127.0.0.1:5432/fieldtrackpro_prod")
+    assert out == "127.0.0.1:5432/fieldtrackpro_prod (user fieldtrack_owner)"
+    assert pw not in out
