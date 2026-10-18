@@ -2,7 +2,7 @@ from __future__ import annotations
 import uuid
 from typing import Any, Optional
 from datetime import datetime
-from sqlalchemy import String, Integer, ForeignKey, Text, DateTime, func
+from sqlalchemy import String, Integer, ForeignKey, Text, DateTime, Boolean, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from geoalchemy2 import Geography
 from app.database import Base
@@ -27,6 +27,17 @@ class Customer(Base):
     outlet_code: Mapped[Optional[str]] = mapped_column(String(50), unique=True, nullable=True)
     gst_number: Mapped[Optional[str]] = mapped_column(String(20), nullable=True, index=True)
     created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+
+    # Set True only for an outlet approved from a CustomerProspect submission (there is no
+    # Tally writeback for customers - Tally sync is import-only - so an admin must add it to
+    # Tally by hand). False for every pre-existing/Tally-imported/admin-direct-created row;
+    # this is a persistent reminder, not a one-time message, because admins approving several
+    # outlets in a row can easily forget one by the time they get to Tally.
+    needs_tally_entry: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    tally_entry_marked_by: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    tally_entry_marked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     
     # Zone (Territory) & Area
     territory_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("territories.id", ondelete="SET NULL"), nullable=True)

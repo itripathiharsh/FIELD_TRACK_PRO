@@ -1,8 +1,10 @@
+import sys as _sys, os as _os; _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _script_env
 import httpx
 from decimal import Decimal
 
-BASE_URL = "https://fieldtrackpro-backend-s7hs.onrender.com"
-FRONTEND_URL = "https://fieldtrack-pro-rosy.vercel.app"
+BASE_URL = _script_env.api_url()
+FRONTEND_URL = _script_env.optional_env("SCRIPT_FRONTEND_URL")
 
 print("="*80)
 print("COMPREHENSIVE PRODUCTION VERIFICATION AUDIT")
@@ -14,7 +16,7 @@ assert r_health.status_code == 200, f"Health check failed: {r_health.status_code
 print("[PASS] Render Health Check: 200 OK")
 
 # 2. Login
-r_login = httpx.post(f"{BASE_URL}/api/v1/auth/login", json={"email": "admin@fieldtrack.test", "password": "AdminPass123!"})
+r_login = httpx.post(f"{BASE_URL}/api/v1/auth/login", json={"email": "admin@fieldtrack.test", "password": _script_env.env("SCRIPT_ADMIN_PASSWORD")})
 assert r_login.status_code == 200, f"Login failed: {r_login.status_code}"
 token = r_login.json()["access_token"]
 headers = {"Authorization": f"Bearer {token}"}

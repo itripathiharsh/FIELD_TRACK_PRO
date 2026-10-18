@@ -28,6 +28,7 @@ class DateRangeFilter(BaseModel):
 class EmployeeVisitReportRow(BaseModel):
     """Single row in the employee visit report."""
     employee_id: uuid.UUID
+    employee_code: Optional[str] = None
     employee_name: str
     total_visits: int
     completed_visits: int
@@ -72,6 +73,8 @@ class OutletReportRow(BaseModel):
     collection: Decimal = Decimal("0.00")
     market_outstanding: Decimal = Decimal("0.00")
     overdue_gt_90: Decimal = Decimal("0.00")
+    # Latest snapshot date used for the stock figures (market OS / >90d); null if no snapshot in the period.
+    as_of_date: Optional[date] = None
 
 
 class OutstandingAgeingReportRow(BaseModel):
@@ -92,6 +95,8 @@ class OutstandingAgeingReportRow(BaseModel):
     bucket_75_90: Decimal = Decimal("0.00")
     bucket_gt_90: Decimal = Decimal("0.00")
     highest_overdue_bucket: str = "Normal"
+    # Date of the (latest in period) snapshot these stock figures are "as of".
+    as_of_date: Optional[date] = None
 
 
 class CollectionReportRow(BaseModel):
@@ -105,7 +110,10 @@ class CollectionReportRow(BaseModel):
     fos_name: Optional[str] = None
     collection_amount: Decimal = Decimal("0.00")
     sales_amount: Decimal = Decimal("0.00")
+    # Latest snapshot date in the period ("as of"); amounts are summed over all snapshots in the period.
     snapshot_date: date
+    first_snapshot_date: Optional[date] = None
+    snapshot_count: int = 1
 
 
 class VisitDetailedReportRow(BaseModel):
@@ -174,6 +182,9 @@ class OverviewReportData(BaseModel):
     brand_breakdown: list[BusinessSummaryRow]
     zone_breakdown: list[BusinessSummaryRow]
     fos_breakdown: list[BusinessSummaryRow]
+    data_source: str = "SNAPSHOT"
+    data_source_note: Optional[str] = None
+    as_of_date: Optional[date] = None
 
 
 class OrderReportRow(BaseModel):

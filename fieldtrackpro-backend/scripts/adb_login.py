@@ -32,8 +32,9 @@ time.sleep(0.3)
 for _ in range(25):
     adb_shell("input", "keyevent", "67")
 
-# Type password: Imharsh + @ + 1
-adb_shell("input", "text", "Imharsh")
+# Type the password from SCRIPT_HARSH_PASSWORD (first segment only; adjust per your keyboard handling)
+import os
+adb_shell("input", "text", os.environ["SCRIPT_HARSH_PASSWORD"])
 adb_shell("input", "keyevent", "77")  # KEYCODE_AT
 adb_shell("input", "text", "1")
 time.sleep(0.3)

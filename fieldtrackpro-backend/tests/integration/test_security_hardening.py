@@ -241,7 +241,7 @@ async def test_change_password_succeeds_and_new_password_works(
         json={"old_password": original, "new_password": updated},
         headers=headers,
     )
-    assert resp.status_code == 204, resp.text
+    assert resp.status_code == 200, resp.text
 
     try:
         assert (await login(client, email, updated)).status_code == 200
@@ -325,7 +325,7 @@ async def test_change_password_revokes_other_sessions(client: AsyncClient, seede
             json={"old_password": original, "new_password": updated},
             headers=headers,
         )
-    ).status_code == 204
+    ).status_code == 200
 
     try:
         stale = await client.post(

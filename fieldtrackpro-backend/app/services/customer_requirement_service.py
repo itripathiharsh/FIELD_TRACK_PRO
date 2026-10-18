@@ -179,24 +179,45 @@ async def create_requirement(
             error_code="CUSTOMER_NOT_FOUND",
         )
 
-    # Optional visit validation
+    is_admin = current_user.is_admin
+
+    # Optional visit validation. An EMPLOYEE may only attach a requirement to
+    # a visit that is theirs (object-level ownership), and the visit must be
+    # for the same customer the requirement is filed against.
     visit_id = data.visit_id
     if visit_id:
-        v_res = await session.execute(select(Visit).where(Visit.id == visit_id))
-        if v_res.scalar_one_or_none() is None:
+        from app.services.visit_service import get_visit_for_user
+
+        visit = await get_visit_for_user(visit_id, current_user, session)
+        if visit.customer_id != customer_id:
             raise BaseAPIException(
-                status_code=404,
-                detail="Visit not found",
-                error_code="VISIT_NOT_FOUND",
+                status_code=422,
+                detail="visit_id does not belong to this customer",
+                error_code="VISIT_CUSTOMER_MISMATCH",
             )
+    elif not is_admin:
+        # No visit context: the employee must still be allowed to see this outlet.
+        from app.services.customer_service import assert_employee_can_view_customer
+
+        await assert_employee_can_view_customer(customer_id, current_user, session)
 
     req_brand = data.brand
     photo_storage_key = None
     if data.photo_media_id:
         vm_res = await session.execute(select(VisitMedia).where(VisitMedia.id == data.photo_media_id))
         vm = vm_res.scalar_one_or_none()
-        if vm:
-            photo_storage_key = vm.storage_key
+        if vm is None:
+            raise BaseAPIException(status_code=404, detail="Photo media not found", error_code="MEDIA_NOT_FOUND")
+        if not is_admin and vm.uploaded_by != current_user.id:
+            # 404 (not 403): someone else's media must look non-existent.
+            raise BaseAPIException(status_code=404, detail="Photo media not found", error_code="MEDIA_NOT_FOUND")
+        if visit_id and vm.visit_id != visit_id:
+            raise BaseAPIException(
+                status_code=403,
+                detail="photo_media_id does not belong to this visit",
+                error_code="MEDIA_VISIT_MISMATCH",
+            )
+        photo_storage_key = vm.storage_key
 
     # Calculate multi-item summary and total requested value
     total_requested_val = Decimal("0.00")
@@ -292,6 +313,23 @@ async def get_requirement_by_id(
             error_code="REQUIREMENT_NOT_FOUND",
         )
     return await _enrich_requirement_read(req, session)
+
+
+async def list_requirements_for_customer(
+    customer_id: uuid.UUID,
+    session: AsyncSession,
+    created_by: Optional[uuid.UUID] = None,
+) -> list[CustomerRequirementRead]:
+    """Requirements for one outlet. `created_by` restricts to one author (employee scope)."""
+    query = (
+        select(CustomerRequirement)
+        .where(CustomerRequirement.customer_id == customer_id)
+        .order_by(CustomerRequirement.created_at.desc())
+    )
+    if created_by is not None:
+        query = query.where(CustomerRequirement.created_by == created_by)
+    res = await session.execute(query)
+    return [await _enrich_requirement_read(r, session) for r in res.scalars().all()]
 
 
 async def list_all_requirements(
@@ -662,8 +700,14 @@ async def list_orders(
     status: Optional[str] = None,
     skip: int = 0,
     limit: int = 50,
+    employee_id: Optional[uuid.UUID] = None,
+    order_id: Optional[uuid.UUID] = None,
 ) -> list[OrderRead]:
     query = select(Order).order_by(Order.created_at.desc())
+    if employee_id is not None:
+        query = query.where(Order.employee_id == employee_id)
+    if order_id is not None:
+        query = query.where(Order.id == order_id)
     if customer_id:
         query = query.where(Order.customer_id == customer_id)
     if status and status.upper() != "ALL":
@@ -733,10 +777,30 @@ async def list_orders(
     return results
 
 
+EMPLOYEE_EDITABLE_STATUSES = {"NEW", "PENDING", "OPEN"}
+
+
+def _assert_employee_may_edit(req: CustomerRequirement, current_user: User) -> None:
+    """An employee may only touch their own requirement, and only before an admin decision."""
+    if req.created_by != current_user.id:
+        raise BaseAPIException(
+            status_code=404,
+            detail="Requirement not found",
+            error_code="REQUIREMENT_NOT_FOUND",
+        )
+    if (req.status or "").upper() not in EMPLOYEE_EDITABLE_STATUSES:
+        raise BaseAPIException(
+            status_code=409,
+            detail="This requirement has already been reviewed and can no longer be edited",
+            error_code="REQUIREMENT_LOCKED",
+        )
+
+
 async def update_requirement(
     requirement_id: uuid.UUID,
     data: CustomerRequirementUpdate,
     session: AsyncSession,
+    current_user: User,
 ) -> CustomerRequirementRead:
     res = await session.execute(
         select(CustomerRequirement).where(CustomerRequirement.id == requirement_id)
@@ -748,6 +812,16 @@ async def update_requirement(
             detail="Requirement not found",
             error_code="REQUIREMENT_NOT_FOUND",
         )
+
+    if not current_user.is_admin:
+        _assert_employee_may_edit(req, current_user)
+        # Status and approval figures are admin-decision fields.
+        if data.status is not None:
+            raise BaseAPIException(
+                status_code=403,
+                detail="Only an administrator can change requirement status",
+                error_code="REQUIREMENT_STATUS_ADMIN_ONLY",
+            )
 
     if data.brand is not None:
         req.brand = data.brand
@@ -790,6 +864,9 @@ async def attach_requirement_photo(
             error_code="REQUIREMENT_NOT_FOUND",
         )
 
+    if not current_user.is_admin:
+        _assert_employee_may_edit(req, current_user)
+
     mime_type, _ = mimetypes.guess_type(filename)
     if not mime_type or not mime_type.startswith("image/"):
         mime_type = "image/jpeg"
@@ -799,11 +876,8 @@ async def attach_requirement_photo(
     compressed_bytes = _compress_image(file_bytes)
     storage_key = f"requirements/{req.id}/{uuid.uuid4()}.jpg"
 
-    await storage_service.upload_file(
-        storage_key=storage_key,
-        data=compressed_bytes,
-        content_type="image/jpeg",
-    )
+    # StorageService has no upload_file(); the real method is upload(bytes, key, content_type).
+    await storage_service.upload(compressed_bytes, storage_key, "image/jpeg")
 
     req.photo_storage_key = storage_key
     await session.commit()

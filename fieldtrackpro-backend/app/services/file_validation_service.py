@@ -14,6 +14,7 @@ import re
 import uuid
 
 import magic
+from fastapi import UploadFile
 
 from app.exceptions.custom import BaseAPIException
 from app.models.visit_media import MediaType
@@ -33,6 +34,25 @@ class FileValidationService:
         "application/msword",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     }
+
+    @classmethod
+    async def read_upload_within_limit(
+        cls, file: UploadFile, max_bytes: int, chunk_size: int = 1024 * 1024
+    ) -> bytes:
+        """
+        Read an UploadFile in bounded chunks, rejecting as soon as the running
+        total exceeds `max_bytes`.
+
+        A bare `await file.read()` buffers the ENTIRE body into one Python
+        bytes object before anything checks its size - an attacker-controlled
+        upload of a few hundred MB/GB can exhaust memory on a small instance
+        before validate_image/validate_document ever runs. Reading in chunks
+        caps worst-case memory to ~max_bytes + chunk_size regardless of how
+        large the request actually is.
+        """
+        from app.core.uploads import read_upload_limited
+
+        return await read_upload_limited(file, max_bytes, chunk_size)
 
     @classmethod
     def sanitize_filename(cls, filename: str) -> str:

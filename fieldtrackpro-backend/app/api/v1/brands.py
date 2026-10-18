@@ -32,13 +32,13 @@ async def list_brands(
     return brands
 
 
-@router.post("", response_model=BrandOut, status_code=status.HTTP_201_CREATED, dependencies=[AnyAuth])
+@router.post("", response_model=BrandOut, status_code=status.HTTP_201_CREATED, dependencies=[AdminAuth])
 async def create_brand(
     data: BrandCreate,
     session: DbSession,
 ):
     """
-    Create a new master brand.
+    Create a new master brand (Admin only).
     Enforces case-insensitive duplicate prevention.
     """
     brand = await brand_service.create_brand(session, data)

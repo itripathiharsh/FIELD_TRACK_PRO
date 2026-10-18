@@ -81,6 +81,8 @@ async def test_dashboard_collection_aggregation_prevents_double_count():
     c_mock = MagicMock()
     c_mock.total_count = 4762
     c_mock.verified_sum = Decimal("432072762.88")
+    c_mock.posted_sum = Decimal("0.00")
+    c_mock.awaiting_sum = Decimal("432072762.88")
     
     mock_session.execute.side_effect = [
         MockResult(30),       # emp_stmt

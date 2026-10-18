@@ -29,7 +29,7 @@ from app.models.payment_invoice_allocation import PaymentInvoiceAllocation
 from app.models.sync_agent import SyncAgent
 from app.models.territory import Territory
 from app.models.area import Area
-from app.models.user import Role, User
+from app.models.user import Role, User, ADMIN_ROLES
 from app.schemas.tally_sync import (
     CustomerSyncBatch,
     HeartbeatRequest,
@@ -46,7 +46,7 @@ from app.services.brand_service import ensure_brand, resolve_brand, resolve_cano
 
 async def _get_system_user_id(session: AsyncSession) -> uuid.UUID:
     """Resolve an active ADMIN user ID to satisfy created_by foreign keys for automated sync."""
-    stmt = select(User.id).where(User.role == Role.ADMIN, User.is_active == True).limit(1)
+    stmt = select(User.id).where(User.role.in_(ADMIN_ROLES), User.is_active == True).limit(1)
     admin_id = (await session.execute(stmt)).scalar_one_or_none()
     if admin_id:
         return admin_id
@@ -168,7 +168,7 @@ async def get_integration_status(session: AsyncSession) -> TallyIntegrationStatu
 
     # TallyPrime is only considered online if the agent is active AND reporting Tally running
     tally_status_val = (agent.tally_status or "OFFLINE").upper()
-    is_tally_online = is_agent_online and (tally_status_val in ["RUNNING", "ONLINE"])
+    is_tally_online = is_agent_online and (tally_status_val in ["RUNNING", "ONLINE", "CONNECTED"])
 
     if is_tally_online:
         msg = "TallyPrime live & bi-directional sync operational."

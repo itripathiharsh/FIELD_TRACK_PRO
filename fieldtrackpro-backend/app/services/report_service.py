@@ -1,19 +1,24 @@
 """
 Report Service: High-performance business intelligence, operational analytics,
 and monthly snapshot management.
+
+Filter / date semantics are documented in app/services/report_filters.py:
+  * all dates are IST calendar dates (timestamps are filtered on IST day windows);
+  * snapshot reports: FLOWS (sales, collection) are summed across the snapshots
+    in the window, STOCK (market outstanding, ageing buckets) is the LATEST
+    snapshot in the window per outlet+brand and is never summed across dates.
+
+Excel / PDF generation lives in app/services/report_exports.py.
 """
 from __future__ import annotations
 
-import io
-import re
 import uuid
+from dataclasses import dataclass, field
 from datetime import date, datetime, timezone, timedelta
 from decimal import Decimal
 from typing import Any, Optional
 
-import openpyxl
-from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-from sqlalchemy import select, or_, and_, func, desc, case
+from sqlalchemy import select, or_, and_, func, desc, case, exists, literal
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions.custom import BaseAPIException
@@ -25,10 +30,12 @@ from app.models.area import Area
 from app.models.visit import Visit, VisitStatus
 from app.models.geo_verification_log import GeoVerificationLog
 from app.models.employee_customer_assignment import EmployeeCustomerAssignment
+from app.models.employee_area_assignment import EmployeeAreaAssignment
 from app.models.invoice import Invoice, InvoiceSource
 from app.models.outlet_financial_snapshot import OutletFinancialSnapshot
 from app.models.monthly_reporting_period import MonthlyReportingPeriod, MonthlyPeriodStatus
 from app.models.payment import Payment, PaymentBrandAllocation, PaymentSource, PaymentStatus
+from app.services import payment_tally
 from app.schemas.financial_snapshot import (
     BusinessBIDashboard,
     BusinessSummaryRow,
@@ -48,6 +55,19 @@ from app.services.brand_service import (
     normalize_brand_name,
     BRAND_ALIASES,
 )
+from app.services.report_filters import (
+    SnapshotWindow,
+    ist_now,
+    like_pattern,
+    resolve_snapshot_window,
+    validate_date_order,
+    where_date_range,
+    where_ist_range,
+)
+
+LIKE_ESCAPE = "\\"
+_S = OutletFinancialSnapshot
+_ECA = EmployeeCustomerAssignment
 
 
 def _get_brand_filter_aliases(brand_query: str) -> list[str]:
@@ -63,6 +83,157 @@ def _get_brand_filter_aliases(brand_query: str) -> list[str]:
     return aliases
 
 
+def _brand_aliases(brand: Optional[str]) -> Optional[list[str]]:
+    if brand and brand != "ALL":
+        return _get_brand_filter_aliases(brand)
+    return None
+
+
+def _snapshot_window_where(stmt, window: SnapshotWindow):
+    if window.start is not None:
+        stmt = stmt.where(_S.snapshot_date >= window.start)
+    if window.end is not None:
+        stmt = stmt.where(_S.snapshot_date <= window.end)
+    return stmt
+
+
+def effective_snapshots(window: SnapshotWindow, brand: Optional[str] = None):
+    """
+    One row per (outlet, brand) that has at least one snapshot in ``window``:
+
+      * STOCK columns (market_outstanding, bucket_*, snapshot_date) come from the
+        LATEST snapshot in the window - never summed across dates;
+      * FLOW columns ``sales_sum`` / ``collection_sum`` are summed over every
+        snapshot in the window.
+    """
+    part = (_S.customer_id, _S.brand)
+    inner = select(
+        _S.id.label("id"),
+        _S.customer_id.label("customer_id"),
+        _S.brand.label("brand"),
+        _S.snapshot_date.label("snapshot_date"),
+        _S.market_outstanding.label("market_outstanding"),
+        _S.bucket_lt_15.label("bucket_lt_15"),
+        _S.bucket_15_30.label("bucket_15_30"),
+        _S.bucket_30_45.label("bucket_30_45"),
+        _S.bucket_45_60.label("bucket_45_60"),
+        _S.bucket_60_75.label("bucket_60_75"),
+        _S.bucket_75_90.label("bucket_75_90"),
+        _S.bucket_gt_90.label("bucket_gt_90"),
+        func.sum(_S.sales).over(partition_by=part).label("sales_sum"),
+        func.sum(_S.collection).over(partition_by=part).label("collection_sum"),
+        func.count(_S.id).over(partition_by=part).label("snapshot_count"),
+        func.min(_S.snapshot_date).over(partition_by=part).label("first_snapshot_date"),
+        func.row_number().over(partition_by=part, order_by=(_S.snapshot_date.desc(), _S.id.desc())).label("rn"),
+    )
+    inner = _snapshot_window_where(inner, window)
+    aliases = _brand_aliases(brand)
+    if aliases:
+        inner = inner.where(func.lower(_S.brand).in_(aliases))
+    win = inner.subquery("snap_window")
+    return select(win).where(win.c.rn == 1).subquery("eff")
+
+
+def _employee_filter(employee_id: Optional[uuid.UUID]):
+    """EXISTS (not a join) so an outlet with several employees is never fanned out."""
+    return exists(
+        select(literal(1))
+        .select_from(_ECA)
+        .where(_ECA.customer_id == Customer.id, _ECA.employee_id == employee_id)
+        .correlate(Customer)
+    )
+
+
+def _outlet_search_clause(query: str, include_contact: bool = False):
+    pattern = like_pattern(query)
+    emp_match = exists(
+        select(literal(1))
+        .select_from(_ECA)
+        .join(Employee, Employee.id == _ECA.employee_id)
+        .where(_ECA.customer_id == Customer.id, func.lower(Employee.full_name).like(pattern, escape=LIKE_ESCAPE))
+        .correlate(Customer)
+    )
+    parts = [
+        func.lower(Customer.name).like(pattern, escape=LIKE_ESCAPE),
+        func.lower(Customer.outlet_code).like(pattern, escape=LIKE_ESCAPE),
+        func.lower(Territory.name).like(pattern, escape=LIKE_ESCAPE),
+        func.lower(Area.name).like(pattern, escape=LIKE_ESCAPE),
+        emp_match,
+    ]
+    if include_contact:
+        parts += [
+            func.lower(Customer.contact_person).like(pattern, escape=LIKE_ESCAPE),
+            func.lower(Customer.contact_number).like(pattern, escape=LIKE_ESCAPE),
+            func.lower(Customer.address).like(pattern, escape=LIKE_ESCAPE),
+        ]
+    return or_(*parts)
+
+
+async def _load_fos_map(
+    session: AsyncSession, only_employee: Optional[uuid.UUID] = None
+) -> dict[uuid.UUID, list[tuple[uuid.UUID, str]]]:
+    """customer_id -> [(employee_id, name)] assigned FOS list (sorted by name)."""
+    stmt = (
+        select(_ECA.customer_id, Employee.id, Employee.full_name)
+        .join(Employee, Employee.id == _ECA.employee_id)
+        .order_by(Employee.full_name.asc(), Employee.id.asc())
+    )
+    if only_employee:
+        stmt = stmt.where(Employee.id == only_employee)
+    out: dict[uuid.UUID, list[tuple[uuid.UUID, str]]] = {}
+    for cid, eid, name in (await session.execute(stmt)).all():
+        out.setdefault(cid, []).append((eid, name))
+    return out
+
+
+def _fos_label(fos: list[tuple[uuid.UUID, str]]) -> str:
+    return ", ".join(n for _, n in fos) if fos else "Unassigned"
+
+
+def _highest_bucket_label(r) -> str:
+    if r.bucket_gt_90 > 0:
+        return "Critical (>90d)"
+    if r.bucket_75_90 > 0:
+        return "Severe (75-90d)"
+    if r.bucket_60_75 > 0:
+        return "High (60-75d)"
+    if r.bucket_45_60 > 0:
+        return "Medium (45-60d)"
+    if r.bucket_30_45 > 0:
+        return "Low (30-45d)"
+    if r.bucket_15_30 > 0:
+        return "Early (15-30d)"
+    return "Normal (<15d)"
+
+
+_BUCKET_FILTERS = {
+    ">90": "bucket_gt_90", "gt_90": "bucket_gt_90",
+    "75-90": "bucket_75_90", "75_90": "bucket_75_90",
+    "60-75": "bucket_60_75", "60_75": "bucket_60_75",
+    "45-60": "bucket_45_60", "45_60": "bucket_45_60",
+    "30-45": "bucket_30_45", "30_45": "bucket_30_45",
+    "15-30": "bucket_15_30", "15_30": "bucket_15_30",
+    "<15": "bucket_lt_15", "lt_15": "bucket_lt_15",
+}
+
+
+@dataclass
+class _BiEntry:
+    """One outlet+brand figure set feeding the BI aggregation (snapshot or live-invoice sourced)."""
+
+    key: Any
+    customer_id: uuid.UUID
+    brand: str
+    outlet_name: str
+    dms_code: str
+    zone: str
+    area: str
+    fos: list
+    sales: Decimal
+    collection: Decimal
+    market_os: Decimal
+    buckets: list  # 7 Decimals: <15, 15-30, 30-45, 45-60, 60-75, 75-90, >90
+    as_of: Optional[date] = None
 class ReportService:
 
     @staticmethod
@@ -73,10 +244,13 @@ class ReportService:
         area_id: Optional[uuid.UUID] = None,
         employee_id: Optional[uuid.UUID] = None,
         month: Optional[str] = None,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
     ) -> OverviewReportData:
         """
         Consolidated Overview KPIs based on real database records.
         """
+        window = resolve_snapshot_window(month, start_date, end_date)
         # Get BI Dashboard aggregations for the filter
         bi_dash = await ReportService.get_business_bi_dashboard(
             session=session,
@@ -85,6 +259,8 @@ class ReportService:
             area_id=area_id,
             employee_id=employee_id,
             month=month,
+            start_date=start_date,
+            end_date=end_date,
         )
 
         # Count total active employees within filter scope
@@ -104,7 +280,7 @@ class ReportService:
         emp_res = await session.execute(emp_stmt)
         total_employees = emp_res.scalar() or 0
 
-        # Operational visits metrics
+        # Operational visits metrics (IST day windows when a month / date range is given)
         visit_stmt = select(
             func.count(Visit.id).label("total_visits"),
             func.sum(case((Visit.status == VisitStatus.COMPLETED, 1), else_=0)).label("completed_visits"),
@@ -117,6 +293,8 @@ class ReportService:
                 visit_stmt = visit_stmt.where(Customer.territory_id == zone_id)
             if area_id:
                 visit_stmt = visit_stmt.where(Customer.area_id == area_id)
+        if not window.is_all:
+            visit_stmt = where_ist_range(visit_stmt, Visit.scheduled_at, window.start, window.end)
 
         visit_res = await session.execute(visit_stmt)
         v_row = visit_res.one_or_none()
@@ -137,6 +315,9 @@ class ReportService:
             brand_breakdown=bi_dash.brand_summaries,
             zone_breakdown=bi_dash.zone_summaries,
             fos_breakdown=bi_dash.fos_summaries,
+            data_source=bi_dash.data_source,
+            data_source_note=bi_dash.data_source_note,
+            as_of_date=bi_dash.as_of_date,
         )
 
     @staticmethod
@@ -222,11 +403,34 @@ class ReportService:
         query: Optional[str] = None,
         skip: Optional[int] = None,
         limit: Optional[int] = None,
+        month: Optional[str] = None,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
     ) -> list[OutletReportRow]:
         """
-        Complete outlet directory report with geographic location and financial aggregates.
+        Outlet directory report: ONE row per outlet (employees are aggregated into
+        ``fos_name``).  Financials follow the snapshot window semantics: sales /
+        collection are summed across snapshots in the window, market outstanding
+        and >90d are the latest snapshot per outlet+brand (summed over brands).
+        Outlets with no snapshot in the window are still listed (zero financials)
+        unless a brand filter is applied.
         """
         from app.services.customer_service import extract_coords
+
+        window = resolve_snapshot_window(month, start_date, end_date)
+        eff = effective_snapshots(window, brand)
+        agg = (
+            select(
+                eff.c.customer_id.label("customer_id"),
+                func.coalesce(func.sum(eff.c.sales_sum), Decimal("0.00")).label("tot_sales"),
+                func.coalesce(func.sum(eff.c.collection_sum), Decimal("0.00")).label("tot_collection"),
+                func.coalesce(func.sum(eff.c.market_outstanding), Decimal("0.00")).label("tot_os"),
+                func.coalesce(func.sum(eff.c.bucket_gt_90), Decimal("0.00")).label("tot_gt_90"),
+                func.max(eff.c.snapshot_date).label("as_of"),
+            )
+            .group_by(eff.c.customer_id)
+            .subquery("agg")
+        )
 
         stmt = (
             select(
@@ -241,71 +445,42 @@ class ReportService:
                 Customer.location_status,
                 Territory.name.label("zone_name"),
                 Area.name.label("area_name"),
-                Employee.full_name.label("fos_name"),
-                func.coalesce(func.sum(OutletFinancialSnapshot.sales), Decimal("0.00")).label("tot_sales"),
-                func.coalesce(func.sum(OutletFinancialSnapshot.collection), Decimal("0.00")).label("tot_collection"),
-                func.coalesce(func.sum(OutletFinancialSnapshot.market_outstanding), Decimal("0.00")).label("tot_os"),
-                func.coalesce(func.sum(OutletFinancialSnapshot.bucket_gt_90), Decimal("0.00")).label("tot_gt_90"),
+                func.coalesce(agg.c.tot_sales, Decimal("0.00")).label("tot_sales"),
+                func.coalesce(agg.c.tot_collection, Decimal("0.00")).label("tot_collection"),
+                func.coalesce(agg.c.tot_os, Decimal("0.00")).label("tot_os"),
+                func.coalesce(agg.c.tot_gt_90, Decimal("0.00")).label("tot_gt_90"),
+                agg.c.as_of.label("as_of"),
             )
             .outerjoin(Territory, Customer.territory_id == Territory.id)
             .outerjoin(Area, Customer.area_id == Area.id)
-            .outerjoin(EmployeeCustomerAssignment, EmployeeCustomerAssignment.customer_id == Customer.id)
-            .outerjoin(Employee, EmployeeCustomerAssignment.employee_id == Employee.id)
-            .outerjoin(OutletFinancialSnapshot, OutletFinancialSnapshot.customer_id == Customer.id)
-            .group_by(
-                Customer.id,
-                Customer.name,
-                Customer.outlet_code,
-                Customer.contact_person,
-                Customer.contact_number,
-                Customer.address,
-                Customer.location,
-                Customer.geofence_radius_m,
-                Customer.location_status,
-                Territory.name,
-                Area.name,
-                Employee.full_name,
-            )
-            .order_by(Customer.name.asc())
+            .outerjoin(agg, agg.c.customer_id == Customer.id)
+            .order_by(Customer.name.asc(), Customer.id.asc())
         )
         if zone_id:
             stmt = stmt.where(Customer.territory_id == zone_id)
         if area_id:
             stmt = stmt.where(Customer.area_id == area_id)
         if employee_id:
-            stmt = stmt.where(EmployeeCustomerAssignment.employee_id == employee_id)
+            stmt = stmt.where(_employee_filter(employee_id))
         if location_status and location_status != "ALL":
             stmt = stmt.where(Customer.location_status == location_status)
         if brand and brand != "ALL":
-            aliases = _get_brand_filter_aliases(brand)
-            stmt = stmt.where(func.lower(OutletFinancialSnapshot.brand).in_(aliases))
+            stmt = stmt.where(agg.c.customer_id.is_not(None))
         if query:
-            q_str = f"%{query.strip().lower()}%"
-            stmt = stmt.where(
-                or_(
-                    func.lower(Customer.name).like(q_str),
-                    func.lower(Customer.outlet_code).like(q_str),
-                    func.lower(Customer.contact_person).like(q_str),
-                    func.lower(Customer.contact_number).like(q_str),
-                    func.lower(Territory.name).like(q_str),
-                    func.lower(Area.name).like(q_str),
-                    func.lower(Employee.full_name).like(q_str),
-                    func.lower(Customer.address).like(q_str),
-                )
-            )
+            stmt = stmt.where(_outlet_search_clause(query, include_contact=True))
 
         if skip is not None:
             stmt = stmt.offset(skip)
         if limit is not None:
             stmt = stmt.limit(limit)
 
-        res = await session.execute(stmt)
-        rows = res.all()
+        rows = (await session.execute(stmt)).all()
+        fos_map = await _load_fos_map(session)
 
         out = []
         for (
             c_id, c_name, c_dms, c_contact_person, c_contact_number, c_addr,
-            c_loc, c_radius, c_loc_status, z_name, a_name, f_name, s, col, os_amt, gt90
+            c_loc, c_radius, c_loc_status, z_name, a_name, s, col, os_amt, gt90, as_of,
         ) in rows:
             lat, lng = None, None
             if c_loc is not None:
@@ -323,7 +498,7 @@ class ReportService:
                     address=c_addr,
                     zone_name=z_name or "Unassigned",
                     area_name=a_name or "Unassigned",
-                    fos_name=f_name or "Unassigned",
+                    fos_name=_fos_label(fos_map.get(c_id, [])),
                     brand=brand or "Multi-Brand",
                     latitude=lat,
                     longitude=lng,
@@ -333,6 +508,7 @@ class ReportService:
                     collection=col,
                     market_outstanding=os_amt,
                     overdue_gt_90=gt90,
+                    as_of_date=as_of,
                 )
             )
         return out
@@ -349,127 +525,77 @@ class ReportService:
         query: Optional[str] = None,
         skip: Optional[int] = None,
         limit: Optional[int] = None,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
     ) -> list[OutstandingAgeingReportRow]:
         """
-        Dedicated Market Outstanding & Ageing Buckets report.
+        Market Outstanding & Ageing Buckets: STOCK figures from the LATEST snapshot
+        in the window per outlet+brand (never summed across snapshot dates).
         """
+        window = resolve_snapshot_window(month, start_date, end_date)
+        eff = effective_snapshots(window, brand)
         stmt = (
             select(
-                OutletFinancialSnapshot,
+                eff,
                 Customer.name.label("customer_name"),
                 Customer.outlet_code.label("dms_code"),
                 Territory.name.label("zone_name"),
                 Area.name.label("area_name"),
-                Employee.full_name.label("fos_name"),
             )
-            .join(Customer, OutletFinancialSnapshot.customer_id == Customer.id)
+            .join(Customer, eff.c.customer_id == Customer.id)
             .outerjoin(Territory, Customer.territory_id == Territory.id)
             .outerjoin(Area, Customer.area_id == Area.id)
-            .outerjoin(EmployeeCustomerAssignment, EmployeeCustomerAssignment.customer_id == Customer.id)
-            .outerjoin(Employee, EmployeeCustomerAssignment.employee_id == Employee.id)
-            .where(OutletFinancialSnapshot.market_outstanding > 0)
-            .order_by(OutletFinancialSnapshot.bucket_gt_90.desc(), OutletFinancialSnapshot.market_outstanding.desc(), OutletFinancialSnapshot.id.asc())
+            .where(eff.c.market_outstanding > 0)
+            .order_by(eff.c.bucket_gt_90.desc(), eff.c.market_outstanding.desc(), eff.c.id.asc())
         )
 
-        if brand and brand != "ALL":
-            aliases = _get_brand_filter_aliases(brand)
-            stmt = stmt.where(func.lower(OutletFinancialSnapshot.brand).in_(aliases))
         if zone_id:
             stmt = stmt.where(Customer.territory_id == zone_id)
         if area_id:
             stmt = stmt.where(Customer.area_id == area_id)
         if employee_id:
-            stmt = stmt.where(EmployeeCustomerAssignment.employee_id == employee_id)
-        if month:
-            # month in YYYY-MM
-            try:
-                y, m = [int(x) for x in month.split("-")]
-                stmt = stmt.where(
-                    and_(
-                        func.extract("year", OutletFinancialSnapshot.snapshot_date) == y,
-                        func.extract("month", OutletFinancialSnapshot.snapshot_date) == m,
-                    )
-                )
-            except Exception:
-                pass
-
+            stmt = stmt.where(_employee_filter(employee_id))
         if ageing_bucket and ageing_bucket != "ALL":
-            if ageing_bucket in (">90", "gt_90"):
-                stmt = stmt.where(OutletFinancialSnapshot.bucket_gt_90 > 0)
-            elif ageing_bucket in ("75-90", "75_90"):
-                stmt = stmt.where(OutletFinancialSnapshot.bucket_75_90 > 0)
-            elif ageing_bucket in ("60-75", "60_75"):
-                stmt = stmt.where(OutletFinancialSnapshot.bucket_60_75 > 0)
-            elif ageing_bucket in ("45-60", "45_60"):
-                stmt = stmt.where(OutletFinancialSnapshot.bucket_45_60 > 0)
-            elif ageing_bucket in ("30-45", "30_45"):
-                stmt = stmt.where(OutletFinancialSnapshot.bucket_30_45 > 0)
-            elif ageing_bucket in ("15-30", "15_30"):
-                stmt = stmt.where(OutletFinancialSnapshot.bucket_15_30 > 0)
-            elif ageing_bucket in ("<15", "lt_15"):
-                stmt = stmt.where(OutletFinancialSnapshot.bucket_lt_15 > 0)
-
-        if query:
-            q_str = f"%{query.strip().lower()}%"
-            stmt = stmt.where(
-                or_(
-                    func.lower(Customer.name).like(q_str),
-                    func.lower(Customer.outlet_code).like(q_str),
-                    func.lower(Territory.name).like(q_str),
-                    func.lower(Area.name).like(q_str),
-                    func.lower(Employee.full_name).like(q_str),
+            col_name = _BUCKET_FILTERS.get(ageing_bucket)
+            if col_name is None:
+                raise BaseAPIException(
+                    detail=f"Unknown ageing_bucket '{ageing_bucket}'",
+                    status_code=422,
+                    error_code="INVALID_AGEING_BUCKET",
                 )
-            )
+            stmt = stmt.where(eff.c[col_name] > 0)
+        if query:
+            stmt = stmt.where(_outlet_search_clause(query))
 
         if skip is not None:
             stmt = stmt.offset(skip)
         if limit is not None:
             stmt = stmt.limit(limit)
 
-        res = await session.execute(stmt)
-        records = res.all()
+        records = (await session.execute(stmt)).all()
+        fos_map = await _load_fos_map(session)
 
         out = []
-        seen_snaps = set()
-        for snap, c_name, dms, z_name, a_name, f_name in records:
-            if not employee_id:
-                if snap.id in seen_snaps:
-                    continue
-                seen_snaps.add(snap.id)
-
-            # Determine highest overdue bucket
-            highest = "Normal (<15d)"
-            if snap.bucket_gt_90 > 0:
-                highest = "Critical (>90d)"
-            elif snap.bucket_75_90 > 0:
-                highest = "Severe (75-90d)"
-            elif snap.bucket_60_75 > 0:
-                highest = "High (60-75d)"
-            elif snap.bucket_45_60 > 0:
-                highest = "Medium (45-60d)"
-            elif snap.bucket_30_45 > 0:
-                highest = "Low (30-45d)"
-            elif snap.bucket_15_30 > 0:
-                highest = "Early (15-30d)"
-
+        for r in records:
             out.append(
                 OutstandingAgeingReportRow(
-                    customer_id=snap.customer_id,
-                    dms_code=dms or "",
-                    outlet_name=c_name,
-                    brand=snap.brand,
-                    zone_name=z_name or "Unassigned",
-                    area_name=a_name or "Unassigned",
-                    fos_name=f_name or "Unassigned",
-                    market_outstanding=snap.market_outstanding,
-                    bucket_lt_15=snap.bucket_lt_15,
-                    bucket_15_30=snap.bucket_15_30,
-                    bucket_30_45=snap.bucket_30_45,
-                    bucket_45_60=snap.bucket_45_60,
-                    bucket_60_75=snap.bucket_60_75,
-                    bucket_75_90=snap.bucket_75_90,
-                    bucket_gt_90=snap.bucket_gt_90,
-                    highest_overdue_bucket=highest,
+                    customer_id=r.customer_id,
+                    dms_code=r.dms_code or "",
+                    outlet_name=r.customer_name,
+                    brand=r.brand,
+                    zone_name=r.zone_name or "Unassigned",
+                    area_name=r.area_name or "Unassigned",
+                    fos_name=_fos_label(fos_map.get(r.customer_id, [])),
+                    market_outstanding=r.market_outstanding,
+                    bucket_lt_15=r.bucket_lt_15,
+                    bucket_15_30=r.bucket_15_30,
+                    bucket_30_45=r.bucket_30_45,
+                    bucket_45_60=r.bucket_45_60,
+                    bucket_60_75=r.bucket_60_75,
+                    bucket_75_90=r.bucket_75_90,
+                    bucket_gt_90=r.bucket_gt_90,
+                    highest_overdue_bucket=_highest_bucket_label(r),
+                    as_of_date=r.snapshot_date,
                 )
             )
         return out
@@ -485,88 +611,64 @@ class ReportService:
         query: Optional[str] = None,
         skip: Optional[int] = None,
         limit: Optional[int] = None,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
     ) -> list[CollectionReportRow]:
         """
-        Collections report per outlet and brand snapshot.
+        Collections report: one row per outlet+brand with the collection / sales
+        FLOWS summed across all snapshots in the window; ``snapshot_date`` is the
+        latest snapshot date in the window ("as of").
         """
+        window = resolve_snapshot_window(month, start_date, end_date)
+        eff = effective_snapshots(window, brand)
         stmt = (
             select(
-                OutletFinancialSnapshot,
+                eff,
                 Customer.name.label("customer_name"),
                 Customer.outlet_code.label("dms_code"),
                 Territory.name.label("zone_name"),
                 Area.name.label("area_name"),
-                Employee.full_name.label("fos_name"),
             )
-            .join(Customer, OutletFinancialSnapshot.customer_id == Customer.id)
+            .join(Customer, eff.c.customer_id == Customer.id)
             .outerjoin(Territory, Customer.territory_id == Territory.id)
             .outerjoin(Area, Customer.area_id == Area.id)
-            .outerjoin(EmployeeCustomerAssignment, EmployeeCustomerAssignment.customer_id == Customer.id)
-            .outerjoin(Employee, EmployeeCustomerAssignment.employee_id == Employee.id)
-            .where(OutletFinancialSnapshot.collection > 0)
-            .order_by(OutletFinancialSnapshot.collection.desc(), OutletFinancialSnapshot.id.asc())
+            .where(eff.c.collection_sum > 0)
+            .order_by(eff.c.collection_sum.desc(), eff.c.id.asc())
         )
-
-        if brand and brand != "ALL":
-            aliases = _get_brand_filter_aliases(brand)
-            stmt = stmt.where(func.lower(OutletFinancialSnapshot.brand).in_(aliases))
         if zone_id:
             stmt = stmt.where(Customer.territory_id == zone_id)
         if area_id:
             stmt = stmt.where(Customer.area_id == area_id)
         if employee_id:
-            stmt = stmt.where(EmployeeCustomerAssignment.employee_id == employee_id)
-        if month:
-            try:
-                y, m = [int(x) for x in month.split("-")]
-                stmt = stmt.where(
-                    and_(
-                        func.extract("year", OutletFinancialSnapshot.snapshot_date) == y,
-                        func.extract("month", OutletFinancialSnapshot.snapshot_date) == m,
-                    )
-                )
-            except Exception:
-                pass
+            stmt = stmt.where(_employee_filter(employee_id))
         if query:
-            q_str = f"%{query.strip().lower()}%"
-            stmt = stmt.where(
-                or_(
-                    func.lower(Customer.name).like(q_str),
-                    func.lower(Customer.outlet_code).like(q_str),
-                )
-            )
+            stmt = stmt.where(_outlet_search_clause(query))
 
         if skip is not None:
             stmt = stmt.offset(skip)
         if limit is not None:
             stmt = stmt.limit(limit)
 
-        res = await session.execute(stmt)
-        records = res.all()
+        records = (await session.execute(stmt)).all()
+        fos_map = await _load_fos_map(session)
 
-        out_cols = []
-        seen_col_snaps = set()
-        for snap, c_name, dms, z_name, a_name, f_name in records:
-            if not employee_id:
-                if snap.id in seen_col_snaps:
-                    continue
-                seen_col_snaps.add(snap.id)
-
-            out_cols.append(
-                CollectionReportRow(
-                    customer_id=snap.customer_id,
-                    dms_code=dms or "",
-                    outlet_name=c_name,
-                    brand=snap.brand,
-                    zone_name=z_name or "Unassigned",
-                    area_name=a_name or "Unassigned",
-                    fos_name=f_name or "Unassigned",
-                    collection_amount=snap.collection,
-                    sales_amount=snap.sales,
-                    snapshot_date=snap.snapshot_date,
-                )
+        return [
+            CollectionReportRow(
+                customer_id=r.customer_id,
+                dms_code=r.dms_code or "",
+                outlet_name=r.customer_name,
+                brand=r.brand,
+                zone_name=r.zone_name or "Unassigned",
+                area_name=r.area_name or "Unassigned",
+                fos_name=_fos_label(fos_map.get(r.customer_id, [])),
+                collection_amount=r.collection_sum,
+                sales_amount=r.sales_sum,
+                snapshot_date=r.snapshot_date,
+                first_snapshot_date=r.first_snapshot_date,
+                snapshot_count=r.snapshot_count,
             )
-        return out_cols
+            for r in records
+        ]
 
     @staticmethod
     async def get_visits_detailed_report(
@@ -579,9 +681,11 @@ class ReportService:
         status: Optional[str] = None,
         skip: Optional[int] = None,
         limit: Optional[int] = None,
+        query: Optional[str] = None,
     ) -> list[VisitDetailedReportRow]:
         """
         Detailed operational visits report with GPS verification status.
+        The date range is applied on IST calendar days of ``scheduled_at``.
         """
         stmt = (
             select(
@@ -599,10 +703,7 @@ class ReportService:
             .order_by(Visit.scheduled_at.desc(), Visit.id.asc())
         )
 
-        if start_date:
-            stmt = stmt.where(Visit.scheduled_at >= datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc))
-        if end_date:
-            stmt = stmt.where(Visit.scheduled_at <= datetime.combine(end_date, datetime.max.time(), tzinfo=timezone.utc))
+        stmt = where_ist_range(stmt, Visit.scheduled_at, start_date, end_date)
         if employee_id:
             stmt = stmt.where(Visit.employee_id == employee_id)
         if zone_id:
@@ -610,7 +711,24 @@ class ReportService:
         if area_id:
             stmt = stmt.where(Customer.area_id == area_id)
         if status and status != "ALL":
-            stmt = stmt.where(Visit.status == VisitStatus(status))
+            try:
+                stmt = stmt.where(Visit.status == VisitStatus(status))
+            except ValueError:
+                raise BaseAPIException(
+                    detail=f"Unknown visit status '{status}'", status_code=422, error_code="INVALID_STATUS"
+                )
+        if query:
+            pattern = like_pattern(query)
+            stmt = stmt.where(
+                or_(
+                    func.lower(Employee.full_name).like(pattern, escape=LIKE_ESCAPE),
+                    func.lower(Employee.employee_code).like(pattern, escape=LIKE_ESCAPE),
+                    func.lower(Customer.name).like(pattern, escape=LIKE_ESCAPE),
+                    func.lower(Customer.outlet_code).like(pattern, escape=LIKE_ESCAPE),
+                    func.lower(Territory.name).like(pattern, escape=LIKE_ESCAPE),
+                    func.lower(Area.name).like(pattern, escape=LIKE_ESCAPE),
+                )
+            )
 
         if skip is not None:
             stmt = stmt.offset(skip)
@@ -645,14 +763,62 @@ class ReportService:
         return out
 
     @staticmethod
+    def _staff_scope(stmt, employee_id, zone_id, area_id, query):
+        """Employee-level filters shared by the Field Staff report and its exports."""
+        if employee_id:
+            stmt = stmt.where(Employee.id == employee_id)
+        if zone_id:
+            in_zone_area = exists(
+                select(literal(1))
+                .select_from(EmployeeAreaAssignment)
+                .join(Area, Area.id == EmployeeAreaAssignment.area_id)
+                .where(EmployeeAreaAssignment.employee_id == Employee.id, Area.territory_id == zone_id)
+                .correlate(Employee)
+            )
+            stmt = stmt.where(or_(Employee.territory_id == zone_id, in_zone_area))
+        if area_id:
+            stmt = stmt.where(
+                exists(
+                    select(literal(1))
+                    .select_from(EmployeeAreaAssignment)
+                    .where(EmployeeAreaAssignment.employee_id == Employee.id, EmployeeAreaAssignment.area_id == area_id)
+                    .correlate(Employee)
+                )
+            )
+        if query:
+            pattern = like_pattern(query)
+            stmt = stmt.where(
+                or_(
+                    func.lower(Employee.full_name).like(pattern, escape=LIKE_ESCAPE),
+                    func.lower(Employee.employee_code).like(pattern, escape=LIKE_ESCAPE),
+                )
+            )
+        return stmt
+
+    @staticmethod
     async def get_employee_visit_report(
         session: AsyncSession,
         start_date: date | None = None,
         end_date: date | None = None,
+        employee_id: Optional[uuid.UUID] = None,
+        zone_id: Optional[uuid.UUID] = None,
+        area_id: Optional[uuid.UUID] = None,
+        query: Optional[str] = None,
     ) -> list[dict]:
+        """Per-employee visit counts; the date range is applied on IST days of ``scheduled_at``."""
+        from app.services.report_filters import ist_window
+
+        validate_date_order(start_date, end_date)
+        lo, hi = ist_window(start_date, end_date)
+        join_conds = [Visit.employee_id == Employee.id]
+        if lo is not None:
+            join_conds.append(Visit.scheduled_at >= lo)
+        if hi is not None:
+            join_conds.append(Visit.scheduled_at < hi)
         stmt = (
             select(
                 Employee.id.label("employee_id"),
+                Employee.employee_code.label("employee_code"),
                 Employee.full_name.label("employee_name"),
                 func.count(Visit.id).label("total_visits"),
                 func.sum(case((Visit.status == VisitStatus.COMPLETED, 1), else_=0)).label("completed_visits"),
@@ -660,14 +826,11 @@ class ReportService:
                 func.sum(case((Visit.status == VisitStatus.MISSED, 1), else_=0)).label("missed_visits"),
                 func.sum(case((Visit.status == VisitStatus.FLAGGED, 1), else_=0)).label("flagged_visits"),
             )
-            .outerjoin(Visit, and_(
-                Visit.employee_id == Employee.id,
-                Visit.scheduled_at >= datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc) if start_date else True,
-                Visit.scheduled_at <= datetime.combine(end_date, datetime.max.time(), tzinfo=timezone.utc) if end_date else True,
-            ))
-            .group_by(Employee.id, Employee.full_name)
-            .order_by(Employee.full_name.asc())
+            .outerjoin(Visit, and_(*join_conds))
+            .group_by(Employee.id, Employee.employee_code, Employee.full_name)
+            .order_by(Employee.full_name.asc(), Employee.id.asc())
         )
+        stmt = ReportService._staff_scope(stmt, employee_id, zone_id, area_id, query)
 
         result = await session.execute(stmt)
         rows = result.all()
@@ -675,6 +838,7 @@ class ReportService:
         return [
             {
                 "employee_id": str(row.employee_id),
+                "employee_code": row.employee_code,
                 "employee_name": row.employee_name,
                 "total_visits": row.total_visits or 0,
                 "completed_visits": row.completed_visits or 0,
@@ -767,8 +931,12 @@ class ReportService:
         end_date: date | None = None,
         skip: Optional[int] = None,
         limit: Optional[int] = None,
+        employee_id: Optional[uuid.UUID] = None,
+        zone_id: Optional[uuid.UUID] = None,
+        area_id: Optional[uuid.UUID] = None,
+        query: Optional[str] = None,
     ) -> list[dict]:
-        query = (
+        stmt = (
             select(
                 GeoVerificationLog,
                 Employee.full_name.label("employee_name"),
@@ -781,17 +949,30 @@ class ReportService:
             .order_by(GeoVerificationLog.attempted_at.desc(), GeoVerificationLog.id.asc())
         )
 
-        if start_date:
-            query = query.where(GeoVerificationLog.attempted_at >= datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc))
-        if end_date:
-            query = query.where(GeoVerificationLog.attempted_at < datetime.combine(end_date + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc))
+        stmt = where_ist_range(stmt, GeoVerificationLog.attempted_at, start_date, end_date)
+        if employee_id:
+            stmt = stmt.where(Visit.employee_id == employee_id)
+        if zone_id:
+            stmt = stmt.where(Customer.territory_id == zone_id)
+        if area_id:
+            stmt = stmt.where(Customer.area_id == area_id)
+        if query:
+            pattern = like_pattern(query)
+            stmt = stmt.where(
+                or_(
+                    func.lower(Employee.full_name).like(pattern, escape=LIKE_ESCAPE),
+                    func.lower(Employee.employee_code).like(pattern, escape=LIKE_ESCAPE),
+                    func.lower(Customer.name).like(pattern, escape=LIKE_ESCAPE),
+                    func.lower(Customer.outlet_code).like(pattern, escape=LIKE_ESCAPE),
+                )
+            )
 
         if skip is not None:
-            query = query.offset(skip)
+            stmt = stmt.offset(skip)
         if limit is not None:
-            query = query.limit(limit)
+            stmt = stmt.limit(limit)
 
-        result = await session.execute(query)
+        result = await session.execute(stmt)
         rows = result.all()
 
         return [
@@ -817,162 +998,86 @@ class ReportService:
         area_id: Optional[uuid.UUID] = None,
         employee_id: Optional[uuid.UUID] = None,
         month: Optional[str] = None,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
     ) -> BusinessBIDashboard:
         """
-        Calculates live or historical aggregated Business BI summaries.
-        """
-        stmt = (
-            select(
-                OutletFinancialSnapshot,
-                Customer.name.label("customer_name"),
-                Customer.outlet_code.label("dms_code"),
-                Territory.name.label("zone_name"),
-                Area.name.label("area_name"),
-                Employee.full_name.label("fos_name"),
-            )
-            .join(Customer, OutletFinancialSnapshot.customer_id == Customer.id)
-            .outerjoin(Territory, Customer.territory_id == Territory.id)
-            .outerjoin(Area, Customer.area_id == Area.id)
-            .outerjoin(EmployeeCustomerAssignment, EmployeeCustomerAssignment.customer_id == Customer.id)
-            .outerjoin(Employee, EmployeeCustomerAssignment.employee_id == Employee.id)
-        )
+        Aggregated Business BI summaries.
 
-        if brand and brand != "ALL":
-            aliases = _get_brand_filter_aliases(brand)
-            stmt = stmt.where(func.lower(OutletFinancialSnapshot.brand).in_(aliases))
-        if zone_id:
-            stmt = stmt.where(Customer.territory_id == zone_id)
-        if area_id:
-            stmt = stmt.where(Customer.area_id == area_id)
-        if employee_id:
-            stmt = stmt.where(EmployeeCustomerAssignment.employee_id == employee_id)
-        if month:
-            try:
-                y, m = [int(x) for x in month.split("-")]
-                stmt = stmt.where(
-                    and_(
-                        func.extract("year", OutletFinancialSnapshot.snapshot_date) == y,
-                        func.extract("month", OutletFinancialSnapshot.snapshot_date) == m,
+        Data source (explicit in ``data_source``):
+          * SNAPSHOT      - outlet financial snapshots in the window.  FLOWS (sales,
+                            collection) are summed across the snapshots, STOCK
+                            (market OS, ageing) is the latest snapshot per
+                            outlet+brand.
+          * LIVE_INVOICES - used ONLY when no snapshot exists at all in the window:
+                            live Tally invoices (invoice_date in the window) and
+                            verified payments (payment_date in the window); ageing
+                            is as of today.
+        """
+        window = resolve_snapshot_window(month, start_date, end_date)
+        today = ist_now().date()
+
+        any_snapshot = (
+            await session.execute(
+                _snapshot_window_where(select(literal(1)).select_from(_S), window).limit(1)
+            )
+        ).first() is not None
+
+        entries: list[_BiEntry] = []
+        total_collection = Decimal("0.00")
+        total_collection_posted = Decimal("0.00")
+        total_collection_awaiting = Decimal("0.00")
+        brand_collection_override: Optional[dict[str, Decimal]] = None
+        data_source = "SNAPSHOT"
+        as_of: Optional[date] = None
+
+        fos_map = await _load_fos_map(session, only_employee=employee_id)
+
+        if any_snapshot:
+            eff = effective_snapshots(window, brand)
+            stmt = (
+                select(
+                    eff,
+                    Customer.name.label("customer_name"),
+                    Customer.outlet_code.label("dms_code"),
+                    Territory.name.label("zone_name"),
+                    Area.name.label("area_name"),
+                )
+                .join(Customer, eff.c.customer_id == Customer.id)
+                .outerjoin(Territory, Customer.territory_id == Territory.id)
+                .outerjoin(Area, Customer.area_id == Area.id)
+                .order_by(eff.c.id.asc())
+            )
+            if zone_id:
+                stmt = stmt.where(Customer.territory_id == zone_id)
+            if area_id:
+                stmt = stmt.where(Customer.area_id == area_id)
+            if employee_id:
+                stmt = stmt.where(_employee_filter(employee_id))
+            for r in (await session.execute(stmt)).all():
+                entries.append(
+                    _BiEntry(
+                        key=r.id,
+                        customer_id=r.customer_id,
+                        brand=resolve_canonical_brand_name(r.brand) if r.brand else "General",
+                        outlet_name=r.customer_name,
+                        dms_code=r.dms_code or "",
+                        zone=r.zone_name or "Unknown Zone",
+                        area=r.area_name or "Unknown Area",
+                        fos=fos_map.get(r.customer_id, []),
+                        sales=r.sales_sum,
+                        collection=r.collection_sum,
+                        market_os=r.market_outstanding,
+                        buckets=[r.bucket_lt_15, r.bucket_15_30, r.bucket_30_45, r.bucket_45_60,
+                                 r.bucket_60_75, r.bucket_75_90, r.bucket_gt_90],
+                        as_of=r.snapshot_date,
                     )
                 )
-            except Exception:
-                pass
-
-        res = await session.execute(stmt)
-        records = res.all()
-
-        total_sales = Decimal("0.00")
-        total_collection = Decimal("0.00")
-        total_market_os = Decimal("0.00")
-        total_gt_90 = Decimal("0.00")
-        unique_outlets: set[uuid.UUID] = set()
-
-        raw_rows: list[BusinessSummaryRow] = []
-        brand_map: dict[str, dict] = {}
-        zone_map: dict[str, dict] = {}
-        area_map: dict[str, dict] = {}
-        fos_map: dict[str, dict] = {}
-
-        def _init_agg(name: str, b_name: str) -> dict:
-            return {
-                "dimension_name": name,
-                "brand": b_name,
-                "outlets": set(),
-                "sales": Decimal("0.00"),
-                "collection": Decimal("0.00"),
-                "market_os": Decimal("0.00"),
-                "b_lt_15": Decimal("0.00"),
-                "b_15_30": Decimal("0.00"),
-                "b_30_45": Decimal("0.00"),
-                "b_45_60": Decimal("0.00"),
-                "b_60_75": Decimal("0.00"),
-                "b_75_90": Decimal("0.00"),
-                "b_gt_90": Decimal("0.00"),
-            }
-
-        def _add_to_agg(agg: dict, snap: OutletFinancialSnapshot, cust_id: uuid.UUID):
-            agg["outlets"].add(cust_id)
-            agg["sales"] += snap.sales
-            agg["collection"] += snap.collection
-            agg["market_os"] += snap.market_outstanding
-            agg["b_lt_15"] += snap.bucket_lt_15
-            agg["b_15_30"] += snap.bucket_15_30
-            agg["b_30_45"] += snap.bucket_30_45
-            agg["b_45_60"] += snap.bucket_45_60
-            agg["b_60_75"] += snap.bucket_60_75
-            agg["b_75_90"] += snap.bucket_75_90
-            agg["b_gt_90"] += snap.bucket_gt_90
-
-        seen_snapshots: set[uuid.UUID] = set()
-        seen_fos_entries: set[tuple[uuid.UUID, str]] = set()
-
-        if records:
-            for snap, c_name, dms, z_name, a_name, f_name in records:
-                b_name = resolve_canonical_brand_name(snap.brand) if snap.brand else "General"
-                z_label = z_name or "Unknown Zone"
-                a_label = a_name or "Unknown Area"
-                f_label = f_name or "Unassigned"
-                snap_id = snap.id
-
-                if snap_id not in seen_snapshots:
-                    seen_snapshots.add(snap_id)
-                    unique_outlets.add(snap.customer_id)
-                    total_sales += snap.sales
-                    total_collection += snap.collection
-                    total_market_os += snap.market_outstanding
-                    total_gt_90 += snap.bucket_gt_90
-
-                    raw_rows.append(
-                        BusinessSummaryRow(
-                            brand=b_name,
-                            dimension_name=c_name,
-                            dms_code=dms or "",
-                            outlet_name=c_name,
-                            zone_name=z_label,
-                            area_name=a_label,
-                            fos_name=f_label,
-                            outlets_count=1,
-                            sales=snap.sales,
-                            collection=snap.collection,
-                            market_outstanding=snap.market_outstanding,
-                            bucket_lt_15=snap.bucket_lt_15,
-                            bucket_15_30=snap.bucket_15_30,
-                            bucket_30_45=snap.bucket_30_45,
-                            bucket_45_60=snap.bucket_45_60,
-                            bucket_60_75=snap.bucket_60_75,
-                            bucket_75_90=snap.bucket_75_90,
-                            bucket_gt_90=snap.bucket_gt_90,
-                        )
-                    )
-
-                    # Brand aggregation (exactly once per snapshot)
-                    if b_name not in brand_map:
-                        brand_map[b_name] = _init_agg(b_name, b_name)
-                    _add_to_agg(brand_map[b_name], snap, snap.customer_id)
-
-                    # Zone aggregation (exactly once per snapshot)
-                    z_key = f"{b_name}::{z_label}"
-                    if z_key not in zone_map:
-                        zone_map[z_key] = _init_agg(z_label, b_name)
-                    _add_to_agg(zone_map[z_key], snap, snap.customer_id)
-
-                    # Area aggregation (exactly once per snapshot)
-                    a_key = f"{b_name}::{a_label}"
-                    if a_key not in area_map:
-                        area_map[a_key] = _init_agg(a_label, b_name)
-                    _add_to_agg(area_map[a_key], snap, snap.customer_id)
-
-                # FOS aggregation (exactly once per (snapshot, FOS) assignment)
-                fos_entry_key = (snap_id, f_label)
-                if fos_entry_key not in seen_fos_entries:
-                    seen_fos_entries.add(fos_entry_key)
-                    f_key = f"{b_name}::{f_label}"
-                    if f_key not in fos_map:
-                        fos_map[f_key] = _init_agg(f_label, b_name)
-                    _add_to_agg(fos_map[f_key], snap, snap.customer_id)
+            as_of = max((e.as_of for e in entries if e.as_of), default=None)
+            total_collection = sum((e.collection for e in entries), Decimal("0.00"))
         else:
-            # Authoritative Tally Accounting Source of Truth: Aggregate directly from real Invoices & Payments
-            today = date.today()
+            data_source = "LIVE_INVOICES"
+            aliases = _brand_aliases(brand)
             inv_stmt = (
                 select(
                     Invoice,
@@ -980,162 +1085,92 @@ class ReportService:
                     Customer.outlet_code.label("dms_code"),
                     Territory.name.label("zone_name"),
                     Area.name.label("area_name"),
-                    Employee.full_name.label("fos_name"),
                 )
                 .join(Customer, Invoice.customer_id == Customer.id)
                 .outerjoin(Territory, Customer.territory_id == Territory.id)
                 .outerjoin(Area, Customer.area_id == Area.id)
-                .outerjoin(EmployeeCustomerAssignment, EmployeeCustomerAssignment.customer_id == Customer.id)
-                .outerjoin(Employee, EmployeeCustomerAssignment.employee_id == Employee.id)
                 .where(Invoice.source == InvoiceSource.TALLY)
+                .order_by(Invoice.id.asc())
             )
-
-            if brand and brand != "ALL":
-                aliases = _get_brand_filter_aliases(brand)
+            if aliases:
                 inv_stmt = inv_stmt.where(func.lower(Invoice.brand).in_(aliases))
             if zone_id:
                 inv_stmt = inv_stmt.where(Customer.territory_id == zone_id)
             if area_id:
                 inv_stmt = inv_stmt.where(Customer.area_id == area_id)
             if employee_id:
-                inv_stmt = inv_stmt.where(EmployeeCustomerAssignment.employee_id == employee_id)
-            if month:
-                try:
-                    y, m = [int(x) for x in month.split("-")]
-                    inv_stmt = inv_stmt.where(
-                        and_(
-                            func.extract("year", Invoice.invoice_date) == y,
-                            func.extract("month", Invoice.invoice_date) == m,
-                        )
+                inv_stmt = inv_stmt.where(_employee_filter(employee_id))
+            inv_stmt = where_date_range(inv_stmt, Invoice.invoice_date, window.start, window.end)
+
+            for inv, c_name, dms, z_name, a_name in (await session.execute(inv_stmt)).all():
+                inv_amt = inv.amount or Decimal("0.00")
+                inv_os = inv.imported_outstanding_amount if inv.imported_outstanding_amount is not None else inv_amt
+                age_days = (today - inv.invoice_date).days if inv.invoice_date else 0
+                zero = Decimal("0.00")
+                buckets = [
+                    inv_os if age_days <= 15 else zero,
+                    inv_os if 16 <= age_days <= 30 else zero,
+                    inv_os if 31 <= age_days <= 45 else zero,
+                    inv_os if 46 <= age_days <= 60 else zero,
+                    inv_os if 61 <= age_days <= 75 else zero,
+                    inv_os if 76 <= age_days <= 90 else zero,
+                    inv_os if age_days > 90 else zero,
+                ]
+                entries.append(
+                    _BiEntry(
+                        key=inv.id,
+                        customer_id=inv.customer_id,
+                        brand=resolve_canonical_brand_name(inv.brand) if inv.brand else "General",
+                        outlet_name=c_name,
+                        dms_code=dms or "",
+                        zone=z_name or "Unknown Zone",
+                        area=a_name or "Unknown Area",
+                        fos=fos_map.get(inv.customer_id, []),
+                        sales=inv_amt,
+                        collection=Decimal("0.00"),
+                        market_os=inv_os,
+                        buckets=buckets,
+                        as_of=today,
                     )
-                except Exception:
-                    pass
+                )
+            as_of = today
 
-            inv_res = await session.execute(inv_stmt)
-            inv_records = inv_res.all()
+            # Collections from VERIFIED payments, same window / brand / zone / area / employee filters.
+            def _pay_filters(stmt):
+                stmt = stmt.where(Payment.status == PaymentStatus.VERIFIED)
+                stmt = where_date_range(stmt, Payment.payment_date, window.start, window.end)
+                if employee_id:
+                    stmt = stmt.where(Payment.employee_id == employee_id)
+                if zone_id:
+                    stmt = stmt.where(Customer.territory_id == zone_id)
+                if area_id:
+                    stmt = stmt.where(Customer.area_id == area_id)
+                return stmt
 
-            # Collections from verified payments
-            if brand and brand != "ALL":
-                aliases = _get_brand_filter_aliases(brand)
+            if aliases:
                 pay_stmt = (
                     select(func.coalesce(func.sum(PaymentBrandAllocation.allocated_amount), Decimal("0.00")))
                     .select_from(Payment)
                     .join(Customer, Payment.customer_id == Customer.id)
                     .join(PaymentBrandAllocation, PaymentBrandAllocation.payment_id == Payment.id)
-                    .where(Payment.status == PaymentStatus.VERIFIED)
                     .where(func.lower(PaymentBrandAllocation.brand).in_(aliases))
                 )
             else:
                 pay_stmt = (
                     select(func.coalesce(func.sum(Payment.amount), Decimal("0.00")))
+                    .select_from(Payment)
                     .join(Customer, Payment.customer_id == Customer.id)
-                    .where(Payment.status == PaymentStatus.VERIFIED)
                 )
-            if employee_id:
-                pay_stmt = pay_stmt.where(Payment.employee_id == employee_id)
-            if zone_id:
-                pay_stmt = pay_stmt.where(Customer.territory_id == zone_id)
-            if area_id:
-                pay_stmt = pay_stmt.where(Customer.area_id == area_id)
-            if month:
-                try:
-                    y, m = [int(x) for x in month.split("-")]
-                    pay_stmt = pay_stmt.where(
-                        and_(
-                            func.extract("year", Payment.payment_date) == y,
-                            func.extract("month", Payment.payment_date) == m,
-                        )
-                    )
-                except Exception:
-                    pass
+            pay_stmt = _pay_filters(pay_stmt)
             total_collection = (await session.execute(pay_stmt)).scalar() or Decimal("0.00")
+            # Split of the same VERIFIED collections: in Tally vs awaiting Tally.
+            total_collection_posted = (
+                await session.execute(pay_stmt.where(payment_tally.posted_clause()))
+            ).scalar() or Decimal("0.00")
+            total_collection_awaiting = (
+                await session.execute(pay_stmt.where(payment_tally.awaiting_clause()))
+            ).scalar() or Decimal("0.00")
 
-            seen_invoices: set[uuid.UUID] = set()
-            for inv, c_name, dms, z_name, a_name, f_name in inv_records:
-                b_name = resolve_canonical_brand_name(inv.brand) if inv.brand else "General"
-                z_label = z_name or "Unknown Zone"
-                a_label = a_name or "Unknown Area"
-                f_label = f_name or "Unassigned"
-                inv_id = inv.id
-
-                if inv_id not in seen_invoices:
-                    seen_invoices.add(inv_id)
-                    unique_outlets.add(inv.customer_id)
-                    inv_amt = inv.amount or Decimal("0.00")
-                    inv_os = inv.imported_outstanding_amount if inv.imported_outstanding_amount is not None else inv_amt
-                    total_sales += inv_amt
-                    total_market_os += inv_os
-
-                    # Ageing calculation from invoice date
-                    age_days = (today - inv.invoice_date).days if inv.invoice_date else 0
-                    b_lt_15 = inv_os if age_days <= 15 else Decimal("0.00")
-                    b_15_30 = inv_os if 16 <= age_days <= 30 else Decimal("0.00")
-                    b_30_45 = inv_os if 31 <= age_days <= 45 else Decimal("0.00")
-                    b_45_60 = inv_os if 46 <= age_days <= 60 else Decimal("0.00")
-                    b_60_75 = inv_os if 61 <= age_days <= 75 else Decimal("0.00")
-                    b_75_90 = inv_os if 76 <= age_days <= 90 else Decimal("0.00")
-                    b_gt_90 = inv_os if age_days > 90 else Decimal("0.00")
-
-                    total_gt_90 += b_gt_90
-
-                    raw_rows.append(
-                        BusinessSummaryRow(
-                            brand=b_name,
-                            dimension_name=c_name,
-                            dms_code=dms or "",
-                            outlet_name=c_name,
-                            zone_name=z_label,
-                            area_name=a_label,
-                            fos_name=f_label,
-                            outlets_count=1,
-                            sales=inv_amt,
-                            collection=Decimal("0.00"),
-                            market_outstanding=inv_os,
-                            bucket_lt_15=b_lt_15,
-                            bucket_15_30=b_15_30,
-                            bucket_30_45=b_30_45,
-                            bucket_45_60=b_45_60,
-                            bucket_60_75=b_60_75,
-                            bucket_75_90=b_75_90,
-                            bucket_gt_90=b_gt_90,
-                        )
-                    )
-
-                    def _add_inv_to_agg(agg: dict, cust_id: uuid.UUID):
-                        agg["outlets"].add(cust_id)
-                        agg["sales"] += inv_amt
-                        agg["market_os"] += inv_os
-                        agg["b_lt_15"] += b_lt_15
-                        agg["b_15_30"] += b_15_30
-                        agg["b_30_45"] += b_30_45
-                        agg["b_45_60"] += b_45_60
-                        agg["b_60_75"] += b_60_75
-                        agg["b_75_90"] += b_75_90
-                        agg["b_gt_90"] += b_gt_90
-
-                    if b_name not in brand_map:
-                        brand_map[b_name] = _init_agg(b_name, b_name)
-                    _add_inv_to_agg(brand_map[b_name], inv.customer_id)
-
-                    z_key = f"{b_name}::{z_label}"
-                    if z_key not in zone_map:
-                        zone_map[z_key] = _init_agg(z_label, b_name)
-                    _add_inv_to_agg(zone_map[z_key], inv.customer_id)
-
-                    a_key = f"{b_name}::{a_label}"
-                    if a_key not in area_map:
-                        area_map[a_key] = _init_agg(a_label, b_name)
-                    _add_inv_to_agg(area_map[a_key], inv.customer_id)
-
-                fos_entry_key = (inv_id, f_label)
-                if fos_entry_key not in seen_fos_entries:
-                    seen_fos_entries.add(fos_entry_key)
-                    f_key = f"{b_name}::{f_label}"
-                    if f_key not in fos_map:
-                        fos_map[f_key] = _init_agg(f_label, b_name)
-                    _add_inv_to_agg(fos_map[f_key], inv.customer_id)
-
-            # Populate brand collections from verified PaymentBrandAllocations
             pay_brand_stmt = (
                 select(
                     PaymentBrandAllocation.brand,
@@ -1144,18 +1179,71 @@ class ReportService:
                 .select_from(Payment)
                 .join(Customer, Payment.customer_id == Customer.id)
                 .join(PaymentBrandAllocation, PaymentBrandAllocation.payment_id == Payment.id)
-                .where(Payment.status == PaymentStatus.VERIFIED)
             )
-            if zone_id:
-                pay_brand_stmt = pay_brand_stmt.where(Customer.territory_id == zone_id)
-            if area_id:
-                pay_brand_stmt = pay_brand_stmt.where(Customer.area_id == area_id)
-            if employee_id:
-                pay_brand_stmt = pay_brand_stmt.where(Payment.employee_id == employee_id)
-            pay_brand_stmt = pay_brand_stmt.group_by(PaymentBrandAllocation.brand)
-            pb_rows = (await session.execute(pay_brand_stmt)).all()
-            for b_raw, b_col in pb_rows:
+            if aliases:
+                pay_brand_stmt = pay_brand_stmt.where(func.lower(PaymentBrandAllocation.brand).in_(aliases))
+            pay_brand_stmt = _pay_filters(pay_brand_stmt).group_by(PaymentBrandAllocation.brand)
+            brand_collection_override = {}
+            for b_raw, b_col in (await session.execute(pay_brand_stmt)).all():
                 canon_b = resolve_canonical_brand_name(b_raw) if b_raw else "General"
+                brand_collection_override[canon_b] = brand_collection_override.get(canon_b, Decimal("0.00")) + b_col
+
+        # ---- aggregation (identical for both sources) ---------------------------------
+        zero = Decimal("0.00")
+        total_sales = sum((e.sales for e in entries), zero)
+        total_market_os = sum((e.market_os for e in entries), zero)
+        total_gt_90 = sum((e.buckets[6] for e in entries), zero)
+        unique_outlets = {e.customer_id for e in entries}
+
+        brand_map: dict[str, dict] = {}
+        zone_map: dict[str, dict] = {}
+        area_map: dict[str, dict] = {}
+        fos_agg: dict[str, dict] = {}
+
+        def _init_agg(name: str, b_name: str) -> dict:
+            return {
+                "dimension_name": name, "brand": b_name, "outlets": set(),
+                "sales": zero, "collection": zero, "market_os": zero, "b": [zero] * 7,
+            }
+
+        def _add(agg: dict, e: _BiEntry):
+            agg["outlets"].add(e.customer_id)
+            agg["sales"] += e.sales
+            agg["collection"] += e.collection
+            agg["market_os"] += e.market_os
+            agg["b"] = [x + y for x, y in zip(agg["b"], e.buckets)]
+
+        raw_rows: list[BusinessSummaryRow] = []
+        for e in entries:
+            fos_label = _fos_label(e.fos)
+            raw_rows.append(
+                BusinessSummaryRow(
+                    brand=e.brand,
+                    dimension_name=e.outlet_name,
+                    dms_code=e.dms_code,
+                    outlet_name=e.outlet_name,
+                    zone_name=e.zone,
+                    area_name=e.area,
+                    fos_name=fos_label,
+                    outlets_count=1,
+                    sales=e.sales,
+                    collection=e.collection,
+                    market_outstanding=e.market_os,
+                    bucket_lt_15=e.buckets[0], bucket_15_30=e.buckets[1], bucket_30_45=e.buckets[2],
+                    bucket_45_60=e.buckets[3], bucket_60_75=e.buckets[4], bucket_75_90=e.buckets[5],
+                    bucket_gt_90=e.buckets[6],
+                    as_of_date=e.as_of,
+                )
+            )
+            _add(brand_map.setdefault(e.brand, _init_agg(e.brand, e.brand)), e)
+            _add(zone_map.setdefault(f"{e.brand}::{e.zone}", _init_agg(e.zone, e.brand)), e)
+            _add(area_map.setdefault(f"{e.brand}::{e.area}", _init_agg(e.area, e.brand)), e)
+            # FOS aggregation: once per (entry, assigned FOS); unassigned outlets -> "Unassigned"
+            for f_label in ([n for _, n in e.fos] or ["Unassigned"]):
+                _add(fos_agg.setdefault(f"{e.brand}::{f_label}", _init_agg(f_label, e.brand)), e)
+
+        if brand_collection_override is not None:
+            for canon_b, b_col in brand_collection_override.items():
                 if canon_b in brand_map:
                     brand_map[canon_b]["collection"] = b_col
                 else:
@@ -1166,6 +1254,7 @@ class ReportService:
         def _to_rows(d_map: dict) -> list[BusinessSummaryRow]:
             out = []
             for item in d_map.values():
+                b = item["b"]
                 out.append(
                     BusinessSummaryRow(
                         brand=item["brand"],
@@ -1174,48 +1263,65 @@ class ReportService:
                         sales=item["sales"],
                         collection=item["collection"],
                         market_outstanding=item["market_os"],
-                        bucket_lt_15=item["b_lt_15"],
-                        bucket_15_30=item["b_15_30"],
-                        bucket_30_45=item["b_30_45"],
-                        bucket_45_60=item["b_45_60"],
-                        bucket_60_75=item["b_60_75"],
-                        bucket_75_90=item["b_75_90"],
-                        bucket_gt_90=item["b_gt_90"],
+                        bucket_lt_15=b[0], bucket_15_30=b[1], bucket_30_45=b[2],
+                        bucket_45_60=b[3], bucket_60_75=b[4], bucket_75_90=b[5], bucket_gt_90=b[6],
                     )
                 )
-            return sorted(out, key=lambda x: x.sales, reverse=True)
+            return sorted(out, key=lambda x: (-x.sales, x.brand, x.dimension_name))
 
-        # Check finalization status if month specified
+        # Check finalization status if a calendar month (and not a date range) was selected
         is_fin = False
-        if month:
-            try:
-                y, m = [int(x) for x in month.split("-")]
-                p_stmt = select(MonthlyReportingPeriod).where(
-                    MonthlyReportingPeriod.period_year == y,
-                    MonthlyReportingPeriod.period_month == m,
+        if window.source == "MONTH" and month:
+            y, m = [int(x) for x in month.split("-")]
+            period_row = (
+                await session.execute(
+                    select(MonthlyReportingPeriod).where(
+                        MonthlyReportingPeriod.period_year == y,
+                        MonthlyReportingPeriod.period_month == m,
+                    )
                 )
-                p_res = await session.execute(p_stmt)
-                period_row = p_res.scalar_one_or_none()
-                if period_row:
-                    status_val = period_row.status.value if hasattr(period_row.status, "value") else str(period_row.status)
-                    is_fin = (status_val == MonthlyPeriodStatus.FINALIZED.value or status_val == "FINALIZED")
-            except Exception:
-                pass
+            ).scalar_one_or_none()
+            if period_row:
+                status_val = period_row.status.value if hasattr(period_row.status, "value") else str(period_row.status)
+                is_fin = status_val == MonthlyPeriodStatus.FINALIZED.value
+
+        if data_source == "SNAPSHOT":
+            note = (
+                "Source: outlet financial snapshots. Sales and collection are summed across the snapshots in the "
+                "selected period; market outstanding and ageing buckets are the latest snapshot per outlet and brand "
+                "in the period"
+                + (f" (as of {as_of.isoformat()})." if as_of else ".")
+            )
+        else:
+            note = (
+                "No snapshot exists for the selected period, so figures come from live Tally invoices "
+                "(invoice date within the period) and verified payments (payment date within the period); "
+                "outstanding and ageing are as of today."
+            )
 
         return BusinessBIDashboard(
-            snapshot_date=date.today(),
-            month_period=month,
+            snapshot_date=as_of or today,
+            month_period=month if (month and month != "ALL" and not window.month_ignored) else None,
             is_finalized=is_fin,
             total_outlets=len(unique_outlets),
             total_sales=total_sales,
             total_collection=total_collection,
+            total_collection_posted_in_tally=total_collection_posted,
+            total_collection_verified_awaiting_tally=total_collection_awaiting,
             total_market_outstanding=total_market_os,
             total_overdue_gt_90=total_gt_90,
             brand_summaries=_to_rows(brand_map),
             zone_summaries=_to_rows(zone_map),
             area_summaries=_to_rows(area_map),
-            fos_summaries=_to_rows(fos_map),
+            fos_summaries=_to_rows(fos_agg),
             raw_outlet_rows=raw_rows,
+            data_source=data_source,
+            data_source_note=note,
+            as_of_date=as_of,
+            period_start=window.start,
+            period_end=window.end,
+            period_source=window.source,
+            month_ignored=window.month_ignored,
         )
 
     # -----------------------------------------------------------------------
@@ -1331,225 +1437,6 @@ class ReportService:
             created_at=period.created_at or now_dt,
             updated_at=now_dt,
         )
-
-    # -----------------------------------------------------------------------
-    # Excel Export Engine (Business-friendly formatting)
-    # -----------------------------------------------------------------------
-    @staticmethod
-    def export_report_excel(
-        report_title: str,
-        sheet_name: str,
-        headers: list[str],
-        data_rows: list[list[Any]],
-        filters_applied: dict[str, str] | None = None,
-        summary_kpis: list[tuple[str, str]] | None = None,
-    ) -> bytes:
-        """
-        Generates business-ready, styled Excel workbook for any report type.
-        """
-        wb = openpyxl.Workbook()
-        ws = wb.active
-        ws.title = sheet_name[:31]
-
-        # Visual design tokens
-        title_font = Font(name="Calibri", size=14, bold=True, color="1E3A8A")
-        sub_font = Font(name="Calibri", size=9, italic=True, color="6B7280")
-        kpi_lbl_font = Font(name="Calibri", size=9, bold=True, color="4B5563")
-        kpi_val_font = Font(name="Calibri", size=12, bold=True, color="1E3A8A")
-        hdr_fill = PatternFill(start_color="1E3A8A", end_color="1E3A8A", fill_type="solid")
-        hdr_font = Font(name="Calibri", size=10, bold=True, color="FFFFFF")
-        total_fill = PatternFill(start_color="F3F4F6", end_color="F3F4F6", fill_type="solid")
-        total_font = Font(name="Calibri", size=10, bold=True, color="111827")
-        data_font = Font(name="Calibri", size=10)
-
-        thin_border = Border(
-            left=Side(style="thin", color="E5E7EB"),
-            right=Side(style="thin", color="E5E7EB"),
-            top=Side(style="thin", color="E5E7EB"),
-            bottom=Side(style="thin", color="E5E7EB"),
-        )
-
-        # 1. Report Title & Header Banner
-        ws.append([f"FieldTrack — {report_title}"])
-        ws.cell(row=1, column=1).font = title_font
-        ws.append([f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"])
-        ws.cell(row=2, column=1).font = sub_font
-
-        # 2. Applied Filters block
-        if filters_applied:
-            f_str = " | ".join(f"{k}: {v}" for k, v in filters_applied.items() if v and v != "ALL")
-            if f_str:
-                ws.append([f"Filters: {f_str}"])
-                ws.cell(row=3, column=1).font = sub_font
-
-        ws.append([])
-
-        # 3. Summary KPIs Banner
-        if summary_kpis:
-            kpi_labels = [k for k, _ in summary_kpis]
-            kpi_values = [v for _, v in summary_kpis]
-            ws.append(kpi_labels)
-            lbl_row = ws.max_row
-            ws.append(kpi_values)
-            val_row = ws.max_row
-
-            for col_i in range(1, len(summary_kpis) + 1):
-                c_lbl = ws.cell(row=lbl_row, column=col_i)
-                c_lbl.font = kpi_lbl_font
-                c_lbl.fill = total_fill
-                c_val = ws.cell(row=val_row, column=col_i)
-                c_val.font = kpi_val_font
-                c_val.fill = total_fill
-
-            ws.append([])
-
-        # 4. Data Table Headers
-        ws.append(headers)
-        header_row_idx = ws.max_row
-        for col_idx in range(1, len(headers) + 1):
-            c = ws.cell(row=header_row_idx, column=col_idx)
-            c.fill = hdr_fill
-            c.font = hdr_font
-            c.alignment = Alignment(horizontal="center", vertical="center")
-
-        # 5. Data Rows
-        for r in data_rows:
-            ws.append(r)
-            cur_r = ws.max_row
-            for col_idx in range(1, len(r) + 1):
-                cell = ws.cell(row=cur_r, column=col_idx)
-                cell.font = data_font
-                cell.border = thin_border
-                val = cell.value
-                if isinstance(val, (int, float, Decimal)):
-                    cell.number_format = "#,##0.00" if isinstance(val, (float, Decimal)) else "#,##0"
-                    cell.alignment = Alignment(horizontal="right")
-
-        # Auto column width
-        for col in ws.columns:
-            max_len = 0
-            col_letter = col[0].column_letter
-            for cell in col:
-                val = str(cell.value or "")
-                if cell.row > 4 and len(val) > max_len:
-                    max_len = len(val)
-            ws.column_dimensions[col_letter].width = max(max_len + 3, 12)
-
-        buf = io.BytesIO()
-        wb.save(buf)
-        return buf.getvalue()
-
-    @staticmethod
-    def export_business_bi_excel(dashboard: BusinessBIDashboard) -> bytes:
-        """
-        Exports the multi-sheet Business BI workbook.
-        """
-        wb = openpyxl.Workbook()
-
-        hdr_fill = PatternFill(start_color="1E3A8A", end_color="1E3A8A", fill_type="solid")
-        hdr_font = Font(name="Calibri", size=10, bold=True, color="FFFFFF")
-        title_font = Font(name="Calibri", size=13, bold=True, color="1E3A8A")
-        sub_font = Font(name="Calibri", size=9, italic=True)
-        thin_border = Border(
-            left=Side(style="thin", color="E5E7EB"),
-            right=Side(style="thin", color="E5E7EB"),
-            top=Side(style="thin", color="E5E7EB"),
-            bottom=Side(style="thin", color="E5E7EB"),
-        )
-
-        def _write_section(ws, title: str, headers: list[str], rows: list[BusinessSummaryRow], is_raw: bool = False):
-            ws.append([title])
-            ws.cell(row=ws.max_row, column=1).font = title_font
-            ws.append([f"Exported: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Total Outlets: {dashboard.total_outlets} | Total Sales: ₹{dashboard.total_sales:,.2f} | Total OS: ₹{dashboard.total_market_outstanding:,.2f}"])
-            ws.cell(row=ws.max_row, column=1).font = sub_font
-            ws.append([])
-            ws.append(headers)
-            header_row_idx = ws.max_row
-            for col_idx in range(1, len(headers) + 1):
-                c = ws.cell(row=header_row_idx, column=col_idx)
-                c.fill = hdr_fill
-                c.font = hdr_font
-                c.alignment = Alignment(horizontal="center", vertical="center")
-
-            for r in rows:
-                if is_raw:
-                    row_data = [
-                        r.brand, r.dms_code, r.outlet_name, r.zone_name, r.area_name, r.fos_name,
-                        float(r.sales), float(r.collection), float(r.market_outstanding),
-                        float(r.bucket_lt_15), float(r.bucket_15_30), float(r.bucket_30_45),
-                        float(r.bucket_45_60), float(r.bucket_60_75), float(r.bucket_75_90),
-                        float(r.bucket_gt_90),
-                    ]
-                else:
-                    row_data = [
-                        r.brand, r.dimension_name, r.outlets_count,
-                        float(r.sales), float(r.collection), float(r.market_outstanding),
-                        float(r.bucket_lt_15), float(r.bucket_15_30), float(r.bucket_30_45),
-                        float(r.bucket_45_60), float(r.bucket_60_75), float(r.bucket_75_90),
-                        float(r.bucket_gt_90),
-                    ]
-                ws.append(row_data)
-                cur_r = ws.max_row
-                for c_i in range(1, len(row_data) + 1):
-                    cell = ws.cell(row=cur_r, column=c_i)
-                    cell.border = thin_border
-                    if isinstance(cell.value, float):
-                        cell.number_format = "#,##0.00"
-
-            for col in ws.columns:
-                max_len = max(len(str(cell.value or "")) for cell in col if cell.row > 3) if col else 10
-                ws.column_dimensions[col[0].column_letter].width = max(max_len + 3, 12)
-
-        # 1. Brand Summary Sheet
-        ws_brand = wb.active
-        ws_brand.title = "Brand Summary"
-        _write_section(
-            ws_brand,
-            "Brand-Wise Performance Summary",
-            ["Brand", "Dimension", "Outlets", "Sales", "Collection", "Market OS", "<15d", "15-30d", "30-45d", "45-60d", "60-75d", "75-90d", ">90d"],
-            dashboard.brand_summaries,
-        )
-
-        # 2. Zone Summary Sheet
-        ws_zone = wb.create_sheet("Zone Summary")
-        _write_section(
-            ws_zone,
-            "Zone-Wise Performance Summary",
-            ["Brand", "Zone Name", "Outlets", "Sales", "Collection", "Market OS", "<15d", "15-30d", "30-45d", "45-60d", "60-75d", "75-90d", ">90d"],
-            dashboard.zone_summaries,
-        )
-
-        # 3. Area Summary Sheet
-        ws_area = wb.create_sheet("Area Summary")
-        _write_section(
-            ws_area,
-            "Area-Wise Performance Summary",
-            ["Brand", "Area Name", "Outlets", "Sales", "Collection", "Market OS", "<15d", "15-30d", "30-45d", "45-60d", "60-75d", "75-90d", ">90d"],
-            dashboard.area_summaries,
-        )
-
-        # 4. FOS Summary Sheet
-        ws_fos = wb.create_sheet("FOS Summary")
-        _write_section(
-            ws_fos,
-            "FOS / Field Officer Performance Summary",
-            ["Brand", "FOS Name", "Outlets", "Sales", "Collection", "Market OS", "<15d", "15-30d", "30-45d", "45-60d", "60-75d", "75-90d", ">90d"],
-            dashboard.fos_summaries,
-        )
-
-        # 5. Raw Outlet Data Sheet
-        ws_raw = wb.create_sheet("Outlet Data")
-        _write_section(
-            ws_raw,
-            "Complete Outlet Level Financial Master",
-            ["Brand", "DMS Code", "Outlet Name", "Zone", "Area", "FOS", "Sales", "Collection", "Market OS", "<15d", "15-30d", "30-45d", "45-60d", "60-75d", "75-90d", ">90d"],
-            dashboard.raw_outlet_rows,
-            is_raw=True,
-        )
-
-        buf = io.BytesIO()
-        wb.save(buf)
-        return buf.getvalue()
 
 
 report_service = ReportService()

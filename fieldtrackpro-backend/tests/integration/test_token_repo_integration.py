@@ -10,10 +10,12 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
 import pytest
 from httpx import AsyncClient
 
+from app.config import settings
 from app.core.security import generate_refresh_token, hash_refresh_token
 from app.database import AsyncSessionLocal
 from app.models.refresh_token import RefreshToken
@@ -98,6 +100,8 @@ async def test_real_refresh_flow_still_works_end_to_end(client: AsyncClient, see
     assert "access_token" in resp.json()
     assert "refresh_token" in resp.json()
 
-    # Rotation: the old refresh token must now be revoked/unusable.
-    reused = await client.post("/api/v1/auth/refresh", json={"refresh_token": raw_refresh})
-    assert reused.status_code == 401, "a rotated-out refresh token must not be reusable"
+    # Rotation: the old refresh token must now be revoked/unusable (past its short reuse-grace
+    # window - see test_auth_hardening.py for the grace-window behavior itself).
+    with patch.object(settings, "refresh_reuse_grace_seconds", 0):
+        reused = await client.post("/api/v1/auth/refresh", json={"refresh_token": raw_refresh})
+    assert reused.status_code == 401, "a rotated-out refresh token must not be reusable past the grace window"

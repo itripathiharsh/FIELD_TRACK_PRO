@@ -10,6 +10,11 @@ class DashboardExecutiveKPIs(BaseModel):
     total_outlets: int
     total_sales: Decimal
     total_collection: Decimal
+    # Additive split of VERIFIED live collections (same filters as total_collection):
+    # receipt confirmed in Tally vs verified but not yet in Tally. total_collection
+    # itself keeps counting at VERIFIED (cash received).
+    total_collection_posted_in_tally: Decimal = Decimal("0.00")
+    total_collection_verified_awaiting_tally: Decimal = Decimal("0.00")
     total_market_outstanding: Decimal
     total_overdue_gt_90: Decimal
     total_employees: int

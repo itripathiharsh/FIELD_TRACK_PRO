@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Sequence
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -25,9 +25,11 @@ from app.exceptions.custom import BaseAPIException
 from app.models.employee import Employee
 from app.models.payment import Payment, PaymentBrandAllocation, PaymentStatus, PaymentSource
 from app.models.payment_proof import PaymentProof
+from app.models.invoice import Invoice
 from app.models.user import Role, User
+from app.models.visit import VisitStatus
 from app.repositories.payment_repo import PaymentProofRepository, PaymentRepository
-from app.schemas.payment import PaymentAllocationUpdate, PaymentCreate, PaymentRead
+from app.schemas.payment import PaymentAllocationUpdate, PaymentCreate, PaymentRead, PaymentVerifyRequest
 from app.services.file_validation_service import FileValidationService
 from app.services.invoice_service import get_invoice
 from app.services.period_service import assert_period_open_for_date
@@ -37,8 +39,83 @@ from app.services.visit_service import get_visit_for_user
 logger = logging.getLogger("fieldtrackpro")
 
 
-def to_payment_read(payment: Payment) -> PaymentRead:
+_MONEY_TOLERANCE = Decimal("0.005")
+
+
+async def _lock_payment(payment_id: uuid.UUID, session: AsyncSession) -> Payment | None:
+    """SELECT ... FOR UPDATE on the payment so concurrent verify/reject serialise."""
+    result = await session.execute(
+        select(Payment)
+        .where(Payment.id == payment_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    return result.scalar_one_or_none()
+
+
+async def _lock_invoice(invoice_id: uuid.UUID, session: AsyncSession) -> Invoice:
+    result = await session.execute(
+        select(Invoice).where(Invoice.id == invoice_id).with_for_update().execution_options(populate_existing=True)
+    )
+    invoice = result.scalar_one_or_none()
+    if invoice is None:
+        raise BaseAPIException(status_code=404, detail="Invoice not found", error_code="INVOICE_NOT_FOUND")
+    return invoice
+
+
+async def _pending_amount_for_invoice(
+    invoice_id: uuid.UUID, session: AsyncSession, exclude_payment_id: uuid.UUID | None = None
+) -> Decimal:
+    stmt = select(func.coalesce(func.sum(Payment.amount), Decimal("0.00"))).where(
+        Payment.invoice_id == invoice_id,
+        Payment.status == PaymentStatus.PENDING_VERIFICATION,
+    )
+    if exclude_payment_id is not None:
+        stmt = stmt.where(Payment.id != exclude_payment_id)
+    return (await session.execute(stmt)).scalar() or Decimal("0.00")
+
+
+async def invoice_outstanding_under_lock(
+    invoice_id: uuid.UUID,
+    session: AsyncSession,
+    exclude_payment_id: uuid.UUID | None = None,
+    include_pending: bool = True,
+) -> tuple[Invoice, Decimal]:
+    """
+    Lock the invoice row and return (invoice, outstanding). Outstanding is
+    invoice.amount minus money settled in Tally, minus VERIFIED-but-awaiting-Tally
+    money (committed, not yet reflected in the displayed balance), minus (optionally) other collections
+    still awaiting verification, so two field reps cannot both collect the
+    last rupee of the same invoice.
+    """
+    from app.services.invoice_service import _verified_paid_amount
+
+    from app.services import payment_tally
+
+    invoice = await _lock_invoice(invoice_id, session)
+    paid = await _verified_paid_amount(invoice_id, session)
+    # Verified money not yet confirmed in Tally does not reduce the displayed
+    # outstanding, but it IS committed: it must still block over-collection.
+    awaiting = (await payment_tally.awaiting_by_invoice(session, [invoice_id], exclude_payment_id))[invoice_id]
+    pending = (
+        await _pending_amount_for_invoice(invoice_id, session, exclude_payment_id) if include_pending else Decimal("0.00")
+    )
+    return invoice, invoice.amount - paid - awaiting - pending
+
+
+def to_payment_read(payment: Payment, job=None, is_admin: bool = False) -> PaymentRead:
+    """
+    `job` is the payment's Tally write-back job (see payment_tally.load_jobs);
+    callers that hold a session should prefer `build_payment_reads`, which
+    fetches it. `is_admin` unlocks tally_error / tally_stuck / bank fields.
+    """
+    from app.services import payment_tally
+
     return PaymentRead(
+        **payment_tally.tally_fields(payment, job, is_admin),
+        bank_reference=payment.bank_reference if is_admin else None,
+        bank_verified_on=payment.bank_verified_on if is_admin else None,
+        verified_note=payment.verified_note if is_admin else None,
         id=payment.id,
         visit_id=payment.visit_id,
         customer_id=payment.customer_id,
@@ -84,6 +161,19 @@ def to_payment_read(payment: Payment) -> PaymentRead:
     )
 
 
+async def build_payment_reads(
+    payments: Sequence[Payment], session: AsyncSession, is_admin: bool
+) -> list[PaymentRead]:
+    """Single helper that turns payments into PaymentRead with Tally status
+    (one batched job lookup). Admin sees tally_error/tally_stuck; employees do not.
+    `is_admin` is passed in (captured before any service call) because a rollback
+    inside the service expires the request's User object."""
+    from app.services import payment_tally
+
+    jobs = await payment_tally.load_jobs(session, [p.id for p in payments])
+    return [to_payment_read(p, jobs.get(p.id), is_admin) for p in payments]
+
+
 async def create_payment(data: PaymentCreate, current_user: User, session: AsyncSession) -> Payment:
     """
     Create a collection with brand allocations. `visit_id` is the single source of truth for which
@@ -97,6 +187,26 @@ async def create_payment(data: PaymentCreate, current_user: User, session: Async
     inserting again.
     """
     visit = await get_visit_for_user(data.visit_id, current_user, session)
+    repo = PaymentRepository(session)
+
+    # Idempotent replay first: a retry of an already-recorded collection must
+    # keep succeeding even if the visit has since changed state.
+    if data.idempotency_key:
+        existing = await repo.find_by_visit_and_idempotency_key(visit.id, data.idempotency_key)
+        if existing is not None:
+            return existing
+
+    # A collection cannot be recorded against a visit that never happened.
+    # (There is no CANCELLED visit status in this system; MISSED is the
+    # equivalent. COMPLETED stays allowed: the Android app records the
+    # collection from the outlet account screen after check-out and offline
+    # submissions are replayed after the visit is closed.)
+    if visit.status == VisitStatus.MISSED:
+        raise BaseAPIException(
+            status_code=409,
+            detail="Cannot record a collection against a missed visit",
+            error_code="VISIT_NOT_COLLECTABLE",
+        )
 
     # Enforce financial lock: reject payments into a finalized period
     await assert_period_open_for_date(data.payment_date, session)
@@ -109,13 +219,20 @@ async def create_payment(data: PaymentCreate, current_user: User, session: Async
                 detail="That invoice does not belong to this visit's outlet",
                 error_code="INVOICE_OUTLET_MISMATCH",
             )
-
-    repo = PaymentRepository(session)
-
-    if data.idempotency_key:
-        existing = await repo.find_by_visit_and_idempotency_key(visit.id, data.idempotency_key)
-        if existing is not None:
-            return existing
+        # Lock the invoice and cap the amount at what is still outstanding.
+        # A payment with NO invoice is an on-account/advance collection, which
+        # the system already models (AccountSummary.advance_amount), so it is
+        # intentionally not capped by customer outstanding.
+        _, outstanding = await invoice_outstanding_under_lock(data.invoice_id, session)
+        if data.amount - outstanding > _MONEY_TOLERANCE:
+            raise BaseAPIException(
+                status_code=422,
+                detail=(
+                    f"Amount {data.amount:,.2f} exceeds the invoice's outstanding balance "
+                    f"({max(outstanding, Decimal('0')):,.2f}). Record the excess without an invoice as an advance."
+                ),
+                error_code="PAYMENT_EXCEEDS_INVOICE_OUTSTANDING",
+            )
 
     payment = Payment(
         visit_id=visit.id,
@@ -147,22 +264,21 @@ async def create_payment(data: PaymentCreate, current_user: User, session: Async
                 )
             )
 
+    # Capture before a possible rollback: expired ORM attributes cannot lazy-load
+    # on an async session (MissingGreenlet).
+    visit_id = visit.id
+    payment_id = payment.id
+
     try:
         await repo.add(payment)
         await session.flush()
-
-        from app.models.customer import Customer
-        from app.services.tally_writeback_service import enqueue_payment_writeback
-        cust_row = await session.execute(select(Customer).where(Customer.id == payment.customer_id))
-        cust_obj = cust_row.scalar_one_or_none()
-        inv_obj = await get_invoice(data.invoice_id, session) if data.invoice_id else None
-        await enqueue_payment_writeback(session, payment, customer=cust_obj, invoice=inv_obj)
-
+        # NOTE: no Tally write-back is enqueued here. A collection is only
+        # untrusted field data until an admin verifies it (verify_payment).
         await repo.commit()
     except IntegrityError:
         await session.rollback()
         if data.idempotency_key:
-            existing = await repo.find_by_visit_and_idempotency_key(visit.id, data.idempotency_key)
+            existing = await repo.find_by_visit_and_idempotency_key(visit_id, data.idempotency_key)
             if existing is not None:
                 return existing
         raise
@@ -195,7 +311,7 @@ async def update_payment_allocations(
     Allows Admins to correct the brand breakdown (e.g. from bank statement) before final verification.
     """
     req_id = get_current_request_id()
-    if current_user.role != Role.ADMIN:
+    if not current_user.is_admin:
         logger.warning("event=payment_reallocate result=rejected reason=ADMIN_REQUIRED request_id=%s user_id=%s", req_id, current_user.id)
         raise BaseAPIException(
             status_code=403,
@@ -276,17 +392,14 @@ async def _assert_payment_visible(payment: Payment, current_user: User, session:
     ADMIN sees any payment. EMPLOYEE may only see their own collections - not
     other reps' (an employee cannot browse a colleague's collections/proofs).
     """
-    if current_user.role == Role.ADMIN:
+    if current_user.is_admin:
         return payment
     from app.services.employee_service import get_employee_by_user_id
 
     employee = await get_employee_by_user_id(current_user.id, session)
     if payment.employee_id != employee.id:
-        raise BaseAPIException(
-            status_code=403,
-            detail="You are not the collector of this payment",
-            error_code="PAYMENT_NOT_OWNED",
-        )
+        # 404, not 403: do not reveal that another employee's payment exists.
+        raise BaseAPIException(status_code=404, detail="Payment not found", error_code="PAYMENT_NOT_FOUND")
     return payment
 
 
@@ -309,14 +422,19 @@ async def list_payments_for_customer(
 
 
 async def list_review_queue(
-    session: AsyncSession, status: PaymentStatus | None = None, skip: int = 0, limit: int = 50
+    session: AsyncSession,
+    status: PaymentStatus | None = None,
+    skip: int = 0,
+    limit: int = 50,
+    tally_status=None,
+    stuck: bool | None = None,
 ) -> Sequence[Payment]:
     """Admin/accountant review queue. Route gates this AdminOnly."""
     repo = PaymentRepository(session)
-    return await repo.list_queue(status=status, skip=skip, limit=limit)
+    return await repo.list_queue(status=status, skip=skip, limit=limit, tally_status=tally_status, stuck=stuck)
 
 
-async def to_payment_read_for_queue(payment: Payment, session: AsyncSession) -> PaymentRead:
+async def to_payment_read_for_queue(payment: Payment, session: AsyncSession, is_admin: bool = False) -> PaymentRead:
     """
     Same as to_payment_read, but also fills the display-only outlet/employee/
     territory fields the accountant queue table needs (Outlet, Employee
@@ -326,7 +444,10 @@ async def to_payment_read_for_queue(payment: Payment, session: AsyncSession) -> 
     from app.models.customer import Customer
     from app.models.territory import Territory
 
-    read = to_payment_read(payment)
+    from app.services import payment_tally
+
+    job = (await payment_tally.load_jobs(session, [payment.id])).get(payment.id)
+    read = to_payment_read(payment, job, is_admin)
 
     customer_row = await session.execute(
         select(Customer.name, Customer.outlet_code).where(Customer.id == payment.customer_id)
@@ -347,10 +468,27 @@ async def to_payment_read_for_queue(payment: Payment, session: AsyncSession) -> 
     return read
 
 
-async def verify_payment(payment_id: uuid.UUID, current_user: User, session: AsyncSession) -> Payment:
+async def verify_payment(
+    payment_id: uuid.UUID,
+    current_user: User,
+    session: AsyncSession,
+    bank: PaymentVerifyRequest | None = None,
+) -> Payment:
+    """
+    Admin verification (optionally recording the bank reference / date / note).
+    Verifying only marks the cash as received: outstanding balances do NOT drop
+    until the Tally write-back job is CONFIRMED (see payment_tally.py). The payment row is locked (FOR UPDATE) so concurrent
+    verify/reject calls serialise and the loser gets 409. The Tally write-back
+    job is enqueued here - and only here - inside the same transaction, keyed
+    by the unique idempotency key `fieldtrack_payment:{id}`, so a retry or a
+    double click cannot create a second job.
+    """
+    from app.services import tally_audit_service
+    from app.services.tally_writeback_service import enqueue_payment_writeback
+
     req_id = get_current_request_id()
     repo = PaymentRepository(session)
-    payment = await repo.get_by_id(payment_id)
+    payment = await _lock_payment(payment_id, session)
     if payment is None:
         logger.warning("event=payment_verify result=rejected reason=PAYMENT_NOT_FOUND request_id=%s payment_id=%s", req_id, payment_id)
         raise BaseAPIException(status_code=404, detail="Payment not found", error_code="PAYMENT_NOT_FOUND")
@@ -361,23 +499,60 @@ async def verify_payment(payment_id: uuid.UUID, current_user: User, session: Asy
             payment.id,
             payment.status.value,
         )
+        current_status = payment.status.value
+        await session.rollback()
         raise BaseAPIException(
             status_code=409,
-            detail=f"Payment is already {payment.status.value}, cannot verify again",
+            detail=f"Payment is already {current_status}, cannot verify again",
             error_code="PAYMENT_ALREADY_REVIEWED",
         )
+
+    if payment.invoice_id is not None:
+        invoice, outstanding = await invoice_outstanding_under_lock(
+            payment.invoice_id, session, exclude_payment_id=payment.id, include_pending=False
+        )
+        if payment.amount - outstanding > _MONEY_TOLERANCE:
+            await session.rollback()
+            raise BaseAPIException(
+                status_code=409,
+                detail=(
+                    "Verifying this payment would exceed the invoice's outstanding balance "
+                    f"({max(outstanding, Decimal('0')):,.2f}). Reject it or re-record the excess as an advance."
+                ),
+                error_code="PAYMENT_EXCEEDS_INVOICE_OUTSTANDING",
+            )
+
+    before_status = payment.status.value
     payment.status = PaymentStatus.VERIFIED
     payment.reviewed_by = current_user.id
     payment.reviewed_at = datetime.now(tz=timezone.utc)
+    if bank is not None:
+        payment.bank_reference = bank.bank_reference
+        payment.bank_verified_on = bank.bank_verified_on
+        payment.verified_note = bank.verified_note
     session.add(payment)
 
-    # Ensure writeback job is enqueued if not already present (idempotent)
     from app.models.customer import Customer
-    from app.services.tally_writeback_service import enqueue_payment_writeback
-    cust_row = await session.execute(select(Customer).where(Customer.id == payment.customer_id))
-    cust_obj = cust_row.scalar_one_or_none()
+
+    cust_obj = (await session.execute(select(Customer).where(Customer.id == payment.customer_id))).scalar_one_or_none()
     inv_obj = await get_invoice(payment.invoice_id, session) if payment.invoice_id else None
-    await enqueue_payment_writeback(session, payment, customer=cust_obj, invoice=inv_obj)
+    job = await enqueue_payment_writeback(session, payment, customer=cust_obj, invoice=inv_obj)
+    await session.flush()
+
+    await tally_audit_service.record_review_audit(
+        session,
+        operation="PAYMENT_VERIFY",
+        actor_user_id=current_user.id,
+        payment_id=payment.id,
+        before_status=before_status,
+        after_status=payment.status.value,
+        writeback_job_id=job.id if job is not None else None,
+        details={
+            "writeback_enqueued": job is not None,
+            "bank_reference": payment.bank_reference,
+            "bank_verified_on": payment.bank_verified_on.isoformat() if payment.bank_verified_on else None,
+        },
+    )
 
     await session.commit()
     logger.info(
@@ -394,6 +569,20 @@ async def verify_payment(payment_id: uuid.UUID, current_user: User, session: Asy
 async def reject_payment(
     payment_id: uuid.UUID, rejection_reason: str | None, current_user: User, session: AsyncSession
 ) -> Payment:
+    """
+    Admin rejection (FOR UPDATE on the payment; second concurrent action -> 409).
+
+    Policy for money already posted to Tally: a VERIFIED payment can never be
+    rejected through this endpoint (409). A payment whose write-back job is
+    already SENT/CONFIRMED in Tally is also refused with PAYMENT_POSTED_TO_TALLY:
+    rejecting it here would silently leave a receipt voucher in the books, so
+    the receipt must be reversed/cancelled in Tally by the accountant first.
+    Otherwise every PENDING/PROCESSING/retryable job is cancelled (FAILED with
+    a CANCELLED marker) and can no longer be retried.
+    """
+    from app.models.tally_writeback import TallyWritebackQueue, WritebackStatus
+    from app.services import tally_audit_service
+
     req_id = get_current_request_id()
     if not rejection_reason or not rejection_reason.strip():
         logger.warning("event=payment_reject result=rejected reason=REJECTION_REASON_REQUIRED request_id=%s payment_id=%s", req_id, payment_id)
@@ -403,7 +592,7 @@ async def reject_payment(
             error_code="REJECTION_REASON_REQUIRED",
         )
     repo = PaymentRepository(session)
-    payment = await repo.get_by_id(payment_id)
+    payment = await _lock_payment(payment_id, session)
     if payment is None:
         logger.warning("event=payment_reject result=rejected reason=PAYMENT_NOT_FOUND request_id=%s payment_id=%s", req_id, payment_id)
         raise BaseAPIException(status_code=404, detail="Payment not found", error_code="PAYMENT_NOT_FOUND")
@@ -414,37 +603,84 @@ async def reject_payment(
             payment.id,
             payment.status.value,
         )
+        current_status = payment.status
+        await session.rollback()
         raise BaseAPIException(
             status_code=409,
-            detail=f"Payment is already {payment.status.value}, cannot reject again",
+            detail=f"Payment is already {current_status.value}, cannot reject again"
+            + (
+                ". If it was posted to Tally, reverse the receipt voucher in Tally instead."
+                if current_status == PaymentStatus.VERIFIED
+                else ""
+            ),
             error_code="PAYMENT_ALREADY_REVIEWED",
         )
+
+    jobs = (
+        await session.execute(
+            select(TallyWritebackQueue)
+            .where(TallyWritebackQueue.entity_type == "PAYMENT", TallyWritebackQueue.entity_id == payment.id)
+            .with_for_update()
+        )
+    ).scalars().all()
+    posted = [j for j in jobs if j.status in (WritebackStatus.SENT, WritebackStatus.CONFIRMED)]
+    if posted:
+        await session.rollback()
+        logger.warning(
+            "event=payment_reject result=rejected reason=PAYMENT_POSTED_TO_TALLY request_id=%s payment_id=%s",
+            req_id,
+            payment_id,
+        )
+        raise BaseAPIException(
+            status_code=409,
+            detail=(
+                "This payment has already been posted to Tally. Reverse or cancel the receipt "
+                "voucher in Tally first; it cannot be rejected here."
+            ),
+            error_code="PAYMENT_POSTED_TO_TALLY",
+        )
+
+    if any(j.status == WritebackStatus.PROCESSING for j in jobs):
+        await session.rollback()
+        raise BaseAPIException(
+            status_code=409,
+            detail="A Tally write-back for this payment is being processed by the sync agent right now. Try again once it completes.",
+            error_code="PAYMENT_WRITEBACK_IN_FLIGHT",
+        )
+
+    before_status = payment.status.value
     payment.status = PaymentStatus.REJECTED
     payment.rejection_reason = rejection_reason.strip()
     payment.reviewed_by = current_user.id
     payment.reviewed_at = datetime.now(tz=timezone.utc)
     session.add(payment)
 
-    # Cancel any pending writeback job for this rejected payment
-    from app.models.tally_writeback import TallyWritebackQueue, WritebackStatus
-    wb_stmt = select(TallyWritebackQueue).where(
-        TallyWritebackQueue.idempotency_key == f"fieldtrack_payment:{payment.id}",
-        TallyWritebackQueue.status.in_([WritebackStatus.PENDING, WritebackStatus.PROCESSING]),
+    cancelled_ids: list[str] = []
+    for job in jobs:
+        if job.status in (WritebackStatus.PENDING, WritebackStatus.FAILED):
+            job.status = WritebackStatus.FAILED
+            job.next_retry_at = None
+            job.last_error = f"CANCELLED: payment rejected by Admin: {rejection_reason.strip()}"
+            cancelled_ids.append(str(job.id))
+
+    await tally_audit_service.record_review_audit(
+        session,
+        operation="PAYMENT_REJECT",
+        actor_user_id=current_user.id,
+        payment_id=payment.id,
+        before_status=before_status,
+        after_status=payment.status.value,
+        details={"cancelled_job_ids": cancelled_ids, "reason": rejection_reason.strip()[:300]},
     )
-    pending_wb = (await session.execute(wb_stmt)).scalar_one_or_none()
-    if pending_wb:
-        pending_wb.status = WritebackStatus.FAILED
-        pending_wb.last_error = f"Payment rejected by Admin: {rejection_reason.strip()}"
 
     await session.commit()
     logger.info(
-        "event=payment_verify result=rejected request_id=%s payment_id=%s customer_id=%s amount=%s rejected_by=%s reason=%s",
+        "event=payment_verify result=rejected request_id=%s payment_id=%s customer_id=%s amount=%s rejected_by=%s",
         req_id,
         payment.id,
         payment.customer_id,
         payment.amount,
         current_user.id,
-        rejection_reason.strip(),
     )
     return await repo.get_by_id(payment.id)
 
@@ -509,3 +745,33 @@ async def get_proof_download_url(
 
     await get_payment_for_user(proof.payment_id, current_user, session)
     return await storage_service.generate_presigned_url(proof.storage_key, expiry_minutes=expiry_minutes)
+
+
+async def tally_retry_payment(payment_id: uuid.UUID, current_user: User, session: AsyncSession) -> Payment:
+    """
+    Admin: re-queue the FAILED Tally write-back of this payment (payment-centred
+    wrapper over tally_writeback_service.retry_writeback_job - same row lock,
+    audit record and duplicate refusal). Only allowed when tally_status is
+    FAILED; the job is reset on the existing row, never duplicated.
+    """
+    from app.services import payment_tally
+    from app.services.tally_writeback_service import retry_writeback_job
+
+    actor_id = current_user.id  # captured before any rollback expires the user
+    payment = await _lock_payment(payment_id, session)
+    if payment is None:
+        raise BaseAPIException(status_code=404, detail="Payment not found", error_code="PAYMENT_NOT_FOUND")
+    job = (await payment_tally.load_jobs(session, [payment.id])).get(payment.id)
+    status = payment_tally.derive_tally_status(payment, job)
+    if status != payment_tally.TallyStatus.FAILED or job is None:
+        current = status.value
+        await session.rollback()
+        raise BaseAPIException(
+            status_code=409,
+            detail=f"Tally retry is only available for FAILED write-backs (this payment is {current}).",
+            error_code="PAYMENT_TALLY_NOT_FAILED",
+        )
+    job_id = job.id
+    await session.rollback()  # release the row lock; retry_writeback_job re-locks job + payment
+    await retry_writeback_job(session, job_id, actor_user_id=actor_id)
+    return await PaymentRepository(session).get_by_id(payment_id)

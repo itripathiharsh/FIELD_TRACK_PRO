@@ -186,9 +186,17 @@ async def test_update_employee_persists_in_database(client: AsyncClient, admin_h
     assert resp.status_code == 200, resp.text
 
     row = db.fetch_one("SELECT full_name, employee_code FROM employees WHERE id = %s", (str(emp_id),))
+    # Restore the session-scoped fixture row so later tests see the original code.
+    from tests.integration.conftest import db_cursor
+    with db_cursor() as cur:
+        cur.execute(
+            "UPDATE employees SET employee_code = %s, full_name = %s WHERE id = %s",
+            (f"__itest__EMP2", "__itest__ Other Rep", str(emp_id)),
+        )
     assert row is not None
     assert row["full_name"] == "Persist Update Test"
-    assert row["employee_code"] == "__itest__UPD1"
+    # employee_code is intentionally normalised to upper-case by the schema validator
+    assert row["employee_code"] == "__ITEST__UPD1"
 
 
 async def test_update_nonexistent_employee_returns_404(client: AsyncClient, admin_headers):

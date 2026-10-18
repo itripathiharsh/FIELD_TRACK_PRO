@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.models.form_template import FormStatus
 from app.models.visit import VisitStatus, VisitType
@@ -34,8 +34,8 @@ class VisitCreate(BaseModel):
     # see, and an archived one is no longer meant for new work.
     required_form_id: uuid.UUID | None = None
     visit_type: VisitType = VisitType.PLANNED
-    adhoc_reason: str | None = None
-    adhoc_notes: str | None = None
+    adhoc_reason: str | None = Field(default=None, max_length=100)
+    adhoc_notes: str | None = Field(default=None, max_length=500)
 
 
 class AdHocVisitCreate(BaseModel):
@@ -125,6 +125,17 @@ class VisitRead(BaseModel):
     customer_contact_number: str | None = None
     customer_contact_person: str | None = None
     notes: str | None = None
+    # Ad-hoc review fields. `is_adhoc` is always present (derived from
+    # visit_type). `outside_assignment` / `review_label` are populated ONLY on
+    # ADMIN responses (null for employees) and are computed at read time.
+    is_adhoc: bool = False
+    outside_assignment: bool | None = None
+    review_label: str | None = None
+
+    @model_validator(mode="after")
+    def _derive_is_adhoc(self):
+        self.is_adhoc = self.visit_type == VisitType.AD_HOC
+        return self
 
     class Config:
         from_attributes = True

@@ -136,8 +136,9 @@ async def test_mark_read_user_scoping(client: AsyncClient, employee_headers, see
             f"/api/v1/notifications/{notif_id}/read",
             headers=employee_headers,
         )
-        # Should succeed (200) but not actually mark it as read (silent no-op)
-        assert resp.status_code == 200, resp.text
+        # Someone else's notification must look non-existent (404, not 403);
+        # row left untouched.
+        assert resp.status_code == 404, resp.text
 
         # Verify it was NOT marked as read
         row = db.fetch_one("SELECT is_read FROM notifications WHERE id = %s", (notif_id,))
@@ -147,10 +148,10 @@ async def test_mark_read_user_scoping(client: AsyncClient, employee_headers, see
         _cleanup_notifications()
 
 
-async def test_mark_read_nonexistent_returns_200(client: AsyncClient, admin_headers):
-    """Marking a non-existent notification as read returns 200 (idempotent no-op)."""
+async def test_mark_read_nonexistent_returns_404(client: AsyncClient, admin_headers):
+    """Marking a non-existent notification as read returns 404 RESOURCE_NOT_FOUND."""
     resp = await client.patch(
         f"/api/v1/notifications/{uuid.uuid4()}/read",
         headers=admin_headers,
     )
-    assert resp.status_code == 200, resp.text
+    assert resp.status_code == 404, resp.text

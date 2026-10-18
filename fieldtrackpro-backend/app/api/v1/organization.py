@@ -5,7 +5,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.core.deps.auth import require_role
+from app.core.deps.auth import CurrentUser, require_role
 from app.database import get_async_session
 from app.models.area import Area
 from app.models.brand import Brand
@@ -13,19 +13,28 @@ from app.models.customer import Customer
 from app.models.employee import Employee
 from app.models.territory import Territory
 from app.models.user import Role
-from app.schemas.organization import OrganizationProfile
+from app.schemas.organization import OrganizationProfile, OrganizationPublicProfile
 
 router = APIRouter(prefix="/organization", tags=["organization"])
 DbSession = Annotated[AsyncSession, Depends(get_async_session)]
 AnyAuth = Depends(require_role(Role.ADMIN, Role.EMPLOYEE))
 
 
-@router.get("", response_model=OrganizationProfile, dependencies=[AnyAuth])
-async def get_organization_profile(session: DbSession) -> OrganizationProfile:
+@router.get("", response_model=OrganizationProfile | OrganizationPublicProfile, dependencies=[AnyAuth])
+async def get_organization_profile(
+    session: DbSession, current_user: CurrentUser
+) -> OrganizationProfile | OrganizationPublicProfile:
     """
-    Returns authoritative, dynamic organization profile & master entity statistics.
-    Single source of truth for Web & Android clients.
+    ADMIN: authoritative organization profile (GSTIN, contact details) and
+    master entity statistics. EMPLOYEE: only the non-sensitive public subset
+    (name, timezone, currency).
     """
+    if not current_user.is_admin:
+        return OrganizationPublicProfile(
+            organization_name=settings.organization_name,
+            timezone=settings.organization_timezone,
+            currency=settings.organization_currency,
+        )
     emp_count = (await session.execute(select(func.count(Employee.id)))).scalar() or 0
     cust_count = (await session.execute(select(func.count(Customer.id)))).scalar() or 0
     terr_count = (await session.execute(select(func.count(Territory.id)))).scalar() or 0

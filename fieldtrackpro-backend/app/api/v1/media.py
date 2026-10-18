@@ -12,11 +12,13 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.uploads import read_upload_limited
 from app.core.deps.auth import CurrentUser
 from app.database import get_async_session
 from app.exceptions.custom import BaseAPIException, ForbiddenException
 from app.schemas.media import MediaRead
 from app.services import media_service
+from app.services.file_validation_service import FileValidationService
 from app.services.storage.local_provider import verify_local_media_signature
 from app.services.storage_service import storage_service
 
@@ -38,7 +40,12 @@ async def upload_media(
     session: AsyncSession = Depends(get_async_session),
 ) -> MediaRead:
     """Upload a photo, document, or order-capture attachment for a visit."""
-    file_bytes = await file.read()
+    max_bytes = (
+        FileValidationService.MAX_DOCUMENT_SIZE_BYTES
+        if is_document
+        else FileValidationService.MAX_IMAGE_SIZE_BYTES
+    )
+    file_bytes = await read_upload_limited(file, max_bytes)
     filename = file.filename or "uploaded_attachment"
     return await media_service.upload_visit_media(
         visit_id=visit_id,

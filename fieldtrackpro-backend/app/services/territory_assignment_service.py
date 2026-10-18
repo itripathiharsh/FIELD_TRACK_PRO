@@ -35,9 +35,8 @@ async def _resolve_effective_assignment(
     """The single history row in effect on `as_of` (default today in IST), or None
     if the employee has no assignment history yet (legacy fallback case)."""
     if as_of is None:
-        from app.core.datetime_utils import get_ist_today_range
-        start_dt, _ = get_ist_today_range()
-        as_of = start_dt.date()
+        from app.core.datetime_utils import get_ist_now
+        as_of = get_ist_now().date()
 
     temp_result = await session.execute(
         select(EmployeeTerritoryAssignment)

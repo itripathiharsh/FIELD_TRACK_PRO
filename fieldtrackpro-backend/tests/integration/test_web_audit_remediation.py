@@ -127,9 +127,9 @@ async def test_notification_ownership_validation(
         f"/api/v1/notifications/{notif_id}/read",
         headers=employee_headers(str(emp_u.id)),
     )
-    assert resp.status_code == 403, resp.text
+    assert resp.status_code == 404, resp.text
     body = resp.json()
-    assert body["error"]["code"] == "FORBIDDEN"
+    assert body["error"]["code"] == "RESOURCE_NOT_FOUND"
 
     # Non-existent notification returns 404
     fake_id = uuid.uuid4()

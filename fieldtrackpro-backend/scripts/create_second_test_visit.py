@@ -1,3 +1,5 @@
+import sys as _sys, os as _os; _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _script_env
 import requests
 from datetime import datetime, timezone, timedelta
 from geoalchemy2.elements import WKTElement
@@ -11,7 +13,7 @@ from app.models.customer import Customer
 from app.models.visit import Visit, VisitStatus
 
 IST = timezone(timedelta(hours=5, minutes=30))
-PROD_API_URL = "https://fieldtrackpro-backend-s7hs.onrender.com"
+PROD_API_URL = _script_env.api_url()
 LOCAL_API_URL = "http://localhost:8000"
 
 LAT = 26.734115
@@ -85,7 +87,7 @@ def create_prod_visit():
     try:
         r_admin = requests.post(f"{PROD_API_URL}/api/v1/auth/login", json={
             "email": "admin@fieldtrack.test",
-            "password": "AdminPass123!"
+            "password": _script_env.env("SCRIPT_ADMIN_PASSWORD")
         }, timeout=30)
         if r_admin.status_code != 200:
             print(f"Prod admin login failed: {r_admin.status_code}")

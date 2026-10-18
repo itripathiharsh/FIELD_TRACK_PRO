@@ -276,7 +276,7 @@ async def test_employee_cannot_upload_to_another_employees_visit(
         files={"file": ("x.jpg", VALID_JPEG, "image/jpeg")},
         headers=other_employee_headers,
     )
-    assert resp.status_code == 403
+    assert resp.status_code == 404
     assert db.count("visit_media", "visit_id = %s", (visit_id,)) == before
 
 
@@ -293,7 +293,7 @@ async def test_employee_cannot_download_another_employees_media(
     resp = await client.get(
         f"/api/v1/media/{up.json()['id']}/download", headers=other_employee_headers
     )
-    assert resp.status_code == 403
+    assert resp.status_code == 404
 
 
 # --- Deletion ---------------------------------------------------------------

@@ -9,6 +9,8 @@ from app.core.security import create_access_token, hash_password
 from app.database import AsyncSessionLocal
 from app.models.user import Role, User
 from app.models.customer import Customer
+from app.models.employee import Employee
+from app.models.employee_customer_assignment import EmployeeCustomerAssignment
 from app.models.customer_requirement import CustomerRequirement
 from app.models.requirement_item import RequirementItem
 from app.models.order import Order
@@ -50,6 +52,17 @@ async def setup_test_data():
             created_by=admin.id,
         )
         session.add(customer)
+        await session.flush()
+
+        # The rep needs an employee profile with the outlet assigned (scoping).
+        rep_emp = Employee(user_id=rep.id, employee_code=f"REPO-{tag.upper()}", full_name="Order Rep")
+        session.add(rep_emp)
+        await session.flush()
+        session.add(
+            EmployeeCustomerAssignment(
+                employee_id=rep_emp.id, customer_id=customer.id, created_by=admin.id
+            )
+        )
         await session.commit()
         await session.refresh(customer)
         await session.refresh(admin)

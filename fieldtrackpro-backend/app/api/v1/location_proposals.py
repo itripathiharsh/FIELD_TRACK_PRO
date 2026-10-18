@@ -26,18 +26,21 @@ AnyAuth = Depends(require_role(Role.ADMIN, Role.EMPLOYEE))
 @router.get("", response_model=list[LocationProposalRead], dependencies=[AnyAuth])
 async def list_location_proposals(
     session: DbSession,
+    current_user: CurrentUser,
     status: Optional[str] = Query(default="PENDING", description="Filter by status: PENDING, APPROVED, REJECTED, or ALL"),
     customer_id: Optional[uuid.UUID] = Query(default=None),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, le=200),
 ):
     """
-    List customer location proposals for Admin review and audit history.
+    List customer location proposals. ADMIN: all (review queue / audit history).
+    EMPLOYEE: only proposals they submitted themselves.
     """
     return await location_proposal_service.list_location_proposals(
         session=session,
         status=status,
         customer_id=customer_id,
+        submitted_by=current_user.id if not current_user.is_admin else None,
         skip=skip,
         limit=limit,
     )

@@ -13,39 +13,40 @@ from typing import Sequence
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.datetime_utils import get_ist_now
 from app.exceptions.custom import BaseAPIException
 from app.models.invoice import Invoice
-from app.models.payment import Payment, PaymentStatus
 from app.models.user import User
 from app.repositories.invoice_repo import InvoiceRepository
-from app.repositories.payment_repo import PaymentRepository
 from app.schemas.invoice import InvoiceCreate, InvoiceRead
 from app.services.aging_service import compute_invoice_aging
 from app.services.period_service import assert_period_open_for_date
 
 
 async def _verified_paid_amount(invoice_id: uuid.UUID, session: AsyncSession) -> Decimal:
-    from app.models.payment_invoice_allocation import PaymentInvoiceAllocation
-    from sqlalchemy import select, func
+    """
+    Money that has actually SETTLED this invoice = payments whose receipt is in
+    Tally (VERIFIED and write-back CONFIRMED, or sourced from Tally). The name
+    is historical; a VERIFIED MANUAL payment still awaiting Tally does NOT count
+    (see app/services/payment_tally.py). Use `_awaiting_tally_amount` for the
+    verified-but-not-yet-posted money.
+    """
+    from app.services import payment_tally
 
-    # Check explicit and FIFO allocations first
-    alloc_stmt = select(func.coalesce(func.sum(PaymentInvoiceAllocation.allocated_amount), Decimal("0.00"))).where(
-        PaymentInvoiceAllocation.invoice_id == invoice_id
-    )
-    alloc_sum = (await session.execute(alloc_stmt)).scalar() or Decimal("0.00")
-    if alloc_sum > Decimal("0.00"):
-        return alloc_sum
+    return (await payment_tally.posted_paid_by_invoice(session, [invoice_id]))[invoice_id]
 
-    # Fallback to direct invoice_id payments
-    repo = PaymentRepository(session)
-    payments = await repo.list_by_invoice(invoice_id, status=PaymentStatus.VERIFIED)
-    return sum((p.amount for p in payments), Decimal("0.00"))
+
+async def _awaiting_tally_amount(invoice_id: uuid.UUID, session: AsyncSession) -> Decimal:
+    from app.services import payment_tally
+
+    return (await payment_tally.awaiting_by_invoice(session, [invoice_id]))[invoice_id]
 
 
 async def to_invoice_read(invoice: Invoice, session: AsyncSession, today: date | None = None) -> InvoiceRead:
     paid = await _verified_paid_amount(invoice.id, session)
+    awaiting = await _awaiting_tally_amount(invoice.id, session)
     aging = compute_invoice_aging(
-        invoice.invoice_date, invoice.amount, paid, today or date.today()
+        invoice.invoice_date, invoice.amount, paid, today or get_ist_now().date()
     )
     return InvoiceRead(
         id=invoice.id,
@@ -60,6 +61,7 @@ async def to_invoice_read(invoice: Invoice, session: AsyncSession, today: date |
         created_by=invoice.created_by,
         created_at=invoice.created_at,
         verified_paid_amount=paid,
+        verified_awaiting_tally_amount=awaiting,
         remaining_amount=aging.remaining_amount,
         days_outstanding=aging.days_outstanding,
         payment_status=aging.payment_status,

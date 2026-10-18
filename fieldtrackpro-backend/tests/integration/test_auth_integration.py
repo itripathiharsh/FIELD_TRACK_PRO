@@ -6,9 +6,12 @@ proved that a GOOD login actually works. These tests close that gap.
 """
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 from httpx import AsyncClient
 
+from app.config import settings
 from tests.integration.conftest import login, requires_db
 
 pytestmark = [requires_db, pytest.mark.integration, pytest.mark.asyncio]
@@ -139,14 +142,21 @@ async def test_refresh_token_returns_new_usable_pair(client: AsyncClient, seeded
 
 
 async def test_refresh_token_is_rotated_and_old_one_revoked(client: AsyncClient, seeded_world):
+    """
+    A rotated refresh token must not be reusable past its short reuse-grace
+    window (see test_auth_hardening.py for the grace-window behavior itself -
+    a replay immediately after rotation is tolerated as a benign race, not
+    treated as theft).
+    """
     resp = await login(client, seeded_world["employee_email"], seeded_world["password"])
     original = resp.json()["refresh_token"]
 
     first = await client.post("/api/v1/auth/refresh", json={"refresh_token": original})
     assert first.status_code == 200
 
-    replay = await client.post("/api/v1/auth/refresh", json={"refresh_token": original})
-    assert replay.status_code == 401, "a rotated refresh token must not be reusable"
+    with patch.object(settings, "refresh_reuse_grace_seconds", 0):
+        replay = await client.post("/api/v1/auth/refresh", json={"refresh_token": original})
+    assert replay.status_code == 401, "a rotated refresh token must not be reusable past the grace window"
 
 
 async def test_logout_revokes_refresh_token_server_side(client: AsyncClient, seeded_world):

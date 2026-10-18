@@ -140,7 +140,7 @@ class FCMService:
                     token = valid_tokens[idx]
                     err = resp.exception
                     error_code = getattr(err, "code", "") or str(err)
-                    logger.warning(f"FCM delivery failure for token prefix {token[:12]}...: {err}")
+                    logger.warning(f"FCM delivery failure for device token index {idx}: {type(err).__name__}")
 
                     # Check if the error indicates an unregistered / dead token
                     is_unregistered = (

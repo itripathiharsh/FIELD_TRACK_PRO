@@ -17,6 +17,7 @@ class NotificationCreate(BaseModel):
     title: str | None = None
     visit_id: uuid.UUID | None = None
     planned_visit_id: uuid.UUID | None = None
+    payment_id: uuid.UUID | None = None
 
 
 class NotificationRead(BaseModel):
@@ -25,6 +26,8 @@ class NotificationRead(BaseModel):
     user_id: uuid.UUID
     visit_id: uuid.UUID | None = None
     planned_visit_id: uuid.UUID | None = None
+    # Additive: payment a failed/stuck Tally post alert refers to.
+    payment_id: uuid.UUID | None = None
     type: str
     title: str | None = None
     message: str

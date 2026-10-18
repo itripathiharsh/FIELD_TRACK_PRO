@@ -12,14 +12,15 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deps.agent_auth import AuthenticatedAgent
-from app.core.deps.auth import CurrentUser, require_role
+from app.core.deps.agent_auth import AuthenticatedAgent, authenticate_agent
+from app.core.deps.auth import CurrentUser, _get_user_from_token, require_role
 from app.database import get_async_session
-from app.exceptions.custom import ForbiddenException
+from app.exceptions.custom import ForbiddenException, UnauthorizedException
 from app.models.employee import Employee
 from app.models.sync_agent import SyncAgent
 from app.models.user import Role, User
@@ -51,18 +52,25 @@ DbSession = Annotated[AsyncSession, Depends(get_async_session)]
 AdminOnly = Depends(require_role(Role.ADMIN))
 
 
-async def require_admin_or_accountant(user: CurrentUser, session: DbSession) -> User:
-    """Enforces caller is an ADMIN or an EMPLOYEE with accountant/billing profile."""
-    if user.role == Role.ADMIN:
-        return user
-    if user.role == Role.EMPLOYEE:
-        stmt = select(Employee).where(Employee.user_id == user.id)
-        emp = (await session.execute(stmt)).scalar_one_or_none()
-        if emp and emp.working_profile:
-            wp = emp.working_profile.lower()
-            if any(term in wp for term in ["accountant", "billing", "finance", "accounts"]):
-                return user
-    raise ForbiddenException("Access restricted to Administrators and Accountants")
+_optional_bearer = HTTPBearer(auto_error=False)
+
+
+async def require_admin_or_agent(
+    request: Request,
+    session: DbSession,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_optional_bearer)],
+) -> None:
+    """Allow either an authenticated ADMIN (JWT) or an authenticated Sync Agent (X-Agent-* headers)."""
+    if request.headers.get("X-Agent-Id") or request.headers.get("X-Agent-Key"):
+        await authenticate_agent(
+            session, request, request.headers.get("X-Agent-Id"), request.headers.get("X-Agent-Key")
+        )
+        return
+    if credentials is None:
+        raise UnauthorizedException("Authentication required")
+    user = await _get_user_from_token(credentials, session)
+    if not user.is_admin:
+        raise ForbiddenException("Access restricted to Administrators")
 
 
 # ---------------------------------------------------------------------------
@@ -95,11 +103,15 @@ async def list_sync_agents(session: DbSession):
     return [SyncAgentRead.model_validate(a) for a in agents]
 
 
-@router.get("/status", response_model=TallyIntegrationStatusResponse)
-async def get_tally_status(session: DbSession, user: CurrentUser):
+@router.get(
+    "/status",
+    response_model=TallyIntegrationStatusResponse,
+    dependencies=[Depends(require_admin_or_agent)],
+)
+async def get_tally_status(session: DbSession):
     """
     Get live Tally integration connectivity, company, and sync statistics.
-    Accessible to all authenticated users for UI freshness indicators.
+    Restricted to Administrators and the Sync Agent (employees have no access).
     """
     return await tally_sync_service.get_integration_status(session)
 
@@ -107,7 +119,7 @@ async def get_tally_status(session: DbSession, user: CurrentUser):
 @router.get(
     "/audit-logs",
     response_model=TallyAuditLogListResponse,
-    dependencies=[Depends(require_admin_or_accountant)],
+    dependencies=[AdminOnly],
 )
 async def get_tally_audit_logs(
     session: DbSession,
@@ -123,7 +135,7 @@ async def get_tally_audit_logs(
     """
     Retrieve unified chronological audit log of all Tally READ and WRITE operations.
     Combines persistent read audit logs with live writeback queue records.
-    Restricted to Admins and Accountants.
+    Restricted to Administrators.
     """
     return await tally_audit_service.get_audit_logs(
         session=session,
@@ -190,7 +202,7 @@ async def sync_payments(
 async def get_pending_outbox_jobs(
     agent: AuthenticatedAgent,
     session: DbSession,
-    limit: int = 10,
+    limit: int = Query(10, ge=1, le=100),
 ):
     """
     Fetch and atomically claim pending Tally write-back jobs.
@@ -211,7 +223,7 @@ async def ack_outbox_job(
     Acknowledge successful creation of receipt voucher in Tally.
     Persists Tally GUID and identifiers, prevents duplicate write-backs.
     """
-    job = await tally_writeback_service.ack_writeback_job(session, job_id, data)
+    job = await tally_writeback_service.ack_writeback_job(session, job_id, data, agent=agent)
     return TallyWritebackActionResponse(
         status="CONFIRMED",
         job_id=job.id,
@@ -230,7 +242,7 @@ async def fail_outbox_job(
     Record error attempting to write to Tally.
     Applies exponential backoff for retryable errors or marks terminal failure.
     """
-    job = await tally_writeback_service.fail_writeback_job(session, job_id, data)
+    job = await tally_writeback_service.fail_writeback_job(session, job_id, data, agent=agent)
     return TallyWritebackActionResponse(
         status=job.status.value if hasattr(job.status, "value") else str(job.status),
         job_id=job.id,
@@ -241,17 +253,18 @@ async def fail_outbox_job(
 @router.post(
     "/outbox/{job_id}/retry",
     response_model=TallyWritebackActionResponse,
-    dependencies=[Depends(require_admin_or_accountant)],
+    dependencies=[AdminOnly],
 )
 async def retry_outbox_job(
     job_id: uuid.UUID,
     session: DbSession,
+    user: CurrentUser,
 ):
     """
     Manually reset a failed or pending outbox write-back job to PENDING.
     Clears error and backoff timer so the local Sync Agent picks it up on next cycle.
     """
-    job = await tally_writeback_service.retry_writeback_job(session, job_id)
+    job = await tally_writeback_service.retry_writeback_job(session, job_id, actor_user_id=user.id)
     return TallyWritebackActionResponse(
         status="PENDING",
         job_id=job.id,

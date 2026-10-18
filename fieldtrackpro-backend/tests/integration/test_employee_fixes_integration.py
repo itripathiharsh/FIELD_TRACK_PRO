@@ -206,7 +206,7 @@ async def test_duplicate_permanent_assignment_same_date_returns_409(
 
 
 async def test_outlet_with_null_gps_and_checkout_before_checkin(
-    client: AsyncClient, admin_headers, seeded_world
+    client: AsyncClient, admin_headers, seeded_world, created_customers, created_visits
 ):
     """
     WEB-EMP-024 & WEB-EMP-023:
@@ -229,6 +229,7 @@ async def test_outlet_with_null_gps_and_checkout_before_checkin(
     )
     assert cust_resp.status_code == 201
     cust_id = cust_resp.json()["id"]
+    created_customers.append(cust_id)
 
     # 2. Schedule a visit to this customer
     visit_resp = await client.post(
@@ -242,6 +243,8 @@ async def test_outlet_with_null_gps_and_checkout_before_checkin(
     )
     assert visit_resp.status_code == 201, visit_resp.text
     visit_id = visit_resp.json()["id"]
+    # Tracked so the PENDING visit does not leak into later tests (409 DUPLICATE_VISIT).
+    created_visits.append(visit_id)
 
     # 3. Attempt check-in on customer with NULL GPS -> 422 OUTLET_LOCATION_NOT_CONFIGURED
     checkin_resp = await client.post(

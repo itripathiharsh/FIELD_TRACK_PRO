@@ -1,3 +1,5 @@
+import sys as _sys, os as _os; _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _script_env
 import asyncio
 import uuid
 from datetime import date, datetime, timezone
@@ -180,4 +182,5 @@ async def seed_requirements():
 
 
 if __name__ == "__main__":
+    _script_env.guard_write_script("seed_customer_requirements")
     asyncio.run(seed_requirements())

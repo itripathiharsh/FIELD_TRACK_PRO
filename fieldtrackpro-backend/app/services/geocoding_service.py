@@ -101,7 +101,7 @@ async def _geocode_nominatim(address: str) -> tuple[float, float]:
 
         _validate_coordinates(lat, lng)
 
-        logger.info("Geocoded address '%s' to (%s, %s)", address, lat, lng)
+        logger.info("Geocoding succeeded (provider result suppressed from logs)")
         return (lat, lng)
 
     except (httpx.RequestError, httpx.TimeoutException) as e:
@@ -161,7 +161,7 @@ async def _geocode_google(address: str) -> tuple[float, float]:
 
         _validate_coordinates(lat, lng)
 
-        logger.info("Geocoded address '%s' to (%s, %s)", address, lat, lng)
+        logger.info("Geocoding succeeded (provider result suppressed from logs)")
         return (lat, lng)
 
     except (httpx.RequestError, httpx.TimeoutException) as e:

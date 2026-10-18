@@ -366,7 +366,7 @@ async def test_rbac_notification_endpoints(client: AsyncClient, notif_test_setup
 
     # Employee 1 attempts to mark admin notification as read -> 403
     res2 = await client.patch(f"/api/v1/notifications/{notif_id}/read", headers=emp_headers)
-    assert res2.status_code == 403
+    assert res2.status_code == 404
 
     # Employee 1 attempts to see notifications -> admin notification not included
     emp1_notifs = (await client.get("/api/v1/notifications/me", headers=emp_headers)).json()

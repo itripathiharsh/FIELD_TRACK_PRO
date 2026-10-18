@@ -171,6 +171,7 @@ async def list_location_proposals(
     customer_id: Optional[uuid.UUID] = None,
     skip: int = 0,
     limit: int = 50,
+    submitted_by: Optional[uuid.UUID] = None,
 ) -> list[LocationProposalRead]:
     query = select(CustomerLocationProposal).order_by(CustomerLocationProposal.created_at.desc())
 
@@ -183,6 +184,8 @@ async def list_location_proposals(
 
     if customer_id:
         query = query.where(CustomerLocationProposal.customer_id == customer_id)
+    if submitted_by is not None:
+        query = query.where(CustomerLocationProposal.submitted_by == submitted_by)
 
     query = query.offset(skip).limit(limit)
     res = await session.execute(query)
@@ -202,7 +205,7 @@ async def approve_location_proposal(
     session: AsyncSession,
 ) -> LocationProposalRead:
     req_id = get_current_request_id()
-    if admin_user.role != Role.ADMIN:
+    if not admin_user.is_admin:
         logger.warning("event=location_approval result=rejected reason=FORBIDDEN_APPROVAL request_id=%s user_id=%s", req_id, admin_user.id)
         raise BaseAPIException(
             status_code=403,
@@ -273,7 +276,7 @@ async def reject_location_proposal(
     session: AsyncSession,
 ) -> LocationProposalRead:
     req_id = get_current_request_id()
-    if admin_user.role != Role.ADMIN:
+    if not admin_user.is_admin:
         logger.warning("event=location_rejection result=rejected reason=FORBIDDEN_REJECTION request_id=%s user_id=%s", req_id, admin_user.id)
         raise BaseAPIException(
             status_code=403,

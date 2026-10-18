@@ -2,6 +2,8 @@
 Import employees strictly from the provided CSV export.
 Ensures ONLY the employees in the CSV exist in the database (preserving superadmin).
 """
+import sys as _sys, os as _os; _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _script_env
 import csv
 import os
 import sys
@@ -54,8 +56,8 @@ async def import_employees(csv_path: str):
         valid_emp_codes.add(r["employee_code"].strip())
         valid_user_ids.add(uuid.UUID(r["user_id"].strip()))
 
-    admin_hash = hash_password("AdminPass123!")
-    emp_hash = hash_password("Password@123!")
+    admin_hash = hash_password(_script_env.env("SCRIPT_ADMIN_PASSWORD"))
+    emp_hash = hash_password(_script_env.env("SCRIPT_EMPLOYEE_PASSWORD"))
 
     async with AsyncSessionLocal() as session:
         # Step 1: Remove any employees NOT in the CSV (to satisfy "only these should be the employees")
@@ -190,6 +192,10 @@ async def import_employees(csv_path: str):
 
 if __name__ == "__main__":
     import asyncio
+
+    import _script_env
+
+    _script_env.guard_write_script("import_employees_from_csv")
 
     # Try original download path, otherwise fall back to workspace scratch copy
     target_csv = r"C:\Users\Admin\Downloads\employees_export - employees_export.csv.csv"

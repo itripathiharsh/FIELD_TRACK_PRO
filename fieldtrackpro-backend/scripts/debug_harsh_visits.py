@@ -1,7 +1,9 @@
+import sys as _sys, os as _os; _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _script_env
 import requests
 import json
 
-PROD_API_URL = "https://fieldtrackpro-backend-s7hs.onrender.com"
+PROD_API_URL = _script_env.api_url()
 LOCAL_API_URL = "http://localhost:8000"
 
 print("="*60)
@@ -14,7 +16,7 @@ for name, base_url in [("LOCAL", LOCAL_API_URL), ("PRODUCTION", PROD_API_URL)]:
         # Try login with Harsh's account
         # Try different passwords
         token = None
-        for pwd in ["Imharsh@1", "Password@123!", "AdminPass123!"]:
+        for pwd in [_script_env.env("SCRIPT_HARSH_PASSWORD"), _script_env.env("SCRIPT_EMPLOYEE_PASSWORD"), _script_env.env("SCRIPT_ADMIN_PASSWORD")]:
             r = requests.post(f"{base_url}/api/v1/auth/login", json={
                 "email": "imharshofficial322@gmail.com",
                 "password": pwd
@@ -30,7 +32,7 @@ for name, base_url in [("LOCAL", LOCAL_API_URL), ("PRODUCTION", PROD_API_URL)]:
             print("Login with imharshofficial322@gmail.com failed. Checking if user exists via admin...")
             r_admin = requests.post(f"{base_url}/api/v1/auth/login", json={
                 "email": "admin@fieldtrack.test",
-                "password": "AdminPass123!"
+                "password": _script_env.env("SCRIPT_ADMIN_PASSWORD")
             }, timeout=10)
             if r_admin.status_code == 200:
                 admin_token = r_admin.json()["access_token"]

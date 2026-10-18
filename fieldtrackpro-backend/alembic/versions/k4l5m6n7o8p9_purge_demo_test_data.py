@@ -20,42 +20,47 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # 1. Delete all demo payments, invoices, visits, form submissions
+    # 1. Delete demo payments, invoices, visits, form submissions.
+    # IMPORTANT: match ONLY the literal demo-data UUID markers below. The original
+    # version of this migration also matched `source = 'MANUAL'` and
+    # `customer_id NOT IN (... outlet_code IS NOT NULL)` - those are NOT demo
+    # markers, they are the normal shape of every real field-collected payment/
+    # invoice/visit (PaymentSource.MANUAL is the default for live field
+    # collections; a customer can legitimately have no outlet_code yet, e.g.
+    # mid-onboarding). On a database that hadn't already run this migration,
+    # those two clauses would have deleted every genuine payment/invoice/visit
+    # in the system. Fixed to use only the exact demo-data markers from AGENTS.md.
     op.execute("""
-        DELETE FROM payments 
-        WHERE id::text LIKE '77777777-%' 
-           OR source = 'MANUAL' 
-           OR customer_id NOT IN (SELECT id FROM customers WHERE outlet_code IS NOT NULL);
+        DELETE FROM payments
+        WHERE id::text LIKE '77777777-%';
     """)
     op.execute("""
-        DELETE FROM invoices 
-        WHERE id::text LIKE '66666666-%' 
-           OR source = 'MANUAL' 
-           OR customer_id NOT IN (SELECT id FROM customers WHERE outlet_code IS NOT NULL);
+        DELETE FROM invoices
+        WHERE id::text LIKE '66666666-%';
     """)
     op.execute("""
-        DELETE FROM form_submissions 
-        WHERE visit_id IN (SELECT id FROM visits WHERE id::text LIKE '44444444-%' OR customer_id NOT IN (SELECT id FROM customers WHERE outlet_code IS NOT NULL));
+        DELETE FROM form_submissions
+        WHERE visit_id IN (SELECT id FROM visits WHERE id::text LIKE '44444444-%');
     """)
     op.execute("""
-        DELETE FROM visits 
-        WHERE id::text LIKE '44444444-%' 
-           OR customer_id NOT IN (SELECT id FROM customers WHERE outlet_code IS NOT NULL);
+        DELETE FROM visits
+        WHERE id::text LIKE '44444444-%';
     """)
     op.execute("""
-        DELETE FROM form_submissions 
+        DELETE FROM form_submissions
         WHERE form_id IN (SELECT id FROM form_templates WHERE name IN ('Debug Publish 2', 'Safety Inspection', 'E2E Safety Inspection', 'Sales guy', 'xyz', 'new'));
     """)
     op.execute("""
-        DELETE FROM form_templates 
+        DELETE FROM form_templates
         WHERE name IN ('Debug Publish 2', 'Safety Inspection', 'E2E Safety Inspection', 'Sales guy', 'xyz', 'new');
     """)
 
-    # 2. Delete non-SGRG demo customers (keep only legitimate SGRG outlets with DMS codes)
+    # 2. Delete demo customers by their literal demo-data markers only (dropped
+    # the blanket `outlet_code IS NULL`, which also matches real customers that
+    # legitimately have no outlet_code yet).
     op.execute("""
-        DELETE FROM customers 
-        WHERE outlet_code IS NULL 
-           OR id::text LIKE '33333333-%' 
+        DELETE FROM customers
+        WHERE id::text LIKE '33333333-%'
            OR id IN (
                '0f68a82d-45e7-4c21-b6bd-ac585d41e32b',
                'd40006dc-cd30-4d56-878a-f0860dd1bb0e',
@@ -65,30 +70,40 @@ def upgrade() -> None:
            );
     """)
 
-    # 3. Delete non-SGRG employees and users
+    # 3. Delete non-SGRG employees and users. employee_code range 11001-11030
+    # is AGENTS.md's own definition of the 30 real SGRG staff members, so
+    # "outside that range" is a legitimate marker here (unlike the payments/
+    # invoices/customers rules above, which used ad-hoc heuristics instead of
+    # an actual documented real-vs-test signal).
     op.execute("""
-        DELETE FROM employee_customer_assignments 
+        DELETE FROM employee_customer_assignments
         WHERE employee_id IN (SELECT id FROM employees WHERE employee_code NOT BETWEEN '11001' AND '11030');
     """)
     op.execute("""
-        DELETE FROM employee_territory_assignments 
+        DELETE FROM employee_territory_assignments
         WHERE employee_id IN (SELECT id FROM employees WHERE employee_code NOT BETWEEN '11001' AND '11030');
     """)
     op.execute("""
-        DELETE FROM employees 
+        DELETE FROM employees
         WHERE employee_code NOT BETWEEN '11001' AND '11030';
     """)
+    # Fixed: the original condition only ever protected the single hardcoded
+    # seed admin@fieldtrack.test - any OTHER real admin account (role=ADMIN,
+    # which has no employees row and typically isn't @sgrgservices.com) would
+    # have been deleted along with the automated writeback/test users. Protect
+    # every admin account, not just the one seed email.
     op.execute("""
-        DELETE FROM users 
-        WHERE email NOT LIKE '%@sgrgservices.com' 
+        DELETE FROM users
+        WHERE email NOT LIKE '%@sgrgservices.com'
           AND email != 'admin@fieldtrack.test'
+          AND role != 'ADMIN'
           AND id NOT IN (SELECT user_id FROM employees WHERE user_id IS NOT NULL);
     """)
 
     # 4. Clean unused demo territories
     op.execute("""
-        DELETE FROM territories 
-        WHERE id::text LIKE '11111111-%' 
+        DELETE FROM territories
+        WHERE id::text LIKE '11111111-%'
            OR name IN ('Bengaluru Central', 'Mumbai Western Suburbs', 'Pune IT Corridor', 'North Delhi Corridor', 'North Region QA');
     """)
 

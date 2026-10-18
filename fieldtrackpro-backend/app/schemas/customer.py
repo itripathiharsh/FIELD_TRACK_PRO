@@ -110,8 +110,11 @@ class CustomerProspectCreate(BaseModel):
     requirement: Optional["CustomerRequirementCreate"] = None
     location: LocationIn | None = None
     gps_accuracy_meters: float | None = None
-    notes: str | None = None
+    notes: str | None = Field(default=None, max_length=1000)
     force: bool = Field(default=False, description="Set to true to bypass duplicate warnings if confirmed")
+    # Live outlet proof (POST /customers/outlet-proofs with no customer_id). When attached, the
+    # proposed location/accuracy are taken FROM THE PROOF and client-supplied location is ignored.
+    outlet_proof_id: uuid.UUID | None = None
 
     @field_validator("gst_number")
     @classmethod
@@ -209,6 +212,12 @@ class CustomerRead(BaseModel):
     brands: list[str] = []
     created_by: uuid.UUID
     created_at: datetime
+    needs_tally_entry: bool = False
+    # --- live outlet proof (additive; filled by outlet_proof_service.enrich_customer_reads) ---
+    primary_outlet_image_available: bool = False
+    primary_outlet_proof_id: uuid.UUID | None = None  # stream via GET /customers/outlet-proofs/{id}/image
+    outlet_proof_count: int = 0
+    outlet_location_confirmations: int = 0
 
     @classmethod
     def from_model(cls, customer: "CustomerModel") -> "CustomerRead":
@@ -264,6 +273,7 @@ class CustomerRead(BaseModel):
             brands=brand_names,
             created_by=customer.created_by,
             created_at=customer.created_at,
+            needs_tally_entry=getattr(customer, "needs_tally_entry", False) or False,
         )
 
 

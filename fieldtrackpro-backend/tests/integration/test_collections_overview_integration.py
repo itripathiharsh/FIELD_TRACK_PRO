@@ -167,11 +167,23 @@ async def test_fully_paid_outlet_has_paid_status_and_zero_outstanding(
     verify = await client.post(f"/api/v1/payments/{payment_id}/verify", headers=admin_headers)
     assert verify.status_code == 200
 
+    # Verified but not yet in Tally: still outstanding, shown as awaiting.
+    resp = await client.get(
+        "/api/v1/collections/overview", params={"search": outlet["outlet_code"]}, headers=admin_headers
+    )
+    row = next(r for r in resp.json()["outlets"] if r["customer_id"] == outlet["id"])
+    assert row["total_outstanding"] == "500.00"
+    assert row["verified_awaiting_tally_amount"] == "500.00"
+
+    from tests.tally_helpers import ack_payment_in_tally
+    await ack_payment_in_tally(payment_id)
+
     resp = await client.get(
         "/api/v1/collections/overview", params={"search": outlet["outlet_code"]}, headers=admin_headers
     )
     row = next(r for r in resp.json()["outlets"] if r["customer_id"] == outlet["id"])
     assert row["total_outstanding"] == "0.00"
+    assert row["verified_awaiting_tally_amount"] == "0.00"
     assert row["collection_status"] == "PAID"
     assert row["most_recent_payment_amount"] == "500.00"
 
@@ -320,6 +332,21 @@ async def test_employee_can_cover_multiple_areas_across_multiple_zones(
     assert zone_b_resp.status_code == 201, zone_b_resp.text
     zone_b_id = zone_b_resp.json()["id"]
     created_territories.append(zone_b_id)
+
+    # Area coverage is only allowed in territories the employee is assigned to
+    # (INVALID_AREA_TERRITORY otherwise), so give the employee a territory
+    # assignment for Zone B first. TEMPORARY keeps their home zone intact.
+    from datetime import date, timedelta
+    assign_resp = await client.post(
+        f"/api/v1/employees/{dedicated_employee['employee_id']}/territory-assignments",
+        json={
+            "territory_id": zone_b_id, "assignment_type": "TEMPORARY",
+            "start_date": date.today().isoformat(),
+            "end_date": (date.today() + timedelta(days=30)).isoformat(),
+        },
+        headers=admin_headers,
+    )
+    assert assign_resp.status_code == 201, assign_resp.text
 
     area_a_resp = await client.post(
         "/api/v1/areas",

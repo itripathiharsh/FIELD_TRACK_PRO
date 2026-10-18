@@ -32,6 +32,10 @@ class Notification(Base):
     planned_visit_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("planned_visits.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    # Payment this alert is about (failed / stuck Tally post); NULL for other alerts.
+    payment_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("payments.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     type: Mapped[NotificationType] = mapped_column(Enum(NotificationType, name="notification_type_enum"))
     title: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     message: Mapped[str] = mapped_column(Text)

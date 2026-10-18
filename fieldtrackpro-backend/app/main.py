@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
 from app.config import settings
+from app.core.uploads import BodySizeLimitMiddleware
 from app.exceptions.handlers import register_exception_handlers
 from app.jobs.scheduler import shutdown_scheduler, start_scheduler
 from app.logging_config import setup_logging
@@ -63,14 +64,16 @@ app = FastAPI(
 # headers land on every response, including CORS-decorated error responses.
 app.add_middleware(RequestLoggingAndContextMiddleware)
 app.add_middleware(CatchUnhandledExceptionsMiddleware)
+# Oversized bodies are refused before any parsing/buffering; inside CORS so the 413 carries CORS headers.
+app.add_middleware(BodySizeLimitMiddleware)
+# Exact-match origins only (CORS_ALLOWED_ORIGINS). No wildcard / *.vercel.app regex.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_allowed_origins,
-    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["X-Total-Count", "X-Request-ID"],
+    expose_headers=["X-Total-Count", "X-Request-ID", "Content-Disposition"],
 )
 app.add_middleware(SecurityHeadersMiddleware)
 
@@ -83,26 +86,3 @@ app.include_router(api_router, prefix=settings.api_v1_prefix)
 async def root_health_check():
     """Root-level health probe for load balancers / Docker HEALTHCHECK."""
     return {"status": "UP"}
-
-
-@app.get("/download/app", tags=["mobile-distribution"])
-@app.get("/app-latest.apk", tags=["mobile-distribution"])
-async def download_latest_apk():
-    """Serves the latest assembled Android APK for direct mobile installation."""
-    from pathlib import Path
-    from fastapi import HTTPException
-    from fastapi.responses import FileResponse
-
-    apk_paths = [
-        Path(r"f:\Field track pro v2 for test\FieldTrackPro-Latest-Debug.apk"),
-        Path(r"f:\Field track pro v2 for test\field track pro\fieldtrackpro-android\app\build\outputs\apk\debug\app-debug.apk"),
-    ]
-    for p in apk_paths:
-        if p.exists():
-            return FileResponse(
-                path=str(p),
-                filename="FieldTrackPro-Latest-Debug.apk",
-                media_type="application/vnd.android.package-archive",
-            )
-    raise HTTPException(status_code=404, detail="APK file not found")
-

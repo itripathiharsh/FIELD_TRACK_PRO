@@ -1,23 +1,29 @@
 import uuid
 from decimal import Decimal
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.main import app
 from app.core.security import create_access_token, hash_password
 from app.database import AsyncSessionLocal
 from app.models.customer import Customer
 from app.models.employee import Employee
+from app.models.notification import Notification
 from app.models.payment import Payment, PaymentMethod, PaymentSource, PaymentStatus
 from app.models.tally_writeback import TallyWritebackQueue, WritebackStatus
 from app.models.user import Role, User
 from app.models.visit import Visit, VisitStatus
 from app.schemas.payment import PaymentCreate
-from app.services.payment_service import create_payment
-from app.services.tally_writeback_service import enqueue_payment_writeback
+from app.services.payment_service import create_payment, verify_payment
+from app.services.tally_writeback_service import (
+    MAX_LEASE_RECLAIMS,
+    TALLY_FAILED_TITLE,
+    claim_pending_jobs,
+    enqueue_payment_writeback,
+)
 from tests.conftest import requires_db
 
 
@@ -83,8 +89,8 @@ async def writeback_test_env():
 
 @pytest.mark.asyncio
 @requires_db
-async def test_payment_creation_enqueues_writeback(writeback_test_env):
-    """TEST A & TEST C: Creating a field payment transactionally creates exactly ONE writeback job."""
+async def test_payment_creation_does_not_enqueue_but_verification_enqueues_exactly_one(writeback_test_env):
+    """Creating a field payment enqueues NOTHING; verifying it enqueues exactly ONE idempotent job."""
     env = writeback_test_env
     visit = env["visit"]
     emp_user = env["employee_user"]
@@ -101,10 +107,10 @@ async def test_payment_creation_enqueues_writeback(writeback_test_env):
         payment = await create_payment(data, emp_user, session)
         assert payment.id is not None
 
-        # Verify exactly one writeback job enqueued
-        wb_stmt = select(TallyWritebackQueue).where(
-            TallyWritebackQueue.entity_id == payment.id
-        )
+        wb_stmt = select(TallyWritebackQueue).where(TallyWritebackQueue.entity_id == payment.id)
+        assert (await session.execute(wb_stmt)).scalars().all() == []
+
+        await verify_payment(payment.id, env["admin"], session)
         jobs = (await session.execute(wb_stmt)).scalars().all()
         assert len(jobs) == 1
         job = jobs[0]
@@ -115,7 +121,8 @@ async def test_payment_creation_enqueues_writeback(writeback_test_env):
         assert job.payload["payment_method"] == "CASH"
 
         # Calling enqueue again with same payment returns existing job (idempotent)
-        job2 = await enqueue_payment_writeback(session, payment, customer=env["customer"])
+        refreshed = (await session.execute(select(Payment).where(Payment.id == payment.id))).scalar_one()
+        job2 = await enqueue_payment_writeback(session, refreshed, customer=env["customer"])
         assert job2.id == job.id
 
 
@@ -180,6 +187,16 @@ async def test_outbox_claim_ack_and_reconciliation_flow(writeback_test_env):
             "X-Agent-Key": agent_data["api_key"],
         }
 
+        # Hermetic start: the claim below takes at most 10 jobs, so stale PENDING/PROCESSING
+        # jobs left by other tests on a shared DB must not crowd out this test's own job.
+        async with AsyncSessionLocal() as cleanup_session:
+            await cleanup_session.execute(
+                update(TallyWritebackQueue)
+                .where(TallyWritebackQueue.status.in_([WritebackStatus.PENDING, WritebackStatus.PROCESSING]))
+                .values(status=WritebackStatus.FAILED, last_error="cleared by test setup")
+            )
+            await cleanup_session.commit()
+
         # Create a field payment
         async with AsyncSessionLocal() as session:
             data = PaymentCreate(
@@ -193,6 +210,7 @@ async def test_outbox_claim_ack_and_reconciliation_flow(writeback_test_env):
             )
             payment = await create_payment(data, env["employee_user"], session)
             payment_id = payment.id
+            await verify_payment(payment_id, admin, session)
 
         # 1. Claim pending job
         claim_res = await client.get(
@@ -318,6 +336,7 @@ async def test_outbox_failure_and_retry_backoff(writeback_test_env):
             )
             pmt = await create_payment(data, env["employee_user"], session)
             pmt_id = pmt.id
+            await verify_payment(pmt_id, admin, session)
 
         # Claim
         claim_res = await client.get("/api/v1/integrations/tally/outbox/pending", headers=agent_headers)
@@ -341,3 +360,138 @@ async def test_outbox_failure_and_retry_backoff(writeback_test_env):
         )
         assert fail_term.status_code == 200
         assert fail_term.json()["status"] == "FAILED"
+
+
+@pytest.mark.asyncio
+@requires_db
+async def test_retry_refused_while_in_flight_then_allowed_after_lease_expires(writeback_test_env):
+    """
+    A duplicate-post guard: admin "retry" on a job the agent is actively posting
+    (PROCESSING, lease still active) must be refused - it would hand the same job
+    to the agent a second time while the first attempt is in flight. Once the lease
+    expires (agent presumed dead/stuck), retry becomes allowed again.
+    """
+    env = writeback_test_env
+    admin = env["admin"]
+    admin_token = create_access_token(subject=str(admin.id), role=Role.ADMIN.value)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        reg_res = await client.post(
+            "/api/v1/integrations/tally/agents",
+            json={"name": f"Agent {uuid.uuid4().hex[:4]}", "organization_id": "test_org"},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        agent_headers = {
+            "X-Agent-Id": reg_res.json()["agent"]["id"],
+            "X-Agent-Key": reg_res.json()["api_key"],
+        }
+
+        async with AsyncSessionLocal() as session:
+            data = PaymentCreate(
+                visit_id=env["visit"].id,
+                amount=Decimal("1000.00"),
+                payment_method=PaymentMethod.CASH,
+                payment_date=date.today(),
+                idempotency_key=f"inflight_test_{uuid.uuid4().hex[:6]}",
+            )
+            pmt = await create_payment(data, env["employee_user"], session)
+            pmt_id = pmt.id
+            await verify_payment(pmt_id, admin, session)
+
+        # Claim puts the job into PROCESSING with an active 5-minute lease - simulates
+        # the agent currently posting it to Tally.
+        claim_res = await client.get("/api/v1/integrations/tally/outbox/pending", headers=agent_headers)
+        job = next(j for j in claim_res.json() if j["entity_id"] == str(pmt_id))
+        job_id = job["id"]
+        assert job["status"] == "PROCESSING"
+
+        retry_res = await client.post(
+            f"/api/v1/integrations/tally/outbox/{job_id}/retry",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert retry_res.status_code == 409
+        assert retry_res.json()["error"]["code"] == "JOB_IN_FLIGHT"
+
+        # Lease expires (agent crashed / never returned) - retry is now allowed.
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                update(TallyWritebackQueue)
+                .where(TallyWritebackQueue.id == uuid.UUID(job_id))
+                .values(next_retry_at=datetime.now(timezone.utc) - timedelta(seconds=1))
+            )
+            await session.commit()
+
+        retry_res2 = await client.post(
+            f"/api/v1/integrations/tally/outbox/{job_id}/retry",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert retry_res2.status_code == 200
+        assert retry_res2.json()["status"] == "PENDING"
+
+
+@pytest.mark.asyncio
+@requires_db
+async def test_stuck_processing_job_forced_failed_after_max_reclaims(writeback_test_env):
+    """
+    A PROCESSING job whose lease keeps expiring without ever being ACKed or FAILed
+    (agent crashed mid-post, stuck ack loop, ...) must not be silently reclaimed
+    forever. After MAX_LEASE_RECLAIMS claims it is forced to terminal FAILED and
+    admins are alerted, instead of claim_pending_jobs handing it to the agent again.
+    """
+    env = writeback_test_env
+    admin = env["admin"]
+
+    async with AsyncSessionLocal() as session:
+        data = PaymentCreate(
+            visit_id=env["visit"].id,
+            amount=Decimal("750.00"),
+            payment_method=PaymentMethod.CASH,
+            payment_date=date.today(),
+            idempotency_key=f"stuck_test_{uuid.uuid4().hex[:6]}",
+        )
+        pmt = await create_payment(data, env["employee_user"], session)
+        pmt_id = pmt.id
+        await verify_payment(pmt_id, admin, session)
+
+        job = (
+            await session.execute(
+                select(TallyWritebackQueue).where(TallyWritebackQueue.entity_id == pmt_id)
+            )
+        ).scalar_one()
+        job_id = job.id
+
+        # Simulate a job already claimed/reclaimed MAX_LEASE_RECLAIMS times, each time
+        # its lease expiring without an ACK or FAIL ever arriving back from the agent.
+        await session.execute(
+            update(TallyWritebackQueue)
+            .where(TallyWritebackQueue.id == job_id)
+            .values(
+                status=WritebackStatus.PROCESSING,
+                retry_count=MAX_LEASE_RECLAIMS,
+                next_retry_at=datetime.now(timezone.utc) - timedelta(minutes=1),
+            )
+        )
+        await session.commit()
+
+    async with AsyncSessionLocal() as session:
+        claimed = await claim_pending_jobs(session, limit=10)
+        assert not any(j.id == job_id for j in claimed)
+
+    async with AsyncSessionLocal() as session:
+        refreshed = (
+            await session.execute(select(TallyWritebackQueue).where(TallyWritebackQueue.id == job_id))
+        ).scalar_one()
+        assert refreshed.status == WritebackStatus.FAILED
+        assert "verify manually" in refreshed.last_error.lower()
+
+        # One admin recipient row per active admin on this (shared) test DB - any is enough.
+        notifs = (
+            await session.execute(
+                select(Notification).where(
+                    Notification.payment_id == pmt_id,
+                    Notification.title == TALLY_FAILED_TITLE,
+                )
+            )
+        ).scalars().all()
+        assert len(notifs) >= 1

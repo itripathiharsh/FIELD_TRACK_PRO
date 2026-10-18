@@ -37,7 +37,12 @@ class InvoiceRead(BaseModel):
     created_at: datetime
 
     # Computed aging fields (from aging_service - never recomputed elsewhere).
+    # Settled money only: VERIFIED payments whose receipt is in Tally
+    # (write-back CONFIRMED, or sourced from Tally). remaining_amount = amount - this.
     verified_paid_amount: Decimal
+    # Additive: verified (cash received) but receipt not yet confirmed in Tally.
+    # Does NOT reduce remaining_amount until Tally confirms.
+    verified_awaiting_tally_amount: Decimal = Decimal("0.00")
     remaining_amount: Decimal
     days_outstanding: int
     payment_status: PaymentStatusLabel

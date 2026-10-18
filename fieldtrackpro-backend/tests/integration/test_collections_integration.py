@@ -130,14 +130,16 @@ async def test_unauthenticated_cannot_create_invoice(client: AsyncClient, seeded
 
 # -- Outlet account visibility -------------------------------------------------
 
-async def test_employee_without_a_visit_can_view_account(
+async def test_employee_without_a_visit_cannot_view_account(
     client: AsyncClient, other_employee_headers, seeded_world
 ):
-    """Authenticated employee can view account summary for ad-hoc collections."""
+    """Financials are confined to outlets in the employee's scope (assigned / on
+    their visits / covered Area). An ad-hoc visit makes the outlet in-scope."""
     resp = await client.get(
         f"/api/v1/customers/{seeded_world['customer_id']}/account", headers=other_employee_headers
     )
-    assert resp.status_code == 200, resp.text
+    assert resp.status_code == 404, resp.text
+    assert resp.json()["error"]["code"] == "CUSTOMER_NOT_FOUND"
 
 
 async def test_employee_with_a_visit_can_view_account(
@@ -176,9 +178,11 @@ async def test_brand_summary_aggregates_correctly(
 
     resp = await client.get(f"/api/v1/customers/{cust_id}/account", headers=admin_headers)
     assert resp.status_code == 200
-    brands = {b["brand"]: b for b in resp.json()["brand_summary"]}
-    assert brands["Usha"]["total_invoiced"] == "15000.00"
-    assert brands["Singer"]["total_invoiced"] == "2000.00"
+    # Brand display names are canonicalised by brand_service ("Usha" -> "USHA"),
+    # so key the lookup case-insensitively rather than on the raw input casing.
+    brands = {b["brand"].upper(): b for b in resp.json()["brand_summary"]}
+    assert brands["USHA"]["total_invoiced"] == "15000.00"
+    assert brands["SINGER"]["total_invoiced"] == "2000.00"
 
 
 # -- Payment / collection creation ---------------------------------------------
@@ -322,7 +326,7 @@ async def test_employee_cannot_collect_against_another_employees_visit(
         },
         headers=other_employee_headers,
     )
-    assert resp.status_code == 403
+    assert resp.status_code == 404
 
 
 async def test_payment_is_stamped_with_visits_customer_and_employee(
@@ -365,7 +369,7 @@ async def test_employee_cannot_view_another_employees_payment(
     created_payments.append(payment_id)
 
     resp = await client.get(f"/api/v1/payments/{payment_id}", headers=other_employee_headers)
-    assert resp.status_code == 403
+    assert resp.status_code == 404
 
 
 async def test_employee_cannot_verify_own_payment(
@@ -505,13 +509,23 @@ async def test_verified_payments_reduce_outstanding_and_preserve_history(
         assert verify.status_code == 200
         return payment_id
 
+    from tests.tally_helpers import ack_payment_in_tally
+
     p1 = await collect_and_verify("50000.00")
 
+    # Verified but not yet in Tally: the invoice balance does not move yet.
+    pre = await client.get(f"/api/v1/invoices/{inv['id']}", headers=admin_headers)
+    assert pre.json()["remaining_amount"] == "200000.00"
+    assert pre.json()["verified_awaiting_tally_amount"] == "50000.00"
+
+    await ack_payment_in_tally(p1)
     check1 = await client.get(f"/api/v1/invoices/{inv['id']}", headers=admin_headers)
     assert check1.json()["remaining_amount"] == "150000.00"
     assert check1.json()["payment_status"] == "PARTIALLY_PAID"
+    assert check1.json()["verified_awaiting_tally_amount"] == "0.00"
 
     p2 = await collect_and_verify("100000.00")
+    await ack_payment_in_tally(p2)
 
     check2 = await client.get(f"/api/v1/invoices/{inv['id']}", headers=admin_headers)
     assert check2.json()["remaining_amount"] == "50000.00"
@@ -526,7 +540,7 @@ async def test_verified_payments_reduce_outstanding_and_preserve_history(
 
 # -- Account aggregation correctness ---------------------------------------------
 
-async def test_unallocated_verified_payment_still_reduces_total_outstanding(
+async def test_unallocated_verified_payment_reduces_total_outstanding_only_after_tally_confirms(
     client: AsyncClient, admin_headers, employee_headers, seeded_world, visit_id, created_invoices, created_payments
 ):
     """
@@ -558,13 +572,32 @@ async def test_unallocated_verified_payment_still_reduces_total_outstanding(
     created_payments.append(payment_id)
     await client.post(f"/api/v1/payments/{payment_id}/verify", headers=admin_headers)
 
+    # Verified, receipt NOT yet in Tally: Tally is the final truth, so the
+    # aggregate outstanding and total_paid do not move; the cash is shown
+    # separately as "verified, not yet in Tally".
+    awaiting = (await client.get(f"/api/v1/customers/{seeded_world['customer_id']}/account", headers=admin_headers)).json()
+    assert float(awaiting["total_outstanding"]) == outstanding_with_invoice
+    assert round(float(awaiting["total_outstanding"]), 2) == round(
+        sum(float(b["total_outstanding"]) for b in awaiting["brand_summary"]), 2
+    )
+    assert float(awaiting["total_paid"]) == paid_before_payment
+    assert float(awaiting["verified_awaiting_tally_amount"]) == 30000.00
+
+    from tests.tally_helpers import ack_payment_in_tally
+    await ack_payment_in_tally(payment_id)
+
     after_payment = await client.get(f"/api/v1/customers/{seeded_world['customer_id']}/account", headers=admin_headers)
     after_json = after_payment.json()
-    # The unallocated-but-verified 30,000 must reduce the aggregate
-    # outstanding by exactly 30,000, even though no single invoice's own
-    # remaining_amount changed.
+    # Once the Tally write-back is CONFIRMED the unallocated 30,000 must reduce
+    # the aggregate outstanding by exactly 30,000, even though no single
+    # invoice's own remaining_amount changed.
     assert float(after_json["total_outstanding"]) == round(outstanding_with_invoice - 30000.00, 2)
+    # Headline can never disagree with the brand table.
+    assert round(float(after_json["total_outstanding"]), 2) == round(
+        sum(float(b["total_outstanding"]) for b in after_json["brand_summary"]), 2
+    )
     assert float(after_json["total_paid"]) == round(paid_before_payment + 30000.00, 2)
+    assert float(after_json["verified_awaiting_tally_amount"]) == 0.00
 
 
 # -- Payment proof --------------------------------------------------------------
@@ -622,7 +655,7 @@ async def test_employee_cannot_upload_proof_to_another_employees_payment(
         files={"file": ("x.jpg", VALID_JPEG, "image/jpeg")},
         headers=other_employee_headers,
     )
-    assert resp.status_code == 403
+    assert resp.status_code == 404
 
 
 # -- Invoice history endpoint ---------------------------------------------------

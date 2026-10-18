@@ -318,7 +318,7 @@ async def test_rbac_employee_cannot_access_or_modify_other_plan(client: AsyncCli
         f"/api/v1/visit-planning/plans/{setup['emp_b_id']}?year={d.year}&month={d.month}",
         headers=headers_a,
     )
-    assert res_unauth.status_code == 403
+    assert res_unauth.status_code == 404
 
     # Employee A tries to modify Employee B's visit -> 403
     res_mod = await client.patch(
@@ -326,14 +326,14 @@ async def test_rbac_employee_cannot_access_or_modify_other_plan(client: AsyncCli
         json={"notes": "Hacked note"},
         headers=headers_a,
     )
-    assert res_mod.status_code == 403
+    assert res_mod.status_code == 404
 
     # Employee A tries to delete Employee B's visit -> 403
     res_del = await client.delete(
         f"/api/v1/visit-planning/visits/{visit_b_id}",
         headers=headers_a,
     )
-    assert res_del.status_code == 403
+    assert res_del.status_code == 404
 
 
 @pytest.mark.asyncio

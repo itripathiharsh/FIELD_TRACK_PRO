@@ -10,6 +10,7 @@ from decimal import Decimal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.models.payment import PaymentMethod, PaymentStatus, PaymentSource
+from app.services.payment_tally import TallyStatus
 
 
 class PaymentProofRead(BaseModel):
@@ -60,7 +61,7 @@ class PaymentCreate(BaseModel):
     cheque_number: str | None = Field(default=None, max_length=50)
     cheque_bank_name: str | None = Field(default=None, max_length=150)
     utr_reference: str | None = Field(default=None, max_length=50)
-    notes: str | None = None
+    notes: str | None = Field(default=None, max_length=1000)
     allocations: list[BrandAllocationInput] | None = None
     # Client-generated key (e.g. a UUID minted once per submit attempt) so a
     # double-tap or a retried request after a dropped response cannot create
@@ -131,6 +132,25 @@ class PaymentReviewAction(BaseModel):
         return self
 
 
+class PaymentVerifyRequest(BaseModel):
+    """
+    Optional body of POST /payments/{id}/verify: the bank-verification record.
+    Every field is optional; verifying with no body (or `{}`) still works.
+    """
+
+    bank_reference: str | None = Field(default=None, max_length=100)
+    bank_verified_on: date | None = None
+    verified_note: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("bank_reference", "verified_note")
+    @classmethod
+    def _strip_blank(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip()
+        return v or None
+
+
 class PaymentRead(BaseModel):
     id: uuid.UUID
     visit_id: uuid.UUID | None = None
@@ -154,6 +174,20 @@ class PaymentRead(BaseModel):
     created_at: datetime
     proofs: list[PaymentProofRead] = []
     allocations: list[PaymentBrandAllocationRead] = []
+
+    # Tally lifecycle (derived, see app/services/payment_tally.py).
+    # NOT_APPLICABLE | AWAITING_TALLY | POSTED | FAILED
+    tally_status: TallyStatus = TallyStatus.NOT_APPLICABLE
+    tally_voucher_number: str | None = None
+    tally_posted_at: datetime | None = None
+    # ADMIN-only (None for employees): last write-back error, and whether the
+    # payment is FAILED or AWAITING_TALLY for 30+ minutes.
+    tally_error: str | None = None
+    tally_stuck: bool | None = None
+    # ADMIN-only bank-verification record (None for employees / not captured).
+    bank_reference: str | None = None
+    bank_verified_on: date | None = None
+    verified_note: str | None = None
 
     # Denormalized display fields, populated by the service layer for the
     # accountant queue (avoids N+1 joins on the frontend).

@@ -23,6 +23,7 @@ class StorageService:
                 secret_key=settings.minio_secret_key,
                 bucket_name=settings.minio_bucket,
                 secure=settings.minio_secure,
+                region=settings.minio_region,
             )
         else:
             self._provider = LocalStorageProvider(base_dir=settings.media_storage_path)

@@ -2,12 +2,12 @@
 Collections Overview service.
 
 Aggregates every outlet's financial position - invoiced, paid, outstanding,
-ageing bucket, last payment, last visit - in bulk, reusing the exact same
-per-invoice calculation account_service.get_account_summary already uses
-(aging_service.compute_invoice_aging) rather than a second, independently
-maintained ageing calculation. The difference from account_service is scale:
-this runs the same math across every matching outlet in a handful of bulk
-queries, instead of one outlet at a time.
+ageing, last payment, last visit - in bulk. ALL money figures come from
+services/account_position.py (the same module account_service uses), so the
+overview rows/totals and the outlet Account summary share one calculation:
+opening_balance + invoiced - paid_in_tally == outstanding. Only the legacy
+invoice-only MIS tiles (bucket_0_15 ...) and "most recent payment" are
+computed here.
 
 Filters that are stored columns (search, territory, employee) are applied in
 SQL; filters on derived values (ageing/collection status) are applied in
@@ -20,7 +20,7 @@ from collections import defaultdict
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.area import Area
@@ -37,7 +37,10 @@ from app.schemas.collections import (
     CollectionsOverviewTotals,
     OutletCollectionRow,
 )
+from app.services import account_position, payment_tally
+from app.services.account_position import position_fields, sum_positions
 from app.services.aging_service import AgingStatus, MisBucket, compute_invoice_aging, compute_mis_bucket
+from app.services.report_filters import ist_now, like_pattern, validate_date_order
 
 ZERO = Decimal("0")
 
@@ -50,15 +53,26 @@ _BUCKET_TOTAL_FIELDS: dict[MisBucket, str] = {
 }
 
 
-def _empty_response(skip: int, limit: int) -> CollectionsOverviewResponse:
+def _empty_response(
+    skip: int, limit: int | None, start_date: date | None = None, end_date: date | None = None,
+    as_of: date | None = None,
+) -> CollectionsOverviewResponse:
+    has_period = start_date is not None or end_date is not None
     return CollectionsOverviewResponse(
         totals=CollectionsOverviewTotals(
             total_outlets=0, total_invoiced=ZERO, total_paid=ZERO, total_outstanding=ZERO,
             current_amount=ZERO, bucket_0_15=ZERO, bucket_16_30=ZERO, bucket_31_60=ZERO,
             bucket_61_90=ZERO, bucket_90_plus=ZERO,
+            invoiced_in_period=ZERO if has_period else None,
+            collected_in_period=ZERO if has_period else None,
         ),
-        outlets=[], total_count=0, skip=skip, limit=limit,
+        outlets=[], total_count=0, skip=skip, limit=limit if limit is not None else 0,
+        period_start=start_date, period_end=end_date, as_of_date=as_of,
     )
+
+
+def _in_range(d: date, start: date | None, end: date | None) -> bool:
+    return (start is None or d >= start) and (end is None or d <= end)
 
 
 async def get_collections_overview(
@@ -69,10 +83,23 @@ async def get_collections_overview(
     employee_id: uuid.UUID | None = None,
     collection_status: AgingStatus | None = None,
     skip: int = 0,
-    limit: int = 50,
+    limit: int | None = 50,
     today: date | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
 ) -> CollectionsOverviewResponse:
-    today = today or date.today()
+    """
+    ``limit=None`` returns every matching outlet (used by the Excel/PDF exports).
+
+    ``start_date``/``end_date`` (inclusive IST dates) add the flow columns
+    ``invoiced_in_period`` (live invoices by invoice_date) and
+    ``collected_in_period`` (payments POSTED to Tally, by payment_date).  They do
+    NOT change which outlets are listed, and Outstanding / Overdue / ageing stay
+    as of today.
+    """
+    validate_date_order(start_date, end_date)
+    today = today or ist_now().date()
+    has_period = start_date is not None or end_date is not None
 
     # 1. Resolve the matching outlet set via cheap, indexable filters only.
     customer_stmt = (
@@ -84,8 +111,13 @@ async def get_collections_overview(
         .outerjoin(Area, Area.id == Customer.area_id)
     )
     if search:
-        like = f"%{search.strip()}%"
-        customer_stmt = customer_stmt.where(or_(Customer.name.ilike(like), Customer.outlet_code.ilike(like)))
+        like = like_pattern(search)
+        customer_stmt = customer_stmt.where(
+            or_(
+                func.lower(Customer.name).like(like, escape="\\"),
+                func.lower(Customer.outlet_code).like(like, escape="\\"),
+            )
+        )
     if territory_id:
         customer_stmt = customer_stmt.where(Customer.territory_id == territory_id)
     if area_id:
@@ -146,24 +178,32 @@ async def get_collections_overview(
         customer_rows = [r for r in customer_rows if _covers(r)]
 
     if not customer_rows:
-        return _empty_response(skip, limit)
+        return _empty_response(skip, limit, start_date, end_date, today)
 
     customer_ids = [r.id for r in customer_rows]
 
-    # 2. Bulk-fetch invoices + payments for exactly this outlet set - a
-    # handful of queries total, never one per outlet.
+    # 2. ALL money figures (invoiced / paid_in_tally / awaiting / outstanding /
+    # overdue / ageing / opening / reconciles) come from the ONE shared
+    # calculation in account_position - the same call the outlet Account
+    # summary makes - so the two screens can never disagree.
+    positions = await account_position.load_outlet_positions(session, customer_ids, today)
+
+    # Legacy invoice-only MIS tiles (bucket_0_15 ... current_amount) and the
+    # "most recent payment" cell still need per-invoice / per-payment rows.
     invoices = (await session.execute(
         select(Invoice).where(Invoice.customer_id.in_(customer_ids))
     )).scalars().all()
     payments = (await session.execute(
         select(Payment).where(Payment.customer_id.in_(customer_ids))
     )).scalars().all()
-    verified_payments = [p for p in payments if p.status == PaymentStatus.VERIFIED]
-
-    verified_paid_by_invoice: dict[uuid.UUID, Decimal] = defaultdict(lambda: ZERO)
-    for p in verified_payments:
-        if p.invoice_id is not None:
-            verified_paid_by_invoice[p.invoice_id] += p.amount
+    jobs = await payment_tally.load_jobs(session, [p.id for p in payments])
+    verified_payments = [
+        p for p in payments
+        if p.status == PaymentStatus.VERIFIED and payment_tally.is_posted(p, jobs.get(p.id))
+    ]
+    verified_paid_by_invoice: dict[uuid.UUID, Decimal] = defaultdict(
+        lambda: ZERO, await payment_tally.posted_paid_by_invoice(session, [i.id for i in invoices])
+    )
 
     invoices_by_customer: dict[uuid.UUID, list[Invoice]] = defaultdict(list)
     for inv in invoices:
@@ -197,9 +237,8 @@ async def get_collections_overview(
         cust_invoices = invoices_by_customer.get(c.id, [])
         cust_verified_payments = verified_payments_by_customer.get(c.id, [])
 
-        total_invoiced = sum((inv.amount for inv in cust_invoices), ZERO)
-        total_paid = sum((p.amount for p in cust_verified_payments), ZERO)
-        total_outstanding = max(total_invoiced - total_paid, ZERO)
+        detail = positions[c.id]
+        pos = detail.outlet
 
         agings = [
             compute_invoice_aging(
@@ -221,19 +260,7 @@ async def get_collections_overview(
         bucket_amounts_by_customer[c.id] = bucket_amounts
         current_amount_by_customer[c.id] = current_amount
 
-        # Same precedence as account_service.get_account_summary's
-        # collection_status derivation - never a second rule set.
-        if any(a.aging_status == AgingStatus.OVERDUE for a in agings):
-            worst_status = AgingStatus.OVERDUE
-        elif any(a.aging_status == AgingStatus.WARNING for a in agings):
-            worst_status = AgingStatus.WARNING
-        elif outstanding_agings:
-            worst_status = AgingStatus.NORMAL
-        else:
-            worst_status = AgingStatus.PAID
-
-        overdue_amount = sum((a.remaining_amount for a in agings if a.aging_status == AgingStatus.OVERDUE), ZERO)
-        max_days_outstanding = max((a.days_outstanding for a in outstanding_agings), default=0)
+        max_days_outstanding = pos.max_days_outstanding
         relevant_bucket = compute_mis_bucket(max_days_outstanding) if outstanding_agings else None
         relevant_bucket_amount = bucket_amounts.get(relevant_bucket, ZERO) if relevant_bucket else ZERO
 
@@ -274,12 +301,14 @@ async def get_collections_overview(
             area_id=c.area_id,
             area_name=c.area_name,
             assigned_employees=assigned_employees,
-            total_invoiced=total_invoiced,
-            total_paid=total_paid,
-            total_outstanding=total_outstanding,
-            overdue_amount=overdue_amount,
+            total_invoiced=pos.invoiced,
+            total_paid=detail.posted_payments_total,
+            verified_awaiting_tally_amount=pos.verified_awaiting_tally,
+            total_outstanding=pos.outstanding,
+            overdue_amount=pos.overdue,
             max_days_outstanding=max_days_outstanding,
-            collection_status=worst_status,
+            collection_status=pos.collection_status,
+            **position_fields(pos),
             relevant_mis_bucket=relevant_bucket,
             relevant_bucket_amount=relevant_bucket_amount,
             most_recent_payment_date=most_recent_payment.payment_date if most_recent_payment else None,
@@ -289,6 +318,14 @@ async def get_collections_overview(
             ),
             most_recent_visit_date=latest_visit[0] if latest_visit else None,
             most_recent_visit_employee_name=latest_visit[1] if latest_visit else None,
+            invoiced_in_period=(
+                sum((i.amount for i in cust_invoices if _in_range(i.invoice_date, start_date, end_date)), ZERO)
+                if has_period else None
+            ),
+            collected_in_period=(
+                sum((p.amount for p in cust_verified_payments if _in_range(p.payment_date, start_date, end_date)), ZERO)
+                if has_period else None
+            ),
         ))
 
     # 5. Ageing/collection-status filter - derived, so applied post-aggregation.
@@ -304,20 +341,28 @@ async def get_collections_overview(
             bucket_totals[field] += bucket_amounts_by_customer.get(cid, {}).get(bucket, ZERO)
     current_total = sum((current_amount_by_customer.get(cid, ZERO) for cid in filtered_ids), ZERO)
 
+    grand = sum_positions(positions[cid].outlet for cid in filtered_ids)
     totals = CollectionsOverviewTotals(
         total_outlets=len(rows),
-        total_invoiced=sum((r.total_invoiced for r in rows), ZERO),
-        total_paid=sum((r.total_paid for r in rows), ZERO),
-        total_outstanding=sum((r.total_outstanding for r in rows), ZERO),
+        total_invoiced=grand.invoiced,
+        total_paid=sum((positions[cid].posted_payments_total for cid in filtered_ids), ZERO),
+        verified_awaiting_tally_amount=grand.verified_awaiting_tally,
+        total_outstanding=grand.outstanding,
+        overdue_amount=grand.overdue,
         current_amount=current_total,
+        **position_fields(grand),
         **bucket_totals,
+        invoiced_in_period=sum((r.invoiced_in_period or ZERO for r in rows), ZERO) if has_period else None,
+        collected_in_period=sum((r.collected_in_period or ZERO for r in rows), ZERO) if has_period else None,
     )
 
     # Default sort: highest outstanding first - serves the client's stated
     # "who owes money, how much" priority directly.
     rows.sort(key=lambda r: r.total_outstanding, reverse=True)
-    paginated = rows[skip: skip + limit]
+    paginated = rows if limit is None else rows[skip: skip + limit]
 
     return CollectionsOverviewResponse(
-        totals=totals, outlets=paginated, total_count=len(rows), skip=skip, limit=limit,
+        totals=totals, outlets=paginated, total_count=len(rows), skip=skip,
+        limit=limit if limit is not None else len(rows),
+        period_start=start_date, period_end=end_date, as_of_date=today,
     )

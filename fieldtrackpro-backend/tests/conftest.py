@@ -46,9 +46,32 @@ SEED_ADMIN_ID = "0f8eb7d1-bf0d-4c52-a022-491b61d2bdb3"
 SEED_EMPLOYEE_ID = "328140a1-d592-42a1-a287-69871f287ed2"
 
 
+def _token_version_for(user_id: str) -> int:
+    """
+    Current users.token_version of an existing account (0 when unknown / DB unavailable).
+
+    Access tokens carry the version they were issued under and are rejected when it no longer matches, so a
+    helper that mints a token for an EXISTING user (whose password may have been changed by an earlier test)
+    must read the current value, exactly like a real login would.
+    """
+    try:
+        from app.config import settings
+        from sqlalchemy import create_engine, text
+
+        engine = create_engine(settings.database_url.replace("postgresql+asyncpg://", "postgresql://"))
+        try:
+            with engine.connect() as conn:
+                value = conn.execute(text("SELECT token_version FROM users WHERE id = :i"), {"i": user_id}).scalar()
+        finally:
+            engine.dispose()
+        return int(value or 0)
+    except Exception:
+        return 0
+
+
 def make_admin_token(user_id: str | None = None) -> str:
     if user_id:
-        return create_access_token(user_id, Role.ADMIN.value)
+        return create_access_token(user_id, Role.ADMIN.value, token_version=_token_version_for(user_id))
     try:
         from app.config import settings
         from sqlalchemy import create_engine, select
@@ -58,7 +81,7 @@ def make_admin_token(user_id: str | None = None) -> str:
             with Session(engine) as s:
                 u = s.execute(select(User).where(User.role == Role.ADMIN, User.is_active == True)).scalars().first()
                 if u:
-                    return create_access_token(str(u.id), Role.ADMIN.value)
+                    return create_access_token(str(u.id), Role.ADMIN.value, token_version=int(u.token_version or 0))
         finally:
             engine.dispose()
     except Exception:
@@ -68,7 +91,7 @@ def make_admin_token(user_id: str | None = None) -> str:
 
 def make_employee_token(user_id: str | None = None) -> str:
     if user_id:
-        return create_access_token(user_id, Role.EMPLOYEE.value)
+        return create_access_token(user_id, Role.EMPLOYEE.value, token_version=_token_version_for(user_id))
     try:
         from app.config import settings
         from sqlalchemy import create_engine, select
@@ -78,7 +101,7 @@ def make_employee_token(user_id: str | None = None) -> str:
             with Session(engine) as s:
                 u = s.execute(select(User).where(User.role == Role.EMPLOYEE, User.is_active == True)).scalars().first()
                 if u:
-                    return create_access_token(str(u.id), Role.EMPLOYEE.value)
+                    return create_access_token(str(u.id), Role.EMPLOYEE.value, token_version=int(u.token_version or 0))
         finally:
             engine.dispose()
     except Exception:

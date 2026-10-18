@@ -23,7 +23,7 @@ async def test_list_brands():
 
 @pytest.mark.asyncio
 async def test_create_brand_and_duplicate_prevention():
-    token = make_employee_token()
+    token = make_admin_token()  # brand creation is ADMIN-only
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         # 1. Create a unique new brand
@@ -53,7 +53,7 @@ async def test_create_brand_and_duplicate_prevention():
 
 @pytest.mark.asyncio
 async def test_empty_and_forbidden_brand_validation():
-    token = make_employee_token()
+    token = make_admin_token()  # brand creation is ADMIN-only
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         # Empty brand
@@ -115,3 +115,16 @@ async def test_admin_patch_brand():
         all_resp = await client.get("/api/v1/brands?active_only=false", headers={"Authorization": f"Bearer {admin_token}"})
         all_names = [b["name"] for b in all_resp.json()]
         assert brand_name in all_names
+
+
+@pytest.mark.asyncio
+async def test_employee_cannot_create_brand():
+    token = make_employee_token()
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post(
+            "/api/v1/brands",
+            json={"name": f"Blocked {uuid.uuid4().hex[:4]}"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 403

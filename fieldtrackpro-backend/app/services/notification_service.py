@@ -68,7 +68,7 @@ class NotificationService:
         if notification is None:
             raise ResourceNotFoundException("Notification not found")
         if notification.user_id != user_id:
-            raise ForbiddenException("Cannot mark another user's notification as read")
+            raise ResourceNotFoundException("Notification not found")
 
         notification.is_read = True
         await session.commit()
@@ -98,6 +98,7 @@ class NotificationService:
         visit_id: uuid.UUID | None = None,
         planned_visit_id: uuid.UUID | None = None,
         session: AsyncSession | None = None,
+        payment_id: uuid.UUID | None = None,
     ) -> Notification:
         """
         Create a new notification in the database and trigger real-time FCM push delivery.
@@ -110,6 +111,7 @@ class NotificationService:
             message=message,
             visit_id=visit_id,
             planned_visit_id=planned_visit_id,
+            payment_id=payment_id,
         )
         if session is not None:
             session.add(notification)
@@ -124,6 +126,7 @@ class NotificationService:
                     "notification_id": str(notification.id),
                     "visit_id": str(visit_id) if visit_id else "",
                     "planned_visit_id": str(planned_visit_id) if planned_visit_id else "",
+                    "payment_id": str(payment_id) if payment_id else "",
                     "type": notification_type.value if hasattr(notification_type, "value") else str(notification_type),
                     "title": resolved_title,
                     "message": message,

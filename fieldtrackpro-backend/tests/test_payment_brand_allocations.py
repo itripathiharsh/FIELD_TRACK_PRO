@@ -14,6 +14,7 @@ from app.models.payment import PaymentMethod, PaymentStatus
 from app.models.user import Role, User
 from app.models.visit import Visit, VisitStatus
 from tests.conftest import requires_db
+from tests.tally_helpers import ack_payment_in_tally
 
 
 @pytest_asyncio.fixture
@@ -320,7 +321,27 @@ async def test_verified_payment_updates_only_allocated_brand_outstanding(client:
     )
     assert verify_resp.status_code == 200
 
-    # After verification:
+    # VERIFIED but NOT yet in Tally: Tally is the final truth, so nothing
+    # drops yet - the cash is only shown as "verified, not yet in Tally".
+    awaiting_resp = await client.get(
+        f"/api/v1/customers/{customer_id}/account",
+        headers={"Authorization": f"Bearer {data['admin_token']}"},
+    )
+    assert awaiting_resp.status_code == 200
+    awaiting_json = awaiting_resp.json()
+    awaiting_map = {b["brand"]: b for b in awaiting_json["brand_summary"]}
+    assert Decimal(awaiting_map["USHA"]["total_outstanding"]) == Decimal("80000.00")
+    assert Decimal(awaiting_map["USHA"]["total_paid"]) == Decimal("0.00")
+    assert Decimal(awaiting_map["USHA"]["verified_awaiting_tally_amount"]) == Decimal("50000.00")
+    assert Decimal(awaiting_map["Zebronics"]["total_outstanding"]) == Decimal("60000.00")
+    assert Decimal(awaiting_map["Zebronics"]["verified_awaiting_tally_amount"]) == Decimal("30000.00")
+    assert Decimal(awaiting_json["verified_awaiting_tally_amount"]) == Decimal("80000.00")
+    assert Decimal(awaiting_json["total_paid"]) == Decimal("0.00")
+
+    # The sync agent writes the receipt to Tally and ACKs the write-back job.
+    await ack_payment_in_tally(payment_id)
+
+    # After Tally confirmation:
     # USHA: 80K invoiced - 50K paid = 30K outstanding
     # Zebronics: 60K invoiced - 30K paid = 30K outstanding
     # Havells: 40K invoiced - 0 paid = 40K outstanding (UNCHANGED!)
@@ -329,16 +350,20 @@ async def test_verified_payment_updates_only_allocated_brand_outstanding(client:
         headers={"Authorization": f"Bearer {data['admin_token']}"},
     )
     assert final_summary_resp.status_code == 200
-    final_brand_map = {b["brand"]: b for b in final_summary_resp.json()["brand_summary"]}
+    final_json = final_summary_resp.json()
+    final_brand_map = {b["brand"]: b for b in final_json["brand_summary"]}
 
     assert Decimal(final_brand_map["USHA"]["total_paid"]) == Decimal("50000.00")
     assert Decimal(final_brand_map["USHA"]["total_outstanding"]) == Decimal("30000.00")
+    assert Decimal(final_brand_map["USHA"]["verified_awaiting_tally_amount"]) == Decimal("0.00")
 
     assert Decimal(final_brand_map["Zebronics"]["total_paid"]) == Decimal("30000.00")
     assert Decimal(final_brand_map["Zebronics"]["total_outstanding"]) == Decimal("30000.00")
 
     assert Decimal(final_brand_map["Havells"]["total_paid"]) == Decimal("0.00")
     assert Decimal(final_brand_map["Havells"]["total_outstanding"]) == Decimal("40000.00")
+    assert Decimal(final_json["verified_awaiting_tally_amount"]) == Decimal("0.00")
+    assert Decimal(final_json["total_paid"]) == Decimal("80000.00")
 
 
 @requires_db
@@ -387,11 +412,12 @@ async def test_strict_brand_isolation_no_cross_brand_spillover(client: AsyncClie
     assert create_resp.status_code == 201
     payment_id = create_resp.json()["id"]
 
-    # Admin verifies payment
+    # Admin verifies payment, then the sync agent confirms it in Tally
     await client.post(
         f"/api/v1/payments/{payment_id}/verify",
         headers={"Authorization": f"Bearer {data['admin_token']}"},
     )
+    await ack_payment_in_tally(payment_id)
 
     # Check account: Zebronics (60K) and Havells (40K) must remain 100% UNTOUCHED
     summary_resp = await client.get(

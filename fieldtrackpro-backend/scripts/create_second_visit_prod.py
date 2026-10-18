@@ -1,8 +1,10 @@
+import sys as _sys, os as _os; _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _script_env
 import requests
 from datetime import datetime, timezone, timedelta
 import asyncio
 
-PROD_API_URL = "https://fieldtrackpro-backend-s7hs.onrender.com"
+PROD_API_URL = _script_env.api_url()
 LOCAL_API_URL = "http://localhost:8000"
 
 LAT = 26.734115
@@ -17,7 +19,7 @@ print("="*60)
 try:
     r_admin = requests.post(f"{PROD_API_URL}/api/v1/auth/login", json={
         "email": "admin@fieldtrack.test",
-        "password": "AdminPass123!"
+        "password": _script_env.env("SCRIPT_ADMIN_PASSWORD")
     }, timeout=90)
     if r_admin.status_code != 200:
         print(f"Prod admin login failed: {r_admin.status_code}")
@@ -77,7 +79,7 @@ try:
         try:
             r_hl = requests.post(f"{base_url}/api/v1/auth/login", json={
                 "email": "imharshofficial322@gmail.com",
-                "password": "Imharsh@1"
+                "password": _script_env.env("SCRIPT_HARSH_PASSWORD")
             }, timeout=10)
             if r_hl.status_code == 200:
                 h_tok = r_hl.json()["access_token"]

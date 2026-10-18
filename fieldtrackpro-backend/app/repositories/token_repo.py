@@ -39,6 +39,20 @@ class TokenRepository(BaseRepository[RefreshToken]):
         )
         return result.scalar_one_or_none()
 
+    async def get_by_hash_for_update(self, token_hash: str) -> RefreshToken | None:
+        """
+        Fetch a token by hash (any state) holding a row lock until commit/rollback.
+        Serialises concurrent refreshes of the same token: the loser blocks,
+        then sees revoked=True and is handled as a replay.
+        """
+        result = await self.session.execute(
+            select(RefreshToken)
+            .where(RefreshToken.token_hash == token_hash)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        return result.scalars().first()
+
     async def revoke_all_for_user(self, user_id: uuid.UUID) -> int:
         """
         Revoke every outstanding refresh token for a user.
@@ -54,5 +68,14 @@ class TokenRepository(BaseRepository[RefreshToken]):
             .where(RefreshToken.user_id == user_id)
             .where(RefreshToken.revoked.is_(False))
             .values(revoked=True)
+        )
+        # A bulk revoke (password change/reset, deactivation, deletion, theft) must also end the
+        # reuse-grace window of tokens that were rotated moments ago; otherwise a token rotated
+        # <10 s before the password change could still mint a fresh session.
+        await self.session.execute(
+            update(RefreshToken)
+            .where(RefreshToken.user_id == user_id)
+            .where(RefreshToken.rotated_at.is_not(None))
+            .values(rotated_at=None)
         )
         return int(result.rowcount or 0)

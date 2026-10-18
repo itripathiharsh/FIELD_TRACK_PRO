@@ -87,6 +87,31 @@ class LoginRateLimiter:
             retry_after = int((oldest + self._window - now).total_seconds())
             raise RateLimitExceededException(max(retry_after, 1))
 
+    async def hit(self, identifier: str, session: AsyncSession) -> None:
+        """
+        Record one attempt FIRST, then enforce the budget (insert-then-count).
+
+        Unlike check_allowed()+record_failure(), concurrent parallel requests
+        each see the others' committed rows, so a burst cannot all slip under
+        the limit. Raises when this attempt exceeds the budget. Used for the
+        password-reset endpoints, where every attempt (not just failures) is
+        counted and a success must never reset the budget.
+        """
+        key = self._normalise(identifier)
+        session.add(LoginAttempt(identifier=key))
+        await session.commit()
+        now = datetime.now(tz=timezone.utc)
+        cutoff = now - self._window
+        result = await session.execute(
+            select(LoginAttempt.attempted_at)
+            .where(LoginAttempt.identifier == key, LoginAttempt.attempted_at > cutoff)
+            .order_by(LoginAttempt.attempted_at.asc())
+        )
+        recent = [row[0] for row in result.all()]
+        if len(recent) > self._max_attempts:
+            retry_after = int((recent[0] + self._window - now).total_seconds())
+            raise RateLimitExceededException(max(retry_after, 1))
+
     async def record_failure(self, identifier: str, session: AsyncSession) -> None:
         key = self._normalise(identifier)
         session.add(LoginAttempt(identifier=key))
@@ -120,3 +145,23 @@ class LoginRateLimiter:
 # reads/writes through the database session passed in, so this is safe to
 # share across any number of worker processes.
 login_rate_limiter = LoginRateLimiter()
+
+
+# --- Password-reset throttles ------------------------------------------------
+# Keys are SHA-256 of the normalised account identifier (no PII in the table,
+# fits the 255-char column) or of the client IP. Every attempt counts; a
+# successful step never clears the budget (only a completed reset does).
+
+def throttle_key(scope: str, kind: str, value: str) -> str:
+    import hashlib
+
+    digest = hashlib.sha256(value.strip().lower().encode()).hexdigest()
+    return f"{scope}:{kind}:{digest}"
+
+
+forgot_account_limiter = LoginRateLimiter(max_attempts=5)   # OTP sends / account / 15 min
+forgot_ip_limiter = LoginRateLimiter(max_attempts=20)       # OTP sends / IP / 15 min
+reset_account_limiter = LoginRateLimiter(max_attempts=8)    # verify-otp + reset-password combined / account
+reset_ip_limiter = LoginRateLimiter(max_attempts=30)        # verify-otp + reset-password combined / IP
+agent_key_ip_limiter = LoginRateLimiter(max_attempts=10)    # failed Tally agent key attempts / IP
+agent_key_id_limiter = LoginRateLimiter(max_attempts=10)    # failed Tally agent key attempts / agent id

@@ -36,6 +36,8 @@ class UserSummary(BaseModel):
     mobile_number: str | None
     role: Role
     is_active: bool
+    # Non-secret: lets the admin UI show "temporary password issued, expires at ...".
+    temp_password_expires_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 
@@ -61,6 +63,8 @@ class CurrentUserRead(BaseModel):
     territory_name: str | None = None
     employee_id: uuid.UUID | None = None
     employee_code: str | None = None
+    # True when the account still has a temporary/default password (see ENFORCE_PASSWORD_CHANGE).
+    must_change_password: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -90,5 +94,5 @@ class UserCreate(BaseModel):
 class UserUpdatePassword(BaseModel):
     """Self-service password change (FT-023)."""
 
-    old_password: str = Field(min_length=1)
+    old_password: str = Field(min_length=1, max_length=128)
     new_password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=128)

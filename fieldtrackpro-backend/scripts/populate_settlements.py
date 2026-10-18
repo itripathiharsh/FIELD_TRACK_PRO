@@ -1,9 +1,11 @@
+import sys as _sys, os as _os; _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _script_env
 import asyncio
 import asyncpg
 from decimal import Decimal
 
 async def populate_settlements():
-    conn = await asyncpg.connect("postgresql://fieldtrack_app:XcWG3aLw7s8mL75vrvl97aDZTSXbr4y6@127.0.0.1:5432/fieldtrackpro_dev")
+    conn = await asyncpg.connect(_script_env.db_url())
     
     # Fetch all customers who have both invoices and verified payments
     cust_rows = await conn.fetch("""
@@ -103,4 +105,5 @@ async def populate_settlements():
     await conn.close()
 
 if __name__ == "__main__":
+    _script_env.guard_write_script("populate_settlements")
     asyncio.run(populate_settlements())

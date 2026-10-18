@@ -10,7 +10,8 @@ from typing import Any
 
 import math
 from geoalchemy2.elements import WKBElement, WKTElement
-from geoalchemy2.shape import to_shape
+from geoalchemy2.shape import from_shape, to_shape
+from shapely.geometry import Point
 from shapely.wkb import loads as wkb_loads
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -65,6 +66,14 @@ async def get_master_brands(session: AsyncSession) -> list[str]:
     return [b.name for b in brands]
 
 
+async def _employee_for_scope(current_user: User, session: AsyncSession) -> Employee | None:
+    """The caller's employee profile, or None when the account is unlinked."""
+    try:
+        return await get_employee_by_user_id(current_user.id, session)
+    except BaseAPIException:
+        return None
+
+
 async def list_customers(
     session: AsyncSession,
     current_user: User,
@@ -73,36 +82,52 @@ async def list_customers(
     limit: int = 50,
     area_id: uuid.UUID | None = None,
     search: str | None = None,
-) -> tuple[list[Customer], int]:
+) -> tuple[list[Customer], int, set[uuid.UUID] | None]:
+    """
+    Returns (customers, total_count, in_scope_ids).
+
+    `in_scope_ids` is None for ADMIN (everything is in scope). For an EMPLOYEE
+    it is the subset of the returned rows they are entitled to see in full;
+    rows outside it came from the ad-hoc directory search and must be
+    redacted by the caller (see redact_customer_read).
+    An EMPLOYEE with no linked employee profile sees nothing.
+    """
     repo = CustomerRepository(session)
     if current_user.role == Role.EMPLOYEE:
-        try:
-            emp = await get_employee_by_user_id(current_user.id, session)
-            return await repo.list_visited_by_employee(
-                emp.id,
-                territory_id=territory_id,
-                skip=skip,
-                limit=limit,
-                area_id=area_id,
-                search=search,
-            )
-        except BaseAPIException:
-            # Fallback to directory search if employee record is unlinked
-            return await repo.list_by_territory(
-                territory_id=territory_id,
-                skip=skip,
-                limit=limit,
-                area_id=area_id,
-                search=search,
-            )
-    return await repo.list_by_territory(
+        emp = await _employee_for_scope(current_user, session)
+        if emp is None:
+            return [], 0, set()
+        customers, total = await repo.list_accessible_by_employee(
+            emp.id,
+            territory_id=territory_id,
+            skip=skip,
+            limit=limit,
+            area_id=area_id,
+            search=search,
+        )
+        in_scope = await repo.in_scope_ids(emp.id, [c.id for c in customers])
+        return customers, total, in_scope
+    customers, total = await repo.list_by_territory(
         territory_id=territory_id,
         skip=skip,
         limit=limit,
         area_id=area_id,
         search=search,
     )
+    return customers, total, None
 
+
+def redact_customer_read(read):
+    """Strip contact and tax identifiers from an out-of-scope (ad-hoc search) result."""
+    return read.model_copy(
+        update={
+            "contact_number": "",
+            "contact_person": None,
+            "gst_number": None,
+            "brands": [],
+            "assigned_fos_names": [],
+        }
+    )
 
 
 async def create_customer(data: CustomerCreate, created_by: uuid.UUID, session: AsyncSession) -> Customer:
@@ -235,7 +260,11 @@ async def create_customer_prospect(
                 )
                 raise BaseAPIException(
                     status_code=409,
-                    detail=f"Possible existing customer found: '{dup_cust.name}' (Phone: {dup_cust.contact_number}, GST: {dup_cust.gst_number or 'N/A'}).",
+                    detail=(
+                        f"Possible existing customer found: '{dup_cust.name}' (Phone: {dup_cust.contact_number}, GST: {dup_cust.gst_number or 'N/A'})."
+                        if current_user.is_admin
+                        else f"Possible existing customer found: '{dup_cust.name}'. Search for it by name and start an ad-hoc visit instead."
+                    ),
                     error_code="DUPLICATE_CUSTOMER",
                 )
 
@@ -244,7 +273,7 @@ async def create_customer_prospect(
     # 2. Location & Status Handling
     # For an Admin, coordinates entered directly are official & VERIFIED immediately.
     # For field employees, coordinates are submitted as PENDING_APPROVAL until admin review.
-    is_admin = getattr(current_user, "role", None) in (Role.ADMIN, "ADMIN")
+    is_admin = getattr(current_user, "role", None) in (Role.ADMIN, Role.SUPER_ADMIN, "ADMIN", "SUPER_ADMIN")
     if is_admin and data.location is not None:
         official_location = from_shape(Point(data.location.longitude, data.location.latitude), srid=4326)
         loc_status = "VERIFIED"
@@ -381,8 +410,27 @@ async def get_customer(customer_id: uuid.UUID, session: AsyncSession) -> Custome
 async def assert_employee_can_view_customer(
     customer_id: uuid.UUID, current_user: User, session: AsyncSession
 ) -> None:
-    # Authenticated employees and admins can view active customer details to support off-beat / ad-hoc visits
+    """
+    ADMIN: any existing outlet. EMPLOYEE: only outlets in their scope (assigned,
+    on one of their visits, or in an Area they cover). Off-beat outlet discovery
+    goes through the redacted search in GET /customers, not through this check.
+    """
     await get_customer(customer_id, session)
+    if current_user.is_admin:
+        return
+    emp = await _employee_for_scope(current_user, session)
+    allowed = (
+        set()
+        if emp is None
+        else await CustomerRepository(session).in_scope_ids(emp.id, [customer_id])
+    )
+    if customer_id not in allowed:
+        # 404 (not 403): out-of-scope outlets must look non-existent to employees.
+        raise BaseAPIException(
+            status_code=404,
+            detail=f"Customer with id '{customer_id}' not found.",
+            error_code="CUSTOMER_NOT_FOUND",
+        )
 
 
 async def update_customer(
@@ -491,8 +539,16 @@ async def list_customer_map_locations(
     session: AsyncSession,
     territory_id: uuid.UUID | None = None,
     area_id: uuid.UUID | None = None,
+    current_user: User | None = None,
 ) -> list[Customer]:
     repo = CustomerRepository(session)
+    if current_user is not None and current_user.role == Role.EMPLOYEE:
+        emp = await _employee_for_scope(current_user, session)
+        if emp is None:
+            return []
+        return await repo.list_map_locations_for_employee(
+            emp.id, territory_id=territory_id, area_id=area_id
+        )
     return await repo.list_map_locations(territory_id=territory_id, area_id=area_id)
 
 

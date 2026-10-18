@@ -1,3 +1,5 @@
+import sys as _sys, os as _os; _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _script_env
 import sys
 import requests
 from decimal import Decimal
@@ -15,7 +17,7 @@ p("=" * 80)
 p("\n[1/12] Testing Authentication & Token Issuance...")
 r_admin = requests.post(f"{BASE_URL}/api/v1/auth/login", json={
     "email": "admin@fieldtrack.test",
-    "password": "AdminPass123!"
+    "password": _script_env.env("SCRIPT_ADMIN_PASSWORD")
 }, timeout=10)
 assert r_admin.status_code == 200, f"Admin login failed: {r_admin.status_code} {r_admin.text}"
 admin_token = r_admin.json()["access_token"]
@@ -24,7 +26,7 @@ p(f"  [OK] Admin Login Successful (Token length: {len(admin_token)})")
 
 r_emp = requests.post(f"{BASE_URL}/api/v1/auth/login", json={
     "email": "imharshofficial322@gmail.com",
-    "password": "Imharsh@1"
+    "password": _script_env.env("SCRIPT_HARSH_PASSWORD")
 }, timeout=10)
 assert r_emp.status_code == 200, f"Employee login failed: {r_emp.status_code} {r_emp.text}"
 emp_token = r_emp.json()["access_token"]

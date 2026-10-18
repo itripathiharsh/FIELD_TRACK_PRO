@@ -59,8 +59,15 @@ async def create_field_exception(
                 raise BaseAPIException(status_code=404, detail="Visit not found", error_code="VISIT_NOT_FOUND")
             employee_id = v_obj.employee_id
         else:
-            # Fallback to any active employee if admin doesn't specify
-            e_res = await session.execute(select(Employee).where(Employee.is_active == True).limit(1))
+            # Fallback to any active employee if admin doesn't specify. Activity lives on the
+            # login account (User.is_active); Employee has no is_active column.
+            e_res = await session.execute(
+                select(Employee)
+                .join(User, User.id == Employee.user_id)
+                .where(User.is_active.is_(True))
+                .order_by(Employee.employee_code)
+                .limit(1)
+            )
             first_emp = e_res.scalar_one_or_none()
             if not first_emp:
                 raise BaseAPIException(status_code=400, detail="No active employee found", error_code="NO_EMPLOYEE")
@@ -79,7 +86,7 @@ async def create_field_exception(
         if not visit_obj:
             raise BaseAPIException(status_code=404, detail="Visit not found", error_code="VISIT_NOT_FOUND")
         if current_user.role == Role.EMPLOYEE and visit_obj.employee_id != employee_id:
-            raise BaseAPIException(status_code=403, detail="You are not assigned to this visit", error_code="VISIT_NOT_ASSIGNED")
+            raise BaseAPIException(status_code=404, detail="Visit not found", error_code="VISIT_NOT_FOUND")
 
     # 4. Insert FieldException
     exc = FieldException(

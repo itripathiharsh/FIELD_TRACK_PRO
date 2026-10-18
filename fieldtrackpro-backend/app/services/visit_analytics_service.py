@@ -37,7 +37,7 @@ from app.models.monthly_visit_plan import (
     PlannedVisit,
     PlannedVisitStatus,
 )
-from app.models.user import Role, User
+from app.models.user import Role, User, ADMIN_ROLES
 from app.models.visit import Visit, VisitStatus, VisitType
 from app.schemas.visit_analytics import (
     DailyAnalytics,
@@ -486,7 +486,7 @@ async def sweep_missed_planned_visits(session: AsyncSession) -> int:
     # Query ALL eligible active admins — no artificial LIMIT
     admin_stmt = (
         select(User.id)
-        .where(User.role == Role.ADMIN, User.is_active == True)
+        .where(User.role.in_(ADMIN_ROLES), User.is_active == True)
     )
     admin_ids = (await session.execute(admin_stmt)).scalars().all()
 

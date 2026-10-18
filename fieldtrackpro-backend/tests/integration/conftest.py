@@ -188,36 +188,64 @@ def _purge_test_artifacts() -> None:
             "DELETE FROM geo_verification_logs WHERE visit_id IN ("
             "  SELECT v.id FROM visits v"
             "  JOIN employees e ON e.id = v.employee_id"
-            "  WHERE e.employee_code LIKE %s)",
+            "  WHERE e.employee_code ILIKE %s)",
             (f"{TEST_MARKER}%",),
         )
         cur.execute(
             "DELETE FROM visit_media WHERE visit_id IN ("
             "  SELECT v.id FROM visits v"
             "  JOIN employees e ON e.id = v.employee_id"
-            "  WHERE e.employee_code LIKE %s)",
+            "  WHERE e.employee_code ILIKE %s)",
             (f"{TEST_MARKER}%",),
         )
         # P1: payments/invoices are FK RESTRICT against visits/customers/
         # employees, so they must be purged before those rows or the deletes
         # below fail with a foreign key violation.
+        # Customers created by marker users (any name) must be purgeable too:
+        # tests that create customers/invoices/payments through the API with a
+        # non-marker name would otherwise leave rows that block the final
+        # customers/users deletes and poison every later session.
+        marker_customers = (
+            "SELECT id FROM customers WHERE name LIKE %s OR created_by IN ("
+            "SELECT id FROM users WHERE email LIKE %s)"
+        )
+        mk = (f"{TEST_MARKER}%", f"{TEST_MARKER}%")
+        cur.execute(
+            f"DELETE FROM payment_brand_allocations WHERE payment_id IN (SELECT id FROM payments WHERE customer_id IN ({marker_customers}))",
+            mk,
+        )
+        cur.execute(
+            f"DELETE FROM payment_proofs WHERE payment_id IN (SELECT id FROM payments WHERE customer_id IN ({marker_customers}))",
+            mk,
+        )
+        cur.execute(f"DELETE FROM payments WHERE customer_id IN ({marker_customers})", mk)
+        cur.execute(f"DELETE FROM invoices WHERE customer_id IN ({marker_customers})", mk)
+        cur.execute(
+            f"DELETE FROM geo_verification_logs WHERE visit_id IN (SELECT id FROM visits WHERE customer_id IN ({marker_customers}))",
+            mk,
+        )
+        cur.execute(
+            f"DELETE FROM visit_media WHERE visit_id IN (SELECT id FROM visits WHERE customer_id IN ({marker_customers}))",
+            mk,
+        )
+        cur.execute(f"DELETE FROM visits WHERE customer_id IN ({marker_customers})", mk)
         cur.execute(
             "DELETE FROM payment_brand_allocations WHERE payment_id IN ("
             "  SELECT p.id FROM payments p"
             "  JOIN employees e ON e.id = p.employee_id"
-            "  WHERE e.employee_code LIKE %s)",
+            "  WHERE e.employee_code ILIKE %s)",
             (f"{TEST_MARKER}%",),
         )
         cur.execute(
             "DELETE FROM payment_proofs WHERE payment_id IN ("
             "  SELECT p.id FROM payments p"
             "  JOIN employees e ON e.id = p.employee_id"
-            "  WHERE e.employee_code LIKE %s)",
+            "  WHERE e.employee_code ILIKE %s)",
             (f"{TEST_MARKER}%",),
         )
         cur.execute(
             "DELETE FROM payments WHERE employee_id IN ("
-            "  SELECT id FROM employees WHERE employee_code LIKE %s)",
+            "  SELECT id FROM employees WHERE employee_code ILIKE %s)",
             (f"{TEST_MARKER}%",),
         )
         cur.execute(
@@ -228,12 +256,12 @@ def _purge_test_artifacts() -> None:
         cur.execute(
             "DELETE FROM field_exceptions WHERE customer_id IN ("
             "  SELECT id FROM customers WHERE name LIKE %s) OR employee_id IN ("
-            "  SELECT id FROM employees WHERE employee_code LIKE %s)",
+            "  SELECT id FROM employees WHERE employee_code ILIKE %s)",
             (f"{TEST_MARKER}%", f"{TEST_MARKER}%"),
         )
         cur.execute(
             "DELETE FROM visits WHERE employee_id IN ("
-            "  SELECT id FROM employees WHERE employee_code LIKE %s)",
+            "  SELECT id FROM employees WHERE employee_code ILIKE %s)",
             (f"{TEST_MARKER}%",),
         )
         cur.execute(
@@ -250,7 +278,7 @@ def _purge_test_artifacts() -> None:
         # interrupted test left behind on a since-deleted test employee.
         cur.execute(
             "DELETE FROM employee_territory_assignments WHERE "
-            "  employee_id IN (SELECT id FROM employees WHERE employee_code LIKE %s)"
+            "  employee_id IN (SELECT id FROM employees WHERE employee_code ILIKE %s)"
             "  OR territory_id IN (SELECT id FROM territories WHERE name LIKE %s)"
             "  OR created_by IN (SELECT id FROM users WHERE email LIKE %s)",
             (f"{TEST_MARKER}%", f"{TEST_MARKER}%", f"{TEST_MARKER}%"),
@@ -262,7 +290,7 @@ def _purge_test_artifacts() -> None:
         # test-marker-named zone, so a test that created its own dedicated
         cur.execute(
             "DELETE FROM employee_area_assignments WHERE "
-            "  employee_id IN (SELECT id FROM employees WHERE employee_code LIKE %s)"
+            "  employee_id IN (SELECT id FROM employees WHERE employee_code ILIKE %s)"
             "  OR area_id IN (SELECT id FROM areas WHERE name LIKE %s OR territory_id IN ("
             "    SELECT id FROM territories WHERE name LIKE %s))"
             "  OR created_by IN (SELECT id FROM users WHERE email LIKE %s)",
@@ -270,14 +298,14 @@ def _purge_test_artifacts() -> None:
         )
         cur.execute(
             "DELETE FROM employee_customer_assignments WHERE "
-            "  employee_id IN (SELECT id FROM employees WHERE employee_code LIKE %s)"
+            "  employee_id IN (SELECT id FROM employees WHERE employee_code ILIKE %s)"
             "  OR customer_id IN (SELECT id FROM customers WHERE name LIKE %s)"
             "  OR created_by IN (SELECT id FROM users WHERE email LIKE %s)",
             (f"{TEST_MARKER}%", f"{TEST_MARKER}%", f"{TEST_MARKER}%"),
         )
         cur.execute(
             "DELETE FROM fos_employee_mappings WHERE "
-            "  employee_id IN (SELECT id FROM employees WHERE employee_code LIKE %s)",
+            "  employee_id IN (SELECT id FROM employees WHERE employee_code ILIKE %s)",
             (f"{TEST_MARKER}%",),
         )
         cur.execute(
@@ -291,7 +319,7 @@ def _purge_test_artifacts() -> None:
             (f"{TEST_MARKER}%", f"{TEST_MARKER}%"),
         )
         cur.execute(
-            "DELETE FROM employees WHERE employee_code LIKE %s OR user_id IN ("
+            "DELETE FROM employees WHERE employee_code ILIKE %s OR user_id IN ("
             "  SELECT id FROM users WHERE email LIKE %s)",
             (f"{TEST_MARKER}%", f"{TEST_MARKER}%"),
         )
@@ -450,6 +478,42 @@ def seeded_world() -> Iterator[dict[str, Any]]:
     _purge_test_artifacts()
 
 
+def _sweep_seeded_world_state(ids: dict[str, Any]) -> None:
+    """
+    Remove per-test residue hanging off the SESSION-scoped seeded principals.
+
+    seeded_world lives for the whole session, so anything a test attaches to it
+    and forgets to untrack (visits/payments/media, territory-assignment history
+    and the Employee.territory_id convenience cache that PERMANENT assignments
+    rewrite) would otherwise leak into every later test file and cascade as
+    409 DUPLICATE_VISIT / ASSIGNMENT_DUPLICATE_PERMANENT / orphaned media
+    failures when the whole suite runs in one process.
+    """
+    emps = [ids["employee_id"], ids["other_employee_id"]]
+    cust = ids["customer_id"]
+    with db_cursor(privileged=True) as cur:
+        pay = "SELECT id FROM payments WHERE employee_id = ANY(%s::uuid[]) OR customer_id = %s"
+        cur.execute(f"DELETE FROM payment_brand_allocations WHERE payment_id IN ({pay})", (emps, cust))
+        cur.execute(f"DELETE FROM payment_proofs WHERE payment_id IN ({pay})", (emps, cust))
+        cur.execute("DELETE FROM payments WHERE employee_id = ANY(%s::uuid[]) OR customer_id = %s", (emps, cust))
+        vis = "SELECT id FROM visits WHERE employee_id = ANY(%s::uuid[]) OR customer_id = %s"
+        cur.execute(f"DELETE FROM geo_verification_logs WHERE visit_id IN ({vis})", (emps, cust))
+        cur.execute("DELETE FROM visits WHERE employee_id = ANY(%s::uuid[]) OR customer_id = %s", (emps, cust))
+        cur.execute("DELETE FROM employee_territory_assignments WHERE employee_id = ANY(%s::uuid[])", (emps,))
+        cur.execute(
+            "UPDATE employees SET territory_id = %s WHERE id = ANY(%s::uuid[]) AND territory_id IS DISTINCT FROM %s",
+            (ids["territory_id"], emps, ids["territory_id"]),
+        )
+
+
+@pytest.fixture(autouse=True)
+def _sweep_seeded_world_after_test(request) -> Iterator[None]:
+    """Hermeticity guard: clear leaked rows on the shared seeded principals after every test."""
+    yield
+    if "seeded_world" in request.fixturenames:
+        _sweep_seeded_world_state(request.getfixturevalue("seeded_world"))
+
+
 @pytest.fixture
 def created_visits() -> Iterator[list[str]]:
     """Track visit ids created inside a test so they are always cleaned up."""
@@ -467,6 +531,14 @@ def created_visits() -> Iterator[list[str]]:
         signature_keys = [r["storage_key"] for r in cur.fetchall()]
         cur.execute("DELETE FROM geo_verification_logs WHERE visit_id = ANY(%s::uuid[])", (ids,))
         cur.execute("DELETE FROM visit_media WHERE visit_id = ANY(%s::uuid[])", (ids,))
+        # Payments are FK RESTRICT against visits. A test that records a
+        # collection without tracking it in created_payments would otherwise
+        # make this teardown fail and leave the visit behind, which then
+        # breaks every later test for the same employee (409 DUPLICATE_VISIT).
+        pay = "SELECT id FROM payments WHERE visit_id = ANY(%s::uuid[])"
+        cur.execute(f"DELETE FROM payment_brand_allocations WHERE payment_id IN ({pay})", (ids,))
+        cur.execute(f"DELETE FROM payment_proofs WHERE payment_id IN ({pay})", (ids,))
+        cur.execute("DELETE FROM payments WHERE visit_id = ANY(%s::uuid[])", (ids,))
         cur.execute("DELETE FROM visits WHERE id = ANY(%s::uuid[])", (ids,))
     _remove_storage_files(signature_keys)
 

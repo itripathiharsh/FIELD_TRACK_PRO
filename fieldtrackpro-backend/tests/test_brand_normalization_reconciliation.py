@@ -177,6 +177,20 @@ async def test_account_reconciliation_single_bucket_no_split():
         session.add(pay)
         await session.commit()
 
+        # Verified but the receipt is not in Tally yet: outstanding must NOT drop.
+        pre = await account_service.get_account_summary(
+            customer_id=cust.id, current_user=admin_user, session=session,
+        )
+        assert pre.total_outstanding == Decimal("100000.00")  # baseline-only headline
+        pre_zeb = {b.brand: b for b in pre.brand_summary}["Zebronics"]
+        assert pre_zeb.total_outstanding == Decimal("100000.00")
+        assert pre_zeb.total_paid == Decimal("0.00")
+        assert pre_zeb.verified_awaiting_tally_amount == Decimal("20000.00")
+
+        # The sync agent posts the receipt to Tally and ACKs the write-back job.
+        from tests.tally_helpers import ack_payment_in_tally
+        await ack_payment_in_tally(pay.id)
+
         # Fetch account summary
         summary = await account_service.get_account_summary(
             customer_id=cust.id,
@@ -198,4 +212,92 @@ async def test_account_reconciliation_single_bucket_no_split():
         # Overall totals
         assert summary.total_invoiced == Decimal("100000.00")
         assert summary.total_paid == Decimal("20000.00")
+        # Tally is the final truth: the headline INCLUDES the snapshot baseline and
+        # always equals the sum of the brand buckets (100,000 - 20,000 posted).
+        assert sum((b.total_outstanding for b in summary.brand_summary), Decimal("0")) == Decimal("80000.00")
         assert summary.total_outstanding == Decimal("80000.00")
+        assert summary.total_outstanding == sum((b.total_outstanding for b in summary.brand_summary), Decimal("0"))
+        assert summary.overdue_amount == sum((b.overdue_amount for b in summary.brand_summary), Decimal("0"))
+        assert summary.verified_awaiting_tally_amount == Decimal("0.00")
+
+
+@pytest.mark.asyncio
+async def test_headline_outstanding_equals_sum_of_brands_with_baseline_and_invoice():
+    """Snapshot baseline (USHA 50,000) + invoice (VU 7,000): headline == 57,000 == sum of brands."""
+    async with AsyncSessionLocal() as session:
+        admin_user = User(
+            email=f"admin_{uuid.uuid4().hex[:6]}@fieldtrack.internal", password_hash="hash", role=Role.ADMIN
+        )
+        session.add(admin_user)
+        await session.flush()
+        cust = Customer(
+            name=f"Headline Outlet {uuid.uuid4().hex[:6]}",
+            outlet_code=f"DMS_HL_{uuid.uuid4().hex[:6]}",
+            location_status="VERIFIED",
+            created_by=admin_user.id,
+        )
+        session.add(cust)
+        await session.flush()
+        session.add(
+            OutletFinancialSnapshot(
+                customer_id=cust.id, brand="USHA", snapshot_date=date.today(),
+                sales=Decimal("50000.00"), collection=Decimal("0.00"),
+                market_outstanding=Decimal("50000.00"), bucket_gt_90=Decimal("10000.00"),
+            )
+        )
+        session.add(
+            Invoice(
+                customer_id=cust.id, invoice_number=f"INV-HL-{uuid.uuid4().hex[:6]}",
+                invoice_date=date.today(), amount=Decimal("7000.00"), brand="VU", created_by=admin_user.id,
+            )
+        )
+        await session.commit()
+
+        summary = await account_service.get_account_summary(
+            customer_id=cust.id, current_user=admin_user, session=session
+        )
+        brands = {b.brand: b for b in summary.brand_summary}
+        assert brands["USHA"].total_outstanding == Decimal("50000.00")
+        assert brands["VU"].total_outstanding == Decimal("7000.00")
+        assert summary.total_outstanding == Decimal("57000.00")
+        assert summary.total_outstanding == sum((b.total_outstanding for b in summary.brand_summary), Decimal("0"))
+        assert summary.overdue_amount == Decimal("10000.00")
+
+
+@pytest.mark.asyncio
+async def test_collections_overview_outstanding_matches_account_headline():
+    """Collections overview row total_outstanding uses the same rule (baseline + invoices) as the account headline."""
+    from app.services import collections_service
+
+    async with AsyncSessionLocal() as session:
+        admin_user = User(
+            email=f"admin_{uuid.uuid4().hex[:6]}@fieldtrack.internal", password_hash="hash", role=Role.ADMIN
+        )
+        session.add(admin_user)
+        await session.flush()
+        code = f"DMS_CO_{uuid.uuid4().hex[:6]}"
+        cust = Customer(name=f"Coll Outlet {code}", outlet_code=code, location_status="VERIFIED", created_by=admin_user.id)
+        session.add(cust)
+        await session.flush()
+        session.add(
+            OutletFinancialSnapshot(
+                customer_id=cust.id, brand="USHA", snapshot_date=date.today(),
+                sales=Decimal("30000.00"), collection=Decimal("0.00"),
+                market_outstanding=Decimal("30000.00"), bucket_gt_90=Decimal("0.00"),
+            )
+        )
+        session.add(
+            Invoice(
+                customer_id=cust.id, invoice_number=f"INV-CO-{uuid.uuid4().hex[:6]}",
+                invoice_date=date.today(), amount=Decimal("4000.00"), brand="Zebronics", created_by=admin_user.id,
+            )
+        )
+        await session.commit()
+
+        acct = await account_service.get_account_summary(customer_id=cust.id, current_user=admin_user, session=session)
+        overview = await collections_service.get_collections_overview(session, search=code)
+        assert overview.total_count == 1
+        row = overview.outlets[0]
+        assert acct.total_outstanding == Decimal("34000.00")
+        assert row.total_outstanding == acct.total_outstanding
+        assert overview.totals.total_outstanding == acct.total_outstanding

@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps.auth import CurrentUser, require_role
 from app.database import get_async_session
+from app.exceptions.custom import BaseAPIException
 from app.models.user import Role
 from app.models.visit import VisitStatus, VisitType
 from app.schemas.geo import GeoVerificationLogRead
@@ -64,7 +65,11 @@ async def list_visits(
     session: DbSession,
     search: str | None = Query(default=None, description="Search by customer name, code, ID, employee name, or visit ID"),
     status: list[VisitStatus] | None = Query(default=None, description="Filter by one or multiple statuses"),
-    visit_type: VisitType | None = Query(default=None, description="Filter by PLANNED or AD_HOC"),
+    visit_type: str | None = Query(default=None, description="Filter by PLANNED or AD_HOC (ADHOC accepted as alias)"),
+    outside_assignment: bool | None = Query(
+        default=None,
+        description="ADMIN only: true = ad-hoc visits to outlets outside the employee's assignment; false = the rest",
+    ),
     employee_id: uuid.UUID | None = Query(default=None),
     territory_id: uuid.UUID | None = Query(default=None, description="Zone / Territory"),
     area_id: uuid.UUID | None = Query(default=None),
@@ -81,6 +86,17 @@ async def list_visits(
     own visits; an ADMIN receives all and may filter by `employee_id`.
     Returns X-Total-Count header for scalable server-side pagination.
     """
+    vt: VisitType | None = None
+    if visit_type:
+        key = visit_type.strip().upper().replace("-", "_")
+        if key == "ADHOC":
+            key = "AD_HOC"
+        try:
+            vt = VisitType(key)
+        except ValueError:
+            raise BaseAPIException(
+                status_code=422, detail="visit_type must be PLANNED or AD_HOC", error_code="VALIDATION_ERROR"
+            )
     visits, total_count = await visit_service.list_visits(
         session=session,
         current_user=current_user,
@@ -92,11 +108,32 @@ async def list_visits(
         to_date=to_date,
         search=search,
         sort_order=sort_order,
-        visit_type=visit_type,
+        visit_type=vt,
+        outside_assignment=outside_assignment,
         skip=skip,
         limit=limit,
     )
     response.headers["X-Total-Count"] = str(total_count)
+    return visits
+
+
+@router.get("/adhoc-review", response_model=list[VisitRead], dependencies=[AdminOnly])
+async def adhoc_review(
+    response: Response,
+    session: DbSession,
+    outside_assignment: bool | None = Query(default=None, description="Only outside-assignment (true) / in-scope (false)"),
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
+):
+    """
+    ADMIN only: ad-hoc visits, newest first, for review. Each item is a VisitRead
+    (employee_name, customer_name/outlet code, adhoc_reason, adhoc_notes) plus
+    is_adhoc / outside_assignment / review_label. Total in X-Total-Count.
+    """
+    visits, total = await visit_service.list_adhoc_review(
+        session, outside_assignment=outside_assignment, skip=skip, limit=limit
+    )
+    response.headers["X-Total-Count"] = str(total)
     return visits
 
 
@@ -132,7 +169,10 @@ async def get_visit(
     session: DbSession,
 ):
     """FT-002: object-level ownership is enforced, not just role membership."""
-    return await visit_service.get_visit_for_user(visit_id, current_user, session)
+    visit = await visit_service.get_visit_for_user(visit_id, current_user, session)
+    if current_user.is_admin:
+        await visit_service.annotate_adhoc_review([visit], session)
+    return visit
 
 
 @router.post("/{visit_id}/check-in", response_model=VisitRead)
@@ -232,6 +272,11 @@ async def list_visit_requirements(
     res = await session.execute(
         select(CustomerRequirement)
         .where(CustomerRequirement.visit_id == visit_id)
+        .where(
+            CustomerRequirement.created_by == current_user.id
+            if not current_user.is_admin
+            else True
+        )
         .order_by(CustomerRequirement.created_at.desc())
     )
     reqs = res.scalars().all()

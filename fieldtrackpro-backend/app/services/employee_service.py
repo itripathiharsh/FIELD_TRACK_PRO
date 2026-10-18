@@ -12,15 +12,21 @@ from sqlalchemy import select, func
 from app.core.security import hash_password
 from app.exceptions.custom import BaseAPIException, DuplicateResourceException
 from app.models.employee import Employee
-from app.models.user import User
+from app.models.user import Role, User
 from app.models.employee_customer_assignment import EmployeeCustomerAssignment
 from app.repositories.employee_repo import EmployeeRepository
 from app.repositories.user_repo import UserRepository
 from app.repositories.token_repo import TokenRepository
 from app.schemas.employee import EmployeeCreate, EmployeeRegistration, EmployeeUpdate
+from app.services import admin_security_service, security_audit_service
 
 
-async def register_employee(data: EmployeeRegistration, session: AsyncSession) -> Employee:
+async def register_employee(
+    data: EmployeeRegistration, session: AsyncSession, actor: User, client_ip: str | None = None
+) -> Employee:
+    # Creating an ADMIN (or SUPER_ADMIN) account is a privilege grant: only a Super Admin may create
+    # an ADMIN, and nobody can create a SUPER_ADMIN through the API.
+    await admin_security_service.assert_may_assign_role_on_create(actor, data.user.role, session, client_ip)
     user_repo = UserRepository(session)
     emp_repo = EmployeeRepository(session)
 
@@ -60,6 +66,12 @@ async def register_employee(data: EmployeeRegistration, session: AsyncSession) -
         address=data.address,
     )
     session.add(employee)
+    if data.user.role == Role.ADMIN:
+        await session.flush()
+        security_audit_service.record(
+            session, "USER_CREATE_PRIVILEGED", "SUCCESS",
+            actor_user_id=actor.id, target_user_id=user.id, new_role=data.user.role.value, client_ip=client_ip,
+        )
 
     try:
         await session.commit()
@@ -146,9 +158,21 @@ async def list_employees(
     )
 
 
-async def update_employee(employee_id: uuid.UUID, data: EmployeeUpdate, session: AsyncSession) -> Employee:
+async def update_employee(
+    employee_id: uuid.UUID, data: EmployeeUpdate, session: AsyncSession, actor: User, client_ip: str | None = None
+) -> Employee:
     repo = EmployeeRepository(session)
     emp = await get_employee(employee_id, session)
+
+    # A Super Admin's profile and contact details (the recovery channels of the highest-privilege
+    # account) can only be edited by a Super Admin; a plain Admin must not be able to repoint them.
+    if emp.user is not None and emp.user.role == Role.SUPER_ADMIN and not actor.is_super_admin:
+        raise await admin_security_service._deny(
+            session, "EMPLOYEE_UPDATE",
+            BaseAPIException(status_code=403, detail="Only a Super Admin can edit a Super Admin account.",
+                             error_code="SUPER_ADMIN_REQUIRED"),
+            actor_user_id=actor.id, target_user_id=emp.user_id, previous_role=Role.SUPER_ADMIN.value, client_ip=client_ip,
+        )
 
     if data.full_name is not None:
         emp.full_name = data.full_name.strip()
@@ -182,6 +206,14 @@ async def update_employee(employee_id: uuid.UUID, data: EmployeeUpdate, session:
         emp.address = data.address
 
     if data.must_change_password is not None:
+        # While an admin-issued temporary password is pending, the forced change cannot be waived:
+        # clearing the flag would turn the short-lived temporary password into a permanent one.
+        if data.must_change_password is False and emp.user is not None and emp.user.temp_password_expires_at is not None:
+            raise BaseAPIException(
+                status_code=409,
+                detail="A temporary password is pending; the employee must set a new password themselves.",
+                error_code="TEMP_PASSWORD_PENDING",
+            )
         emp.must_change_password = data.must_change_password
 
     if "email" in data.model_fields_set:

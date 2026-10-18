@@ -281,7 +281,7 @@ async def test_employee_cannot_submit_form_for_others_visit(
             },
             headers=other_employee_headers,
         )
-        assert resp.status_code == 403, resp.text
+        assert resp.status_code == 404, resp.text
     finally:
         # Cleanup category
         conn = psycopg2.connect(_sync_dsn())
@@ -346,21 +346,30 @@ async def test_get_form_requires_auth(client: AsyncClient, seeded_world):
     assert resp.status_code == 401
 
 
-async def test_get_form_nonexistent_returns_null(client: AsyncClient, admin_headers, seeded_world):
-    """Getting a form for a visit without one returns null."""
+async def test_get_form_nonexistent_returns_null(
+    client: AsyncClient, admin_headers, seeded_world, created_visits
+):
+    """A REAL visit that has no requirement form yet returns null (200)."""
+    visit_id = await create_visit(
+        client, admin_headers, seeded_world["customer_id"], seeded_world["employee_id"], created_visits,
+    )
     resp = await client.get(
-        f"/api/v1/visits/{seeded_world['customer_id']}/requirement-form",
+        f"/api/v1/visits/{visit_id}/requirement-form",
         headers=admin_headers,
     )
     assert resp.status_code == 200
     assert resp.json() is None
 
 
-async def test_get_form_nonexistent_visit_returns_null(client: AsyncClient, admin_headers):
-    """Getting a form for a non-existent visit returns null (no form exists)."""
-    resp = await client.get(
-        f"/api/v1/visits/{uuid.uuid4()}/requirement-form",
-        headers=admin_headers,
-    )
-    assert resp.status_code == 200
-    assert resp.json() is None
+async def test_get_form_unknown_visit_returns_404(client: AsyncClient, admin_headers, seeded_world):
+    """get_form 404s (RESOURCE_NOT_FOUND) when the id is not a visit.
+
+    The route validates the visit first (and then access) before looking for a
+    form, so a non-visit id (random uuid, or a customer id) is 404, not null.
+    """
+    for bogus in (uuid.uuid4(), seeded_world["customer_id"]):
+        resp = await client.get(
+            f"/api/v1/visits/{bogus}/requirement-form",
+            headers=admin_headers,
+        )
+        assert resp.status_code == 404, resp.text

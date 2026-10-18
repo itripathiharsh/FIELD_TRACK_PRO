@@ -1,7 +1,9 @@
-from typing import List
+import json
+import warnings
+from typing import Annotated, List
 
-from pydantic import field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, field_validator, model_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -33,6 +35,14 @@ class Settings(BaseSettings):
     jwt_access_token_expiry_minutes: int = 15
     jwt_refresh_token_expiry_days: int = 7
 
+    # Reuse of an already-rotated refresh token within this many seconds of
+    # its own rotation is treated as a benign duplicate (two browser tabs or
+    # a client retry racing the same token) rather than theft: no account-wide
+    # revoke, just another valid rotation issued. Reuse older than this is
+    # still treated as theft. Kept short - this is about tolerating a race,
+    # not widening the window a genuinely stolen token can be replayed in.
+    refresh_reuse_grace_seconds: int = 10
+
     # P1-2: dedicated secret for signing media presigned-URL tokens
     # (app/services/storage/local_provider.py), independent of jwt_secret.
     # Previously reused jwt_secret directly, so rotating either secret
@@ -50,16 +60,70 @@ class Settings(BaseSettings):
     minio_secret_key: str = "minioadmin"
     minio_bucket: str = "fieldtrackpro-dev"
     minio_secure: bool = False
+    minio_region: str | None = None  # e.g. "auto" (Cloudflare R2), "ap-south-1" (AWS S3)
+
+    # Live outlet proof (photo + GPS captured together). All values are overridable via env.
+    outlet_proof_max_accuracy_m: float = 30.0          # reject GPS fixes worse than this
+    outlet_proof_max_age_seconds: int = 180            # captured_at must be this fresh (live capture)
+    outlet_proof_future_tolerance_seconds: int = 60    # device clock skew allowed into the future
+    outlet_proof_confirm_radius_m: float = 50.0        # within this of the verified pin = CONFIRMATION
+    outlet_proof_max_image_bytes: int = 10 * 1024 * 1024
+    outlet_proof_max_dimension_px: int = 1600          # stored longest side
+    outlet_proof_jpeg_quality: int = 82
+    outlet_proof_signed_url_minutes: int = 10
+    outlet_proof_unattached_ttl_hours: int = 48        # unattached (new-outlet) proofs expire after this
+    # New-outlet submissions by an EMPLOYEE must carry an outlet_proof_id (422 OUTLET_PROOF_REQUIRED).
+    # Set False for backward compatibility with clients that predate live outlet proof.
+    outlet_proof_required_for_new_outlet: bool = True
+    # >= 2 enables auto-verification: N distinct employees on N distinct IST dates with PENDING
+    # INITIAL proofs inside the confirm radius (accuracy <= auto_verify_max_accuracy_m). 0 = off.
+    outlet_proof_auto_verify_min_agreeing: int = 0
+    outlet_proof_auto_verify_max_accuracy_m: float = 20.0
 
     # CORS
-    cors_allowed_origins: List[str] = [
+    # Exact-match allow-list only (no wildcard / *.vercel.app regex - any
+    # attacker can deploy to *.vercel.app). The default is local development
+    # origins; production origins MUST come from CORS_ALLOWED_ORIGINS
+    # (render.yaml).
+    # Accepts a comma-separated string OR a JSON array in the environment
+    # (NoDecode stops pydantic-settings pre-parsing it as JSON; see validator).
+    cors_allowed_origins: Annotated[List[str], NoDecode] = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:3000",
-        "https://fieldtrack-pro-rosy.vercel.app",
-        "https://fieldtrack-pro-imharshofficial322-gmailcoms-projects.vercel.app",
-        "https://fieldtrack-pro-git-main-imharshofficial322-gmailcoms-projects.vercel.app",
     ]
+
+    # Refresh-token cookie. Web (Vercel) and API (Render) are different sites,
+    # so production needs SameSite=None; Secure for the cookie to be sent on
+    # cross-site fetch(credentials: include). Dev/test use Lax.
+    refresh_cookie_samesite: str | None = None  # "lax" | "strict" | "none"; None = auto
+
+    # Forced password change: when True, an authenticated employee whose
+    # Employee.must_change_password flag is set gets 403 PASSWORD_CHANGE_REQUIRED on every
+    # endpoint except /auth/me, /auth/logout, /auth/refresh and the change-password endpoints.
+    # Default False so deploying this code cannot lock 30 staff out before clients ship the
+    # change-password screen; render.yaml turns it on.
+    enforce_password_change: bool = False
+    # Lifetime of an admin-issued temporary password (admin "Reset Password"). After this the
+    # temporary password is rejected at login and on every request; the admin must reset again.
+    temp_password_expiry_minutes: int = Field(default=30, ge=5, le=1440)
+
+    # Number of trusted reverse-proxy hops in front of the app (Render edge = 1). The client IP
+    # for per-IP rate limits is the X-Forwarded-For entry that many hops from the RIGHT; entries
+    # to its left are client-controlled and ignored. 0 = ignore X-Forwarded-For entirely.
+    trusted_proxy_hops: int = 1
+
+    # Hard cap on ANY request body (multipart upload or JSON incl. base64 signatures), rejected
+    # with 413 before the body is parsed. The per-endpoint caps (10 MB images, 20 MB documents,
+    # outlet_proof_max_image_bytes) are tighter and enforced while streaming (app/core/uploads.py).
+    max_request_body_bytes: int = 30 * 1024 * 1024
+
+    # Password-reset OTP keyed-hash secret. Falls back to a key derived from
+    # JWT_SECRET (domain-separated) when unset.
+    otp_hmac_secret: str | None = None
+
+    # Twilio sender (was read by sms_service but never declared)
+    twilio_from_number: str | None = None
 
     # Background jobs
     # Disabled in tests so a scheduled sweep cannot mutate fixture data while
@@ -82,6 +146,9 @@ class Settings(BaseSettings):
     smtp_user: str | None = None
     smtp_password: str | None = None
     smtp_from_email: str = "noreply@fieldtrackpro.com"
+    # Never send SMTP credentials over an unencrypted channel unless this is set (dev only;
+    # ignored in production, where it is always treated as False).
+    smtp_allow_insecure: bool = False
 
     # SMS Configuration
     sms_provider: str = "mock"  # "mock" | "msg91" | "twilio" | "fast2sms"
@@ -91,6 +158,9 @@ class Settings(BaseSettings):
     twilio_account_sid: str | None = None
     twilio_auth_token: str | None = None
     allow_mock_communications: bool = False
+    # Explicit local-dev opt-in to print password-reset OTPs to the console
+    # (also requires ENVIRONMENT in dev/test and DEBUG=true). Never set in prod.
+    dev_print_otp: bool = False
     # Organization Profile & Identity
     organization_name: str = "SGRG Services Private Limited"
     organization_hub: str = "Kanpur Central, Uttar Pradesh"
@@ -117,9 +187,36 @@ class Settings(BaseSettings):
     @field_validator("cors_allowed_origins", mode="before")
     @classmethod
     def _ensure_cors_list(cls, v: list | str) -> list:
-        if isinstance(v, str) and not v.strip().startswith("["):
-            return [o.strip() for o in v.split(",") if o.strip()]
+        """Accept a JSON array string, a comma-separated string, or a real list."""
+        if isinstance(v, str):
+            raw = v.strip()
+            if not raw:
+                return []
+            if raw.startswith("["):
+                try:
+                    parsed = json.loads(raw)
+                except ValueError as exc:
+                    raise ValueError("CORS_ALLOWED_ORIGINS looks like JSON but is not valid JSON") from exc
+                return [str(o).strip() for o in parsed if str(o).strip()]
+            return [o.strip() for o in raw.split(",") if o.strip()]
         return v
+
+    @model_validator(mode="after")
+    def _warn_production_cors(self) -> "Settings":
+        """Warn (never fail) on risky production CORS configuration."""
+        if self.environment == "production":
+            bad = [o for o in self.cors_allowed_origins if o.strip() == "*"]
+            local = [o for o in self.cors_allowed_origins if "localhost" in o or "127.0.0.1" in o]
+            non_local = [o for o in self.cors_allowed_origins if o not in local]
+            if bad:
+                warnings.warn("CORS_ALLOWED_ORIGINS contains '*' in production", stacklevel=2)
+            if not non_local:
+                warnings.warn(
+                    "CORS_ALLOWED_ORIGINS has only localhost origins in production; "
+                    "the real web origin is probably missing",
+                    stacklevel=2,
+                )
+        return self
 
     @model_validator(mode="after")
     def _require_media_signing_secret_in_production(self) -> "Settings":

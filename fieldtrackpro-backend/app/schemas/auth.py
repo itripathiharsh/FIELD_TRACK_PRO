@@ -13,10 +13,10 @@ class LoginRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    identifier: str | None = None
-    email: str | None = None
-    mobile_number: str | None = None
-    password: str
+    identifier: str | None = Field(default=None, max_length=255)
+    email: str | None = Field(default=None, max_length=255)
+    mobile_number: str | None = Field(default=None, max_length=255)
+    password: str = Field(max_length=128)
 
     @model_validator(mode="after")
     def resolve_identity(self) -> "LoginRequest":
@@ -36,16 +36,20 @@ class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
+    # True when the account still has a temporary/default password. Clients must send the
+    # user to the change-password screen; with ENFORCE_PASSWORD_CHANGE the server also
+    # answers 403 PASSWORD_CHANGE_REQUIRED on every other endpoint until it is changed.
+    must_change_password: bool = False
 
 
 class RefreshRequest(BaseModel):
-    refresh_token: str | None = None
+    refresh_token: str | None = Field(default=None, max_length=512)
 
 
 class ForgotPasswordRequest(BaseModel):
-    identifier: str | None = None
-    email: str | None = None
-    mobile_number: str | None = None
+    identifier: str | None = Field(default=None, max_length=255)
+    email: str | None = Field(default=None, max_length=255)
+    mobile_number: str | None = Field(default=None, max_length=255)
 
     @model_validator(mode="after")
     def resolve_identifier(self) -> "ForgotPasswordRequest":
@@ -68,9 +72,9 @@ class ForgotPasswordResponse(BaseModel):
 
 
 class VerifyOtpRequest(BaseModel):
-    identifier: str | None = None
-    email: str | None = None
-    mobile_number: str | None = None
+    identifier: str | None = Field(default=None, max_length=255)
+    email: str | None = Field(default=None, max_length=255)
+    mobile_number: str | None = Field(default=None, max_length=255)
     otp: str = Field(min_length=6, max_length=8)
 
     @model_validator(mode="after")
@@ -93,10 +97,10 @@ class VerifyOtpResponse(BaseModel):
 
 
 class ResetPasswordRequest(BaseModel):
-    identifier: str | None = None
-    email: str | None = None
-    mobile_number: str | None = None
-    otp: str
+    identifier: str | None = Field(default=None, max_length=255)
+    email: str | None = Field(default=None, max_length=255)
+    mobile_number: str | None = Field(default=None, max_length=255)
+    otp: str = Field(min_length=6, max_length=8)
     new_password: str = Field(min_length=8, max_length=128)
 
     @model_validator(mode="after")

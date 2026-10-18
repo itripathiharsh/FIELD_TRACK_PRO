@@ -1,8 +1,10 @@
+import sys as _sys, os as _os; _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _script_env
 import requests
 from datetime import datetime, timezone, timedelta
 
 IST = timezone(timedelta(hours=5, minutes=30))
-PROD_API_URL = "https://fieldtrackpro-backend-s7hs.onrender.com"
+PROD_API_URL = _script_env.api_url()
 
 # Target Coordinates (Current Device GPS Location)
 LAT = 26.734115
@@ -14,7 +16,7 @@ session = requests.Session()
 # 1. Admin login
 r_login = session.post(f"{PROD_API_URL}/api/v1/auth/login", json={
     "email": "admin@fieldtrack.test",
-    "password": "AdminPass123!"
+    "password": _script_env.env("SCRIPT_ADMIN_PASSWORD")
 }, timeout=30)
 token = r_login.json()["access_token"]
 headers = {"Authorization": f"Bearer {token}"}
@@ -70,7 +72,7 @@ print(f"Scheduled Visit for Harsh: {r_v.status_code} -> {r_v.text}")
 # Login as Harsh and check visits
 r_hlogin = requests.post(f"{PROD_API_URL}/api/v1/auth/login", json={
     "email": "imharshofficial322@gmail.com",
-    "password": "Imharsh@1"
+    "password": _script_env.env("SCRIPT_HARSH_PASSWORD")
 }, timeout=30)
 h_token = r_hlogin.json()["access_token"]
 h_headers = {"Authorization": f"Bearer {h_token}"}

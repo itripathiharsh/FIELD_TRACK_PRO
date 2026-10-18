@@ -358,7 +358,7 @@ async def test_rbac_analytics_endpoints(client: AsyncClient, analytics_test_setu
         f"/api/v1/visit-planning/analytics/daily?employee_id={setup['emp_b_id']}&date={today.isoformat()}",
         headers=emp_a_headers,
     )
-    assert res3.status_code == 403
+    assert res3.status_code == 404
 
     # 4. Admin calling /analytics/employee/{emp_a_id} -> 200
     res4 = await client.get(

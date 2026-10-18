@@ -31,6 +31,7 @@ async def list_orders(
 ):
     """
     List confirmed customer orders and their Tally synchronization status.
+    ADMIN: all orders. EMPLOYEE: only orders raised from their own visits.
     """
     return await customer_requirement_service.list_orders(
         session=session,
@@ -38,7 +39,16 @@ async def list_orders(
         status=status,
         skip=skip,
         limit=limit,
+        employee_id=await _employee_scope(current_user, session),
     )
+
+
+async def _employee_scope(current_user, session):
+    if current_user.is_admin:
+        return None
+    from app.services.employee_service import get_employee_by_user_id
+
+    return (await get_employee_by_user_id(current_user.id, session)).id
 
 
 @router.get("/{order_id}", response_model=OrderRead, dependencies=[AnyAuth])
@@ -49,22 +59,15 @@ async def get_order(
 ):
     """
     Get detailed confirmed order with line items and Tally confirmation details.
+    An EMPLOYEE can only read orders from their own visits (404 otherwise).
     """
-    res = await customer_requirement_service.list_orders(
+    orders = await customer_requirement_service.list_orders(
         session=session,
         skip=0,
         limit=1,
+        order_id=order_id,
+        employee_id=await _employee_scope(current_user, session),
     )
-    # Fetch specific order
-    orders = [o for o in res if o.id == order_id]
-    if not orders:
-        orders = await customer_requirement_service.list_orders(
-            session=session,
-            skip=0,
-            limit=200,
-        )
-        orders = [o for o in orders if o.id == order_id]
-
     if not orders:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

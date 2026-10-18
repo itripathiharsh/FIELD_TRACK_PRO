@@ -1,20 +1,22 @@
+import sys as _sys, os as _os; _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _script_env
 import requests
 
 print("="*60)
 print("TESTING PRODUCTION RENDER API")
 print("="*60)
 
-r = requests.get("https://fieldtrackpro-backend-s7hs.onrender.com/health", timeout=20)
+r = requests.get(_script_env.api_url() + "/health", timeout=20)
 print("Production Render Health:", r.status_code, r.json())
 
-r_login = requests.post("https://fieldtrackpro-backend-s7hs.onrender.com/api/v1/auth/login", json={
+r_login = requests.post(_script_env.api_url() + "/api/v1/auth/login", json={
     "email": "imharshofficial322@gmail.com",
-    "password": "Imharsh@1"
+    "password": _script_env.env("SCRIPT_HARSH_PASSWORD")
 }, timeout=20)
 print("Harsh Production Login:", r_login.status_code)
 
 token = r_login.json()["access_token"]
-r_v = requests.get("https://fieldtrackpro-backend-s7hs.onrender.com/api/v1/visits/me/today", headers={
+r_v = requests.get(_script_env.api_url() + "/api/v1/visits/me/today", headers={
     "Authorization": f"Bearer {token}"
 }, timeout=20)
 

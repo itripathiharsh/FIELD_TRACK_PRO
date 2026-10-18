@@ -52,7 +52,7 @@ class MockSmsProvider(BaseSmsProvider):
             return False
 
         logger.info("[MOCK SMS] Dispatched security code to %s", masked)
-        if settings.environment in ("dev", "test") and settings.debug:
+        if settings.environment in ("dev", "test") and settings.debug and settings.dev_print_otp:
             print(
                 f"\n=======================================================\n"
                 f"[DEV SMS] Password Reset OTP for {mobile_number}: {otp}\n"

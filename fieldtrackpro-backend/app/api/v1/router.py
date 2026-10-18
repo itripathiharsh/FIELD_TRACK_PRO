@@ -7,6 +7,7 @@ from app.api.v1 import (
     areas,
     employees,
     customers,
+    outlet_proofs,
     visits,
     geo,
     media,
@@ -30,18 +31,25 @@ from app.api.v1 import (
     visit_planning,
     tally_integration,
     orders,
+    account,
+    security_audit,
 )
 
 api_router = APIRouter()
 
 api_router.include_router(health.router, tags=["health"])
 api_router.include_router(auth.router)
+api_router.include_router(account.router)
 api_router.include_router(organization.router)
 api_router.include_router(users.router)
+api_router.include_router(security_audit.router)
 api_router.include_router(devices.router)
 api_router.include_router(territories.router)
 api_router.include_router(areas.router)
 api_router.include_router(employees.router)
+# outlet_proofs MUST precede customers: its literal /customers/outlet-proofs paths would
+# otherwise be captured by /customers/{customer_id}.
+api_router.include_router(outlet_proofs.router)
 api_router.include_router(customers.router)
 api_router.include_router(location_proposals.router)
 api_router.include_router(brands.router)

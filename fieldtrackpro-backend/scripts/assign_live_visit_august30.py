@@ -1,3 +1,5 @@
+import sys as _sys, os as _os; _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _script_env
 import asyncio
 import httpx
 from datetime import datetime, timezone, timedelta
@@ -10,7 +12,7 @@ from app.models.customer import Customer
 from app.models.visit import Visit, VisitStatus
 
 IST = timezone(timedelta(hours=5, minutes=30))
-PROD_API_URL = "https://fieldtrackpro-backend-s7hs.onrender.com"
+PROD_API_URL = _script_env.api_url()
 
 # Target Coordinates (Current Device GPS Location)
 LAT = 26.734115
@@ -115,7 +117,7 @@ async def assign_production_render():
             # Login as Admin
             login_resp = await client.post(f"{PROD_API_URL}/api/v1/auth/login", json={
                 "email": "admin@fieldtrack.test",
-                "password": "AdminPass123!"
+                "password": _script_env.env("SCRIPT_ADMIN_PASSWORD")
             })
             if login_resp.status_code != 200:
                 print(f"Prod login failed: {login_resp.status_code} - {login_resp.text}")

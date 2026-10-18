@@ -12,6 +12,7 @@ import uuid
 from datetime import date, timedelta
 
 import pytest
+from app.core.datetime_utils import get_ist_now
 import pytest_asyncio
 from httpx import AsyncClient
 
@@ -95,10 +96,14 @@ async def test_brand_summary_includes_counts_overdue_and_latest_dates(
     created_payments.append(payment_id)
     verify_resp = await client.post(f"/api/v1/payments/{payment_id}/verify", headers=admin_headers)
     assert verify_resp.status_code == 200, verify_resp.text
+    # Outstanding/paid only move once the Tally write-back is CONFIRMED.
+    from tests.tally_helpers import ack_payment_in_tally
+    await ack_payment_in_tally(payment_id)
 
     resp = await client.get(f"/api/v1/customers/{cust_id}/account", headers=admin_headers)
     assert resp.status_code == 200
-    usha = next(b for b in resp.json()["brand_summary"] if b["brand"] == "Usha")
+    # brand display is canonicalised by brand_service.resolve_canonical_brand_name ("Usha" -> "USHA")
+    usha = next(b for b in resp.json()["brand_summary"] if b["brand"].upper() == "USHA")
     assert usha["invoice_count"] == 2
     assert usha["payment_count"] == 1
     assert usha["total_invoiced"] == "15000.00"
@@ -178,7 +183,7 @@ async def test_employee_without_visit_cannot_view_customer_order_history(
     client: AsyncClient, other_employee_headers, seeded_world
 ):
     resp = await client.get(f"/api/v1/customers/{seeded_world['customer_id']}/orders", headers=other_employee_headers)
-    assert resp.status_code == 403
+    assert resp.status_code == 404
 
 
 async def test_regular_photo_media_excluded_from_order_history(
@@ -259,11 +264,11 @@ async def test_permanent_reassignment_effective_today_becomes_current(
     emp_id = seeded_world["employee_id"]
     resp = await client.post(
         f"/api/v1/employees/{emp_id}/territory-assignments",
-        json={"territory_id": second_territory_id, "assignment_type": "PERMANENT", "start_date": date.today().isoformat()},
+        json={"territory_id": second_territory_id, "assignment_type": "PERMANENT", "start_date": get_ist_now().date().isoformat()},
         headers=admin_headers,
     )
     assert resp.status_code == 201, resp.text
-    assert resp.json()["is_current"] is True
+    assert resp.json()["is_current"] is True, resp.json()
 
     history = await client.get(f"/api/v1/employees/{emp_id}/territory-assignments", headers=admin_headers)
     assert history.status_code == 200
@@ -302,7 +307,7 @@ async def test_temporary_reassignment_active_window_wins_over_base(
         headers=admin_headers,
     )
     assert resp.status_code == 201, resp.text
-    assert resp.json()["is_current"] is True
+    assert resp.json()["is_current"] is True, resp.json()
 
     history = await client.get(f"/api/v1/employees/{emp_id}/territory-assignments", headers=admin_headers)
     assert history.json()["effective_territory_id"] == second_territory_id

@@ -1,10 +1,18 @@
 """
 Real Client Data Importer & Seeder for FieldTrack Pro.
 Imports Employee Master, Outlets, FOS Mappings, Zones, Areas, and Financial Snapshots
-from real client Excel files in `F:\\sentio wala\\sheet`.
+from real client Excel files (directory given by CLIENT_SHEET_DIR, or backend/data/sheet).
+
+Safety:
+  * Temporary passwords are generated randomly PER NEW USER; existing users' passwords
+    are never touched. Passwords are never printed.
+  * A credentials workbook is written ONLY if --credentials-out PATH is passed
+    (keep that file out of git; hand it over securely and delete it).
+  * Refuses ENVIRONMENT=production unless --i-understand-production.
 """
 from __future__ import annotations
 
+import argparse
 import os
 import sys
 import uuid
@@ -32,7 +40,7 @@ from app.models.fos_mapping import FOSEmployeeMapping
 from app.models.outlet_financial_snapshot import OutletFinancialSnapshot
 from app.services.import_service import generate_onboarding_excel
 
-DEFAULT_TEMP_PASSWORD = "Password@123!"
+import _script_env  # noqa: E402  (scripts dir is on sys.path when run directly)
 
 # Client Real Employee Roster (Telecom: 11001-11020, CE: 11021-11030)
 REAL_EMPLOYEES = [
@@ -69,14 +77,14 @@ REAL_EMPLOYEES = [
 ]
 
 
-def run_import() -> None:
+def run_import(credentials_out: str | None = None) -> None:
     sync_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
     engine = create_engine(sync_url)
 
     candidate_paths = [
         Path(__file__).resolve().parent.parent / "data" / "sheet" / "Combined_BI_Excle_By_TGIshan.xlsx",
         Path(__file__).resolve().parent.parent.parent / "sheet" / "Combined_BI_Excle_By_TGIshan.xlsx",
-        Path(r"F:\sentio wala\sheet\Combined_BI_Excle_By_TGIshan.xlsx"),
+        Path(os.environ.get("CLIENT_SHEET_DIR", "")) / "Combined_BI_Excle_By_TGIshan.xlsx",
     ]
     excel_path = None
     for p in candidate_paths:
@@ -103,7 +111,7 @@ def run_import() -> None:
         if not admin_user:
             admin_user = User(
                 email=admin_email,
-                password_hash=hash_password("AdminPass123!"),
+                password_hash=hash_password(_script_env.env("ADMIN_BOOTSTRAP_PASSWORD")),
                 role=Role.ADMIN,
                 is_active=True,
             )
@@ -124,11 +132,13 @@ def run_import() -> None:
 
             # User account
             user = session.execute(select(User).where(User.email == email)).scalar_one_or_none()
+            temp_password = None
             if not user:
+                temp_password = _script_env.random_password()
                 user = User(
                     email=email,
                     mobile_number=cug,
-                    password_hash=hash_password(DEFAULT_TEMP_PASSWORD),
+                    password_hash=hash_password(temp_password),
                     role=Role.ADMIN if profile in ["Director", "Sales Manager"] else Role.EMPLOYEE,
                     is_active=True,
                 )
@@ -167,7 +177,7 @@ def run_import() -> None:
                 "employee_name": name,
                 "employee_id": code,
                 "email": email,
-                "temporary_password": DEFAULT_TEMP_PASSWORD,
+                "temporary_password": temp_password or "(existing account - unchanged)",
                 "application_role": user.role.value if hasattr(user.role, "value") else str(user.role),
                 "working_profile": profile,
                 "cug": cug,
@@ -369,10 +379,12 @@ def run_import() -> None:
         session.commit()
 
         # Generate Onboarding Credentials Excel
-        cred_excel_path = r"F:\sentio wala\sheet\Employee_Onboarding_Credentials.xlsx"
-        cred_bytes = generate_onboarding_excel(credentials_list)
-        with open(cred_excel_path, "wb") as f:
-            f.write(cred_bytes)
+        cred_excel_path = None
+        if credentials_out:
+            cred_bytes = generate_onboarding_excel(credentials_list)
+            with open(credentials_out, "wb") as fh:
+                fh.write(cred_bytes)
+            cred_excel_path = credentials_out
 
         print("\n=======================================================")
         print("REAL DATA IMPORT COMPLETED SUCCESSFULLY!")
@@ -384,9 +396,15 @@ def run_import() -> None:
         print(f"FOS Assignments Established: {assignments_count}")
         print(f"Financial Snapshots Stored: {financial_snapshots_count}")
         print(f"Unmatched FOS (reported for admin): {sorted(list(unmatched_fos))}")
-        print(f"Credentials Excel Saved: {cred_excel_path}")
+        print(f"Credentials workbook written: {bool(cred_excel_path)} (not requested)" if not cred_excel_path else "Credentials workbook written to the path you requested.")
         print("=======================================================\n")
 
 
 if __name__ == "__main__":
-    run_import()
+    ap = argparse.ArgumentParser(description="Import real client data (employees, outlets, snapshots).")
+    ap.add_argument("--credentials-out", help="write per-user temporary credentials workbook to this path (gitignored location!)")
+    ap.add_argument("--i-understand-production", action="store_true")
+    ns = ap.parse_args()
+    if settings.environment == "production" and not ns.i_understand_production:
+        sys.exit("REFUSING: ENVIRONMENT=production requires --i-understand-production.")
+    run_import(ns.credentials_out)

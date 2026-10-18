@@ -165,10 +165,10 @@ async def test_employee_cannot_view_outlet_they_have_no_visit_for(
         client, admin_headers, "__itest__Unassigned Outlet", created_customers
     )
     resp = await client.get(f"/api/v1/customers/{other_customer_id}", headers=employee_headers)
-    assert resp.status_code == 403, (
+    assert resp.status_code == 404, (
         "P0-1: an employee must not be able to view an outlet they have no visit assigned to"
     )
-    assert resp.json()["error"]["code"] == "OUTLET_NOT_ASSIGNED"
+    assert resp.json()["error"]["code"] == "CUSTOMER_NOT_FOUND"
 
 
 async def test_customer_list_is_scoped_to_employees_own_visits(
@@ -248,6 +248,7 @@ async def test_geo_verify_location_is_scoped_to_visited_outlet(
             "customer_id": seeded_world["customer_id"],
             "latitude": seeded_world["customer_lat"],
             "longitude": seeded_world["customer_lng"],
+            "accuracy_m": 8.0,
         },
         headers=employee_headers,
     )
@@ -258,10 +259,10 @@ async def test_geo_verify_location_is_scoped_to_visited_outlet(
     )
     denied = await client.post(
         "/api/v1/geo/verify-location",
-        json={"customer_id": other_customer_id, "latitude": 12.9716, "longitude": 77.5946},
+        json={"customer_id": other_customer_id, "latitude": 12.9716, "longitude": 77.5946, "accuracy_m": 8.0},
         headers=employee_headers,
     )
-    assert denied.status_code == 403, (
+    assert denied.status_code == 404, (
         "P0-1: an employee must not be able to probe an outlet's geofence without a visit assigned to it"
     )
 

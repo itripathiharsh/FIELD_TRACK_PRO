@@ -1,35 +1,84 @@
 """
 FieldTrack Pro - Automated & Test Data Purge Master Script.
-Removes all test/dummy data according to AGENTS.md rules.
-Ensures ONLY Real SGRG Production Data remains:
-- 30 SGRG Staff Members (11001 - 11030)
-- 1,631 Real Client Outlets
-- 55 Territories & 465 Areas
-- 1.5 Years Real Tally Invoices & Vouchers
-- admin@fieldtrack.test
+
+DESTRUCTIVE. Removes test/dummy data according to AGENTS.md rules so ONLY real
+SGRG data remains (30 staff 11001-11030, ~1,631 outlets, 55 territories /
+465 areas, real Tally invoices & vouchers, the admin account).
+
+Safety model:
+  * DEFAULT IS DRY-RUN: the whole purge is executed inside a transaction that
+    is ROLLED BACK; row counts are printed so you can review them.
+  * Real execution needs ALL of:  --execute
+                                  CONFIRM_PURGE_DATABASE=<exact database name>  (env)
+  * ENVIRONMENT=production additionally needs --i-understand-production.
+  * The database comes from DATABASE_URL / app settings - there is no
+    hardcoded fallback connection string.
+  * Take a backup first (pg_dump). This script cannot be undone once committed.
 """
+from __future__ import annotations
+
+import argparse
 import os
+import sys
+from pathlib import Path
+from urllib.parse import urlparse
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 import psycopg2
 
-db_url = os.environ.get("DATABASE_URL", "postgresql://fieldtrack_app:XcWG3aLw7s8mL75vrvl97aDZTSXbr4y6@127.0.0.1:5432/fieldtrackpro_dev")
-db_url = db_url.replace("postgresql+asyncpg://", "postgresql://")
+import _script_env
 
-conn = psycopg2.connect(db_url)
-conn.autocommit = False
-cur = conn.cursor()
 
-def run(sql, params=None, desc=""):
-    if params is not None:
-        cur.execute(sql, params)
-    else:
-        cur.execute(sql)
-    print(f"  {desc}: {cur.rowcount} rows affected")
+# --- Test-entity markers (AGENTS.md) ---------------------------------------------------------
+# Payments are only ever deleted when they belong to a TEST employee or a TEST outlet matched by
+# these markers. A real field collection (real SGRG employee 110xx on a real outlet) is never
+# selected, even if it is MANUAL or carries a visit_id.
+TEST_EMPLOYEE_IDS_SQL = r"""
+    SELECT e.id FROM employees e JOIN users u ON u.id = e.user_id
+    WHERE e.employee_code LIKE 'REP-%'
+       OR e.employee_code LIKE 'FT%'
+       OR e.employee_code LIKE 'RFX%'
+       OR e.employee_code LIKE '\_\_itest\_\_%'
+       OR u.email LIKE 'emp\_wb\_%@fieldtrack.test'
+       OR u.email LIKE '\_\_itest\_\_%'
+       OR (u.email LIKE '%@fieldtrack.test' AND u.email <> 'admin@fieldtrack.test')
+       OR e.full_name IN ('Browser Test', 'Alert Store/Rep')
+"""
 
-print("=" * 65)
-print("PURGING AUTOMATED & TEST DATA FROM DATABASE")
-print("=" * 65)
+TEST_CUSTOMER_IDS_SQL = r"""
+    SELECT id FROM customers
+    WHERE outlet_code IN ('UPDDC10FEF', 'CURR-GPS-001')
+       OR outlet_code LIKE '%TEST%'
+       OR outlet_code LIKE 'REP%'
+       OR outlet_code LIKE 'DMS-%'
+       OR outlet_code LIKE 'FT%'
+       OR outlet_code LIKE 'RFX%'
+       OR name LIKE 'Aaditya Telecom %'
+       OR name LIKE '\_\_itest\_\_%'
+       OR name IN ('Browser Test', 'Alert Store/Rep')
+"""
 
-try:
+TEST_PAYMENT_IDS_SQL = (
+    "SELECT id FROM payments WHERE employee_id IN (" + TEST_EMPLOYEE_IDS_SQL + ") "
+    "OR customer_id IN (" + TEST_CUSTOMER_IDS_SQL + ")"
+)
+
+# Visits still referenced by a payment that is being KEPT must survive (FK + audit trail).
+KEPT_PAYMENT_VISITS_SQL = (
+    "SELECT visit_id FROM payments WHERE visit_id IS NOT NULL AND id NOT IN (" + TEST_PAYMENT_IDS_SQL + ")"
+)
+
+
+def purge(cur) -> None:
+    def run(sql, params=None, desc=""):
+        if params is not None:
+            cur.execute(sql, params)
+        else:
+            cur.execute(sql)
+        print(f"  {desc}: {cur.rowcount} rows affected")
+
     # 0. Super-admin ID
     cur.execute("SELECT id FROM users WHERE email = 'admin@fieldtrack.test'")
     row = cur.fetchone()
@@ -44,7 +93,7 @@ try:
     run("DELETE FROM customer_requirements", desc="Customer requirements records")
 
     # 3. Purge test payments and allocations
-    cur.execute("SELECT id FROM payments WHERE source = 'MANUAL' OR visit_id IS NOT NULL")
+    cur.execute(TEST_PAYMENT_IDS_SQL)
     test_payment_ids = [r[0] for r in cur.fetchall()]
     if test_payment_ids:
         cur.execute("DELETE FROM payment_proofs WHERE payment_id = ANY(%s::uuid[])", (test_payment_ids,))
@@ -54,30 +103,24 @@ try:
         print(f"  test payments: {len(test_payment_ids)} deleted")
 
     # 4. Purge test visits & child tables
-    run("DELETE FROM geo_verification_logs", desc="Geo verification logs")
-    run("DELETE FROM visit_signatures", desc="Visit signatures")
-    run("DELETE FROM visit_media", desc="Visit media")
+    keep = f"visit_id NOT IN ({KEPT_PAYMENT_VISITS_SQL})"
+    run(f"DELETE FROM geo_verification_logs WHERE {keep}", desc="Geo verification logs")
+    run(f"DELETE FROM visit_signatures WHERE {keep}", desc="Visit signatures")
+    run(f"DELETE FROM visit_media WHERE {keep}", desc="Visit media")
     run("DELETE FROM form_answers", desc="Form answers")
     run("DELETE FROM form_submissions", desc="Form submissions")
     run("DELETE FROM field_exceptions", desc="Field exceptions")
     run("DELETE FROM employee_work_sessions", desc="Employee work sessions")
     run("DELETE FROM planned_visits", desc="Planned visits")
     run("DELETE FROM monthly_visit_plans", desc="Monthly visit plans")
-    run("DELETE FROM visits", desc="Visits")
+    run(f"DELETE FROM visits WHERE id NOT IN ({KEPT_PAYMENT_VISITS_SQL})", desc="Visits")
 
     # 5. Purge test invoices
     run("DELETE FROM payment_invoice_allocations WHERE invoice_id IN (SELECT id FROM invoices WHERE invoice_number LIKE '%16241b' OR invoice_number LIKE '%ffd7b6' OR invoice_number LIKE '%9f63ce')", desc="Test invoice allocations")
     run("DELETE FROM invoices WHERE invoice_number LIKE '%16241b' OR invoice_number LIKE '%ffd7b6' OR invoice_number LIKE '%9f63ce'", desc="Test invoices")
 
     # 6. Purge test customers (Aaditya Telecom test hex, DMS-*, UPDDC10FEF, CURR-GPS-001)
-    cur.execute("""
-        SELECT id FROM customers 
-        WHERE outlet_code IN ('UPDDC10FEF', 'CURR-GPS-001') 
-           OR outlet_code LIKE '%TEST%' 
-           OR outlet_code LIKE 'REP%'
-           OR outlet_code LIKE 'DMS-%'
-           OR name LIKE 'Aaditya Telecom %'
-    """)
+    cur.execute(TEST_CUSTOMER_IDS_SQL)
     test_cust_ids = [r[0] for r in cur.fetchall()]
     if test_cust_ids:
         cur.execute("DELETE FROM customer_brands WHERE customer_id = ANY(%s::uuid[])", (test_cust_ids,))
@@ -118,15 +161,51 @@ try:
         cur.execute("DELETE FROM users WHERE id = ANY(%s::uuid[])", (test_user_ids,))
         print(f"  test users: {len(test_user_ids)} deleted")
 
-    conn.commit()
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description="Purge automated/test data (dry-run by default).")
+    parser.add_argument("--execute", action="store_true", help="really commit the purge (default: dry-run + rollback)")
+    parser.add_argument("--i-understand-production", action="store_true", help="required when ENVIRONMENT=production")
+    args = parser.parse_args(argv)
+
+    from app.config import settings
+
+    db_url = _script_env.db_url()
+    db_name = urlparse(db_url).path.lstrip("/")
+
+    if settings.environment == "production" and not args.i_understand_production:
+        print("REFUSING: ENVIRONMENT=production requires --i-understand-production.")
+        return 2
+    if args.execute and os.environ.get("CONFIRM_PURGE_DATABASE") != db_name:
+        print(f"REFUSING: --execute requires env CONFIRM_PURGE_DATABASE set to the exact database name ({db_name!r}).")
+        return 2
+
+    mode = "EXECUTE (will COMMIT)" if args.execute else "DRY-RUN (will ROLL BACK)"
     print("=" * 65)
-    print("SUCCESS: ALL TEST DATA PURGED! ONLY REAL CLIENT DATA REMAINS.")
+    print(f"PURGE AUTOMATED & TEST DATA - database={db_name} - {mode}")
     print("=" * 65)
 
-except Exception as e:
-    conn.rollback()
-    print("ERROR DURING CLEANUP:", e)
-    raise
-finally:
-    cur.close()
-    conn.close()
+    conn = psycopg2.connect(db_url)
+    conn.autocommit = False
+    cur = conn.cursor()
+    try:
+        purge(cur)
+        if args.execute:
+            conn.commit()
+            print("COMMITTED: test data purged.")
+        else:
+            conn.rollback()
+            print("DRY-RUN complete: everything rolled back, nothing was changed.")
+        return 0
+    except Exception as exc:  # noqa: BLE001
+        conn.rollback()
+        print("ERROR during purge, rolled back:", type(exc).__name__, exc)
+        return 1
+    finally:
+        cur.close()
+        conn.close()
+
+
+if __name__ == "__main__":
+    sys.exit(main())

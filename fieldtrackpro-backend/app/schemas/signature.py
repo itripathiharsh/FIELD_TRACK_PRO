@@ -6,7 +6,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.visit_signature import SignatureCaptureMethod, SignatureType
 
@@ -14,13 +14,13 @@ from app.models.visit_signature import SignatureCaptureMethod, SignatureType
 class SignatureCreate(BaseModel):
     """Upload a signature/acknowledgement for a visit."""
     signature_type: SignatureType
-    signature_image_base64: str
+    signature_image_base64: str = Field(max_length=1_500_000)
     capture_method: SignatureCaptureMethod = SignatureCaptureMethod.SIGNATURE
 
 
 class SignatureReplaceRequest(BaseModel):
     """Replace an existing (not yet superseded) signature/acknowledgement with a corrected capture."""
-    signature_image_base64: str
+    signature_image_base64: str = Field(max_length=1_500_000)
     capture_method: SignatureCaptureMethod = SignatureCaptureMethod.SIGNATURE
 
 

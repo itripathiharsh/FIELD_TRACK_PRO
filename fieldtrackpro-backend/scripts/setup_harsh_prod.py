@@ -1,8 +1,10 @@
+import sys as _sys, os as _os; _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _script_env
 import requests
 from datetime import datetime, timezone, timedelta
 
 IST = timezone(timedelta(hours=5, minutes=30))
-PROD_API_URL = "https://fieldtrackpro-backend-s7hs.onrender.com"
+PROD_API_URL = _script_env.api_url()
 
 # Target Coordinates (Current Device GPS Location)
 LAT = 26.734115
@@ -14,7 +16,7 @@ session = requests.Session()
 # 1. Login as Admin
 login_resp = session.post(f"{PROD_API_URL}/api/v1/auth/login", json={
     "email": "admin@fieldtrack.test",
-    "password": "AdminPass123!"
+    "password": _script_env.env("SCRIPT_ADMIN_PASSWORD")
 }, timeout=90)
 
 if login_resp.status_code != 200:
@@ -28,7 +30,7 @@ print("Admin logged in successfully.")
 
 # 2. Check if Harsh already exists or register Harsh
 harsh_email = "imharshofficial322@gmail.com"
-harsh_pass = "Imharsh@1"
+harsh_pass = _script_env.env("SCRIPT_HARSH_PASSWORD")
 harsh_phone = "9565249244"
 
 # Try registering Harsh as an Employee with Role.EMPLOYEE (or ADMIN)

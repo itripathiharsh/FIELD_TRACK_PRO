@@ -283,10 +283,10 @@ async def get_daily_analytics(
     target_date: date = Query(..., alias="date", description="Calendar date (YYYY-MM-DD)"),
 ) -> DailyAnalytics:
     """Daily planned vs actual breakdown. Employees can only query their own data."""
-    if current_user.role != Role.ADMIN:
+    if not current_user.is_admin:
         from app.services.employee_service import get_employee_by_user_id
         caller_emp = await get_employee_by_user_id(current_user.id, session)
         if caller_emp.id != employee_id:
-            from app.exceptions.custom import ForbiddenException
-            raise ForbiddenException("Access denied to another employee's analytics")
+            from app.exceptions.custom import ResourceNotFoundException
+            raise ResourceNotFoundException("Employee not found")
     return await visit_analytics_service.get_daily_analytics(employee_id, target_date, session)

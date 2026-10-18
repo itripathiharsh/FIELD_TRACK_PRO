@@ -6,8 +6,8 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timedelta
 
-from sqlalchemy import select, func, or_, cast, String, and_
-from sqlalchemy.orm import selectinload
+from sqlalchemy import select, func, or_, cast, String, and_, exists
+from sqlalchemy.orm import selectinload, aliased
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.area import Area
@@ -15,13 +15,59 @@ from app.models.customer import Customer
 from app.models.employee import Employee
 from app.models.form_template import FormTemplate
 from app.models.territory import Territory
-from app.models.visit import Visit, VisitStatus
+from app.models.employee_area_assignment import EmployeeAreaAssignment
+from app.models.employee_customer_assignment import EmployeeCustomerAssignment
+from app.models.visit import Visit, VisitStatus, VisitType
 from app.repositories.base import BaseRepository
+
+
+def visit_in_scope_clause():
+    """
+    SQL predicate: the visit's customer is inside its employee's scope, mirroring
+    CustomerRepository.employee_scope_clause evaluated at READ time against
+    current assignments, with one deliberate difference: the visit itself (and
+    any other AD_HOC visit) does not count as an 'own visit' criterion -
+    otherwise every ad-hoc visit would legitimise its own outlet.
+    Requires Visit and Customer in the enclosing FROM.
+    """
+    other = aliased(Visit)
+    return or_(
+        exists().where(
+            EmployeeCustomerAssignment.employee_id == Visit.employee_id,
+            EmployeeCustomerAssignment.customer_id == Visit.customer_id,
+        ),
+        exists().where(
+            other.employee_id == Visit.employee_id,
+            other.customer_id == Visit.customer_id,
+            other.id != Visit.id,
+            other.visit_type != VisitType.AD_HOC,
+        ),
+        exists().where(
+            EmployeeAreaAssignment.employee_id == Visit.employee_id,
+            EmployeeAreaAssignment.area_id == Customer.area_id,
+        ),
+    )
+
+
+def adhoc_outside_assignment_clause():
+    """SQL predicate: ad-hoc visit to an outlet outside the employee's scope."""
+    return and_(Visit.visit_type == VisitType.AD_HOC, ~visit_in_scope_clause())
 
 
 class VisitRepository(BaseRepository[Visit]):
     def __init__(self, session: AsyncSession) -> None:
         super().__init__(Visit, session)
+
+    async def outside_assignment_ids(self, visit_ids: list[uuid.UUID]) -> set[uuid.UUID]:
+        """Subset of `visit_ids` that are ad-hoc visits outside the employee's scope."""
+        if not visit_ids:
+            return set()
+        res = await self.session.execute(
+            select(Visit.id)
+            .join(Customer, Customer.id == Visit.customer_id)
+            .where(Visit.id.in_(visit_ids), adhoc_outside_assignment_clause())
+        )
+        return set(res.scalars().all())
 
     async def get_full(self, visit_id: uuid.UUID) -> Visit | None:
         result = await self.session.execute(
@@ -47,6 +93,7 @@ class VisitRepository(BaseRepository[Visit]):
         search: str | None = None,
         sort_order: str = "desc",
         visit_type: VisitType | None = None,
+        outside_assignment: bool | None = None,
         skip: int = 0,
         limit: int = 20,
     ) -> tuple[list[Visit], int]:
@@ -78,6 +125,13 @@ class VisitRepository(BaseRepository[Visit]):
         if visit_type:
             stmt = stmt.where(Visit.visit_type == visit_type)
             count_stmt = count_stmt.where(Visit.visit_type == visit_type)
+
+        if outside_assignment is not None:
+            cond_out = adhoc_outside_assignment_clause()
+            if not outside_assignment:
+                cond_out = ~cond_out
+            stmt = stmt.where(cond_out)
+            count_stmt = count_stmt.where(cond_out)
 
         if status:
             if isinstance(status, (list, tuple, set)):
@@ -120,6 +174,8 @@ class VisitRepository(BaseRepository[Visit]):
 
         if sort_order.lower() == "asc":
             stmt = stmt.order_by(Visit.scheduled_at.asc(), Visit.id.asc())
+        elif sort_order.lower() == "created_desc":
+            stmt = stmt.order_by(Visit.created_at.desc(), Visit.id.desc())
         elif sort_order.lower() in ("recent", "updated_desc", "recent_ops"):
             stmt = stmt.order_by(Visit.updated_at.desc().nullslast(), Visit.scheduled_at.desc(), Visit.id.desc())
         else:

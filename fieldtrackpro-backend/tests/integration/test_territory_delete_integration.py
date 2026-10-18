@@ -8,7 +8,7 @@ Creates its own territory for deletion to avoid mutating the shared seeded_world
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 from httpx import AsyncClient
@@ -154,7 +154,7 @@ async def test_cannot_delete_territory_in_reassignment_history(
         json={
             "territory_id": history_territory_id,
             "assignment_type": "PERMANENT",
-            "start_date": date.today().isoformat(),
+            "start_date": (date.today() - timedelta(days=1)).isoformat()  # distinct date: one PERMANENT per start_date,
         },
         headers=admin_headers,
     )

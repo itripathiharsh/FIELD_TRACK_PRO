@@ -11,7 +11,7 @@ import pytest_asyncio
 from httpx import AsyncClient
 
 from app.config import settings
-from tests.integration.conftest import VALID_JPEG, create_visit, requires_db
+from tests.integration.conftest import VALID_JPEG, create_visit, iso_in, requires_db
 
 pytestmark = [requires_db, pytest.mark.integration, pytest.mark.asyncio]
 
@@ -136,9 +136,10 @@ async def test_same_file_allowed_on_a_different_visit(
         client, admin_headers, seeded_world["customer_id"],
         seeded_world["employee_id"], created_visits,
     )
+    # Visits for the same employee must be >= 60 min apart (DUPLICATE_VISIT).
     visit_b = await create_visit(
         client, admin_headers, seeded_world["customer_id"],
-        seeded_world["employee_id"], created_visits,
+        seeded_world["employee_id"], created_visits, iso_in(5),
     )
 
     for vid in (visit_a, visit_b):

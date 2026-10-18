@@ -9,8 +9,10 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.customer import Customer
+from app.models.employee_area_assignment import EmployeeAreaAssignment
 from app.models.employee_customer_assignment import EmployeeCustomerAssignment
-from app.models.visit import Visit
+from app.core.datetime_utils import get_ist_today_range
+from app.models.visit import Visit, VisitStatus, VisitType
 from app.repositories.base import BaseRepository
 
 
@@ -19,7 +21,11 @@ def _escape_like_pattern(search: str) -> str:
     return f"%{escaped}%"
 
 
-def _build_customer_search_filter(search: str):
+AD_HOC_MIN_SEARCH_LEN = 3
+AD_HOC_MAX_RESULTS = 50
+
+
+def _build_customer_search_filter(search: str, scope_clause=None):
     """
     Tokenizes search query by whitespace and constructs an AND filter across all tokens,
     matching each token against name, outlet_code, address, contact_person, or contact_number.
@@ -30,13 +36,19 @@ def _build_customer_search_filter(search: str):
     token_clauses = []
     for token in tokens:
         pattern = _escape_like_pattern(token)
+        contact_match = or_(
+            Customer.contact_person.ilike(pattern, escape="\\"),
+            Customer.contact_number.ilike(pattern, escape="\\"),
+        )
+        if scope_clause is not None:
+            # Contact fields are only searchable for outlets the caller may see.
+            contact_match = and_(scope_clause, contact_match)
         token_clauses.append(
             or_(
                 Customer.name.ilike(pattern, escape="\\"),
                 Customer.outlet_code.ilike(pattern, escape="\\"),
                 Customer.address.ilike(pattern, escape="\\"),
-                Customer.contact_person.ilike(pattern, escape="\\"),
-                Customer.contact_number.ilike(pattern, escape="\\"),
+                contact_match,
             )
         )
     return and_(*token_clauses)
@@ -77,6 +89,46 @@ class CustomerRepository(BaseRepository[Customer]):
         result = await self.session.execute(stmt)
         return list(result.scalars().all()), total_count
 
+    @staticmethod
+    def employee_scope_clause(employee_id: uuid.UUID, territory_id: uuid.UUID | None = None):
+        """
+        The set of outlets an EMPLOYEE is entitled to see:
+          * directly assigned (employee_customer_assignments),
+          * on any PLANNED visit (past or future) assigned to them,
+          * on an AD_HOC visit ONLY while it is PENDING/IN_PROGRESS and was created today
+            (IST) - enough to do the visit/collection that day, but an ad-hoc visit must
+            never leave lasting read access to an arbitrary outlet (it is a self-service
+            action; the outlet id can come from the redacted directory search). Mirrors
+            visit_repo.visit_in_scope_clause, where ad-hoc visits never legitimise an outlet.
+          * inside an Area they are assigned to cover (employee_area_assignments),
+          * inside their own home territory (employees.territory_id).
+        """
+        today_start, today_end = get_ist_today_range()
+        own_visit = or_(
+            Visit.visit_type != VisitType.AD_HOC,
+            and_(
+                Visit.status.in_((VisitStatus.PENDING, VisitStatus.IN_PROGRESS)),
+                Visit.created_at >= today_start,
+                Visit.created_at < today_end,
+            ),
+        )
+        clauses = [
+            Customer.id.in_(
+                select(EmployeeCustomerAssignment.customer_id).where(
+                    EmployeeCustomerAssignment.employee_id == employee_id
+                )
+            ),
+            Customer.id.in_(select(Visit.customer_id).where(Visit.employee_id == employee_id, own_visit)),
+            Customer.area_id.in_(
+                select(EmployeeAreaAssignment.area_id).where(
+                    EmployeeAreaAssignment.employee_id == employee_id
+                )
+            ),
+        ]
+        if territory_id is not None:
+            clauses.append(Customer.territory_id == territory_id)
+        return or_(*clauses)
+
     async def list_accessible_by_employee(
         self,
         employee_id: uuid.UUID,
@@ -85,56 +137,75 @@ class CustomerRepository(BaseRepository[Customer]):
         limit: int = 50,
         area_id: uuid.UUID | None = None,
         search: str | None = None,
+        home_territory_id: uuid.UUID | None = None,
     ) -> tuple[list[Customer], int]:
         """
-        Enables employee counter list and off-beat directory search.
-        If a search term is provided, searches the counter directory matching the query.
-        Otherwise, returns outlets assigned to the employee or visited by the employee.
+        Employee outlet list. Without a search term: only in-scope outlets.
+
+        With a search term of at least AD_HOC_MIN_SEARCH_LEN characters the
+        lookup extends to the whole directory (needed to pick an outlet for an
+        off-beat / ad-hoc visit) but matches ONLY name / outlet code / address
+        outside scope; phone and contact-person matching is limited to in-scope
+        outlets so the search cannot be used to enumerate contact data. The
+        caller redacts contact/financial fields for out-of-scope rows.
         """
+        scope = self.employee_scope_clause(employee_id, home_territory_id)
         filters = []
         if territory_id:
             filters.append(Customer.territory_id == territory_id)
         if area_id:
             filters.append(Customer.area_id == area_id)
 
-        if search and search.strip():
-            search_clause = _build_customer_search_filter(search)
-            if search_clause is not None:
-                filters.append(search_clause)
-            # Off-beat search across the full customer directory
-            count_stmt = select(func.count(Customer.id))
-            if filters:
-                count_stmt = count_stmt.where(*filters)
-            total_count = (await self.session.execute(count_stmt)).scalar_one()
-
-            stmt = select(Customer)
-            if filters:
-                stmt = stmt.where(*filters)
-            stmt = stmt.order_by(Customer.name.asc()).offset(skip).limit(limit)
-            result = await self.session.execute(stmt)
-            return list(result.scalars().all()), total_count
+        term = (search or "").strip()
+        if term:
+            directory_wide = len(term) >= AD_HOC_MIN_SEARCH_LEN
+            clause = _build_customer_search_filter(term, scope_clause=scope)
+            if clause is not None:
+                filters.append(clause)
+            if not directory_wide:
+                filters.append(scope)
+            limit = min(limit, AD_HOC_MAX_RESULTS)
         else:
-            # Beat browsing: assigned in EmployeeCustomerAssignment OR visited in Visit
-            assigned_or_visited = or_(
-                Customer.id.in_(
-                    select(EmployeeCustomerAssignment.customer_id).where(
-                        EmployeeCustomerAssignment.employee_id == employee_id
-                    )
-                ),
-                Customer.id.in_(
-                    select(Visit.customer_id).where(
-                        Visit.employee_id == employee_id
-                    )
-                )
-            )
-            filters.append(assigned_or_visited)
+            filters.append(scope)
 
-            count_stmt = select(func.count(Customer.id)).where(*filters)
-            total_count = (await self.session.execute(count_stmt)).scalar_one()
+        count_stmt = select(func.count(Customer.id)).where(*filters)
+        total_count = (await self.session.execute(count_stmt)).scalar_one()
+        stmt = (
+            select(Customer).where(*filters).order_by(Customer.name.asc()).offset(skip).limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all()), total_count
 
-            stmt = select(Customer).where(*filters).order_by(Customer.name.asc()).offset(skip).limit(limit)
-            result = await self.session.execute(stmt)
-            return list(result.scalars().all()), total_count
+    async def in_scope_ids(
+        self,
+        employee_id: uuid.UUID,
+        customer_ids: list[uuid.UUID],
+        home_territory_id: uuid.UUID | None = None,
+    ) -> set[uuid.UUID]:
+        if not customer_ids:
+            return set()
+        scope = self.employee_scope_clause(employee_id, home_territory_id)
+        res = await self.session.execute(
+            select(Customer.id).where(Customer.id.in_(customer_ids), scope)
+        )
+        return set(res.scalars().all())
+
+    async def list_map_locations_for_employee(
+        self,
+        employee_id: uuid.UUID,
+        territory_id: uuid.UUID | None = None,
+        area_id: uuid.UUID | None = None,
+        home_territory_id: uuid.UUID | None = None,
+    ) -> list[Customer]:
+        filters = [Customer.location.is_not(None), self.employee_scope_clause(employee_id, home_territory_id)]
+        if territory_id is not None:
+            filters.append(Customer.territory_id == territory_id)
+        if area_id is not None:
+            filters.append(Customer.area_id == area_id)
+        res = await self.session.execute(
+            select(Customer).where(*filters).order_by(Customer.name.asc())
+        )
+        return list(res.scalars().all())
 
     # Backwards compatibility alias
     list_visited_by_employee = list_accessible_by_employee

@@ -98,6 +98,47 @@ def test_file_validation_oversized_file():
     assert exc_info.value.error_code == "FILE_TOO_LARGE"
 
 
+class _FakeUploadStream:
+    """Minimal async-read stream standing in for UploadFile in these unit tests."""
+
+    def __init__(self, data: bytes):
+        self._data = data
+        self._pos = 0
+
+    async def read(self, n: int = -1) -> bytes:
+        if n < 0:
+            chunk, self._pos = self._data[self._pos :], len(self._data)
+        else:
+            chunk = self._data[self._pos : self._pos + n]
+            self._pos += len(chunk)
+        return chunk
+
+
+@pytest.mark.asyncio
+async def test_read_upload_within_limit_rejects_oversized_stream_without_full_buffer():
+    """
+    The whole point of streaming the read is to never materialize a too-large
+    upload in memory - verify it rejects (413) using a stream far bigger than
+    the cap, read in small chunks so the running-total check is actually exercised.
+    """
+    cap = 1024
+    oversized = b"x" * (cap * 50)
+    stream = _FakeUploadStream(oversized)
+    with pytest.raises(BaseAPIException) as exc_info:
+        await FileValidationService.read_upload_within_limit(stream, max_bytes=cap, chunk_size=64)
+    assert exc_info.value.status_code == 413
+    assert exc_info.value.error_code == "FILE_TOO_LARGE"
+
+
+@pytest.mark.asyncio
+async def test_read_upload_within_limit_allows_payload_at_or_under_cap():
+    cap = 1024
+    exact = b"y" * cap
+    under = b"z" * (cap - 1)
+    assert await FileValidationService.read_upload_within_limit(_FakeUploadStream(exact), cap, chunk_size=64) == exact
+    assert await FileValidationService.read_upload_within_limit(_FakeUploadStream(under), cap, chunk_size=64) == under
+
+
 # ---------------------------------------------------------------------------
 # Storage Provider Unit Tests (LocalStorageProvider)
 # ---------------------------------------------------------------------------

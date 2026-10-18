@@ -20,6 +20,13 @@ from app.schemas.customer import (
     CustomerRead,
     CustomerUpdate,
 )
+from app.schemas.customer_prospect import (
+    CustomerProspectRead,
+    CustomerProspectRejectRequest,
+    CustomerProspectSubmitResponse,
+    CustomerProspectUpdate,
+)
+from app.models.customer_prospect import ProspectStatus
 from app.schemas.customer_requirement import (
     CustomerRequirementCreate,
     CustomerRequirementRead,
@@ -32,11 +39,13 @@ from app.schemas.location_proposal import (
 from app.schemas.media import OrderRead
 from app.services import (
     account_service,
+    customer_prospect_service,
     customer_requirement_service,
     customer_service,
     invoice_service,
     location_proposal_service,
     media_service,
+    outlet_proof_service,  # live outlet proof: additive CustomerRead fields
 )
 
 router = APIRouter(prefix="/customers", tags=["customers"])
@@ -56,17 +65,104 @@ async def create_customer(
     return CustomerRead.from_model(customer)
 
 
-@router.post("/prospect", response_model=CustomerRead, status_code=201, dependencies=[AnyAuth])
+@router.post("/prospect", response_model=CustomerProspectSubmitResponse, status_code=201, dependencies=[AnyAuth])
 async def create_customer_prospect(
     data: CustomerProspectCreate,
     current_user: CurrentUser,
     session: DbSession,
 ):
     """
-    Field sales: Onboard a new customer / outlet with brands, requirement, and pending location proposal.
+    Field sales: submit a new outlet with brands, requirement, and GPS pin.
+
+    An ADMIN caller still gets the outlet created immediately (unchanged). An
+    EMPLOYEE caller's submission is held as a CustomerProspect for admin
+    review instead - nothing is created yet; see POST /customers/prospects/{id}/approve.
     """
-    customer = await customer_service.create_customer_prospect(data, current_user, session)
-    return CustomerRead.from_model(customer)
+    if current_user.is_admin:
+        customer = await customer_service.create_customer_prospect(data, current_user, session)
+        return CustomerProspectSubmitResponse(
+            status="CREATED",
+            message="Outlet created.",
+            customer=CustomerRead.from_model(customer),
+        )
+
+    prospect = await customer_prospect_service.submit_prospect(data, current_user, session)
+    return CustomerProspectSubmitResponse(
+        status="PENDING_APPROVAL",
+        message="Submitted for admin approval. The outlet will appear once approved.",
+        prospect_id=prospect.id,
+    )
+
+
+@router.get("/prospects", response_model=list[CustomerProspectRead], dependencies=[AnyAuth])
+async def list_customer_prospects(
+    current_user: CurrentUser,
+    session: DbSession,
+    status: ProspectStatus | None = Query(default=None),
+):
+    """ADMIN sees every submission; EMPLOYEE sees only their own."""
+    prospects = await customer_prospect_service.list_prospects(session, current_user, status)
+    reads = [CustomerProspectRead.from_model(p) for p in prospects]
+    return await outlet_proof_service.attach_outlet_proofs(session, reads)
+
+
+@router.get("/prospects/{prospect_id}", response_model=CustomerProspectRead, dependencies=[AnyAuth])
+async def get_customer_prospect(
+    prospect_id: uuid.UUID,
+    current_user: CurrentUser,
+    session: DbSession,
+):
+    prospect = await customer_prospect_service.get_prospect(prospect_id, current_user, session)
+    read = CustomerProspectRead.from_model(prospect)
+    await outlet_proof_service.attach_outlet_proofs(session, [read])
+    return read
+
+
+@router.patch("/prospects/{prospect_id}", response_model=CustomerProspectRead, dependencies=[AdminOnly])
+async def update_customer_prospect(
+    prospect_id: uuid.UUID,
+    data: CustomerProspectUpdate,
+    session: DbSession,
+):
+    """Admin can correct fields (typo, outlet code) on a PENDING submission before approving."""
+    prospect = await customer_prospect_service.update_prospect(prospect_id, data, session)
+    return CustomerProspectRead.from_model(prospect)
+
+
+@router.post("/prospects/{prospect_id}/approve", response_model=CustomerRead, dependencies=[AdminOnly])
+async def approve_customer_prospect(
+    prospect_id: uuid.UUID,
+    current_user: CurrentUser,
+    session: DbSession,
+):
+    customer = await customer_prospect_service.approve_prospect(prospect_id, current_user, session)
+    read = CustomerRead.from_model(customer)
+    await outlet_proof_service.enrich_customer_reads(session, [read])
+    return read
+
+
+@router.post("/prospects/{prospect_id}/reject", response_model=CustomerProspectRead, dependencies=[AdminOnly])
+async def reject_customer_prospect(
+    prospect_id: uuid.UUID,
+    data: CustomerProspectRejectRequest,
+    current_user: CurrentUser,
+    session: DbSession,
+):
+    prospect = await customer_prospect_service.reject_prospect(prospect_id, data.reason, current_user, session)
+    return CustomerProspectRead.from_model(prospect)
+
+
+@router.post("/{customer_id}/mark-tally-entry-done", response_model=CustomerRead, dependencies=[AdminOnly])
+async def mark_customer_tally_entry_done(
+    customer_id: uuid.UUID,
+    current_user: CurrentUser,
+    session: DbSession,
+):
+    """Admin confirms they've manually added this approved outlet to TallyPrime."""
+    customer = await customer_prospect_service.mark_tally_entry_done(customer_id, current_user, session)
+    read = CustomerRead.from_model(customer)
+    await outlet_proof_service.enrich_customer_reads(session, [read])
+    return read
 
 
 @router.get("", response_model=list[CustomerRead], dependencies=[AnyAuth])
@@ -81,30 +177,47 @@ async def list_customers(
     limit: int = Query(default=50, le=5000),
 ):
     """
-    P0-1: an ADMIN sees the full outlet directory; an EMPLOYEE is confined
-    server-side to outlets they have at least one visit assigned to (see
-    customer_service.list_customers) - never the client-supplied
-    territory_id/area_id alone.
+    An ADMIN sees the full outlet directory. An EMPLOYEE sees only outlets in
+    their scope (assigned, on one of their visits, or in an Area they cover).
+    The one exception is the off-beat / ad-hoc visit picker: a `search` of 3+
+    characters also matches other outlets, returned REDACTED (no contact,
+    GST, brands or staff). An unlinked employee account gets an empty list.
     Returns X-Total-Count header for scalable server-side pagination.
     """
-    customers, total_count = await customer_service.list_customers(
+    customers, total_count, in_scope = await customer_service.list_customers(
         session, current_user, territory_id, skip, limit, area_id, search
     )
     response.headers["X-Total-Count"] = str(total_count)
-    return [CustomerRead.from_model(c) for c in customers]
+    out = []
+    for c in customers:
+        read = CustomerRead.from_model(c)
+        if in_scope is not None and c.id not in in_scope:
+            # Ad-hoc / off-beat directory search hit: id, name, code, address,
+            # coordinates only. No contact numbers, tax ids, brands or staff.
+            read = customer_service.redact_customer_read(read)
+        out.append(read)
+    # Live outlet proof summary fields, only for outlets the caller may fully see.
+    await outlet_proof_service.enrich_customer_reads(
+        session, [r for r in out if in_scope is None or r.id in in_scope]
+    )
+    return out
 
 
 @router.get("/map-locations", response_model=list[CustomerMapLocation], dependencies=[AnyAuth])
 async def list_customer_map_locations(
     session: DbSession,
+    current_user: CurrentUser,
     territory_id: uuid.UUID | None = Query(default=None),
     area_id: uuid.UUID | None = Query(default=None),
 ):
     """
     Dedicated lightweight geo-coordinates endpoint for maps (WEB-CUST-002).
-    Returns coordinates, radius, and status for all active customer map markers.
+    Returns coordinates, radius, and status for customer map markers
+    (ADMIN: all; EMPLOYEE: only outlets in their scope).
     """
-    customers = await customer_service.list_customer_map_locations(session, territory_id, area_id)
+    customers = await customer_service.list_customer_map_locations(
+        session, territory_id, area_id, current_user
+    )
     out = []
     for c in customers:
         lat, lng = customer_service.extract_coords(c.location)
@@ -130,13 +243,14 @@ async def list_customer_map_locations(
 @router.get("/{customer_id}", response_model=CustomerRead, dependencies=[AnyAuth])
 async def get_customer(customer_id: uuid.UUID, current_user: CurrentUser, session: DbSession):
     """
-    P0-1: an EMPLOYEE may only view an outlet they have a visit assigned to -
-    the same ownership rule already enforced for the account/invoices/orders
-    endpoints below, now applied consistently to the base profile too.
+    An EMPLOYEE may only view an outlet in their scope (assigned / on their
+    visits / in a covered Area) - the same rule as account/invoices/orders.
     """
     await customer_service.assert_employee_can_view_customer(customer_id, current_user, session)
     customer = await customer_service.get_customer(customer_id, session)
-    return CustomerRead.from_model(customer)
+    read = CustomerRead.from_model(customer)
+    await outlet_proof_service.enrich_customer_reads(session, [read])
+    return read
 
 
 @router.patch("/{customer_id}", response_model=CustomerRead, dependencies=[AdminOnly])
@@ -144,7 +258,9 @@ async def update_customer(
     customer_id: uuid.UUID, data: CustomerUpdate, session: DbSession
 ):
     customer = await customer_service.update_customer(customer_id, data, session)
-    return CustomerRead.from_model(customer)
+    read = CustomerRead.from_model(customer)
+    await outlet_proof_service.enrich_customer_reads(session, [read])
+    return read
 
 
 @router.get("/{customer_id}/account", response_model=AccountSummary, dependencies=[AnyAuth])
@@ -185,6 +301,7 @@ async def propose_customer_location(
     Employee / Admin: Propose corrected GPS coordinates for an existing customer.
     Creates a pending location proposal without altering official coordinates until approved.
     """
+    await customer_service.assert_employee_can_view_customer(customer_id, current_user, session)
     return await location_proposal_service.create_location_proposal(
         customer_id=customer_id,
         data=data,
@@ -196,29 +313,37 @@ async def propose_customer_location(
 @router.get("/{customer_id}/location-proposals", response_model=list[LocationProposalRead], dependencies=[AnyAuth])
 async def list_customer_location_proposals(
     customer_id: uuid.UUID,
+    current_user: CurrentUser,
     session: DbSession,
 ):
     """
-    List all location proposals and audit trail for a specific customer.
+    List location proposals for a customer. ADMIN: full audit trail.
+    EMPLOYEE: only the proposals they submitted, and only for outlets in their scope.
     """
+    await customer_service.assert_employee_can_view_customer(customer_id, current_user, session)
     return await location_proposal_service.list_location_proposals(
         session=session,
         status="ALL",
         customer_id=customer_id,
+        submitted_by=current_user.id if not current_user.is_admin else None,
     )
 
 
 @router.get("/{customer_id}/requirements", response_model=list[CustomerRequirementRead], dependencies=[AnyAuth])
 async def list_customer_requirements(
     customer_id: uuid.UUID,
+    current_user: CurrentUser,
     session: DbSession,
 ):
     """
-    List business opportunities / requirements for a customer.
+    List requirements for a customer. ADMIN: all. EMPLOYEE: only those they
+    created, and only for outlets in their scope.
     """
+    await customer_service.assert_employee_can_view_customer(customer_id, current_user, session)
     return await customer_requirement_service.list_requirements_for_customer(
         customer_id=customer_id,
         session=session,
+        created_by=current_user.id if not current_user.is_admin else None,
     )
 
 

@@ -1,3 +1,5 @@
+import sys as _sys, os as _os; _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _script_env
 import asyncio
 import asyncpg
 import re
@@ -41,7 +43,7 @@ def resolve_brand(cust_name: str, outlet_code: str | None) -> str | None:
     return None
 
 async def run_backfill():
-    conn = await asyncpg.connect("postgresql://fieldtrack_app:XcWG3aLw7s8mL75vrvl97aDZTSXbr4y6@127.0.0.1:5432/fieldtrackpro_dev")
+    conn = await asyncpg.connect(_script_env.db_url())
     
     rows = await conn.fetch("""
         SELECT i.id, i.amount, c.id as cust_id, c.name, c.outlet_code 
@@ -92,4 +94,5 @@ async def run_backfill():
     await conn.close()
 
 if __name__ == "__main__":
+    _script_env.guard_write_script("backfill_brands")
     asyncio.run(run_backfill())

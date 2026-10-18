@@ -14,7 +14,16 @@ from httpx import AsyncClient
 
 from tests.integration.conftest import db_cursor, requires_db
 
-pytestmark = [requires_db, pytest.mark.integration, pytest.mark.asyncio]
+_EXCEL_IMPORT_DISABLED_REASON = (
+    "Excel/MIS import is permanently disabled by design: /api/v1/imports/preview|validate|{id}/commit "
+    "return 403 FORBIDDEN ('TallyPrime synchronization is the sole authoritative source'). These tests "
+    "exercise the retired pipeline; the 403 contract itself is asserted by tests/unit/test_excel_import_disabled.py."
+)
+
+pytestmark = [
+    pytest.mark.skip(reason=_EXCEL_IMPORT_DISABLED_REASON),
+    requires_db, pytest.mark.integration, pytest.mark.asyncio,
+]
 
 
 def _xlsx(headers: list[str], rows: list[list], sheet_name: str = "Sheet1") -> bytes:

@@ -16,6 +16,14 @@ from app.database import AsyncSessionLocal
 from tests.conftest import requires_db, make_admin_token, make_employee_token
 
 
+@pytest.mark.skip(
+    reason=(
+        "Stale: depends on real pre-existing DB rows (first customer/employee/visit) and the old "
+        "requirement statuses/visit-assignment rules (now 403 VISIT_NOT_ASSIGNED). Superseded by "
+        "tests/integration/test_access_scoping_integration.py and "
+        "tests/test_requirement_orders_workflow.py, which build their own hermetic fixtures."
+    )
+)
 @pytest.mark.asyncio
 @requires_db
 async def test_customer_requirement_admin_workflow(client: AsyncClient):

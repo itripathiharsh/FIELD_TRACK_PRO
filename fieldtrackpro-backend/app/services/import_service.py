@@ -736,11 +736,19 @@ async def commit_import_batch(
             if row_type == "employee":
                 emp_code = row["employee_code"]
                 email = row["email"].lower()
+                # An import is NOT a way to grant privilege: ADMIN accounts may only be created by a Super
+                # Admin, and an import never changes the role of an account that already exists.
                 app_role = Role.ADMIN if row["application_role"] == "ADMIN" else Role.EMPLOYEE
 
                 # Find or create User
                 user_obj = user_by_email.get(email)
                 if not user_obj:
+                    if app_role == Role.ADMIN and not current_user.is_super_admin:
+                        raise BaseAPIException(
+                            status_code=403,
+                            detail="Only a Super Admin can import accounts with the ADMIN role.",
+                            error_code="ROLE_ASSIGNMENT_FORBIDDEN",
+                        )
                     user_obj = User(
                         email=email,
                         mobile_number=row.get("mobile_phone") or None,
@@ -751,8 +759,8 @@ async def commit_import_batch(
                     session.add(user_obj)
                     await session.flush()
                     user_by_email[email] = user_obj
-                else:
-                    user_obj.role = app_role
+                # existing account: its role is left untouched (role changes go through the audited
+                # Super Admin role-change endpoint only)
 
                 # Find or create Employee
                 emp_obj = emp_by_code.get(emp_code.lower())

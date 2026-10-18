@@ -194,7 +194,7 @@ async def test_cannot_check_in_to_another_employees_visit(
         },
         headers=other_employee_headers,
     )
-    assert resp.status_code == 403
+    assert resp.status_code == 404
     assert db.fetch_one("SELECT status FROM visits WHERE id = %s", (visit_id,))["status"] == "PENDING"
 
 

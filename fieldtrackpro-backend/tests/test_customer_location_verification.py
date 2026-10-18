@@ -13,6 +13,7 @@ from app.models.customer_brand import CustomerBrand
 from app.models.customer_location_proposal import CustomerLocationProposal, LocationProposalStatus
 from app.models.customer_requirement import CustomerRequirement
 from app.models.employee import Employee
+from app.models.employee_customer_assignment import EmployeeCustomerAssignment
 from app.models.user import Role, User
 
 
@@ -59,6 +60,14 @@ async def loc_setup():
         await session.refresh(emp_user)
         await session.refresh(employee)
         await session.refresh(customer)
+
+        # The employee must have the outlet in scope (assigned) to touch it.
+        session.add(
+            EmployeeCustomerAssignment(
+                employee_id=employee.id, customer_id=customer.id, created_by=admin_user.id
+            )
+        )
+        await session.commit()
 
         admin_token = create_access_token(str(admin_user.id), Role.ADMIN.value)
         emp_token = create_access_token(str(emp_user.id), Role.EMPLOYEE.value)
@@ -258,9 +267,16 @@ async def test_single_pending_proposal_per_customer_guard(loc_setup):
 
 @pytest.mark.asyncio
 async def test_create_customer_prospect_with_brands_and_requirement(loc_setup):
+    """
+    An EMPLOYEE submission is held for admin approval (not created live) - submitting,
+    then approving, must produce the same end state (brands, requirement, VERIFIED
+    location - the approval review IS the location sign-off, no separate pending
+    CustomerLocationProposal for a brand-new outlet) the old immediate-creation flow did.
+    """
     import random
     import string
     emp_token = loc_setup["emp_token"]
+    admin_token = loc_setup["admin_token"]
     unique_phone = f"+9198{random.randint(10000000, 99999999)}"
     unique_gst = f"07{''.join(random.choices(string.ascii_uppercase, k=5))}{random.randint(1000, 9999)}A1Z{random.randint(1, 9)}"
 
@@ -290,13 +306,24 @@ async def test_create_customer_prospect_with_brands_and_requirement(loc_setup):
             },
         )
         assert resp.status_code == 201
-        cust_data = resp.json()
+        submit_body = resp.json()
+        assert submit_body["status"] == "PENDING_APPROVAL"
+        assert submit_body["customer"] is None
+        prospect_id = submit_body["prospect_id"]
+
+        approved = await client.post(
+            f"/api/v1/customers/prospects/{prospect_id}/approve",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert approved.status_code == 200, approved.text
+        cust_data = approved.json()
         cust_id = uuid.UUID(cust_data["id"])
         assert cust_data["name"] == "New Alpha Traders"
         assert cust_data["gst_number"] == unique_gst
         assert "USHA" in cust_data["brands"]
         assert "Zebronics" in cust_data["brands"]
-        assert cust_data["location_status"] == "PENDING_APPROVAL"
+        assert cust_data["location_status"] == "VERIFIED"
+        assert cust_data["needs_tally_entry"] is True
 
     async with AsyncSessionLocal() as session:
         # Verify brands in database
@@ -314,15 +341,6 @@ async def test_create_customer_prospect_with_brands_and_requirement(loc_setup):
         assert req.quantity == 70
         assert float(req.expected_value) == 150000.0
         assert str(req.follow_up_date) == "2026-09-05"
-
-        # Verify pending location proposal created
-        p_res = await session.execute(select(CustomerLocationProposal).where(CustomerLocationProposal.customer_id == cust_id))
-        proposals = p_res.scalars().all()
-        assert len(proposals) == 1
-        prop = proposals[0]
-        assert prop.status == LocationProposalStatus.PENDING
-        assert prop.proposed_latitude == 28.6505
-        assert prop.proposed_longitude == 77.2303
 
 
 @pytest.mark.asyncio
@@ -407,3 +425,11 @@ async def test_global_requirements_and_brands_api(loc_setup):
         assert list_req.status_code == 200
         req_items = list_req.json()
         assert any(r["id"] == req_id for r in req_items)
+
+
+@pytest.fixture(autouse=True)
+def _outlet_proof_not_required(monkeypatch):
+    """These tests predate live outlet proof: submit prospects without a proof (flag off)."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "outlet_proof_required_for_new_outlet", False)

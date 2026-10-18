@@ -1,3 +1,5 @@
+import sys as _sys, os as _os; _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _script_env
 import asyncio
 from sqlalchemy import select
 from app.database import AsyncSessionLocal
@@ -7,7 +9,7 @@ from app.core.security import hash_password
 
 async def setup_user():
     email = "imharshofficial322@gmail.com"
-    password = "Imharsh@1"
+    password = _script_env.env("SCRIPT_HARSH_PASSWORD")
     password_hash = hash_password(password)
     
     async with AsyncSessionLocal() as session:

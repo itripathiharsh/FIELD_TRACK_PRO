@@ -17,3 +17,10 @@ class OrganizationProfile(BaseModel):
     total_territories: int
     total_areas: int
     master_brands: List[str]
+
+
+class OrganizationPublicProfile(BaseModel):
+    """Non-sensitive subset visible to field employees."""
+    organization_name: str
+    timezone: str
+    currency: str

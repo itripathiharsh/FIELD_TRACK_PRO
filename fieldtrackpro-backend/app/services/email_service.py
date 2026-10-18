@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import smtplib
+import ssl
 from email.message import EmailMessage
 
 from app.config import settings
@@ -9,7 +10,26 @@ from app.services.sms_service import mask_email
 logger = logging.getLogger(__name__)
 
 
+class SmtpInsecureError(RuntimeError):
+    """Raised instead of sending SMTP credentials over an unencrypted connection."""
+
+
+def _insecure_allowed() -> bool:
+    # Never in production, whatever SMTP_ALLOW_INSECURE says.
+    return bool(settings.smtp_allow_insecure) and settings.environment != "production"
+
+
 def _send_smtp_email(email: str, subject: str, body: str) -> None:
+    """
+    Deliver one message. Transport rules:
+      * port 465 -> implicit TLS (SMTP_SSL);
+      * any other port -> plain connect, then STARTTLS whenever the server advertises it
+        (587 / 2525 / 25 ...), re-issuing EHLO afterwards;
+      * credentials are NEVER sent over an unencrypted channel unless SMTP_ALLOW_INSECURE=true
+        (dev only; ignored in production). A refusal is logged and the send is skipped.
+    Failures are logged (masked address, exception class only - no secrets, no OTP) and
+    re-raised to the caller, which swallows them so the API response never changes.
+    """
     msg = EmailMessage()
     msg.set_content(body)
     msg["Subject"] = subject
@@ -17,18 +37,41 @@ def _send_smtp_email(email: str, subject: str, body: str) -> None:
     msg["To"] = email
 
     masked = mask_email(email)
-    logger.info("Connecting to SMTP server at %s:%s...", settings.smtp_host, settings.smtp_port)
+    host, port = settings.smtp_host, settings.smtp_port
+    has_credentials = bool(settings.smtp_user and settings.smtp_password)
+    logger.info("Connecting to SMTP server at %s:%s...", host, port)
     try:
-        with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=10) as server:
+        context = ssl.create_default_context()
+        if port == 465:
+            server = smtplib.SMTP_SSL(host, port, timeout=10, context=context)
+            encrypted = True
+        else:
+            server = smtplib.SMTP(host, port, timeout=10)
+            encrypted = False
+        with server:
             server.ehlo()
-            if settings.smtp_port == 587:
-                server.starttls()
-            if settings.smtp_user and settings.smtp_password:
+            if not encrypted and server.has_extn("starttls"):
+                server.starttls(context=context)
+                server.ehlo()
+                encrypted = True
+            if has_credentials:
+                if not encrypted and not _insecure_allowed():
+                    raise SmtpInsecureError(
+                        "refusing to send SMTP credentials without TLS (use port 465/587 with STARTTLS, "
+                        "or set SMTP_ALLOW_INSECURE=true in development)"
+                    )
                 server.login(settings.smtp_user, settings.smtp_password)
             server.send_message(msg)
             logger.info("Password reset email delivered successfully to %s", masked)
     except Exception as e:
-        logger.error("Failed to send email to %s (error: %s)", masked, type(e).__name__)
+        logger.error(
+            "event=smtp_delivery_failed to=%s smtp=%s:%s error=%s%s",
+            masked,
+            host,
+            port,
+            type(e).__name__,
+            f" ({e})" if isinstance(e, SmtpInsecureError) else "",
+        )
         raise
 
 
@@ -69,7 +112,7 @@ FieldTrack Pro Team
             return
 
         logger.info("[MOCK EMAIL] Dispatched security code to %s", masked)
-        if settings.environment in ("dev", "test") and settings.debug:
+        if settings.environment in ("dev", "test") and settings.debug and settings.dev_print_otp:
             print(
                 f"\n=======================================================\n"
                 f"[DEV EMAIL] Password Reset OTP for {email}: {otp}\n"

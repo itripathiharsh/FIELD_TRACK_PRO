@@ -46,6 +46,8 @@ class BusinessSummaryRow(BaseModel):
     bucket_60_75: Decimal = Decimal("0.00")
     bucket_75_90: Decimal = Decimal("0.00")
     bucket_gt_90: Decimal = Decimal("0.00")
+    # Latest snapshot date of the stock figures on a raw outlet row.
+    as_of_date: Optional[date] = None
 
 
 class BusinessBIDashboard(BaseModel):
@@ -55,6 +57,9 @@ class BusinessBIDashboard(BaseModel):
     total_outlets: int
     total_sales: Decimal
     total_collection: Decimal
+    # Additive split of live VERIFIED collections (0 on the snapshot path).
+    total_collection_posted_in_tally: Decimal = Decimal("0.00")
+    total_collection_verified_awaiting_tally: Decimal = Decimal("0.00")
     total_market_outstanding: Decimal
     total_overdue_gt_90: Decimal
     brand_summaries: list[BusinessSummaryRow]
@@ -62,6 +67,17 @@ class BusinessBIDashboard(BaseModel):
     area_summaries: list[BusinessSummaryRow]
     fos_summaries: list[BusinessSummaryRow]
     raw_outlet_rows: list[BusinessSummaryRow]
+    # SNAPSHOT (outlet financial snapshots) or LIVE_INVOICES (fallback when no snapshot exists in the period).
+    data_source: str = "SNAPSHOT"
+    data_source_note: Optional[str] = None
+    # Latest snapshot date backing the stock figures (market OS / ageing); today for LIVE_INVOICES.
+    as_of_date: Optional[date] = None
+    # Resolved period: inclusive IST dates, source DATES | MONTH | ALL.
+    period_start: Optional[date] = None
+    period_end: Optional[date] = None
+    period_source: str = "ALL"
+    # True when a month was supplied but ignored because an explicit date range won.
+    month_ignored: bool = False
 
 
 class MonthlyPeriodRead(BaseModel):

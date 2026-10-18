@@ -565,8 +565,8 @@ async def test_submission_requires_visit_ownership(
         json={"form_id": setup["form_id"], "visit_id": visit_id, "answers": []},
         headers=other_employee_headers,
     )
-    assert resp.status_code == 403, resp.text
-    assert resp.json()["error"]["code"] == "VISIT_NOT_ASSIGNED"
+    assert resp.status_code == 404, resp.text
+    assert resp.json()["error"]["code"] == "VISIT_NOT_FOUND"
 
     # Employee A (assigned) succeeds.
     resp = await client.post(
@@ -734,7 +734,7 @@ async def test_non_owner_non_admin_cannot_read_submission(
     submission_id = resp.json()["id"]
 
     resp = await client.get(f"/api/v1/form-submissions/{submission_id}", headers=other_employee_headers)
-    assert resp.status_code == 403
+    assert resp.status_code == 404
 
     resp = await client.get(f"/api/v1/form-submissions/{submission_id}", headers=admin_headers)
     assert resp.status_code == 200

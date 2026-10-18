@@ -1,3 +1,5 @@
+import sys as _sys, os as _os; _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import _script_env
 import asyncio
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -89,4 +91,5 @@ async def main():
     await engine.dispose()
 
 if __name__ == '__main__':
+    _script_env.guard_write_script("apply_brands_migration")
     asyncio.run(main())

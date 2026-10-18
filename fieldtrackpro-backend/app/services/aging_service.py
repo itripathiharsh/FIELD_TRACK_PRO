@@ -61,6 +61,25 @@ class InvoiceAging:
     mis_bucket: MisBucket
 
 
+def classify_age_days(days_outstanding: int) -> AgingStatus:
+    """
+    THE one place the Normal / Warning(YELLOW) / Overdue(RED) boundary lives:
+
+      days <= 20        -> NORMAL
+      21 <= days <= 25  -> WARNING  (yellow)
+      days >= 26 (>25)  -> OVERDUE  (red)
+
+    Applies to money that is still outstanding; a fully paid invoice is PAID
+    regardless of age (handled by compute_invoice_aging). The web
+    (utils/ageing.ts) and Android (OutletAccountScreen) clients mirror this rule.
+    """
+    if days_outstanding < WARNING_THRESHOLD_DAYS:
+        return AgingStatus.NORMAL
+    if days_outstanding < OVERDUE_THRESHOLD_DAYS:
+        return AgingStatus.WARNING
+    return AgingStatus.OVERDUE
+
+
 def compute_mis_bucket(days_outstanding: int) -> MisBucket:
     if days_outstanding <= 15:
         return MisBucket.DAYS_0_15
@@ -100,12 +119,7 @@ def compute_invoice_aging(
         PaymentStatusLabel.PARTIALLY_PAID if verified_paid_amount > 0 else PaymentStatusLabel.UNPAID
     )
 
-    if days_outstanding < WARNING_THRESHOLD_DAYS:
-        aging_status = AgingStatus.NORMAL
-    elif days_outstanding < OVERDUE_THRESHOLD_DAYS:
-        aging_status = AgingStatus.WARNING
-    else:
-        aging_status = AgingStatus.OVERDUE
+    aging_status = classify_age_days(days_outstanding)
 
     return InvoiceAging(
         days_outstanding=days_outstanding,

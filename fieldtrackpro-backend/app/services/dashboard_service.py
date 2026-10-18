@@ -19,7 +19,7 @@ from app.schemas.dashboard import (
     DashboardSummaryResponse,
     EmployeeDayDashboardResponse,
 )
-from app.services import field_exception_service, report_service
+from app.services import field_exception_service, payment_tally, report_service
 from app.services.employee_service import get_employee_by_user_id
 
 
@@ -116,6 +116,14 @@ async def get_dashboard_summary(
                 func.sum(case((Payment.status == "VERIFIED", PaymentBrandAllocation.allocated_amount), else_=Decimal("0.00"))),
                 Decimal("0.00"),
             ).label("verified_sum"),
+            func.coalesce(
+                func.sum(case((payment_tally.posted_clause(), PaymentBrandAllocation.allocated_amount), else_=Decimal("0.00"))),
+                Decimal("0.00"),
+            ).label("posted_sum"),
+            func.coalesce(
+                func.sum(case((payment_tally.awaiting_clause(), PaymentBrandAllocation.allocated_amount), else_=Decimal("0.00"))),
+                Decimal("0.00"),
+            ).label("awaiting_sum"),
         ).join(PaymentBrandAllocation, PaymentBrandAllocation.payment_id == Payment.id).where(
             func.lower(PaymentBrandAllocation.brand) == canonical_b.lower()
         )
@@ -126,6 +134,14 @@ async def get_dashboard_summary(
                 func.sum(case((Payment.status == "VERIFIED", Payment.amount), else_=Decimal("0.00"))),
                 Decimal("0.00"),
             ).label("verified_sum"),
+            func.coalesce(
+                func.sum(case((payment_tally.posted_clause(), Payment.amount), else_=Decimal("0.00"))),
+                Decimal("0.00"),
+            ).label("posted_sum"),
+            func.coalesce(
+                func.sum(case((payment_tally.awaiting_clause(), Payment.amount), else_=Decimal("0.00"))),
+                Decimal("0.00"),
+            ).label("awaiting_sum"),
         )
     if employee_id:
         col_q = col_q.where(Payment.employee_id == employee_id)
@@ -150,6 +166,9 @@ async def get_dashboard_summary(
     col_res = (await session.execute(col_q)).one()
     col_count = col_res.total_count or 0
     live_verified_col = col_res.verified_sum or Decimal("0.00")
+    # Split of the verified collections: receipt already in Tally vs not yet.
+    live_posted_col = col_res.posted_sum or Decimal("0.00")
+    live_awaiting_col = col_res.awaiting_sum or Decimal("0.00")
 
     # 5b. Compute accurate total customer accounts (from snapshots, assignments, or visits)
     cust_q = select(func.count(func.distinct(Customer.id)))
@@ -227,6 +246,8 @@ async def get_dashboard_summary(
         total_outlets=final_outlets,
         total_sales=bi_data.total_sales,
         total_collection=final_collection,
+        total_collection_posted_in_tally=live_posted_col,
+        total_collection_verified_awaiting_tally=live_awaiting_col,
         total_market_outstanding=bi_data.total_market_outstanding,
         total_overdue_gt_90=bi_data.total_overdue_gt_90,
         total_employees=total_employees,

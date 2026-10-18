@@ -50,6 +50,51 @@ async def record_read_audit(
     return audit_entry
 
 
+async def record_review_audit(
+    session: AsyncSession,
+    *,
+    operation: str,
+    actor_user_id: Optional[uuid.UUID],
+    payment_id: Optional[uuid.UUID],
+    before_status: Optional[str],
+    after_status: Optional[str],
+    writeback_job_id: Optional[uuid.UUID] = None,
+    agent: Optional[SyncAgent] = None,
+    direction: str = "REVIEW",
+    status: str = "SUCCESS",
+    error_message: Optional[str] = None,
+    details: Optional[Dict[str, Any]] = None,
+) -> TallyAuditLog:
+    """
+    Add an audit row (actor + before/after status) for a review / write-back
+    action. Does NOT commit: it joins the caller's transaction so the audit row
+    and the state change are atomic.
+    """
+    payload: Dict[str, Any] = {
+        "actor_user_id": str(actor_user_id) if actor_user_id else None,
+        "actor_agent_id": str(agent.id) if agent else None,
+        "payment_id": str(payment_id) if payment_id else None,
+        "before_status": before_status,
+        "after_status": after_status,
+    }
+    if details:
+        payload.update(details)
+    entry = TallyAuditLog(
+        direction=direction,
+        operation=operation,
+        entity_type="PAYMENTS",
+        record_count=1,
+        status=status,
+        error_message=error_message,
+        agent_id=agent.id if agent else None,
+        agent_name=agent.name if agent else None,
+        writeback_job_id=writeback_job_id,
+        details=payload,
+    )
+    session.add(entry)
+    return entry
+
+
 def _map_writeback_to_audit_item(job: TallyWritebackQueue, agent: Optional[SyncAgent] = None) -> TallyAuditLogItem:
     """Converts a TallyWritebackQueue entry into a unified TallyAuditLogItem."""
     status_map = {
@@ -148,9 +193,11 @@ async def get_audit_logs(
     clean_status = status.strip().upper() if status else None
     clean_entity = entity_type.strip().upper() if entity_type else None
 
-    # 1. Fetch READ items from tally_audit_logs
-    if clean_dir is None or clean_dir == "READ":
+    # 1. Fetch READ / REVIEW (admin & agent action) items from tally_audit_logs
+    if clean_dir in (None, "READ", "REVIEW"):
         stmt = select(TallyAuditLog)
+        if clean_dir is not None:
+            stmt = stmt.where(TallyAuditLog.direction == clean_dir)
         if clean_status:
             if clean_status == "SUCCESS":
                 stmt = stmt.where(TallyAuditLog.status.in_(["SUCCESS", "PARTIAL"]))

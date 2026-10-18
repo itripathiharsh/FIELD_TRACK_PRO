@@ -130,7 +130,7 @@ async def test_checkout_without_notes_has_null_notes(
 
 @pytest.mark.asyncio
 async def test_payment_idempotency_retry_returns_same_payment(
-    client: AsyncClient, admin_headers, employee_headers, seeded_world
+    client: AsyncClient, admin_headers, employee_headers, seeded_world, created_visits, created_payments
 ):
     """APP-CONTRACT-003: Retrying payment creation with the same idempotency_key returns the existing payment."""
     cust_id = seeded_world["customer_id"]
@@ -147,6 +147,10 @@ async def test_payment_idempotency_retry_returns_same_payment(
     )
     assert create_resp.status_code == 201, create_resp.text
     visit_id = create_resp.json()["id"]
+    # Track for teardown: an untracked IN_PROGRESS visit at "now" leaks into
+    # every later test for the same employee and makes them fail with
+    # 409 DUPLICATE_VISIT (time-dependent scheduling conflict).
+    created_visits.append(visit_id)
 
     # In-progress visit
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -180,6 +184,7 @@ async def test_payment_idempotency_retry_returns_same_payment(
     )
     assert resp1.status_code == 201, resp1.text
     payment1 = resp1.json()
+    created_payments.append(payment1["id"])
 
     # Retry submit with exact same idempotency_key
     resp2 = await client.post(

@@ -208,12 +208,12 @@ async def test_tally_read_write_audit_logging_and_apis(audit_test_setup):
         assert wb_log["record_count"] == 1
 
         # 6. Test Role Security:
-        # Accountant user -> 200 OK
+        # Accountant-profile EMPLOYEE -> 403 (ADMIN-only; free-text working_profile is no longer a privilege)
         res_logs_acct = await client.get(
             "/api/v1/integrations/tally/audit-logs",
             headers={"Authorization": f"Bearer {acct_token}"},
         )
-        assert res_logs_acct.status_code == 200
+        assert res_logs_acct.status_code == 403
 
         # Non-accountant Field Rep -> 403 Forbidden
         res_logs_rep = await client.get(

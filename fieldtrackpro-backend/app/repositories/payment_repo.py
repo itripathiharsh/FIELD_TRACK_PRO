@@ -53,14 +53,24 @@ class PaymentRepository(BaseRepository[Payment]):
         status: PaymentStatus | None = None,
         skip: int = 0,
         limit: int = 50,
+        tally_status=None,
+        stuck: bool | None = None,
     ) -> Sequence[Payment]:
-        """The accountant review queue - newest pending first by default."""
+        """The accountant review queue - newest pending first by default.
+        `tally_status` filters on the derived Tally lifecycle; `stuck=True`
+        keeps only FAILED / AWAITING_TALLY-older-than-30-min payments."""
+        from app.services import payment_tally
+
         stmt = (
             select(Payment)
             .options(selectinload(Payment.proofs), selectinload(Payment.allocations))
         )
         if status is not None:
             stmt = stmt.where(Payment.status == status)
+        if tally_status is not None:
+            stmt = stmt.where(payment_tally.tally_status_clause(tally_status))
+        if stuck:
+            stmt = stmt.where(payment_tally.stuck_clause())
         stmt = stmt.order_by(Payment.created_at.desc()).offset(skip).limit(limit)
         result = await self.session.execute(stmt)
         return result.scalars().all()

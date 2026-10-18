@@ -108,6 +108,12 @@ class Payment(Base):
     )
     reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # Optional bank-verification record captured by the admin at verify time
+    # (what the admin matched this collection against in the bank statement).
+    bank_reference: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    bank_verified_on: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    verified_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
     # Client-generated key so a double-tap/retried submit cannot create two
     # collection rows for the same visit. Nullable (historical EXCEL_IMPORT/
     # TALLY rows never set one; those dedupe by source_reference instead) -

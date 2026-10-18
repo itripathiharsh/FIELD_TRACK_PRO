@@ -22,7 +22,7 @@ class RequirementItemCreate(BaseModel):
     requested_quantity: int = Field(default=1, ge=1)
     expected_rate: float = Field(default=0.0, ge=0.0)
     requested_amount: Optional[float] = Field(default=None, ge=0.0)
-    notes: Optional[str] = None
+    notes: Optional[str] = Field(default=None, max_length=1000)
 
 
 class RequirementItemRead(BaseModel):
@@ -50,7 +50,7 @@ class RequirementItemDecisionUpdate(BaseModel):
     approved_quantity: Optional[int] = Field(default=None, ge=0)
     approved_rate: Optional[float] = Field(default=None, ge=0.0)
     tally_stock_item_name: Optional[str] = None
-    notes: Optional[str] = None
+    notes: Optional[str] = Field(default=None, max_length=1000)
 
 
 class CustomerRequirementCreate(BaseModel):
@@ -62,11 +62,11 @@ class CustomerRequirementCreate(BaseModel):
         max_length=100,
         description="e.g. Bulk Order, Dealership, Stock Replenishment",
     )
-    product_details: Optional[str] = Field(default=None, description="e.g. 25 Ceiling Fans, Smart TVs")
+    product_details: Optional[str] = Field(default=None, max_length=2000, description="e.g. 25 Ceiling Fans, Smart TVs")
     quantity: Optional[int] = Field(default=None, ge=1)
     expected_value: Optional[float] = Field(default=None, ge=0.0)
     follow_up_date: Optional[date] = None
-    notes: Optional[str] = None
+    notes: Optional[str] = Field(default=None, max_length=1000)
     photo_media_id: Optional[uuid.UUID] = None
     # Multi-item list
     items: Optional[list[RequirementItemCreate]] = None
@@ -79,7 +79,7 @@ class CustomerRequirementUpdate(BaseModel):
     quantity: Optional[int] = Field(default=None, ge=1)
     expected_value: Optional[float] = Field(default=None, ge=0.0)
     follow_up_date: Optional[date] = None
-    notes: Optional[str] = None
+    notes: Optional[str] = Field(default=None, max_length=1000)
     status: Optional[str] = Field(default=None, max_length=50)
 
 
@@ -87,30 +87,30 @@ class RequirementDecisionRequest(BaseModel):
     action: RequirementDecisionAction
     approved_quantity: Optional[int] = Field(default=None, ge=0)
     approved_value: Optional[float] = Field(default=None, ge=0.0)
-    admin_notes: Optional[str] = None
+    admin_notes: Optional[str] = Field(default=None, max_length=2000)
     items: Optional[list[RequirementItemDecisionUpdate]] = None
 
 
 class RequirementApproveRequest(BaseModel):
     approved_quantity: Optional[int] = Field(default=None, ge=1)
     approved_value: Optional[float] = Field(default=None, ge=0.0)
-    admin_notes: Optional[str] = None
+    admin_notes: Optional[str] = Field(default=None, max_length=2000)
     items: Optional[list[RequirementItemDecisionUpdate]] = None
 
 
 class RequirementPartiallyApproveRequest(BaseModel):
     approved_quantity: Optional[int] = Field(default=None, ge=0)
     approved_value: Optional[float] = Field(default=None, ge=0.0)
-    admin_notes: Optional[str] = None
+    admin_notes: Optional[str] = Field(default=None, max_length=2000)
     items: Optional[list[RequirementItemDecisionUpdate]] = None
 
 
 class RequirementRejectRequest(BaseModel):
-    admin_notes: Optional[str] = None
+    admin_notes: Optional[str] = Field(default=None, max_length=2000)
 
 
 class RequirementConfirmOrderRequest(BaseModel):
-    admin_notes: Optional[str] = None
+    admin_notes: Optional[str] = Field(default=None, max_length=2000)
     items: Optional[list[RequirementItemDecisionUpdate]] = None
 
 

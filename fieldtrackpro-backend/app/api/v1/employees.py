@@ -6,17 +6,25 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.client_ip import get_client_ip
 from app.core.deps.auth import CurrentUser, require_role
 from app.database import get_async_session
 from app.models.user import Role
+from app.schemas.admin_security import AdminPasswordResetResponse
 from app.schemas.employee import EmployeeCreate, EmployeeRead, EmployeeReadWithUser, EmployeeRegistration, EmployeeUpdate
 from app.schemas.employee_activity import EmployeeActivity
 from app.schemas.employee_area_assignment import EmployeeAreaAssignmentCreate, EmployeeAreaAssignmentRead
 from app.schemas.territory_assignment import TerritoryAssignmentCreate, TerritoryAssignmentHistory, TerritoryAssignmentRead
-from app.services import employee_activity_service, employee_area_service, employee_service, territory_assignment_service
+from app.services import (
+    admin_security_service,
+    employee_activity_service,
+    employee_area_service,
+    employee_service,
+    territory_assignment_service,
+)
 
 router = APIRouter(prefix="/employees", tags=["employees"])
 
@@ -26,9 +34,14 @@ AnyAuth = Depends(require_role(Role.ADMIN, Role.EMPLOYEE))
 
 
 @router.post("/register", response_model=EmployeeReadWithUser, status_code=201, dependencies=[AdminOnly])
-async def register_employee(data: EmployeeRegistration, session: DbSession):
-    """Admin: create a new user account and employee profile together."""
-    return await employee_service.register_employee(data, session)
+async def register_employee(data: EmployeeRegistration, request: Request, current_user: CurrentUser, session: DbSession):
+    """
+    Admin: create a new user account and employee profile together.
+
+    Role rules: an Admin may create EMPLOYEE accounts only; creating an ADMIN requires a Super Admin;
+    SUPER_ADMIN can never be created here.
+    """
+    return await employee_service.register_employee(data, session, current_user, get_client_ip(request))
 
 
 @router.post("", response_model=EmployeeRead, status_code=201, dependencies=[AdminOnly])
@@ -82,9 +95,37 @@ async def get_employee(employee_id: uuid.UUID, session: DbSession):
 
 @router.patch("/{employee_id}", response_model=EmployeeRead, dependencies=[AdminOnly])
 async def update_employee(
-    employee_id: uuid.UUID, data: EmployeeUpdate, session: DbSession
+    employee_id: uuid.UUID, data: EmployeeUpdate, request: Request, current_user: CurrentUser, session: DbSession
 ):
-    return await employee_service.update_employee(employee_id, data, session)
+    return await employee_service.update_employee(employee_id, data, session, current_user, get_client_ip(request))
+
+
+@router.post(
+    "/{employee_id}/reset-password",
+    response_model=AdminPasswordResetResponse,
+    dependencies=[AdminOnly],
+    summary="Admin: reset an employee's password",
+)
+async def reset_employee_password(
+    employee_id: uuid.UUID,
+    request: Request,
+    response: Response,
+    current_user: CurrentUser,
+    session: DbSession,
+):
+    """
+    Generate a single-use temporary password for the employee (valid for `TEMP_PASSWORD_EXPIRY_MINUTES`,
+    default 30). The plaintext is returned in THIS response only - it is never stored or logged, and
+    there is no endpoint to fetch it again. All of the employee's sessions are ended and they must set a
+    new password at next sign-in. Admins may reset EMPLOYEE accounts; Super Admins may also reset ADMIN
+    accounts; Super Admin accounts and your own account cannot be reset here.
+    """
+    result = await admin_security_service.admin_reset_employee_password(
+        current_user, employee_id, session, get_client_ip(request)
+    )
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    return AdminPasswordResetResponse(**result)
 
 
 @router.get("/{employee_id}/activity", response_model=EmployeeActivity, dependencies=[AdminOnly])

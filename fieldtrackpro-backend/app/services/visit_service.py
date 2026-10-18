@@ -16,7 +16,7 @@ from app.exceptions.custom import BaseAPIException, DuplicateVisitException
 from app.models.form_template import FormStatus, FormTemplate
 from app.models.geo_verification_log import GeoVerificationLog, GeoVerificationType
 from app.models.notification import NotificationType
-from app.models.user import Role, User
+from app.models.user import Role, User, ADMIN_ROLES
 from app.models.visit import Visit, VisitStatus, VisitType
 from app.repositories.geo_log_repo import GeoLogRepository
 from app.repositories.visit_repo import VisitRepository
@@ -68,7 +68,7 @@ async def _resolve_employee_scope(
     re-implementing it (the audit found the same check copy-pasted four times,
     and absent entirely from the two read paths).
     """
-    if current_user.role == Role.ADMIN:
+    if current_user.is_admin:
         return None
     employee = await get_employee_by_user_id(current_user.id, session)
     return employee.id
@@ -85,11 +85,8 @@ async def assert_visit_access(
     """
     scope = await _resolve_employee_scope(current_user, session)
     if scope is not None and visit.employee_id != scope:
-        raise BaseAPIException(
-            status_code=403,
-            detail="You are not assigned to this visit",
-            error_code="VISIT_NOT_ASSIGNED",
-        )
+        # 404 (not 403) so an employee cannot probe for other people's visits.
+        raise BaseAPIException(status_code=404, detail="Visit not found", error_code="VISIT_NOT_FOUND")
     return visit
 
 
@@ -208,7 +205,7 @@ async def create_adhoc_visit(
     """
     customer = await get_customer(data.customer_id, session)
 
-    if current_user.role == Role.ADMIN:
+    if current_user.is_admin:
         try:
             employee = await get_employee_by_user_id(current_user.id, session)
         except BaseAPIException:
@@ -275,6 +272,8 @@ async def create_adhoc_visit(
         customer.id,
         data.adhoc_reason,
     )
+    if not current_user.is_admin:
+        await _notify_admins_adhoc_outside(visit, employee, customer, session)
     return await repo.get_full(visit.id)
 
 
@@ -307,6 +306,7 @@ async def list_visits(
     search: str | None = None,
     sort_order: str = "desc",
     visit_type: VisitType | None = None,
+    outside_assignment: bool | None = None,
     skip: int = 0,
     limit: int = 20,
 ) -> tuple[list[Visit], int]:
@@ -320,9 +320,10 @@ async def list_visits(
     scope = await _resolve_employee_scope(current_user, session)
     if scope is not None:
         employee_id = scope
+        outside_assignment = None  # review flags/filters are admin-only
 
     repo = VisitRepository(session)
-    return await repo.list_filtered_paginated(
+    visits, total = await repo.list_filtered_paginated(
         employee_id=employee_id,
         status=status,
         territory_id=territory_id,
@@ -332,9 +333,85 @@ async def list_visits(
         search=search,
         sort_order=sort_order,
         visit_type=visit_type,
+        outside_assignment=outside_assignment,
         skip=skip,
         limit=limit,
     )
+    if current_user.is_admin:
+        await annotate_adhoc_review(visits, session)
+    return visits, total
+
+
+async def annotate_adhoc_review(visits: list[Visit], session: AsyncSession) -> list[Visit]:
+    """
+    ADMIN read-time enrichment: sets `outside_assignment` and `review_label`
+    on the given Visit objects (transient attributes picked up by VisitRead).
+    Never call this for employee responses.
+    """
+    adhoc_ids = [v.id for v in visits if v.visit_type == VisitType.AD_HOC]
+    outside = await VisitRepository(session).outside_assignment_ids(adhoc_ids)
+    for v in visits:
+        is_adhoc = v.visit_type == VisitType.AD_HOC
+        is_outside = is_adhoc and v.id in outside
+        v.outside_assignment = is_outside
+        v.review_label = (
+            "AD-HOC · OUTSIDE ASSIGNMENT" if is_outside else ("AD-HOC" if is_adhoc else None)
+        )
+    return visits
+
+
+async def list_adhoc_review(
+    session: AsyncSession,
+    outside_assignment: bool | None = None,
+    skip: int = 0,
+    limit: int = 50,
+) -> tuple[list[Visit], int]:
+    """ADMIN: ad-hoc visits, newest first, annotated for review."""
+    repo = VisitRepository(session)
+    visits, total = await repo.list_filtered_paginated(
+        visit_type=VisitType.AD_HOC,
+        outside_assignment=outside_assignment,
+        sort_order="created_desc",
+        skip=skip,
+        limit=limit,
+    )
+    await annotate_adhoc_review(visits, session)
+    return visits, total
+
+
+async def _notify_admins_adhoc_outside(visit: Visit, employee, customer, session: AsyncSession) -> None:
+    """
+    If a freshly created ad-hoc visit targets an outlet outside the employee's
+    scope, notify active admins. Reuses existing NotificationType.REMINDER
+    (no new DB enum value / migration). Never fails the visit creation.
+    """
+    try:
+        if visit.id not in await VisitRepository(session).outside_assignment_ids([visit.id]):
+            return
+        from app.models.user import User as _User
+        from app.services.notification_service import notification_service
+
+        admin_ids = list(
+            (await session.execute(select(_User.id).where(_User.role.in_(ADMIN_ROLES), _User.is_active.is_(True))))
+            .scalars()
+            .all()
+        )
+        reason = visit.adhoc_reason or "-"
+        msg = (
+            f"Ad-hoc visit outside assignment: {employee.full_name} visited "
+            f"{customer.name} (reason: {reason})"
+        )
+        for admin_id in admin_ids:
+            await notification_service.create_notification(
+                user_id=admin_id,
+                notification_type=NotificationType.REMINDER,
+                title="Ad-hoc visit outside assignment",
+                message=msg,
+                visit_id=visit.id,
+                session=session,
+            )
+    except Exception as exc:
+        logger.warning("event=adhoc_outside_notify_failed visit_id=%s error=%s", visit.id, exc)
 
 
 async def get_my_today_visits(

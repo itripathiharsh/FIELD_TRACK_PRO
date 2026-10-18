@@ -8,8 +8,10 @@ from fastapi import APIRouter, Body, Depends, File, HTTPException, Query, Upload
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.uploads import read_upload_limited
 from app.core.deps.auth import CurrentUser, require_role
 from app.database import get_async_session
+from app.exceptions.custom import BaseAPIException
 from app.models.user import Role
 from app.models.visit import Visit
 from app.schemas.customer_requirement import (
@@ -24,7 +26,8 @@ from app.schemas.customer_requirement import (
     RequirementPartiallyApproveRequest,
     RequirementRejectRequest,
 )
-from app.services import customer_requirement_service
+from app.services import customer_requirement_service, visit_service
+from app.services.file_validation_service import FileValidationService
 
 router = APIRouter(prefix="/requirements", tags=["requirements"])
 
@@ -45,10 +48,9 @@ async def create_requirement_direct(
     """
     customer_id = payload.customer_id
     if not customer_id and payload.visit_id:
-        v_res = await session.execute(select(Visit).where(Visit.id == payload.visit_id))
-        visit = v_res.scalar_one_or_none()
-        if visit:
-            customer_id = visit.customer_id
+        # Ownership-checked: an employee cannot resolve (or attach to) another's visit.
+        visit = await visit_service.get_visit_for_user(payload.visit_id, current_user, session)
+        customer_id = visit.customer_id
     if not customer_id:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -78,7 +80,7 @@ async def list_all_requirements(
     """
     List requirements across outlets for review, approval, and management.
     Employees see only requirements they submitted.
-    Admins and Managers see all requirements across outlets.
+    Admins see all requirements across outlets.
     """
     creator_filter = employee_id
     if current_user.role == Role.EMPLOYEE:
@@ -109,9 +111,10 @@ async def get_requirement(
     """
     req = await customer_requirement_service.get_requirement_by_id(requirement_id, session)
     if current_user.role == Role.EMPLOYEE and req.created_by != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have permission to view this requirement",
+        raise BaseAPIException(
+            status_code=404,
+            detail="Requirement not found",
+            error_code="REQUIREMENT_NOT_FOUND",
         )
     return req
 
@@ -280,7 +283,9 @@ async def upload_requirement_photo(
     """
     Upload and attach a client requirement document or photo.
     """
-    file_bytes = await file.read()
+    file_bytes = await read_upload_limited(
+        file, FileValidationService.MAX_IMAGE_SIZE_BYTES
+    )
     filename = file.filename or "requirement_photo.jpg"
     return await customer_requirement_service.attach_requirement_photo(
         requirement_id=requirement_id,
@@ -296,12 +301,15 @@ async def update_requirement(
     requirement_id: uuid.UUID,
     data: CustomerRequirementUpdate,
     session: DbSession,
+    current_user: CurrentUser,
 ):
     """
-    Update requirement status, notes, or details.
+    Update requirement content. An EMPLOYEE may edit only their own requirement
+    while it is still unreviewed and may not change status; ADMIN is unrestricted.
     """
     return await customer_requirement_service.update_requirement(
         requirement_id=requirement_id,
         data=data,
         session=session,
+        current_user=current_user,
     )

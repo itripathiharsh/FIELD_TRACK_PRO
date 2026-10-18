@@ -39,6 +39,8 @@ from app.models.login_attempt import LoginAttempt
 from app.models.password_reset import PasswordResetToken
 from app.models.user_device import UserDevice
 from app.models.customer_location_proposal import CustomerLocationProposal, LocationProposalStatus
+from app.models.customer_prospect import CustomerProspect, ProspectStatus
+from app.models.outlet_proof import OutletProof, OutletProofKind, OutletProofStatus
 from app.models.customer_brand import CustomerBrand
 from app.models.brand import Brand
 from app.models.customer_requirement import CustomerRequirement
@@ -56,6 +58,7 @@ from app.models.sync_agent import SyncAgent
 from app.models.payment_invoice_allocation import PaymentInvoiceAllocation
 from app.models.tally_writeback import TallyWritebackQueue, WritebackStatus
 from app.models.tally_audit import TallyAuditLog
+from app.models.security_audit import SecurityAuditLog
 
 
 
@@ -133,4 +136,5 @@ __all__ = [
     "TallyWritebackQueue",
     "WritebackStatus",
     "TallyAuditLog",
+    "SecurityAuditLog",
 ]
