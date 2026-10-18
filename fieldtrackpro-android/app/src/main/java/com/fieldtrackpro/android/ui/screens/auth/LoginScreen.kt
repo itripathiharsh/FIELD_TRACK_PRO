@@ -346,6 +346,20 @@ fun LoginScreen(
                         }
                     }
 
+                    val loginContext = androidx.compose.ui.platform.LocalContext.current
+                    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        TextButton(onClick = {
+                            com.fieldtrackpro.android.utils.ExternalLinks.openPrivacyPolicy(loginContext)
+                        }) {
+                            Text(
+                                "Privacy Policy",
+                                fontFamily = LeagueSpartanFamily,
+                                fontSize = 12.sp,
+                                color = TextSecondary
+                            )
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Button(

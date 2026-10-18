@@ -33,7 +33,7 @@ class VisitPlanningRepository(private val visitPlanningApi: VisitPlanningApi) {
             if (response.isSuccessful && response.body() != null) {
                 Resource.Success(response.body()!!)
             } else {
-                val errorMsg = parseError(response, "Failed to load monthly plan (${response.code()})")
+                val errorMsg = parseError(response, com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Failed to load monthly plan (${response.code()})"))
                 Resource.Error(errorMsg, response.code())
             }
         } catch (e: Exception) {
@@ -47,7 +47,7 @@ class VisitPlanningRepository(private val visitPlanningApi: VisitPlanningApi) {
             if (response.isSuccessful && response.body() != null) {
                 Resource.Success(response.body()!!)
             } else {
-                val errorMsg = parseError(response, "Failed to schedule visit (${response.code()})")
+                val errorMsg = parseError(response, com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Failed to schedule visit (${response.code()})"))
                 Resource.Error(errorMsg, response.code())
             }
         } catch (e: Exception) {
@@ -61,7 +61,7 @@ class VisitPlanningRepository(private val visitPlanningApi: VisitPlanningApi) {
             if (response.isSuccessful && response.body() != null) {
                 Resource.Success(response.body()!!)
             } else {
-                val errorMsg = parseError(response, "Failed to update visit (${response.code()})")
+                val errorMsg = parseError(response, com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Failed to update visit (${response.code()})"))
                 Resource.Error(errorMsg, response.code())
             }
         } catch (e: Exception) {
@@ -75,7 +75,7 @@ class VisitPlanningRepository(private val visitPlanningApi: VisitPlanningApi) {
             if (response.isSuccessful && response.body() != null) {
                 Resource.Success(response.body()!!)
             } else {
-                val errorMsg = parseError(response, "Failed to reschedule visit (${response.code()})")
+                val errorMsg = parseError(response, com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Failed to reschedule visit (${response.code()})"))
                 Resource.Error(errorMsg, response.code())
             }
         } catch (e: Exception) {
@@ -89,7 +89,7 @@ class VisitPlanningRepository(private val visitPlanningApi: VisitPlanningApi) {
             if (response.isSuccessful) {
                 Resource.Success(Unit)
             } else {
-                val errorMsg = parseError(response, "Failed to remove planned visit (${response.code()})")
+                val errorMsg = parseError(response, com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Failed to remove planned visit (${response.code()})"))
                 Resource.Error(errorMsg, response.code())
             }
         } catch (e: Exception) {
@@ -103,7 +103,7 @@ class VisitPlanningRepository(private val visitPlanningApi: VisitPlanningApi) {
             if (response.isSuccessful && response.body() != null) {
                 Resource.Success(response.body()!!)
             } else {
-                val errorMsg = parseError(response, "Failed to load monthly analytics (${response.code()})")
+                val errorMsg = parseError(response, com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Failed to load monthly analytics (${response.code()})"))
                 Resource.Error(errorMsg, response.code())
             }
         } catch (e: Exception) {

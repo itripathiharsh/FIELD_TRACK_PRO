@@ -1,5 +1,6 @@
 package com.fieldtrackpro.android.notifications
 
+import com.fieldtrackpro.android.BuildConfig
 import android.util.Log
 import com.fieldtrackpro.android.data.local.TokenManager
 import com.fieldtrackpro.android.data.model.DeviceRegisterRequest
@@ -23,9 +24,9 @@ class FieldTrackFirebaseMessagingService : FirebaseMessagingService() {
 
     override fun onNewToken(token: String) {
         super.onNewToken(token)
-        Log.i(TAG, "New FCM token received: ${token.take(15)}...")
+        if (BuildConfig.DEBUG) Log.d(TAG, "New FCM token received")
 
-        val tokenManager = TokenManager(applicationContext)
+        val tokenManager = TokenManager.getInstance(applicationContext)
         tokenManager.saveFcmToken(token)
 
         // If user is currently signed in, register the new token with the backend immediately

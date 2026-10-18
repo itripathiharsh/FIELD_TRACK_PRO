@@ -25,6 +25,10 @@ object ApiErrorParser {
      * Never exposes raw JSON or unformatted technical exceptions to the user.
      */
     fun parse(responseCode: Int, errorBody: String?): ApiError {
+        // The backend answers 404 (not 403) for records an employee may not access: always show the friendly text.
+        if (responseCode == 404) {
+            return ApiError(code = "HTTP_404", message = HttpErrors.NOT_AVAILABLE_MESSAGE, httpStatus = 404)
+        }
         if (!errorBody.isNullOrBlank()) {
             try {
                 val json = gson.fromJson(errorBody, JsonObject::class.java)
@@ -67,7 +71,7 @@ object ApiErrorParser {
         return when (statusCode) {
             401 -> "Session expired. Please sign in again."
             403 -> "You are not assigned to this visit/customer."
-            404 -> "Visit or customer not found. It may have been reassigned."
+            404 -> HttpErrors.NOT_AVAILABLE_MESSAGE
             409 -> "Duplicate operation or resource already exists."
             422 -> "Validation failed. Please verify the submitted details."
             429 -> "Too many attempts. Please wait and try again."
@@ -83,4 +87,13 @@ object ApiErrorParser {
         }
         return trimmed
     }
+}
+
+/** Central friendly-message mapping for HTTP failures shown on screens (never raw "(404)" text). */
+object HttpErrors {
+    const val NOT_AVAILABLE_MESSAGE = "This item is no longer available or is not assigned to you."
+
+    /** Returns the friendly 404 text, otherwise [fallback] unchanged. */
+    fun message(code: Int, fallback: String): String =
+        if (code == 404) NOT_AVAILABLE_MESSAGE else fallback
 }

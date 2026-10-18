@@ -37,7 +37,7 @@ class TransientRetryInterceptor(
                 val response = chain.proceed(request)
                 if (isIdempotent && attempt < maxRetries && isTransientError(response.code)) {
                     attempt++
-                    Log.w(TAG, "Transient HTTP ${response.code} on ${request.url}, retrying attempt $attempt after ${backoffMs}ms")
+                    Log.w(TAG, "Transient HTTP ${response.code} on ${request.url.encodedPath}, retrying attempt $attempt after ${backoffMs}ms")
                     response.close()
                     try {
                         Thread.sleep(backoffMs)
@@ -53,7 +53,7 @@ class TransientRetryInterceptor(
                 lastException = e
                 if (isIdempotent && attempt < maxRetries) {
                     attempt++
-                    Log.w(TAG, "Network IOException on ${request.url}, retrying attempt $attempt after ${backoffMs}ms: ${e.message}")
+                    Log.w(TAG, "Network IOException on ${request.url.encodedPath}, retrying attempt $attempt after ${backoffMs}ms: ${e.javaClass.simpleName}")
                     try {
                         Thread.sleep(backoffMs)
                     } catch (ie: InterruptedException) {

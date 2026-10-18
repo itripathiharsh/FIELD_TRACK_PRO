@@ -1,5 +1,6 @@
 package com.fieldtrackpro.android.geofencing
 
+import com.fieldtrackpro.android.BuildConfig
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -55,6 +56,13 @@ class GeofenceManager(private val context: Context) {
      * @param longitude Customer longitude
      * @param radiusMeters Geofence radius in meters
      * @return true if registration succeeded on Play Services
+     *
+     * Background location: the app intentionally does NOT declare ACCESS_BACKGROUND_LOCATION.
+     * Geofence registration only requires foreground (fine/coarse) location; on Android 10+ the
+     * ENTER/EXIT/DWELL transitions are then only reliably delivered while the app is in use.
+     * Geofencing is a convenience; check-in always relies on an explicit user-initiated location
+     * capture. A missing permission (SecurityException) or any other failure returns false
+     * and never crashes.
      */
     suspend fun registerGeofence(
         geofenceId: String,
@@ -63,7 +71,7 @@ class GeofenceManager(private val context: Context) {
         radiusMeters: Float,
     ): Boolean = suspendCancellableCoroutine { cont ->
         if (!isValidCoordinate(latitude, longitude)) {
-            Log.w(TAG, "Invalid coordinates for geofence: ($latitude, $longitude)")
+            Log.w(TAG, "Invalid coordinates for geofence $geofenceId")
             cont.resume(false)
             return@suspendCancellableCoroutine
         }
@@ -88,7 +96,7 @@ class GeofenceManager(private val context: Context) {
         try {
             geofencingClient.addGeofences(request, pendingIntent)
                 .addOnSuccessListener {
-                    Log.i(TAG, "Geofence registered: $geofenceId at ($latitude, $longitude) radius=${radiusMeters}m")
+                    if (BuildConfig.DEBUG) Log.i(TAG, "Geofence registered: $geofenceId at ($latitude, $longitude) radius=${radiusMeters}m")
                     if (cont.isActive) cont.resume(true)
                 }
                 .addOnFailureListener { e ->

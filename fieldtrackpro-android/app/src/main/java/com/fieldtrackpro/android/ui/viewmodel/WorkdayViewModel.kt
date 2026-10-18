@@ -25,8 +25,8 @@ data class WorkdayUiState(
 
 class WorkdayViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val tokenManager = TokenManager(application)
-    private val offlineQueueManager = OfflineQueueManager(application)
+    private val tokenManager = TokenManager.getInstance(application)
+    private val offlineQueueManager = OfflineQueueManager.getInstance(application)
     private val workdayRepository = WorkdayRepository(
         workdayApi = ApiClient.createWorkdayApi(tokenManager),
         offlineQueueManager = offlineQueueManager,

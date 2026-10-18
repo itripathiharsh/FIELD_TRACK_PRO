@@ -6,6 +6,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.fieldtrackpro.android.MainActivity
@@ -72,7 +73,7 @@ object NotificationHelper {
             NotificationManagerCompat.from(context).notify(notificationId, builder.build())
         } catch (e: SecurityException) {
             // Permission not granted on Android 13+
-            e.printStackTrace()
+            Log.w("NotificationHelper", "POST_NOTIFICATIONS not granted; notification skipped")
         }
     }
 }

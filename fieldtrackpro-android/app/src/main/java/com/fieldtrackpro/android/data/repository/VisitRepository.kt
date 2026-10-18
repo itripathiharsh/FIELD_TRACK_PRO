@@ -8,6 +8,8 @@ import com.fieldtrackpro.android.data.local.ConflictType
 import com.fieldtrackpro.android.data.local.OfflineQueueManager
 import com.fieldtrackpro.android.data.local.PendingAction
 import com.fieldtrackpro.android.data.local.SyncConflict
+import com.fieldtrackpro.android.data.local.SyncErrorClass
+import com.fieldtrackpro.android.data.local.SyncErrorPolicy
 import com.fieldtrackpro.android.data.local.TokenManager
 import com.fieldtrackpro.android.data.model.AdHocVisitCreateRequest
 import com.fieldtrackpro.android.data.model.CheckInRequest
@@ -39,6 +41,8 @@ class VisitRepository(
     private val dashboardApi: DashboardApi? = null,
     private val tokenManager: TokenManager? = null,
     private val workdayApi: com.fieldtrackpro.android.data.api.WorkdayApi? = null,
+    private val collectionApi: com.fieldtrackpro.android.data.api.CollectionApi? = null,
+    private val outletProofApi: com.fieldtrackpro.android.data.api.OutletProofApi? = null,
 ) {
     suspend fun getVisits(
         status: String? = null,
@@ -56,7 +60,7 @@ class VisitRepository(
             if (response.isSuccessful && response.body() != null) {
                 Resource.Success(response.body()!!)
             } else {
-                Resource.Error("Failed to fetch visits (${response.code()})", response.code())
+                Resource.Error(com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Failed to fetch visits (${response.code()})"), response.code())
             }
         } catch (e: Exception) {
             Resource.Error("Network error: ${e.localizedMessage ?: "Unable to connect"}")
@@ -79,7 +83,7 @@ class VisitRepository(
             if (response.isSuccessful && response.body() != null) {
                 Resource.Success(response.body()!!)
             } else {
-                Resource.Error("Failed to fetch today's visits (${response.code()})", response.code())
+                Resource.Error(com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Failed to fetch today's visits (${response.code()})"), response.code())
             }
         } catch (e: Exception) {
             Resource.Error("Network error: ${e.localizedMessage ?: "Unable to connect"}")
@@ -106,7 +110,7 @@ class VisitRepository(
             if (response.isSuccessful && response.body() != null) {
                 Resource.Success(response.body()!!)
             } else {
-                Resource.Error("Failed to initiate ad-hoc visit (${response.code()})", response.code())
+                Resource.Error(com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Failed to initiate ad-hoc visit (${response.code()})"), response.code())
             }
         } catch (e: Exception) {
             Resource.Error("Network error: ${e.localizedMessage ?: "Unable to connect"}")
@@ -127,7 +131,7 @@ class VisitRepository(
             if (response.isSuccessful && response.body() != null) {
                 Resource.Success(response.body()!!)
             } else {
-                Resource.Error("Failed to search customers (${response.code()})", response.code())
+                Resource.Error(com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Failed to search customers (${response.code()})"), response.code())
             }
         } catch (e: Exception) {
             Resource.Error("Network error: ${e.localizedMessage ?: "Unable to connect"}")
@@ -140,7 +144,7 @@ class VisitRepository(
             if (response.isSuccessful && response.body() != null) {
                 Resource.Success(response.body()!!)
             } else {
-                Resource.Error("Visit not found (${response.code()})", response.code())
+                Resource.Error(com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Visit not found (${response.code()})"), response.code())
             }
         } catch (e: Exception) {
             Resource.Error("Network error: ${e.localizedMessage ?: "Unable to connect"}")
@@ -154,7 +158,7 @@ class VisitRepository(
             if (response.isSuccessful && response.body() != null) {
                 Resource.Success(response.body()!!)
             } else {
-                Resource.Error("Failed to fetch dashboard summary (${response.code()})", response.code())
+                Resource.Error(com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Failed to fetch dashboard summary (${response.code()})"), response.code())
             }
         } catch (e: Exception) {
             Resource.Error("Network error: ${e.localizedMessage ?: "Unable to connect"}")
@@ -168,7 +172,7 @@ class VisitRepository(
             if (response.isSuccessful && response.body() != null) {
                 Resource.Success(response.body()!!)
             } else {
-                Resource.Error("Failed to fetch my day dashboard (${response.code()})", response.code())
+                Resource.Error(com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Failed to fetch my day dashboard (${response.code()})"), response.code())
             }
         } catch (e: Exception) {
             Resource.Error("Network error: ${e.localizedMessage ?: "Unable to connect"}")
@@ -218,7 +222,7 @@ class VisitRepository(
                 Resource.Success(response.body()!!)
             } else {
                 val errBody = response.errorBody()?.string() ?: "Check-in failed"
-                Resource.Error("Check-in rejected (${response.code()}): $errBody", response.code())
+                Resource.Error(com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Check-in rejected (${response.code()}): $errBody"), response.code())
             }
         } catch (e: Exception) {
             if (!skipEnqueueOnFailure) {
@@ -285,7 +289,7 @@ class VisitRepository(
                 Resource.Success(response.body()!!)
             } else {
                 val errBody = response.errorBody()?.string() ?: "Check-out failed"
-                Resource.Error("Check-out rejected (${response.code()}): $errBody", response.code())
+                Resource.Error(com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Check-out rejected (${response.code()}): $errBody"), response.code())
             }
         } catch (e: Exception) {
             if (!skipEnqueueOnFailure) {
@@ -326,7 +330,7 @@ class VisitRepository(
             if (response.isSuccessful && response.body() != null) {
                 Resource.Success(response.body()!!)
             } else {
-                Resource.Error("Location pre-check failed (${response.code()})", response.code())
+                Resource.Error(com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Location pre-check failed (${response.code()})"), response.code())
             }
         } catch (e: Exception) {
             Resource.Error("Location service error: ${e.localizedMessage}")
@@ -339,7 +343,7 @@ class VisitRepository(
             if (response.isSuccessful && response.body() != null) {
                 Resource.Success(response.body()!!)
             } else {
-                Resource.Error("Failed to fetch geo logs (${response.code()})", response.code())
+                Resource.Error(com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Failed to fetch geo logs (${response.code()})"), response.code())
             }
         } catch (e: Exception) {
             Resource.Error("Network error: ${e.localizedMessage}")
@@ -361,22 +365,98 @@ class VisitRepository(
             return SyncResult(syncedCount = 0, conflicts = emptyList())
         }
 
-        val queue = offlineQueueManager.getQueue()
+        // Per-user view (also adopts legacy un-owned entries): another employee's items are never touched.
+        val queue = offlineQueueManager.getQueueForUser(effectiveUserId)
         var syncedCount = 0
         val conflicts = mutableListOf<SyncConflict>()
+        var retryableFailures = 0
+        // Visits whose check-in/out failed transiently this pass: their payments wait for the next run so they
+        // are always replayed AFTER the visit actions.
+        val visitsWithPendingVisitActions = mutableSetOf<String>()
 
-        for (action in queue) {
+        // Forced password change (403 PASSWORD_CHANGE_REQUIRED): pause - queue intact, nothing failed or
+        // conflicted - and resume once the password has been changed (see OfflineSyncScheduler).
+        fun passwordChangePending() = tokenManager?.isPasswordChangeRequired() == true
+        fun pausedResult() = SyncResult(
+            syncedCount, conflicts,
+            pausedForAuth = true,
+            retryableFailures = retryableFailures,
+            pausedForPasswordChange = passwordChangePending()
+        )
+        // L2: if the active user changed (logout / user switch) mid-run, stop replaying immediately: the
+        // remaining entries belong to the previous user and must never be sent under the new session.
+        fun activeUserChanged(): Boolean {
+            val tm = tokenManager ?: return false
+            val current = tm.getUserId()
+            return (current != null && current != effectiveUserId) || !tm.isLoggedIn()
+        }
+
+        // Payments are replayed after every check-in/out/workday action (stable sort keeps capture order).
+        // Outlet photos go FIRST: they are the most time-sensitive (the server only accepts a fresh capture).
+        for (action in queue.sortedBy { if (it.isOutletProof) -1 else if (it.isPayment) 1 else 0 }) {
             // User Isolation: If action is tagged with a userId that does NOT match the active session, skip it
             if (action.userId != null && action.userId != effectiveUserId) {
+                continue
+            }
+            if (passwordChangePending()) return pausedResult()
+            if (activeUserChanged()) {
+                return SyncResult(syncedCount, conflicts, retryableFailures = retryableFailures)
+            }
+
+            if (action.isOutletProof) {
+                val oApi = outletProofApi ?: tokenManager?.let { ApiClient.createOutletProofApi(it) }
+                if (oApi == null) {
+                    retryableFailures++
+                    continue
+                }
+                when (val outcome = OutletProofQueueProcessor(oApi, offlineQueueManager).replay(action)) {
+                    is OutletProofReplayOutcome.Synced -> syncedCount++
+                    is OutletProofReplayOutcome.AuthExpired -> return pausedResult()
+                    is OutletProofReplayOutcome.Retry -> retryableFailures++
+                    is OutletProofReplayOutcome.Conflict -> {
+                        offlineQueueManager.moveToConflict(outcome.conflict)
+                        conflicts.add(outcome.conflict)
+                    }
+                }
+                continue
+            }
+
+            if (action.isPayment) {
+                if (action.visitId in visitsWithPendingVisitActions) {
+                    retryableFailures++
+                    continue
+                }
+                val cApi = collectionApi ?: tokenManager?.let { ApiClient.createCollectionApi(it) }
+                if (cApi == null) {
+                    retryableFailures++
+                    continue
+                }
+                when (val outcome = PaymentQueueProcessor(cApi, offlineQueueManager).replay(action)) {
+                    is PaymentReplayOutcome.Synced -> syncedCount++
+                    is PaymentReplayOutcome.AuthExpired -> return pausedResult()
+                    is PaymentReplayOutcome.Retry -> retryableFailures++
+                    is PaymentReplayOutcome.Conflict -> {
+                        offlineQueueManager.moveToConflict(outcome.conflict)
+                        conflicts.add(outcome.conflict)
+                    }
+                }
                 continue
             }
 
             // Check current visit status before attempting sync (for visit-specific actions)
             if (action.actionType in listOf("CHECK_IN", "CHECK_OUT")) {
                 val visitStatus = getVisitById(action.visitId)
-                if (visitStatus is Resource.Error && visitStatus.code == 401) {
-                    // 401 Auth expired: pause synchronization immediately without modifying queue
-                    return SyncResult(syncedCount = syncedCount, conflicts = conflicts)
+                if (visitStatus is Resource.Error && (visitStatus.code == 401 || (visitStatus.code == 403 && passwordChangePending()))) {
+                    // 401 Auth expired (or forced password change): pause without modifying the queue
+                    return pausedResult()
+                }
+
+                if (visitStatus is Resource.Error && SyncErrorPolicy.classify(visitStatus.code) == SyncErrorClass.NOT_AVAILABLE) {
+                    // 404: visit gone / reassigned. Never retry forever: move to conflicts and tell the user.
+                    val gone = SyncErrorPolicy.notAvailableConflict(action)
+                    offlineQueueManager.moveToConflict(gone)
+                    conflicts.add(gone)
+                    continue
                 }
 
                 if (visitStatus is Resource.Success) {
@@ -452,21 +532,33 @@ class VisitRepository(
                     syncedCount++
                 }
                 is Resource.Error -> {
-                    if (res.code == 401) {
-                        // 401 Auth expired: pause synchronization, preserve remaining queue items
-                        return SyncResult(syncedCount = syncedCount, conflicts = conflicts)
+                    if (res.code == 401 || (res.code == 403 && passwordChangePending())) {
+                        // 401 Auth expired (or forced password change): pause synchronization, preserve queue items
+                        return pausedResult()
+                    }
+                    if (SyncErrorPolicy.classify(res.code) == SyncErrorClass.NOT_AVAILABLE) {
+                        // 404: record no longer accessible. Surface as a conflict and stop retrying it.
+                        val notAvailable = SyncErrorPolicy.notAvailableConflict(action)
+                        offlineQueueManager.moveToConflict(notAvailable)
+                        conflicts.add(notAvailable)
+                        continue
                     }
                     val conflict = detectConflictFromError(action, res.message, res.code)
                     if (conflict != null) {
                         offlineQueueManager.saveConflict(conflict)
                         conflicts.add(conflict)
                     }
+                    // Network failure (no HTTP code) or server 5xx: the action stays queued; ask for a retry.
+                    if (res.code == null || res.code >= 500) {
+                        retryableFailures++
+                        visitsWithPendingVisitActions.add(action.visitId)
+                    }
                 }
                 is Resource.Loading -> { /* no-op */ }
             }
         }
 
-        return SyncResult(syncedCount = syncedCount, conflicts = conflicts)
+        return SyncResult(syncedCount = syncedCount, conflicts = conflicts, retryableFailures = retryableFailures)
     }
 
     private fun detectConflict(action: PendingAction, serverStatus: String?): SyncConflict? =
@@ -510,6 +602,7 @@ class VisitRepository(
         fun detectConflictFromError(action: PendingAction, errorMessage: String?, errorCode: Int?): SyncConflict? {
             if (errorMessage == null) return null
             return when {
+                errorCode == 404 -> SyncErrorPolicy.notAvailableConflict(action)
                 errorCode == 422 && errorMessage.contains("GEO_VERIFICATION_FAILED", ignoreCase = true) -> SyncConflict(
                     pendingAction = action,
                     conflictType = ConflictType.GEO_VALIDATION_FAILED,
@@ -522,7 +615,7 @@ class VisitRepository(
                     serverStatus = null,
                     message = errorMessage
                 )
-                errorCode == 404 || errorMessage.contains("not found", ignoreCase = true) -> SyncConflict(
+                errorMessage.contains("not found", ignoreCase = true) -> SyncConflict(
                     pendingAction = action,
                     conflictType = ConflictType.VISIT_UNAVAILABLE,
                     serverStatus = null,

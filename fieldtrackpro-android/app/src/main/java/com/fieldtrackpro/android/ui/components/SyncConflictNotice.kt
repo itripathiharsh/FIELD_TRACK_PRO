@@ -106,4 +106,6 @@ private fun getConflictTypeLabel(type: ConflictType): String = when (type) {
     ConflictType.GEO_VALIDATION_FAILED -> "Location validation failed"
     ConflictType.SERVER_REJECTED -> "Server rejected action"
     ConflictType.NETWORK_ERROR -> "Network error"
+    ConflictType.UNOWNED_LEGACY -> "Unowned legacy item"
+    ConflictType.QUEUE_CORRUPTED -> "Saved items could not be read"
 }

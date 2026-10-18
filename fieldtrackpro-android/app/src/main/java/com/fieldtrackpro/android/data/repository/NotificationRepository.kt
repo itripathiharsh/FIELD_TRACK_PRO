@@ -11,7 +11,7 @@ class NotificationRepository(private val notificationApi: NotificationApi) {
             if (response.isSuccessful && response.body() != null) {
                 Resource.Success(response.body()!!)
             } else {
-                Resource.Error("Failed to load notifications (${response.code()})")
+                Resource.Error(com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Failed to load notifications (${response.code()})"))
             }
         } catch (e: Exception) {
             Resource.Error("Network error: ${e.localizedMessage}")
@@ -24,7 +24,7 @@ class NotificationRepository(private val notificationApi: NotificationApi) {
             if (response.isSuccessful) {
                 Resource.Success(Unit)
             } else {
-                Resource.Error("Failed to mark as read (${response.code()})")
+                Resource.Error(com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Failed to mark as read (${response.code()})"))
             }
         } catch (e: Exception) {
             Resource.Error("Network error: ${e.localizedMessage}")

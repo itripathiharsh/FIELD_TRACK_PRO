@@ -67,7 +67,7 @@ fun AttachmentPreviewScreen(
         errorMessage = null
 
         try {
-            val tokenManager = TokenManager(context)
+            val tokenManager = TokenManager.getInstance(context)
             val repository = MediaRepository(ApiClient.createMediaApi(tokenManager))
 
             when (val metaResult = repository.getMediaMetadata(mediaId)) {

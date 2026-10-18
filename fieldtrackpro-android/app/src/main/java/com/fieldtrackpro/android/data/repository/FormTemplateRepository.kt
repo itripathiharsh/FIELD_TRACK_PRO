@@ -15,7 +15,7 @@ class FormTemplateRepository(private val api: FormTemplateApi) {
             if (response.isSuccessful && response.body() != null) {
                 Resource.Success(response.body()!!)
             } else {
-                Resource.Error("Failed to load forms (${response.code()})")
+                Resource.Error(com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Failed to load forms (${response.code()})"))
             }
         } catch (e: Exception) {
             Resource.Error("Network error: ${e.localizedMessage}")
@@ -28,7 +28,7 @@ class FormTemplateRepository(private val api: FormTemplateApi) {
             if (response.isSuccessful && response.body() != null) {
                 Resource.Success(response.body()!!)
             } else {
-                Resource.Error("Failed to load form (${response.code()})")
+                Resource.Error(com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Failed to load form (${response.code()})"))
             }
         } catch (e: Exception) {
             Resource.Error("Network error: ${e.localizedMessage}")
@@ -41,7 +41,7 @@ class FormTemplateRepository(private val api: FormTemplateApi) {
             if (response.isSuccessful) {
                 Resource.Success(response.body()?.firstOrNull())
             } else {
-                Resource.Error("Failed to load submission (${response.code()})")
+                Resource.Error(com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Failed to load submission (${response.code()})"))
             }
         } catch (e: Exception) {
             Resource.Error("Network error: ${e.localizedMessage}")
@@ -61,7 +61,7 @@ class FormTemplateRepository(private val api: FormTemplateApi) {
                 Resource.Success(response.body()!!)
             } else {
                 val err = response.errorBody()?.string() ?: "Save failed"
-                Resource.Error("Save failed (${response.code()}): $err", response.code())
+                Resource.Error(com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Save failed (${response.code()}): $err"), response.code())
             }
         } catch (e: Exception) {
             Resource.Error("Save failed: ${e.localizedMessage}")
@@ -75,7 +75,7 @@ class FormTemplateRepository(private val api: FormTemplateApi) {
                 Resource.Success(response.body()!!)
             } else {
                 val err = response.errorBody()?.string() ?: "Submit failed"
-                Resource.Error("Submit failed (${response.code()}): $err", response.code())
+                Resource.Error(com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Submit failed (${response.code()}): $err"), response.code())
             }
         } catch (e: Exception) {
             Resource.Error("Submit failed: ${e.localizedMessage}")

@@ -34,7 +34,9 @@ class SyncConflictTest {
     @Test
     fun testConflictTypeEnumValues() {
         val types = ConflictType.values()
-        assertEquals(5, types.size)
+        assertEquals(7, types.size)
+        assertTrue(types.contains(ConflictType.QUEUE_CORRUPTED))
+        assertTrue(types.contains(ConflictType.UNOWNED_LEGACY))
         assertTrue(types.contains(ConflictType.STATUS_CHANGED))
         assertTrue(types.contains(ConflictType.VISIT_UNAVAILABLE))
         assertTrue(types.contains(ConflictType.GEO_VALIDATION_FAILED))

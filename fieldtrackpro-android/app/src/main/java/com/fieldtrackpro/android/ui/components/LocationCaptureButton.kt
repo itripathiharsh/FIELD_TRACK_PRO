@@ -104,6 +104,7 @@ fun LocationCaptureButton(
         }
     }
 
+    val onLocationDenied = rememberPermissionDeniedHandler(PermissionDisclosureKind.LOCATION, Manifest.permission.ACCESS_FINE_LOCATION)
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { grants ->
@@ -115,7 +116,18 @@ fun LocationCaptureButton(
             statusText = "Location permission denied. Enable it to capture GPS coordinates."
             isError = true
             isPermissionDenied = true
+            onLocationDenied()
         }
+    }
+
+    // Prominent disclosure is shown once before the first system location prompt.
+    val requestLocationPermission = rememberWithDisclosure(PermissionDisclosureKind.LOCATION) {
+        permissionLauncher.launch(
+            arrayOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            )
+        )
     }
 
     // Lifecycle observer to auto re-check on resume when returning from settings
@@ -143,12 +155,7 @@ fun LocationCaptureButton(
                 if (isLocationDisabled || !locationService.isLocationEnabled()) {
                     LocationSettingsHelper.openLocationSettings(context)
                 } else if (!locationService.hasLocationPermission()) {
-                    permissionLauncher.launch(
-                        arrayOf(
-                            Manifest.permission.ACCESS_FINE_LOCATION,
-                            Manifest.permission.ACCESS_COARSE_LOCATION
-                        )
-                    )
+                    requestLocationPermission()
                 } else {
                     capture()
                 }

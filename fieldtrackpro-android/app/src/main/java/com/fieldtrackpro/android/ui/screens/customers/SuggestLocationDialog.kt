@@ -74,6 +74,12 @@ import kotlinx.coroutines.launch
  *
  * CRITICAL RULE: Zero direct coordinate overwrite. Proposal status is PENDING and must be approved by Admin.
  */
+/**
+ * Live outlet proof (camera photo + GPS captured at the shutter click, see OutletProofLocationDialog) replaces the
+ * coordinate-only proposal below. The legacy body and CustomerRepository.proposeCustomerLocation are kept, unused.
+ */
+private const val USE_LIVE_OUTLET_PROOF = true
+
 @Composable
 fun SuggestLocationDialog(
     customerId: String,
@@ -83,11 +89,16 @@ fun SuggestLocationDialog(
     onDismiss: () -> Unit,
     onProposalSubmitted: (LocationProposalDto) -> Unit
 ) {
+    if (USE_LIVE_OUTLET_PROOF) {
+        OutletProofLocationDialog(customerId = customerId, customerName = customerName, onDismiss = onDismiss)
+        return
+    }
+
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val locationService = remember { LocationCaptureService(context) }
     val customerRepository = remember {
-        CustomerRepository(ApiClient.createCustomerApi(com.fieldtrackpro.android.data.local.TokenManager(context)))
+        CustomerRepository(ApiClient.createCustomerApi(com.fieldtrackpro.android.data.local.TokenManager.getInstance(context)))
     }
 
     var isCapturingLocation by remember { mutableStateOf(false) }
@@ -254,6 +265,7 @@ fun SuggestLocationDialog(
 
                         Spacer(modifier = Modifier.height(4.dp))
 
+                        val locationSnapshot = locationResult
                         if (isCapturingLocation) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -271,8 +283,8 @@ fun SuggestLocationDialog(
                                     fontFamily = LeagueSpartanFamily
                                 )
                             }
-                        } else if (locationResult != null) {
-                            val loc = locationResult!!
+                        } else if (locationSnapshot != null) {
+                            val loc = locationSnapshot
                             Text(
                                 text = "%.6f, %.6f".format(loc.latitude, loc.longitude),
                                 fontSize = 13.sp,
@@ -304,7 +316,7 @@ fun SuggestLocationDialog(
                             }
                         } else if (locationError != null) {
                             Text(
-                                text = locationError!!,
+                                text = locationError.orEmpty(),
                                 fontSize = 12.sp,
                                 color = ErrorRed,
                                 fontFamily = LeagueSpartanFamily
@@ -362,7 +374,7 @@ fun SuggestLocationDialog(
 
                 if (submitError != null) {
                     Text(
-                        text = submitError!!,
+                        text = submitError.orEmpty(),
                         fontSize = 12.sp,
                         color = ErrorRed,
                         fontFamily = LeagueSpartanFamily

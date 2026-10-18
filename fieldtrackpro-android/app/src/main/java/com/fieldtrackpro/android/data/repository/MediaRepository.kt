@@ -14,7 +14,7 @@ class MediaRepository(private val mediaApi: MediaApi) {
             if (response.isSuccessful && response.body() != null) {
                 Resource.Success(response.body()!!)
             } else {
-                Resource.Error("Failed to load visit attachments (${response.code()})")
+                Resource.Error(com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Failed to load visit attachments (${response.code()})"))
             }
         } catch (e: Exception) {
             Resource.Error("Network error: ${e.localizedMessage}")
@@ -27,7 +27,7 @@ class MediaRepository(private val mediaApi: MediaApi) {
             if (response.isSuccessful && response.body() != null) {
                 Resource.Success(response.body()!!)
             } else {
-                Resource.Error("Media not found (${response.code()})")
+                Resource.Error(com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Media not found (${response.code()})"))
             }
         } catch (e: Exception) {
             Resource.Error("Network error: ${e.localizedMessage}")
@@ -40,7 +40,7 @@ class MediaRepository(private val mediaApi: MediaApi) {
             if (response.isSuccessful && response.body() != null) {
                 Resource.Success(response.body()!!)
             } else {
-                Resource.Error("Failed to get download URL (${response.code()})")
+                Resource.Error(com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Failed to get download URL (${response.code()})"))
             }
         } catch (e: Exception) {
             Resource.Error("Network error: ${e.localizedMessage}")
@@ -61,7 +61,7 @@ class MediaRepository(private val mediaApi: MediaApi) {
                 Resource.Success(response.body()!!)
             } else {
                 val err = response.errorBody()?.string() ?: "Upload rejected"
-                Resource.Error("Media upload failed (${response.code()}): $err")
+                Resource.Error(com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Media upload failed (${response.code()}): $err"))
             }
         } catch (e: Exception) {
             Resource.Error("Upload failed: ${e.localizedMessage}")
@@ -84,7 +84,7 @@ class MediaRepository(private val mediaApi: MediaApi) {
                 Resource.Success(response.body()!!)
             } else {
                 val err = response.errorBody()?.string() ?: "Upload rejected"
-                Resource.Error("Order capture failed (${response.code()}): $err")
+                Resource.Error(com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Order capture failed (${response.code()}): $err"))
             }
         } catch (e: Exception) {
             Resource.Error("Order capture failed: ${e.localizedMessage}")

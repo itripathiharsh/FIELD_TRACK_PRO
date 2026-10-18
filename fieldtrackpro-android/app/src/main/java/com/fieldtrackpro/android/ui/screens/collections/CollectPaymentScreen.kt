@@ -1,8 +1,11 @@
 package com.fieldtrackpro.android.ui.screens.collections
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -48,6 +51,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -77,7 +81,10 @@ import com.fieldtrackpro.android.ui.theme.TextSecondary
 import com.fieldtrackpro.android.ui.viewmodel.AccountState
 import com.fieldtrackpro.android.ui.viewmodel.CollectionState
 import com.fieldtrackpro.android.ui.viewmodel.CollectionViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import com.fieldtrackpro.android.data.local.PaymentProofStore
 import java.io.File
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
@@ -91,6 +98,17 @@ private fun formatRupees(amount: Double): String {
     formatter.maximumFractionDigits = 2
     return formatter.format(amount)
 }
+
+/** Saver for the per-brand amount map: flat [brand, amount, brand, amount...] list. */
+private val BrandAmountsSaver = androidx.compose.runtime.saveable.Saver<androidx.compose.runtime.snapshots.SnapshotStateMap<String, String>, ArrayList<String>>(
+    save = { map -> ArrayList<String>(map.size * 2).also { out -> map.forEach { (k, v) -> out.add(k); out.add(v) } } },
+    restore = { flat ->
+        mutableStateMapOf<String, String>().also { m ->
+            var i = 0
+            while (i + 1 < flat.size) { m[flat[i]] = flat[i + 1]; i += 2 }
+        }
+    }
+)
 
 private fun todayIso(): String =
     SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
@@ -113,16 +131,17 @@ fun CollectPaymentScreen(
         viewModel.loadAccount(customerId)
     }
 
-    val brandAmounts = remember { mutableStateMapOf<String, String>() }
-    var method by remember { mutableStateOf("CASH") }
-    var paymentDate by remember { mutableStateOf(todayIso()) }
-    var chequeNumber by remember { mutableStateOf("") }
-    var chequeBankName by remember { mutableStateOf("") }
-    var utrReference by remember { mutableStateOf("") }
-    var notes by remember { mutableStateOf("") }
+    // Form state survives rotation / dark-mode toggle / process death (rememberSaveable -> saved instance state).
+    val brandAmounts = rememberSaveable(saver = BrandAmountsSaver) { mutableStateMapOf<String, String>() }
+    var method by rememberSaveable { mutableStateOf("CASH") }
+    var paymentDate by rememberSaveable { mutableStateOf(todayIso()) }
+    var chequeNumber by rememberSaveable { mutableStateOf("") }
+    var chequeBankName by rememberSaveable { mutableStateOf("") }
+    var utrReference by rememberSaveable { mutableStateOf("") }
+    var notes by rememberSaveable { mutableStateOf("") }
 
-    var proofUri by remember { mutableStateOf<Uri?>(null) }
-    var tempCameraUri by remember { mutableStateOf<Uri?>(null) }
+    var proofUri by rememberSaveable { mutableStateOf<Uri?>(null) }
+    var tempCameraUri by rememberSaveable { mutableStateOf<Uri?>(null) }
     var isUploadingProof by remember { mutableStateOf(false) }
     var fieldError by remember { mutableStateOf<String?>(null) }
 
@@ -133,6 +152,41 @@ fun CollectPaymentScreen(
             proofUri = tempCameraUri
         }
     }
+
+    fun launchProofCamera() {
+        try {
+            val photoFile = com.fieldtrackpro.android.ui.components.createCaptureFile(context, "PAY_PROOF_${System.currentTimeMillis()}_")
+            val uri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                photoFile
+            )
+            tempCameraUri = uri
+            cameraLauncher.launch(uri)
+        } catch (e: Exception) {
+            fieldError = "Could not launch camera: ${e.localizedMessage}"
+        }
+    }
+
+    var hasCameraPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+                PackageManager.PERMISSION_GRANTED
+        )
+    }
+    // Permanent denial => rationale + "Open app settings" (the system prompt would silently do nothing).
+    val onCameraDenied = com.fieldtrackpro.android.ui.components.rememberPermissionDeniedHandler(
+        com.fieldtrackpro.android.ui.components.PermissionDisclosureKind.CAMERA, Manifest.permission.CAMERA
+    )
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        hasCameraPermission = granted
+        if (granted) launchProofCamera() else onCameraDenied()
+    }
+    val requestCameraPermission = com.fieldtrackpro.android.ui.components.rememberWithDisclosure(
+        com.fieldtrackpro.android.ui.components.PermissionDisclosureKind.CAMERA
+    ) { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) }
 
     // Determine brands list directly from dynamic account state
     val brandSummaryList: List<BrandSummaryDto> = remember(accountState) {
@@ -202,6 +256,42 @@ fun CollectPaymentScreen(
 
                 if (state is CollectionState.Error) {
                     ErrorBanner(message = (state as CollectionState.Error).message)
+                }
+
+                if (state is CollectionState.SavedOffline) {
+                    // Not an error: the payment is safely stored on the device and syncs by itself.
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = BrandWhite),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, SuccessGreen)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = SuccessGreen)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    (state as CollectionState.SavedOffline).message,
+                                    fontFamily = LeagueSpartanFamily,
+                                    fontWeight = FontWeight.Bold,
+                                    color = SuccessGreen
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                "No connection right now. Your payment of ${(state as CollectionState.SavedOffline).amount} " +
+                                    "(with its proof photo, if any) is stored on this device and is sent automatically " +
+                                    "when you are back online. See Offline Queue for status.",
+                                color = TextPrimary
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Button(
+                                onClick = { onSuccess() },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.buttonColors(containerColor = BrandNavy, contentColor = BrandWhite)
+                            ) { Text("DONE") }
+                        }
+                    }
                 }
 
                 // Brand-Wise Allocation Card
@@ -549,21 +639,10 @@ fun CollectPaymentScreen(
 
                             OutlinedButton(
                                 onClick = {
-                                    try {
-                                        val photoFile = File.createTempFile(
-                                            "PAY_PROOF_${System.currentTimeMillis()}_",
-                                            ".jpg",
-                                            context.cacheDir
-                                        )
-                                        val uri = FileProvider.getUriForFile(
-                                            context,
-                                            "${context.packageName}.fileprovider",
-                                            photoFile
-                                        )
-                                        tempCameraUri = uri
-                                        cameraLauncher.launch(uri)
-                                    } catch (e: Exception) {
-                                        fieldError = "Could not launch camera: ${e.localizedMessage}"
+                                    if (hasCameraPermission) {
+                                        launchProofCamera()
+                                    } else {
+                                        requestCameraPermission()
                                     }
                                 },
                                 modifier = Modifier.fillMaxWidth(),
@@ -645,37 +724,43 @@ fun CollectPaymentScreen(
                                     return@Button
                                 }
 
-                                viewModel.submitCollection(
-                                    visitId = visitId,
-                                    invoiceId = null,
-                                    amount = totalAmount.toString(),
-                                    paymentMethod = method,
-                                    paymentDate = paymentDate,
-                                    chequeNumber = if (method == "CHEQUE") chequeNumber else null,
-                                    chequeBankName = if (method == "CHEQUE") chequeBankName.ifBlank { null } else null,
-                                    utrReference = if (method == "ONLINE") utrReference else null,
-                                    notes = notes.ifBlank { null },
-                                    allocations = allocationsList,
-                                    onSubmitted = { payment ->
+                                val amountText = totalAmount.toString()
+                                val methodNow = method
+                                val outletName = (accountState as? AccountState.Success)?.summary?.customerName
+                                coroutineScope.launch {
+                                    // Copy the proof into app-private storage first so it survives until it syncs.
+                                    isUploadingProof = true
+                                    val proofPaths = try {
                                         val uri = proofUri
-                                        if (uri != null) {
-                                            coroutineScope.launch {
-                                                isUploadingProof = true
-                                                try {
-                                                    val bytes = context.contentResolver.openInputStream(uri)?.readBytes()
-                                                    if (bytes != null && bytes.isNotEmpty()) {
-                                                        viewModel.uploadProof(payment.id, "proof_${payment.id}.jpg", "image/jpeg", bytes)
-                                                    }
-                                                } finally {
-                                                    isUploadingProof = false
-                                                    onSuccess()
-                                                }
+                                        if (uri == null) emptyList() else {
+                                            val path = withContext(Dispatchers.IO) { PaymentProofStore.copyToPrivate(context, uri) }
+                                            if (path == null) {
+                                                fieldError = "Could not read the proof photo. Please retake it."
+                                                isUploadingProof = false
+                                                return@launch
                                             }
-                                        } else {
-                                            onSuccess()
+                                            listOf(path)
                                         }
+                                    } finally {
+                                        isUploadingProof = false
                                     }
-                                )
+                                    viewModel.submitCollection(
+                                        visitId = visitId,
+                                        invoiceId = null,
+                                        amount = amountText,
+                                        paymentMethod = methodNow,
+                                        paymentDate = paymentDate,
+                                        chequeNumber = if (methodNow == "CHEQUE") chequeNumber else null,
+                                        chequeBankName = if (methodNow == "CHEQUE") chequeBankName.ifBlank { null } else null,
+                                        utrReference = if (methodNow == "ONLINE") utrReference else null,
+                                        notes = notes.ifBlank { null },
+                                        allocations = allocationsList,
+                                        customerId = customerId,
+                                        outletName = outletName,
+                                        proofPaths = proofPaths,
+                                        onSubmitted = { onSuccess() }
+                                    )
+                                }
                             },
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -685,7 +770,7 @@ fun CollectPaymentScreen(
                                 containerColor = BrandNavy,
                                 contentColor = BrandWhite
                             ),
-                            enabled = state !is CollectionState.Submitting && !isUploadingProof && totalAmount > 0
+                            enabled = state !is CollectionState.Submitting && state !is CollectionState.SavedOffline && !isUploadingProof && totalAmount > 0
                         ) {
                             if (state is CollectionState.Submitting || isUploadingProof) {
                                 CircularProgressIndicator(color = BrandGold, modifier = Modifier.size(24.dp))

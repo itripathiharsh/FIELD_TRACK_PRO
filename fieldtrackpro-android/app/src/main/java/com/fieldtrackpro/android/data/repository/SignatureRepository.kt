@@ -12,7 +12,7 @@ class SignatureRepository(private val signatureApi: SignatureApi) {
             if (response.isSuccessful && response.body() != null) {
                 Resource.Success(response.body()!!)
             } else {
-                Resource.Error("Failed to load signatures (${response.code()})")
+                Resource.Error(com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Failed to load signatures (${response.code()})"))
             }
         } catch (e: Exception) {
             Resource.Error("Network error: ${e.localizedMessage}")
@@ -36,7 +36,7 @@ class SignatureRepository(private val signatureApi: SignatureApi) {
                 Resource.Success(response.body()!!)
             } else {
                 val err = response.errorBody()?.string() ?: "Upload rejected"
-                Resource.Error("Signature upload failed (${response.code()}): $err")
+                Resource.Error(com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Signature upload failed (${response.code()}): $err"))
             }
         } catch (e: Exception) {
             Resource.Error("Upload failed: ${e.localizedMessage}")
@@ -65,7 +65,7 @@ class SignatureRepository(private val signatureApi: SignatureApi) {
                 Resource.Success(response.body()!!)
             } else {
                 val err = response.errorBody()?.string() ?: "Replace rejected"
-                Resource.Error("Signature replace failed (${response.code()}): $err")
+                Resource.Error(com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Signature replace failed (${response.code()}): $err"))
             }
         } catch (e: Exception) {
             Resource.Error("Replace failed: ${e.localizedMessage}")

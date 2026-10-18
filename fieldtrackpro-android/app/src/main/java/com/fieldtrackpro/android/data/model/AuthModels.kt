@@ -24,12 +24,16 @@ data class LoginRequest(
     val email: String? = null,
     @SerializedName("mobile_number") val mobileNumber: String? = null,
     val password: String
-)
+) {
+    override fun toString(): String = "LoginRequest(<redacted>)"
+}
 
 data class LoginResponse(
     @SerializedName("access_token") val accessToken: String,
     @SerializedName("refresh_token") val refreshToken: String,
-    @SerializedName("token_type") val tokenType: String = "bearer"
+    @SerializedName("token_type") val tokenType: String = "bearer",
+    /** Nullable-safe: absent on older backends / on refresh responses. */
+    @SerializedName("must_change_password") val mustChangePassword: Boolean? = null
 )
 
 /** Body of POST /api/v1/auth/refresh and /auth/logout. */
@@ -48,7 +52,9 @@ data class UserDto(
     @SerializedName("territory_id") val territoryId: String? = null,
     @SerializedName("territory_name") val territoryName: String? = null,
     @SerializedName("employee_id") val employeeId: String? = null,
-    @SerializedName("employee_code") val employeeCode: String? = null
+    @SerializedName("employee_code") val employeeCode: String? = null,
+    /** Nullable-safe: absent on older backends. True => forced password change before anything else works. */
+    @SerializedName("must_change_password") val mustChangePassword: Boolean? = null
 ) {
     /** Display label, tolerant of an account with no employee profile. */
     val displayName: String
@@ -59,7 +65,9 @@ data class UserDto(
 data class ChangePasswordRequest(
     @SerializedName("old_password") val oldPassword: String,
     @SerializedName("new_password") val newPassword: String
-)
+) {
+    override fun toString(): String = "ChangePasswordRequest(<redacted>)"
+}
 
 data class ForgotPasswordRequest(
     val identifier: String? = null,
@@ -90,4 +98,21 @@ data class ResetPasswordRequest(
 
 data class MessageResponse(
     val message: String
+)
+
+/**
+ * Body of DELETE /api/v1/auth/me. The backend REQUIRES the current password (re-authentication for an
+ * irreversible action); [reason] is optional. NEVER log or toString this object into logs.
+ */
+data class AccountDeletionRequest(
+    val password: String,
+    val reason: String? = null
+) {
+    override fun toString(): String = "AccountDeletionRequest(password=<redacted>, reason=$reason)"
+}
+
+/** Response of DELETE /api/v1/auth/me: {"status": "...", "message": "..."}. */
+data class AccountDeletionResponse(
+    val status: String? = null,
+    val message: String? = null
 )

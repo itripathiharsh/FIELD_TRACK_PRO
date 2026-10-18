@@ -1,5 +1,7 @@
 package com.fieldtrackpro.android.data.api
 
+import com.fieldtrackpro.android.data.model.AccountDeletionRequest
+import com.fieldtrackpro.android.data.model.AccountDeletionResponse
 import com.fieldtrackpro.android.data.model.ChangePasswordRequest
 import com.fieldtrackpro.android.data.model.ForgotPasswordRequest
 import com.fieldtrackpro.android.data.model.ForgotPasswordResponse
@@ -13,6 +15,7 @@ import com.fieldtrackpro.android.data.model.VerifyOtpRequest
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.GET
+import retrofit2.http.HTTP
 import retrofit2.http.PATCH
 import retrofit2.http.POST
 
@@ -38,7 +41,7 @@ interface AuthApi {
     suspend fun getCurrentUser(): Response<UserDto>
 
     @PATCH("api/v1/users/me/password")
-    suspend fun changePassword(@Body request: ChangePasswordRequest): Response<Unit>
+    suspend fun changePassword(@Body request: ChangePasswordRequest): Response<LoginResponse>
 
     @POST("api/v1/auth/forgot-password")
     suspend fun forgotPassword(@Body request: ForgotPasswordRequest): Response<ForgotPasswordResponse>
@@ -48,4 +51,8 @@ interface AuthApi {
 
     @POST("api/v1/auth/reset-password")
     suspend fun resetPassword(@Body request: ResetPasswordRequest): Response<MessageResponse>
+
+    /** Play account-deletion: DELETE /api/v1/auth/me with {"password": "...", "reason": "..."} (reason optional). */
+    @HTTP(method = "DELETE", path = "api/v1/auth/me", hasBody = true)
+    suspend fun deleteAccount(@Body request: AccountDeletionRequest): Response<AccountDeletionResponse>
 }

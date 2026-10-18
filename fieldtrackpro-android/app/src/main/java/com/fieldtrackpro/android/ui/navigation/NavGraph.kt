@@ -1,6 +1,8 @@
 package com.fieldtrackpro.android.ui.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.navigation.NavController
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -21,6 +23,7 @@ import com.fieldtrackpro.android.ui.screens.profile.ProfileSettingsScreen
 import com.fieldtrackpro.android.ui.screens.requirements.FormFillScreen
 import com.fieldtrackpro.android.ui.screens.requirements.RequirementFormScreen
 import com.fieldtrackpro.android.ui.screens.signature.SignatureScreen
+import com.fieldtrackpro.android.ui.screens.auth.ChangePasswordScreen
 import com.fieldtrackpro.android.ui.screens.splash.SplashScreen
 import com.fieldtrackpro.android.ui.screens.sync.OfflineQueueScreen
 import com.fieldtrackpro.android.ui.screens.visits.CheckInScreen
@@ -66,6 +69,22 @@ fun NavGraph(
     offlineQueueManager: OfflineQueueManager,
     monthlyPlanningViewModel: MonthlyPlanningViewModel? = null
 ) {
+    // Leaving the payment form by ANY route (system Back, top-bar back, deep link) discards its view-model state:
+    // a stale "Saved offline"/error banner and the previous submission's idempotency key must not leak into the
+    // next form. Submitting from the form itself still resets in onSuccess. A rotation does not change the
+    // destination, so an in-flight submission keeps its key across recreation.
+    DisposableEffect(navController) {
+        var previousRoute: String? = null
+        val listener = NavController.OnDestinationChangedListener { _, destination, _ ->
+            if (previousRoute == Screen.CollectPayment.route && destination.route != Screen.CollectPayment.route) {
+                collectionViewModel.resetCollectionState()
+            }
+            previousRoute = destination.route
+        }
+        navController.addOnDestinationChangedListener(listener)
+        onDispose { navController.removeOnDestinationChangedListener(listener) }
+    }
+
     NavHost(
         navController = navController,
         startDestination = Screen.Splash.route
@@ -88,6 +107,30 @@ fun NavGraph(
                     if (pendingDeepLink != null && pendingDeepLink.isNotBlank()) {
                         navController.navigate(Screen.VisitDetails.createRoute(pendingDeepLink))
                     }
+                },
+                onNavigateToChangePassword = {
+                    navController.navigate(Screen.ChangePassword.route) {
+                        popUpTo(Screen.Splash.route) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                }
+            )
+        }
+
+        composable(Screen.ChangePassword.route) {
+            ChangePasswordScreen(
+                viewModel = authViewModel,
+                onPasswordChanged = {
+                    navController.navigate(Screen.Dashboard.route) {
+                        popUpTo(0) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                },
+                onLogout = {
+                    navController.navigate(Screen.Login.route) {
+                        popUpTo(0) { inclusive = true }
+                        launchSingleTop = true
+                    }
                 }
             )
         }
@@ -96,6 +139,14 @@ fun NavGraph(
             LoginScreen(
                 viewModel = authViewModel,
                 onLoginSuccess = {
+                    if (tokenManager.isPasswordChangeRequired()) {
+                        // Forced password change: nothing else works until it is done.
+                        navController.navigate(Screen.ChangePassword.route) {
+                            popUpTo(Screen.Login.route) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                        return@LoginScreen
+                    }
                     val pendingDeepLink = SessionManager.consumePendingDeepLink()
                     navController.navigate(Screen.Dashboard.route) {
                         popUpTo(Screen.Login.route) { inclusive = true }
@@ -341,6 +392,8 @@ fun NavGraph(
             ProfileSettingsScreen(
                 tokenManager = tokenManager,
                 authViewModel = authViewModel,
+                offlineQueueManager = offlineQueueManager,
+                onSyncNow = { onDone -> visitsViewModel.syncOfflineQueue { onDone() } },
                 onNavigateBack = { navController.popBackStack() },
                 onLogout = {
                     navController.navigate(Screen.Login.route) {

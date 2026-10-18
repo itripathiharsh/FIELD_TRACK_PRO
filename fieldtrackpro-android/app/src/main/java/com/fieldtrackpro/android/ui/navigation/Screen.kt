@@ -5,6 +5,7 @@ import java.net.URLEncoder
 sealed class Screen(val route: String) {
     object Splash : Screen("splash")
     object Login : Screen("login")
+    object ChangePassword : Screen("change_password")
     object Dashboard : Screen("dashboard")
     object TodayVisits : Screen("today_visits")
     object VisitDetails : Screen("visit_details/{visitId}") {

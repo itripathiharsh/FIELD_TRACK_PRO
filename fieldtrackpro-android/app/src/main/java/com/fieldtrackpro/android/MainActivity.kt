@@ -1,28 +1,29 @@
 package com.fieldtrackpro.android
 
-import android.Manifest
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.navigation.compose.rememberNavController
+import com.fieldtrackpro.android.data.local.AccountDataWiper
 import com.fieldtrackpro.android.data.local.OfflineQueueManager
 import com.fieldtrackpro.android.data.local.TokenManager
 import com.fieldtrackpro.android.notifications.NotificationHelper
+import com.fieldtrackpro.android.ui.components.NotificationPermissionPrompt
 import com.fieldtrackpro.android.ui.navigation.NavGraph
 import com.fieldtrackpro.android.ui.navigation.Screen
 import com.fieldtrackpro.android.ui.theme.FieldTrackProTheme
+import com.fieldtrackpro.android.ui.viewmodel.AuthState
 import com.fieldtrackpro.android.ui.viewmodel.AuthViewModel
 import com.fieldtrackpro.android.ui.viewmodel.CheckInViewModel
 import com.fieldtrackpro.android.ui.viewmodel.CheckOutViewModel
@@ -44,18 +45,33 @@ import kotlinx.coroutines.flow.collectLatest
 
 class MainActivity : ComponentActivity() {
 
-    private val tokenManager by lazy { TokenManager(applicationContext) }
-    private val offlineQueueManager by lazy { OfflineQueueManager(applicationContext) }
-
-    private val requestNotificationPermissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
-            if (isGranted) {
-                NotificationSyncScheduler.syncImmediately(applicationContext)
-            }
-        }
+    private val tokenManager by lazy { TokenManager.getInstance(applicationContext) }
+    private val offlineQueueManager by lazy { OfflineQueueManager.getInstance(applicationContext) }
 
     private val authViewModel by viewModels<AuthViewModel> {
-        viewModelFactory { initializer { AuthViewModel(tokenManager) } }
+        viewModelFactory { initializer {
+            AuthViewModel(
+                tokenManager,
+                onSessionEnded = {
+                    // Logout / account deletion: stop background work scoped to the ended session.
+                    OfflineSyncScheduler.cancelSync(applicationContext)
+                    NotificationSyncScheduler.cancelAll(applicationContext)
+                },
+                // Account deletion succeeded on the server: erase every local trace of that user (off the main
+                // thread: file deletes + commit()s + WorkManager).
+                onAccountDeleted = { userId ->
+                    val app = applicationContext
+                    Thread { AccountDataWiper.forContext(app).wipe(userId) }.start()
+                },
+                // Forced password change done: sync (paused meanwhile) and notifications resume.
+                onPasswordChanged = {
+                    OfflineSyncScheduler.ensureScheduled(applicationContext)
+                    OfflineSyncScheduler.scheduleSync(applicationContext)
+                    NotificationSyncScheduler.schedulePeriodicSync(applicationContext)
+                    NotificationSyncScheduler.syncImmediately(applicationContext)
+                }
+            )
+        } }
     }
     private val visitsViewModel by viewModels<VisitsViewModel> {
         viewModelFactory { initializer { VisitsViewModel(tokenManager, offlineQueueManager) } }
@@ -91,7 +107,7 @@ class MainActivity : ComponentActivity() {
         viewModelFactory { initializer { VisitSummaryViewModel(tokenManager, offlineQueueManager) } }
     }
     private val collectionViewModel by viewModels<CollectionViewModel> {
-        viewModelFactory { initializer { CollectionViewModel(tokenManager) } }
+        viewModelFactory { initializer { CollectionViewModel(tokenManager, offlineQueueManager = offlineQueueManager) } }
     }
     private val monthlyPlanningViewModel by viewModels<MonthlyPlanningViewModel> {
         viewModelFactory { initializer { MonthlyPlanningViewModel(tokenManager) } }
@@ -103,15 +119,10 @@ class MainActivity : ComponentActivity() {
         // Initialize Notification Channel
         NotificationHelper.createNotificationChannel(applicationContext)
 
-        // Request POST_NOTIFICATIONS on Android 13+ (API 33+)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                requestNotificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            }
-        }
+        // POST_NOTIFICATIONS is requested after login (with an in-app disclosure) from NotificationPermissionPrompt below.
 
         // Schedule offline sync & notification sync
-        OfflineSyncScheduler.scheduleSync(application)
+        OfflineSyncScheduler.ensureScheduled(applicationContext)
         NotificationSyncScheduler.schedulePeriodicSync(applicationContext)
         NotificationSyncScheduler.syncImmediately(applicationContext)
 
@@ -126,13 +137,45 @@ class MainActivity : ComponentActivity() {
                 ) {
                     val navController = rememberNavController()
 
-                    // Global session expiration & logout guard (User A -> User B isolation)
+                    // After login: disclosure + notification permission (not on cold start), and
+                    // (re)start background syncs that are cancelled on logout/session expiry.
+                    val authState by authViewModel.authState.collectAsState()
+                    val isSignedIn = authState is AuthState.Authenticated || tokenManager.isLoggedIn()
+                    NotificationPermissionPrompt(enabled = isSignedIn) {
+                        NotificationSyncScheduler.syncImmediately(applicationContext)
+                    }
+                    LaunchedEffect(authState) {
+                        if (authState is AuthState.Authenticated && !tokenManager.isPasswordChangeRequired()) {
+                            OfflineSyncScheduler.ensureScheduled(applicationContext)
+                            OfflineSyncScheduler.scheduleSync(applicationContext)
+                            NotificationSyncScheduler.schedulePeriodicSync(applicationContext)
+                        }
+                    }
+
+                    // Global session expiration & logout guard (User A -> User B isolation).
+                    // sessionExpiredEvent is a ONE-SHOT event (see SessionManager): once consumed here it is
+                    // gone, so a recreated activity (rotation, dark mode) cannot re-deliver it and log the user
+                    // out again; a genuinely pending (not yet consumed) event still reaches the next collector.
                     LaunchedEffect(Unit) {
                         SessionManager.sessionExpiredEvent.collectLatest {
+                            SessionManager.setPendingDeepLink(null)
                             clearAllUserScopedState()
                             navController.navigate(Screen.Login.route) {
                                 popUpTo(0) { inclusive = true }
                                 launchSingleTop = true
+                            }
+                        }
+                    }
+
+                    // Backend answered 403 PASSWORD_CHANGE_REQUIRED on some call: show the forced "Set a new
+                    // password" screen (one-shot event; the flag itself is persisted by the interceptor).
+                    LaunchedEffect(Unit) {
+                        SessionManager.passwordChangeRequiredEvent.collectLatest {
+                            if (tokenManager.isLoggedIn()) {
+                                navController.navigate(Screen.ChangePassword.route) {
+                                    popUpTo(0) { inclusive = true }
+                                    launchSingleTop = true
+                                }
                             }
                         }
                     }

@@ -70,7 +70,10 @@ object ApiClient {
             val originalRequest = chain.request()
             val token = tokenManager.getAccessToken()
             val requestBuilder = originalRequest.newBuilder()
-            if (!token.isNullOrBlank()) {
+            // Login / refresh / password-reset are session-less: never attach a (possibly stale) bearer.
+            if (!token.isNullOrBlank() &&
+                !TokenAuthenticator.isUnauthenticatedEndpoint(originalRequest.url.encodedPath)
+            ) {
                 requestBuilder.header("Authorization", "Bearer $token")
             }
             chain.proceed(requestBuilder.build())
@@ -90,6 +93,7 @@ object ApiClient {
 
         return OkHttpClient.Builder()
             .addInterceptor(authInterceptor)
+            .addInterceptor(PasswordChangeRequiredInterceptor(tokenManager))
             .addInterceptor(transientRetryInterceptor)
             .addInterceptor(loggingInterceptor)
             .authenticator(tokenAuthenticator)
@@ -157,4 +161,7 @@ object ApiClient {
 
     fun createVisitPlanningApi(tokenManager: TokenManager): VisitPlanningApi =
         getRetrofit(tokenManager).create(VisitPlanningApi::class.java)
+
+    fun createOutletProofApi(tokenManager: TokenManager): com.fieldtrackpro.android.data.api.OutletProofApi =
+        getRetrofit(tokenManager).create(com.fieldtrackpro.android.data.api.OutletProofApi::class.java)
 }

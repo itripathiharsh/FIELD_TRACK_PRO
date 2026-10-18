@@ -117,6 +117,29 @@ private const val OSM_STYLE_JSON = """
 }
 """
 
+/** isMock on API 31+, isFromMockProvider before that (never hardcoded to false). */
+@Suppress("DEPRECATION")
+private fun isMockLocation(loc: Location): Boolean =
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) loc.isMock else loc.isFromMockProvider
+
+/**
+ * Map style from BuildConfig.MAPLIBRE_TILE_URL: a `{z}/{x}/{y}` raster template, or a style JSON URL.
+ * Release builds cannot be built without it (see build.gradle.kts); the OSM fallback is debug-only.
+ */
+private fun buildMapStyle(): Style.Builder {
+    val url = com.fieldtrackpro.android.BuildConfig.MAPLIBRE_TILE_URL.trim()
+    return when {
+        url.isBlank() -> Style.Builder().fromJson(OSM_STYLE_JSON)
+        url.contains("{z}") -> Style.Builder().fromJson(
+            OSM_STYLE_JSON.replace(
+                Regex("\"tiles\": \\[[^\\]]*\\]"),
+                java.util.regex.Matcher.quoteReplacement("\"tiles\": [\"" + url.replace("\"", "%22") + "\"]")
+            )
+        )
+        else -> Style.Builder().fromUri(url)
+    }
+}
+
 @Composable
 fun MapScreen(
     customerId: String,
@@ -138,21 +161,50 @@ fun MapScreen(
         isExpanded = false
     }
 
+    val onLocationDenied = com.fieldtrackpro.android.ui.components.rememberPermissionDeniedHandler(
+        com.fieldtrackpro.android.ui.components.PermissionDisclosureKind.LOCATION, Manifest.permission.ACCESS_FINE_LOCATION
+    )
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         hasPermission = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
                 permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        if (!hasPermission) onLocationDenied()
     }
 
-    LaunchedEffect(Unit) {
-        if (!hasPermission) {
-            permissionLauncher.launch(
-                arrayOf(
-                    Manifest.permission.ACCESS_FINE_LOCATION,
-                    Manifest.permission.ACCESS_COARSE_LOCATION
-                )
+    // Prominent disclosure before the first location prompt (the map shows your live position while open).
+    var showLocationDisclosure by remember {
+        mutableStateOf(
+            !hasPermission && !com.fieldtrackpro.android.ui.components.isDisclosureAcknowledged(
+                context, com.fieldtrackpro.android.ui.components.PermissionDisclosureKind.LOCATION
             )
+        )
+    }
+    val launchLocationPermission = {
+        permissionLauncher.launch(
+            arrayOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            )
+        )
+    }
+    if (showLocationDisclosure) {
+        com.fieldtrackpro.android.ui.components.PermissionDisclosureDialog(
+            kind = com.fieldtrackpro.android.ui.components.PermissionDisclosureKind.LOCATION,
+            onContinue = {
+                showLocationDisclosure = false
+                com.fieldtrackpro.android.ui.components.markDisclosureAcknowledged(
+                    context, com.fieldtrackpro.android.ui.components.PermissionDisclosureKind.LOCATION
+                )
+                launchLocationPermission()
+            },
+            onDismiss = { showLocationDisclosure = false },
+            extraMessage = "On this screen your live position is shown on the map while it is open."
+        )
+    }
+    LaunchedEffect(Unit) {
+        if (!hasPermission && !showLocationDisclosure) {
+            launchLocationPermission()
         }
     }
 
@@ -168,7 +220,7 @@ fun MapScreen(
                     latitude = loc.latitude,
                     longitude = loc.longitude,
                     accuracy = loc.accuracy,
-                    isMockLocation = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) loc.isMock else false,
+                    isMockLocation = isMockLocation(loc),
                     timestamp = loc.time
                 )
             }
@@ -192,7 +244,7 @@ fun MapScreen(
                         latitude = bestLast.latitude,
                         longitude = bestLast.longitude,
                         accuracy = bestLast.accuracy,
-                        isMockLocation = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) bestLast.isMock else false,
+                        isMockLocation = isMockLocation(bestLast),
                         timestamp = bestLast.time
                     )
                 }
@@ -250,7 +302,7 @@ fun MapScreen(
 
     LaunchedEffect(customerId) {
         try {
-            val tokenManager = TokenManager(context)
+            val tokenManager = TokenManager.getInstance(context)
             val customerRepository = CustomerRepository(
                 customerApi = ApiClient.createCustomerApi(tokenManager)
             )
@@ -877,7 +929,7 @@ private fun MapLibreMapView(
                 mv.getMapAsync { mapLibre ->
                     mapLibreInstance = mapLibre
                     try {
-                        mapLibre.setStyle(Style.Builder().fromJson(OSM_STYLE_JSON)) { style ->
+                        mapLibre.setStyle(buildMapStyle()) { style ->
                             mapStyleInstance = style
 
                             // Initial camera framing

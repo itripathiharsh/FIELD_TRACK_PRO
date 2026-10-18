@@ -16,7 +16,7 @@ class RequirementRepository(private val requirementApi: RequirementApi) {
             if (response.isSuccessful && response.body() != null) {
                 Resource.Success(response.body()!!)
             } else {
-                Resource.Error("Failed to load categories (${response.code()})")
+                Resource.Error(com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Failed to load categories (${response.code()})"))
             }
         } catch (e: Exception) {
             Resource.Error("Network error: ${e.localizedMessage}")
@@ -46,7 +46,7 @@ class RequirementRepository(private val requirementApi: RequirementApi) {
                 Resource.Success(response.body()!!)
             } else {
                 val err = response.errorBody()?.string() ?: "Form submission failed"
-                Resource.Error("Submit failed (${response.code()}): $err", response.code())
+                Resource.Error(com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Submit failed (${response.code()}): $err"), response.code())
             }
         } catch (e: Exception) {
             Resource.Error("Submit failed: ${e.localizedMessage}")
@@ -71,7 +71,7 @@ class RequirementRepository(private val requirementApi: RequirementApi) {
                 Resource.Success(response.body()!!)
             } else {
                 val err = response.errorBody()?.string() ?: "Requirement submission failed"
-                Resource.Error("Submit failed (${response.code()}): $err", response.code())
+                Resource.Error(com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Submit failed (${response.code()}): $err"), response.code())
             }
         } catch (e: Exception) {
             Resource.Error("Submit failed: ${e.localizedMessage}")
@@ -84,7 +84,7 @@ class RequirementRepository(private val requirementApi: RequirementApi) {
             if (response.isSuccessful) {
                 Resource.Success(response.body())
             } else {
-                Resource.Error("Failed to load form (${response.code()})")
+                Resource.Error(com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Failed to load form (${response.code()})"))
             }
         } catch (e: Exception) {
             Resource.Error("Network error: ${e.localizedMessage}")

@@ -105,14 +105,29 @@ fun VisitDetailsScreen(
     val geofenceUiState by geofenceViewModel.uiState.collectAsState()
 
     val context = LocalContext.current
-    val formRepository = remember { FormTemplateRepository(ApiClient.createFormTemplateApi(TokenManager(context))) }
+    val formRepository = remember { FormTemplateRepository(ApiClient.createFormTemplateApi(TokenManager.getInstance(context))) }
     var requiredFormSubmission by remember { mutableStateOf<FormSubmissionDto?>(null) }
     var showSuggestLocationDialog by remember { mutableStateOf(false) }
 
+    val onLocationDenied = com.fieldtrackpro.android.ui.components.rememberPermissionDeniedHandler(
+        com.fieldtrackpro.android.ui.components.PermissionDisclosureKind.LOCATION, android.Manifest.permission.ACCESS_FINE_LOCATION
+    )
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
-    ) {
+    ) { grants ->
         geofenceViewModel.checkPermissions()
+        if (grants.values.none { it }) onLocationDenied()
+    }
+    // Prominent disclosure is shown once before the first system location prompt.
+    val requestLocationPermission = com.fieldtrackpro.android.ui.components.rememberWithDisclosure(
+        com.fieldtrackpro.android.ui.components.PermissionDisclosureKind.LOCATION
+    ) {
+        locationPermissionLauncher.launch(
+            arrayOf(
+                android.Manifest.permission.ACCESS_FINE_LOCATION,
+                android.Manifest.permission.ACCESS_COARSE_LOCATION
+            )
+        )
     }
 
     LaunchedEffect(visitId) {
@@ -310,17 +325,15 @@ fun VisitDetailsScreen(
                         onEnableLocationClick = {
                             com.fieldtrackpro.android.utils.LocationSettingsHelper.openLocationSettings(context)
                         },
-                        onRequestPermissionClick = {
-                            locationPermissionLauncher.launch(
-                                arrayOf(
-                                    android.Manifest.permission.ACCESS_FINE_LOCATION,
-                                    android.Manifest.permission.ACCESS_COARSE_LOCATION
-                                )
-                            )
-                        }
+                        onRequestPermissionClick = { requestLocationPermission() }
                     )
 
                     Spacer(modifier = Modifier.height(8.dp))
+
+                    // Approved live outlet photo (authenticated GET /customers/{id}/outlet-image), only when one exists.
+                    if (s.customer?.primaryOutletImageAvailable == true) {
+                        com.fieldtrackpro.android.ui.components.OutletPhotoSection(customerId = s.customer.id)
+                    }
 
                     OutlinedButton(
                         onClick = { showSuggestLocationDialog = true },
@@ -368,12 +381,7 @@ fun VisitDetailsScreen(
                                         com.fieldtrackpro.android.utils.LocationSettingsHelper.openLocationSettings(context)
                                     }
                                     noPermission -> {
-                                        locationPermissionLauncher.launch(
-                                            arrayOf(
-                                                android.Manifest.permission.ACCESS_FINE_LOCATION,
-                                                android.Manifest.permission.ACCESS_COARSE_LOCATION
-                                            )
-                                        )
+                                        requestLocationPermission()
                                     }
                                     else -> {
                                         onNavigateToCheckIn(visit.id, visit.customerId)

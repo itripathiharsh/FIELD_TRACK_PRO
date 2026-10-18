@@ -19,7 +19,7 @@ class CollectionRepository(private val collectionApi: CollectionApi) {
             if (response.isSuccessful && response.body() != null) {
                 Resource.Success(response.body()!!)
             } else {
-                Resource.Error("Failed to load outlet account (${response.code()})", response.code())
+                Resource.Error(com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Failed to load outlet account (${response.code()})"), response.code())
             }
         } catch (e: Exception) {
             Resource.Error("Network error: ${e.localizedMessage}")
@@ -32,7 +32,7 @@ class CollectionRepository(private val collectionApi: CollectionApi) {
             if (response.isSuccessful && response.body() != null) {
                 Resource.Success(response.body()!!)
             } else {
-                Resource.Error("Failed to load invoice history (${response.code()})", response.code())
+                Resource.Error(com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Failed to load invoice history (${response.code()})"), response.code())
             }
         } catch (e: Exception) {
             Resource.Error("Network error: ${e.localizedMessage}")
@@ -46,7 +46,7 @@ class CollectionRepository(private val collectionApi: CollectionApi) {
                 Resource.Success(response.body()!!)
             } else {
                 val err = response.errorBody()?.string() ?: "Collection rejected"
-                Resource.Error("Failed to record collection (${response.code()}): $err", response.code())
+                Resource.Error(com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Failed to record collection (${response.code()}): $err"), response.code())
             }
         } catch (e: Exception) {
             Resource.Error("Network error: ${e.localizedMessage}")
@@ -67,7 +67,7 @@ class CollectionRepository(private val collectionApi: CollectionApi) {
                 Resource.Success(response.body()!!)
             } else {
                 val err = response.errorBody()?.string() ?: "Upload rejected"
-                Resource.Error("Proof upload failed (${response.code()}): $err")
+                Resource.Error(com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Proof upload failed (${response.code()}): $err"))
             }
         } catch (e: Exception) {
             Resource.Error("Upload failed: ${e.localizedMessage}")
@@ -80,7 +80,7 @@ class CollectionRepository(private val collectionApi: CollectionApi) {
             if (response.isSuccessful && response.body() != null) {
                 Resource.Success(response.body()!!)
             } else {
-                Resource.Error("Failed to get proof URL (${response.code()})")
+                Resource.Error(com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Failed to get proof URL (${response.code()})"))
             }
         } catch (e: Exception) {
             Resource.Error("Network error: ${e.localizedMessage}")

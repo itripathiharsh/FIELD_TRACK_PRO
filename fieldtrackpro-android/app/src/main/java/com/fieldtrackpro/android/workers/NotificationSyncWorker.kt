@@ -21,7 +21,7 @@ class NotificationSyncWorker(
     }
 
     override suspend fun doWork(): Result {
-        val tokenManager = TokenManager(context)
+        val tokenManager = TokenManager.getInstance(context)
         if (!tokenManager.isLoggedIn()) {
             return Result.success()
         }

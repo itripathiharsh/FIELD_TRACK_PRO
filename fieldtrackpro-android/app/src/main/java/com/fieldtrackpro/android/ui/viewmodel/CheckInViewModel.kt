@@ -65,7 +65,7 @@ class CheckInViewModel(
         accuracyM: Double? = 10.0,
         isMock: Boolean = false
     ) {
-        if (!CoordinateValidator.isValidCoordinate(lat, lon)) {
+        if (lat == null || lon == null || !CoordinateValidator.isValidCoordinate(lat, lon)) {
             _state.value = CheckInState.InvalidCoordinates(
                 "Invalid GPS coordinates. Please capture a fresh location fix."
             )
@@ -74,7 +74,7 @@ class CheckInViewModel(
 
         viewModelScope.launch {
             _state.value = CheckInState.Processing
-            when (val res = repository.verifyLocation(customerId, lat!!, lon!!, accuracyM ?: 10.0, isMock)) {
+            when (val res = repository.verifyLocation(customerId, lat, lon, accuracyM ?: 10.0, isMock)) {
                 is Resource.Success -> _state.value = CheckInState.VerifySuccess(res.data)
                 is Resource.Error -> _state.value = parseError(res.message, res.code)
                 else -> {}
@@ -91,7 +91,7 @@ class CheckInViewModel(
         isMock: Boolean = false,
         isOfflineMode: Boolean = false,
     ) {
-        if (!CoordinateValidator.isValidCoordinate(lat, lon)) {
+        if (lat == null || lon == null || !CoordinateValidator.isValidCoordinate(lat, lon)) {
             _state.value = CheckInState.InvalidCoordinates(
                 "Invalid GPS coordinates. Please capture a fresh location fix."
             )
@@ -109,7 +109,7 @@ class CheckInViewModel(
             _state.value = CheckInState.Processing
             when (
                 val res = repository.checkIn(
-                    visitId, lat!!, lon!!,
+                    visitId, lat, lon,
                     capturedAtMillis = capturedAtMillis,
                     accuracyM = accuracyM,
                     isMock = isMock,

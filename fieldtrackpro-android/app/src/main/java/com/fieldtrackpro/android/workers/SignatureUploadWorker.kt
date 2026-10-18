@@ -67,7 +67,7 @@ class SignatureUploadWorker(
             val imageBytes = file.readBytes()
             val base64 = Base64.encodeToString(imageBytes, Base64.NO_WRAP)
 
-            val tokenManager = TokenManager(applicationContext)
+            val tokenManager = TokenManager.getInstance(applicationContext)
             val repository = SignatureRepository(ApiClient.createSignatureApi(tokenManager))
 
             val result = if (signatureId != null) {

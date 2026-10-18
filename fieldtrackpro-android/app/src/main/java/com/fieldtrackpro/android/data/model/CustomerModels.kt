@@ -37,7 +37,10 @@ data class CustomerDto(
     @SerializedName("area_id") val areaId: String? = null,
     @SerializedName("area_name") val areaName: String? = null,
     @SerializedName("created_by") val createdBy: String? = null,
-    @SerializedName("created_at") val createdAt: String? = null
+    @SerializedName("created_at") val createdAt: String? = null,
+    // Live outlet proof: additive fields on CustomerRead (absent on older servers).
+    @SerializedName("primary_outlet_image_available") val primaryOutletImageAvailable: Boolean = false,
+    @SerializedName("primary_outlet_proof_id") val primaryOutletProofId: String? = null
 ) {
     val latitude: Double? get() = location?.latitude
     val longitude: Double? get() = location?.longitude
@@ -136,5 +139,7 @@ data class CustomerProspectCreate(
     val location: GeoPointDto? = null,
     @SerializedName("gps_accuracy_meters") val gpsAccuracyMeters: Double? = null,
     val notes: String? = null,
-    val force: Boolean = false
+    val force: Boolean = false,
+    /** UUID of the UNATTACHED live outlet proof; the server then takes lat/lon/accuracy from it. */
+    @SerializedName("outlet_proof_id") val outletProofId: String? = null
 )

@@ -12,15 +12,23 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.FileProvider
 import java.io.File
 
+/** Sub-directory of the app cache that FileProvider exposes (see res/xml/file_paths.xml). */
+const val CAPTURE_CACHE_SUBDIR = "captures"
+
+/**
+ * Creates a temp file inside the FileProvider-exposed capture cache sub-directory
+ * (only this directory is shared with the camera app, not the whole cache).
+ */
+fun createCaptureFile(context: Context, prefix: String): File {
+    val dir = File(context.cacheDir, CAPTURE_CACHE_SUBDIR).apply { mkdirs() }
+    return File.createTempFile(prefix, ".jpg", dir)
+}
+
 /**
  * Creates a temporary file for camera capture and returns its URI via FileProvider.
  */
 fun createImageUri(context: Context): Uri {
-    val tempFile = File.createTempFile(
-        "capture_${System.currentTimeMillis()}",
-        ".jpg",
-        context.cacheDir
-    )
+    val tempFile = createCaptureFile(context, "capture_${System.currentTimeMillis()}_")
     return FileProvider.getUriForFile(
         context,
         "${context.packageName}.fileprovider",

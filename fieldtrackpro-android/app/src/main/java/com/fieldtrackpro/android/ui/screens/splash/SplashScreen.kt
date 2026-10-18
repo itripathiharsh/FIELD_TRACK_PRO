@@ -23,8 +23,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fieldtrackpro.android.data.local.TokenManager
-import com.fieldtrackpro.android.data.remote.ApiClient
-import com.fieldtrackpro.android.data.repository.AuthRepository
+import com.fieldtrackpro.android.utils.StartDestination
+import com.fieldtrackpro.android.utils.StartRouting
 import com.fieldtrackpro.android.ui.theme.BrandGold
 import com.fieldtrackpro.android.ui.theme.BrandNavy
 import com.fieldtrackpro.android.ui.theme.BrandWhite
@@ -35,40 +35,24 @@ import kotlinx.coroutines.delay
 /**
  * Splash Screen.
  *
- * APP-AUTH-002:
- * - Checks session viability on cold start.
- * - If tokens are present, validates or refreshes session via AuthRepository.
- * - Routes to Dashboard only if session is confirmed valid; routes to Login if stale/missing.
+ * APP-AUTH-002: routes from STORED state only (see [StartRouting]) - no network call, no eager token refresh.
+ * A stored session opens the dashboard immediately (also offline); expiry is handled lazily by
+ * TokenAuthenticator on the first authenticated request.
  */
 @Composable
 fun SplashScreen(
     tokenManager: TokenManager,
     onNavigateToLogin: () -> Unit,
-    onNavigateToDashboard: () -> Unit
+    onNavigateToDashboard: () -> Unit,
+    onNavigateToChangePassword: () -> Unit = onNavigateToLogin
 ) {
     LaunchedEffect(Unit) {
-        val hasSession = if (!tokenManager.isLoggedIn()) {
-            false
-        } else {
-            // Attempt to refresh/verify session
-            val authRepo = AuthRepository(
-                authApi = ApiClient.createAuthApi(tokenManager),
-                tokenManager = tokenManager
-            )
-            // If refreshToken exists, verify or refresh
-            if (tokenManager.getRefreshToken() != null) {
-                authRepo.refreshSession()
-            } else {
-                tokenManager.isLoggedIn()
-            }
-        }
-
-        delay(800)
-
-        if (hasSession) {
-            onNavigateToDashboard()
-        } else {
-            onNavigateToLogin()
+        val destination = StartRouting.decide(tokenManager)
+        delay(400)
+        when (destination) {
+            StartDestination.DASHBOARD -> onNavigateToDashboard()
+            StartDestination.CHANGE_PASSWORD -> onNavigateToChangePassword()
+            StartDestination.LOGIN -> onNavigateToLogin()
         }
     }
 

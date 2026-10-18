@@ -88,6 +88,14 @@ import com.fieldtrackpro.android.ui.theme.SurfaceSecondary
 import com.fieldtrackpro.android.ui.theme.TextPrimary
 import com.fieldtrackpro.android.ui.theme.TextSecondary
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.fieldtrackpro.android.data.repository.OutletProofMessages
+import com.fieldtrackpro.android.ui.screens.proof.OutletProofCard
+import com.fieldtrackpro.android.ui.screens.proof.rememberOutletProofCapture
+import com.fieldtrackpro.android.ui.viewmodel.OutletProofFlowViewModel
+import com.fieldtrackpro.android.ui.viewmodel.ProofUi
+import com.fieldtrackpro.android.utils.OutletProofRules
 
 /**
  * Screen for field employees to register a new Customer / Outlet prospect,
@@ -104,7 +112,7 @@ fun AddCustomerScreen(
     val scope = rememberCoroutineScope()
     val locationService = remember { LocationCaptureService(context) }
     val customerRepository = remember {
-        CustomerRepository(ApiClient.createCustomerApi(TokenManager(context)))
+        CustomerRepository(ApiClient.createCustomerApi(TokenManager.getInstance(context)))
     }
 
     // Form fields
@@ -140,6 +148,14 @@ fun AddCustomerScreen(
     var submitError by remember { mutableStateOf<String?>(null) }
     var duplicateWarningMessage by remember { mutableStateOf<String?>(null) }
 
+    // Live outlet proof (camera photo + GPS fix taken at the shutter click). Required to submit a new outlet.
+    val proofVm: OutletProofFlowViewModel = viewModel(key = "outlet_proof_new")
+    val proofUi by proofVm.ui.collectAsState()
+    val launchProofCapture = rememberOutletProofCapture(customerId = null, outletName = null) { proofVm.onCaptured(it) }
+    val uploadedProof = proofUi as? ProofUi.Uploaded
+    val proofReady = uploadedProof != null &&
+        OutletProofRules.isUnattachedProofUsable(uploadedProof.payload.uploadedAtEpochMs, System.currentTimeMillis())
+
     fun captureLocation() {
         if (!locationService.hasLocationPermission()) {
             locationError = "Location permission required"
@@ -164,7 +180,7 @@ fun AddCustomerScreen(
     }
 
     LaunchedEffect(Unit) {
-        captureLocation()
+        proofVm.start(customerId = null, outletName = null)
         // Load master brands
         scope.launch {
             when (val bRes = customerRepository.getBrandNames()) {
@@ -187,6 +203,10 @@ fun AddCustomerScreen(
             Toast.makeText(context, "Contact number is required", Toast.LENGTH_SHORT).show()
             return
         }
+        if (!proofReady) {
+            Toast.makeText(context, "Take the live outlet photo first (it is required)", Toast.LENGTH_SHORT).show()
+            return
+        }
 
         isSubmitting = true
         submitError = null
@@ -205,9 +225,8 @@ fun AddCustomerScreen(
                 )
             } else null
 
-            val locDto = locationResult?.let {
-                GeoPointDto(latitude = it.latitude, longitude = it.longitude)
-            }
+            // The server takes latitude/longitude/accuracy from the live outlet proof (outlet_proof_id).
+            val locDto: GeoPointDto? = null
 
             val prospectPayload = CustomerProspectCreate(
                 name = name.trim(),
@@ -219,18 +238,25 @@ fun AddCustomerScreen(
                 brands = selectedBrands.toList(),
                 requirement = reqDto,
                 location = locDto,
-                gpsAccuracyMeters = locationResult?.accuracy?.toDouble(),
-                force = force
+                gpsAccuracyMeters = null,
+                force = force,
+                outletProofId = uploadedProof?.proof?.id
             )
 
             when (val res = customerRepository.createCustomerProspect(prospectPayload)) {
                 is Resource.Success -> {
+                    proofVm.onConsumed()
                     Toast.makeText(context, "Outlet added successfully!", Toast.LENGTH_LONG).show()
                     onCustomerCreated(res.data)
                     onNavigateBack()
                 }
                 is Resource.Error -> {
-                    if (res.code == 409) {
+                    if (res.errorCode?.startsWith("OUTLET_PROOF") == true) {
+                        // The photo bundle is no longer usable (expired / already used / missing): retake it.
+                        submitError = OutletProofMessages.forCode(res.errorCode, res.code, res.message) +
+                            " Please retake the outlet photo."
+                        proofVm.discard()
+                    } else if (res.code == 409) {
                         duplicateWarningMessage = res.message
                     } else {
                         submitError = res.message
@@ -469,7 +495,7 @@ fun AddCustomerScreen(
                 }
             }
 
-            // Section 4: GPS Location
+            // Section 4: Outlet photo + GPS (live camera capture; replaces the old "suggested GPS" controls)
             Card(
                 colors = CardDefaults.cardColors(containerColor = Color.White),
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
@@ -478,61 +504,17 @@ fun AddCustomerScreen(
                     modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.LocationOn, contentDescription = null, tint = BrandNavy, modifier = Modifier.size(20.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Store GPS Position", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = BrandNavy)
-                        }
-                        IconButton(onClick = { captureLocation() }, modifier = Modifier.size(28.dp)) {
-                            Icon(Icons.Default.Refresh, contentDescription = "Refresh GPS", tint = BrandNavy)
-                        }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.LocationOn, contentDescription = null, tint = BrandNavy, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Outlet Photo + GPS *", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = BrandNavy)
                     }
-
-                    if (isCapturingLocation) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = BrandNavy)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Acquiring GPS fix at current location...", fontSize = 12.sp, color = TextSecondary)
-                        }
-                    } else if (locationResult != null) {
-                        val loc = locationResult!!
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(SuccessGreen.copy(alpha = 0.1f))
-                                .border(1.dp, SuccessGreen.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
-                                .padding(10.dp)
-                        ) {
-                            Column {
-                                Text(
-                                    text = "%.6f, %.6f".format(loc.latitude, loc.longitude),
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp,
-                                    color = BrandNavy
-                                )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = "Accuracy: ±%.1fm · Status: PENDING APPROVAL".format(loc.accuracy),
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = SuccessGreen
-                                )
-                            }
-                        }
-                    } else {
-                        Text(
-                            text = locationError ?: "No GPS fix available. Ensure location is enabled.",
-                            fontSize = 12.sp,
-                            color = Color.Red
-                        )
-                    }
-
+                    OutletProofCard(
+                        ui = proofUi,
+                        onCapture = launchProofCapture,
+                        onRetry = { proofVm.retryUpload() },
+                        onRetake = { proofVm.discard(); launchProofCapture() }
+                    )
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -544,7 +526,7 @@ fun AddCustomerScreen(
                         Icon(Icons.Default.Info, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(14.dp))
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "New outlet location is saved in PENDING APPROVAL state until verified by Admin.",
+                            text = "Internet is needed to add a new outlet. The photo and the GPS position taken at the same moment are verified together; the new outlet stays in PENDING APPROVAL until an Admin approves it.",
                             fontSize = 11.sp,
                             color = TextSecondary
                         )
@@ -554,7 +536,7 @@ fun AddCustomerScreen(
 
             if (submitError != null) {
                 Text(
-                    text = submitError!!,
+                    text = submitError.orEmpty(),
                     color = Color.Red,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold
@@ -564,7 +546,7 @@ fun AddCustomerScreen(
             // Submit Button
             Button(
                 onClick = { submitProspect(force = false) },
-                enabled = !isSubmitting,
+                enabled = !isSubmitting && proofReady,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(50.dp),
@@ -591,7 +573,7 @@ fun AddCustomerScreen(
                 Text("Potential Duplicate Outlet", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = BrandNavy)
             },
             text = {
-                Text(duplicateWarningMessage!!, fontSize = 13.sp, color = TextPrimary)
+                Text(duplicateWarningMessage.orEmpty(), fontSize = 13.sp, color = TextPrimary)
             },
             confirmButton = {
                 Button(
@@ -660,7 +642,17 @@ fun AddCustomerScreen(
                                     isAddBrandDialogOpen = false
                                 }
                                 is Resource.Error -> {
-                                    addBrandError = res.message ?: "Failed to add brand"
+                                    if (res.code == 403) {
+                                        // Brand master is admin-managed. The prospect submission creates
+                                        // any new brand server-side, so just select it locally.
+                                        if (!availableBrands.contains(trimmed)) {
+                                            availableBrands = (availableBrands + trimmed).sorted()
+                                        }
+                                        selectedBrands = selectedBrands + trimmed
+                                        isAddBrandDialogOpen = false
+                                    } else {
+                                        addBrandError = res.message ?: "Failed to add brand"
+                                    }
                                 }
                                 else -> {}
                             }

@@ -48,7 +48,7 @@ class CustomerRepository(private val customerApi: CustomerApi) {
                     )
                 )
             } else {
-                Resource.Error("Failed to fetch customers (${response.code()})", response.code())
+                Resource.Error(com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Failed to fetch customers (${response.code()})"), response.code())
             }
         } catch (e: Exception) {
             Resource.Error("Network error: ${e.localizedMessage}")
@@ -64,7 +64,7 @@ class CustomerRepository(private val customerApi: CustomerApi) {
             if (response.isSuccessful && response.body() != null) {
                 Resource.Success(response.body()!!)
             } else {
-                Resource.Error("Customer not found (${response.code()})", response.code())
+                Resource.Error(com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Customer not found (${response.code()})"), response.code())
             }
         } catch (e: Exception) {
             Resource.Error("Network error: ${e.localizedMessage}")
@@ -85,7 +85,7 @@ class CustomerRepository(private val customerApi: CustomerApi) {
                 Resource.Success(response.body()!!)
             } else {
                 val errorBody = response.errorBody()?.string()
-                val message = parseErrorMessage(errorBody) ?: "Failed to submit location proposal (${response.code()})"
+                val message = parseErrorMessage(errorBody) ?: com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Failed to submit location proposal (${response.code()})")
                 Resource.Error(message, response.code())
             }
         } catch (e: Exception) {
@@ -102,7 +102,7 @@ class CustomerRepository(private val customerApi: CustomerApi) {
             if (response.isSuccessful && response.body() != null) {
                 Resource.Success(response.body()!!)
             } else {
-                Resource.Error("Failed to fetch location proposals (${response.code()})", response.code())
+                Resource.Error(com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Failed to fetch location proposals (${response.code()})"), response.code())
             }
         } catch (e: Exception) {
             Resource.Error("Network error: ${e.localizedMessage}")
@@ -119,8 +119,8 @@ class CustomerRepository(private val customerApi: CustomerApi) {
                 Resource.Success(response.body()!!)
             } else {
                 val errorBody = response.errorBody()?.string()
-                val message = parseErrorMessage(errorBody) ?: "Failed to create customer (${response.code()})"
-                Resource.Error(message, response.code())
+                val message = parseErrorMessage(errorBody) ?: com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Failed to create customer (${response.code()})")
+                Resource.Error(message, response.code(), errorCode = parseErrorCode(errorBody))
             }
         } catch (e: Exception) {
             Resource.Error("Network error: ${e.localizedMessage}")
@@ -136,7 +136,7 @@ class CustomerRepository(private val customerApi: CustomerApi) {
             if (response.isSuccessful && response.body() != null) {
                 Resource.Success(response.body()!!)
             } else {
-                Resource.Error("Failed to fetch requirements (${response.code()})", response.code())
+                Resource.Error(com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Failed to fetch requirements (${response.code()})"), response.code())
             }
         } catch (e: Exception) {
             Resource.Error("Network error: ${e.localizedMessage}")
@@ -155,7 +155,7 @@ class CustomerRepository(private val customerApi: CustomerApi) {
             if (response.isSuccessful && response.body() != null) {
                 Resource.Success(response.body()!!)
             } else {
-                Resource.Error("Failed to create requirement (${response.code()})", response.code())
+                Resource.Error(com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Failed to create requirement (${response.code()})"), response.code())
             }
         } catch (e: Exception) {
             Resource.Error("Network error: ${e.localizedMessage}")
@@ -171,7 +171,7 @@ class CustomerRepository(private val customerApi: CustomerApi) {
             if (response.isSuccessful && response.body() != null) {
                 Resource.Success(response.body()!!)
             } else {
-                Resource.Error("Failed to fetch brands (${response.code()})", response.code())
+                Resource.Error(com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Failed to fetch brands (${response.code()})"), response.code())
             }
         } catch (e: Exception) {
             Resource.Error("Network error: ${e.localizedMessage}")
@@ -196,11 +196,22 @@ class CustomerRepository(private val customerApi: CustomerApi) {
                 Resource.Success(response.body()!!)
             } else {
                 val errorBody = response.errorBody()?.string()
-                val message = parseErrorMessage(errorBody) ?: "Failed to create brand (${response.code()})"
+                val message = parseErrorMessage(errorBody) ?: com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Failed to create brand (${response.code()})")
                 Resource.Error(message, response.code())
             }
         } catch (e: Exception) {
             Resource.Error("Network error: ${e.localizedMessage}")
+        }
+    }
+
+    /** Machine-readable error code of the API error envelope (e.g. OUTLET_PROOF_EXPIRED), if any. */
+    private fun parseErrorCode(errorJson: String?): String? {
+        if (errorJson.isNullOrBlank()) return null
+        return try {
+            val obj = JSONObject(errorJson)
+            if (obj.has("error")) obj.getJSONObject("error").optString("code").takeIf { it.isNotBlank() } else null
+        } catch (_: Exception) {
+            null
         }
     }
 

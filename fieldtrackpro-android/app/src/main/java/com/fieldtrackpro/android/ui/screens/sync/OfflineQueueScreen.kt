@@ -15,11 +15,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -32,7 +34,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fieldtrackpro.android.data.local.ConflictType
 import com.fieldtrackpro.android.data.local.OfflineQueueManager
+import com.fieldtrackpro.android.data.local.PaymentProofStore
+import com.fieldtrackpro.android.data.local.PendingAction
+import com.fieldtrackpro.android.data.local.SyncConflict
 import com.fieldtrackpro.android.data.local.TokenManager
+import com.fieldtrackpro.android.data.repository.needsOutletRetake
 import com.fieldtrackpro.android.ui.components.EmptyState
 import com.fieldtrackpro.android.ui.components.FieldTrackTopAppBar
 import com.fieldtrackpro.android.ui.components.StatusBadge
@@ -58,6 +64,39 @@ private fun ConflictType.displayLabel(): String = when (this) {
     ConflictType.GEO_VALIDATION_FAILED -> "Location Check Failed"
     ConflictType.SERVER_REJECTED -> "Rejected by Server"
     ConflictType.NETWORK_ERROR -> "Network Error During Sync"
+    ConflictType.UNOWNED_LEGACY -> "Unowned Legacy Item (not synced)"
+    ConflictType.QUEUE_CORRUPTED -> "Saved Items Could Not Be Read"
+}
+
+/** One-line title for a queued action: amount + method for payments, short visit id otherwise. */
+internal fun actionTitle(action: PendingAction): String {
+    if (action.isOutletProof) return "Outlet photo + GPS"
+    val p = action.paymentPayload
+    return if (action.isPayment && p != null) {
+        "Payment \u20B9${p.amount ?: "?"} (${p.paymentMethod ?: "?"})"
+    } else {
+        "Visit ID: ${action.visitId.take(8)}..."
+    }
+}
+
+internal fun actionSubtitle(action: PendingAction): String? {
+    if (action.isOutletProof) {
+        val o = action.outletProofPayload ?: return null
+        val outlet = o.outletName?.takeIf { it.isNotBlank() } ?: "Outlet ${o.customerId?.take(8) ?: "?"}..."
+        return "Outlet: $outlet • GPS ±%.0f m".format(o.accuracyM ?: 0.0)
+    }
+    val p = action.paymentPayload
+    if (!action.isPayment || p == null) return null
+    val outlet = p.outletName?.takeIf { it.isNotBlank() } ?: "Visit ${action.visitId.take(8)}..."
+    val proofs = p.proofPaths?.size ?: 0
+    return "Outlet: $outlet" + if (proofs > 0) " \u2022 $proofs proof photo(s)" else ""
+}
+
+private fun discard(manager: OfflineQueueManager, conflict: SyncConflict) {
+    conflict.pendingAction.paymentPayload?.proofPaths?.forEach { PaymentProofStore.delete(it) }
+    conflict.pendingAction.outletProofPayload?.photoPath?.let { com.fieldtrackpro.android.data.local.OutletProofStore.delete(it) }
+    manager.removeAction(conflict.pendingAction.id)
+    manager.removeConflict(conflict.id)
 }
 
 @Composable
@@ -69,8 +108,11 @@ fun OfflineQueueScreen(
 ) {
     val currentUserId = tokenManager?.getUserId()
     var queueItems by remember { mutableStateOf(offlineQueueManager.getQueueForUser(currentUserId)) }
-    var conflicts by remember { mutableStateOf(offlineQueueManager.getConflicts()) }
+    var conflicts by remember { mutableStateOf(offlineQueueManager.getConflictsForUser(currentUserId)) }
     var syncNotice by remember { mutableStateOf("") }
+    var quarantined by remember { mutableStateOf(offlineQueueManager.getQuarantinedConflicts()) }
+    var showQuarantineConfirm by remember { mutableStateOf(false) }
+    var quarantineRevealed by remember { mutableStateOf(false) }
     val dateFormat = remember { SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()) }
 
     Scaffold(
@@ -134,7 +176,7 @@ fun OfflineQueueScreen(
                                 visitsViewModel.syncOfflineQueue { count ->
                                     syncNotice = "Synced $count pending action(s) to backend!"
                                     queueItems = offlineQueueManager.getQueueForUser(currentUserId)
-                                    conflicts = offlineQueueManager.getConflicts()
+                                    conflicts = offlineQueueManager.getConflictsForUser(currentUserId)
                                 }
                             },
                             enabled = queueItems.isNotEmpty(),
@@ -156,8 +198,9 @@ fun OfflineQueueScreen(
 
                         OutlinedButton(
                             onClick = {
-                                offlineQueueManager.clearQueue()
-                                queueItems = emptyList()
+                                // Only the signed-in user's items: never wipe another employee's queue.
+                                if (currentUserId != null) offlineQueueManager.clearQueueForUser(currentUserId)
+                                queueItems = offlineQueueManager.getQueueForUser(currentUserId)
                                 syncNotice = "Cleared offline queue."
                             },
                             enabled = queueItems.isNotEmpty(),
@@ -203,12 +246,20 @@ fun OfflineQueueScreen(
                             ) {
                                 Column {
                                     Text(
-                                        text = "Visit ID: ${action.visitId.take(8)}...",
+                                        text = actionTitle(action),
                                         fontFamily = LeagueSpartanFamily,
                                         fontSize = 15.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = BrandNavy
                                     )
+                                    actionSubtitle(action)?.let {
+                                        Text(
+                                            text = it,
+                                            fontFamily = LibreBaskervilleFamily,
+                                            fontSize = 13.sp,
+                                            color = TextSecondary
+                                        )
+                                    }
                                     Spacer(modifier = Modifier.height(2.dp))
                                     Text(
                                         text = "Captured: ${dateFormat.format(Date(action.timestamp))}",
@@ -217,13 +268,15 @@ fun OfflineQueueScreen(
                                         fontWeight = FontWeight.Normal,
                                         color = TextSecondary
                                     )
-                                    Text(
-                                        text = "Coords: ${action.latitude}, ${action.longitude}",
-                                        fontFamily = LibreBaskervilleFamily,
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Normal,
-                                        color = TextSubtle
-                                    )
+                                    if (!action.isPayment && !action.isOutletProof) {
+                                        Text(
+                                            text = "Coords: ${action.latitude}, ${action.longitude}",
+                                            fontFamily = LibreBaskervilleFamily,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Normal,
+                                            color = TextSubtle
+                                        )
+                                    }
                                 }
                                 StatusBadge(status = action.actionType)
                             }
@@ -269,7 +322,8 @@ fun OfflineQueueScreen(
                                     color = BrandGoldDark
                                 )
                                 Text(
-                                    text = "Visit ID: ${conflict.pendingAction.visitId.take(8)}... (${conflict.pendingAction.actionType})",
+                                    text = "${actionTitle(conflict.pendingAction)} (${conflict.pendingAction.actionType})" +
+                                        (actionSubtitle(conflict.pendingAction)?.let { " \u2022 $it" } ?: ""),
                                     fontFamily = LibreBaskervilleFamily,
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Normal,
@@ -283,12 +337,23 @@ fun OfflineQueueScreen(
                                     color = TextPrimary
                                 )
                                 Spacer(modifier = Modifier.height(8.dp))
+                                if (conflict.needsOutletRetake) {
+                                    // Stale/unusable queued outlet photo: offer a RETAKE (live capture at the outlet).
+                                    com.fieldtrackpro.android.ui.screens.proof.OutletProofRetakeAction(
+                                        conflict = conflict,
+                                        offlineQueueManager = offlineQueueManager,
+                                        onResolved = {
+                                            queueItems = offlineQueueManager.getQueueForUser(currentUserId)
+                                            conflicts = offlineQueueManager.getConflictsForUser(currentUserId)
+                                        }
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                }
                                 OutlinedButton(
                                     onClick = {
-                                        offlineQueueManager.removeAction(conflict.pendingAction.id)
-                                        offlineQueueManager.removeConflict(conflict.id)
+                                        discard(offlineQueueManager, conflict)
                                         queueItems = offlineQueueManager.getQueueForUser(currentUserId)
-                                        conflicts = offlineQueueManager.getConflicts()
+                                        conflicts = offlineQueueManager.getConflictsForUser(currentUserId)
                                     },
                                     shape = RoundedCornerShape(8.dp)
                                 ) {
@@ -299,6 +364,85 @@ fun OfflineQueueScreen(
                     }
                 }
             }
+
+            if (quarantined.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(20.dp))
+                Text(
+                    text = "UNOWNED LEGACY ITEMS (${quarantined.size})",
+                    fontFamily = LeagueSpartanFamily,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.8.sp,
+                    color = BrandGoldDark
+                )
+                Text(
+                    text = "Saved by an older app version with no owner. They are never synced automatically.",
+                    fontFamily = LibreBaskervilleFamily,
+                    fontSize = 12.sp,
+                    color = TextSecondary
+                )
+                if (!quarantineRevealed) {
+                    OutlinedButton(onClick = { showQuarantineConfirm = true }, shape = RoundedCornerShape(8.dp)) {
+                        Text("REVIEW", fontFamily = LeagueSpartanFamily, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = BrandNavy)
+                    }
+                } else {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        items(quarantined, key = { it.id }) { conflict ->
+                            Card(
+                                modifier = Modifier.fillMaxWidth().border(1.dp, BrandLightGray, RoundedCornerShape(12.dp)),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(containerColor = BrandWhite)
+                            ) {
+                                Column(modifier = Modifier.padding(14.dp)) {
+                                    Text(
+                                        text = "${actionTitle(conflict.pendingAction)} (${conflict.pendingAction.actionType})",
+                                        fontFamily = LeagueSpartanFamily, fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold, color = BrandGoldDark
+                                    )
+                                    Text(
+                                        text = "Captured: ${dateFormat.format(Date(conflict.pendingAction.timestamp))}",
+                                        fontFamily = LibreBaskervilleFamily, fontSize = 12.sp, color = TextSecondary
+                                    )
+                                    Text(
+                                        text = conflict.message,
+                                        fontFamily = LibreBaskervilleFamily, fontSize = 13.sp, color = TextPrimary
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    OutlinedButton(
+                                        onClick = {
+                                            discard(offlineQueueManager, conflict)
+                                            quarantined = offlineQueueManager.getQuarantinedConflicts()
+                                        },
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Text("DISCARD", fontFamily = LeagueSpartanFamily, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = BrandNavy)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
+    }
+
+    if (showQuarantineConfirm) {
+        AlertDialog(
+            onDismissRequest = { showQuarantineConfirm = false },
+            title = { Text("Show unowned legacy items?") },
+            text = {
+                Text(
+                    "These items were saved by an older app version and cannot be tied to any employee. " +
+                        "They will not be synced. Only continue if you are the person who handles them."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { quarantineRevealed = true; showQuarantineConfirm = false }) { Text("SHOW") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showQuarantineConfirm = false }) { Text("CANCEL") }
+            }
+        )
     }
 }

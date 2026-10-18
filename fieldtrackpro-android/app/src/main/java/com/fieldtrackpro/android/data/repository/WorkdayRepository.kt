@@ -96,7 +96,7 @@ class WorkdayRepository(
                     json.optJSONObject("error")?.optString("message")
                         ?: json.optString("detail", "Failed to start workday")
                 } catch (e: Exception) {
-                    "Failed to start workday (${response.code()})"
+                    com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Failed to start workday (${response.code()})")
                 }
                 Resource.Error(message, response.code())
             }
@@ -200,7 +200,7 @@ class WorkdayRepository(
                     json.optJSONObject("error")?.optString("message")
                         ?: json.optString("detail", "Failed to end workday")
                 } catch (e: Exception) {
-                    "Failed to end workday (${response.code()})"
+                    com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Failed to end workday (${response.code()})")
                 }
                 Resource.Error(message, response.code())
             }
@@ -247,11 +247,12 @@ class WorkdayRepository(
             if (response.isSuccessful && response.body() != null) {
                 Resource.Success(response.body()!!)
             } else {
-                Resource.Error("Failed to load workday (${response.code()})", response.code())
+                Resource.Error(com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Failed to load workday (${response.code()})"), response.code())
             }
         } catch (e: Exception) {
             // Check if there are local queued actions for today
-            val queued = offlineQueueManager?.getQueue() ?: emptyList()
+            // Only the signed-in user's queue: another employee's START/END_DAY must never show as mine.
+            val queued = offlineQueueManager?.getQueueForUser(tokenManager?.getUserId()) ?: emptyList()
             val endAction = queued.find { it.actionType == "END_DAY" }
             val startAction = queued.find { it.actionType == "START_DAY" }
 

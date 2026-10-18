@@ -37,7 +37,7 @@ class ApiErrorParserTest {
         assertEquals("You are not assigned to this visit/customer.", parsed403.message)
 
         val parsed404 = ApiErrorParser.parse(404, "   ")
-        assertEquals("Visit or customer not found. It may have been reassigned.", parsed404.message)
+        assertEquals("This item is no longer available or is not assigned to you.", parsed404.message)
 
         val parsed429 = ApiErrorParser.parse(429, null)
         assertEquals("Too many attempts. Please wait and try again.", parsed429.message)

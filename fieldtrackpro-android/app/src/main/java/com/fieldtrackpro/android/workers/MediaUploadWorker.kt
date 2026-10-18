@@ -69,7 +69,7 @@ class MediaUploadWorker(
         return try {
             val fileBytes = file.readBytes()
 
-            val tokenManager = TokenManager(applicationContext)
+            val tokenManager = TokenManager.getInstance(applicationContext)
             val repository = MediaRepository(ApiClient.createMediaApi(tokenManager))
 
             val result = if (isOrder) {

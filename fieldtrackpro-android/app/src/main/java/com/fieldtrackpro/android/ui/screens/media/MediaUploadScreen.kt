@@ -106,6 +106,9 @@ fun MediaUploadScreen(
         }
     }
 
+    val onCameraDenied = com.fieldtrackpro.android.ui.components.rememberPermissionDeniedHandler(
+        com.fieldtrackpro.android.ui.components.PermissionDisclosureKind.CAMERA, Manifest.permission.CAMERA
+    )
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -114,8 +117,14 @@ fun MediaUploadScreen(
             val uri = createTempImageUri(context)
             cameraUri = uri
             cameraLauncher.launch(uri)
+        } else {
+            onCameraDenied()
         }
     }
+
+    val requestCameraPermission = com.fieldtrackpro.android.ui.components.rememberWithDisclosure(
+        com.fieldtrackpro.android.ui.components.PermissionDisclosureKind.CAMERA
+    ) { permissionLauncher.launch(Manifest.permission.CAMERA) }
 
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -412,7 +421,7 @@ fun MediaUploadScreen(
                                         cameraUri = uri
                                         cameraLauncher.launch(uri)
                                     } else {
-                                        permissionLauncher.launch(Manifest.permission.CAMERA)
+                                        requestCameraPermission()
                                     }
                                 }
                             },
@@ -592,10 +601,9 @@ fun MediaUploadScreen(
 }
 
 private fun createTempImageUri(context: android.content.Context): Uri {
-    val tempFile = File.createTempFile(
-        "capture_${System.currentTimeMillis()}",
-        ".jpg",
-        context.cacheDir
+    val tempFile = com.fieldtrackpro.android.ui.components.createCaptureFile(
+        context,
+        "capture_${System.currentTimeMillis()}_"
     )
     return FileProvider.getUriForFile(
         context,

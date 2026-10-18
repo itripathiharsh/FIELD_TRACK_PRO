@@ -12,9 +12,11 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Before
 import org.junit.Test
 import java.io.BufferedReader
+import java.io.IOException
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.net.ServerSocket
@@ -261,5 +263,58 @@ class TokenAuthenticatorTest {
             assertEquals("Bearer shared_new_token", res?.header("Authorization"))
         }
         assertEquals(1, server.requestCount.get())
+    }
+
+    private fun unauthorizedResponse(): Response {
+        val originalRequest = Request.Builder()
+            .url("http://127.0.0.1/api/v1/visits")
+            .header("Authorization", "Bearer expired_token")
+            .build()
+        return createFakeResponse(originalRequest, 401)
+    }
+
+    @Test
+    fun refreshNetworkFailure_doesNotLogOut() = runBlocking {
+        // Nothing listens on this port any more: the refresh call fails with an IOException.
+        val closedPort = java.net.ServerSocket(0).use { it.localPort }
+        val tokenManager = FakeTokenManager(accessToken = "expired_token", refreshToken = "valid_refresh_token")
+        val authenticator = TokenAuthenticator(tokenManager) { "http://127.0.0.1:$closedPort/" }
+
+        // A transient refresh failure throws (fails the call with no HTTP code) rather than
+        // returning null (which would hand the original 401 back unchanged and get misread as
+        // AUTH_EXPIRED downstream) - see SyncErrorPolicy.classify(null) -> RETRYABLE.
+        assertThrows(IOException::class.java) { authenticator.authenticate(null, unauthorizedResponse()) }
+
+        assertEquals("Session must be kept", "expired_token", tokenManager.getAccessToken())
+        assertEquals("Refresh token must be kept", "valid_refresh_token", tokenManager.getRefreshToken())
+        val eventReceived = withTimeoutOrNull(300) { SessionManager.sessionExpiredEvent.first() }
+        assertNull("Session-expired event must NOT be emitted on a network error", eventReceived)
+    }
+
+    @Test
+    fun refreshServerError_doesNotLogOut() = runBlocking {
+        server.enqueueResponse(500, """{"error":"boom"}""")
+        val tokenManager = FakeTokenManager(accessToken = "expired_token", refreshToken = "valid_refresh_token")
+        val authenticator = TokenAuthenticator(tokenManager) { baseUrl() }
+
+        assertThrows(IOException::class.java) { authenticator.authenticate(null, unauthorizedResponse()) }
+
+        assertEquals("expired_token", tokenManager.getAccessToken())
+        val eventReceived = withTimeoutOrNull(300) { SessionManager.sessionExpiredEvent.first() }
+        assertNull("Session-expired event must NOT be emitted on a 5xx", eventReceived)
+    }
+
+    @Test
+    fun refreshForbidden403_clearsSession() = runBlocking {
+        server.enqueueResponse(403, """{"error":"revoked"}""")
+        val tokenManager = FakeTokenManager(accessToken = "expired_token", refreshToken = "revoked_refresh")
+        val authenticator = TokenAuthenticator(tokenManager) { baseUrl() }
+
+        val retryRequest = authenticator.authenticate(null, unauthorizedResponse())
+
+        assertNull(retryRequest)
+        assertNull("Rejected refresh must clear the session", tokenManager.getAccessToken())
+        val eventReceived = withTimeoutOrNull(1000) { SessionManager.sessionExpiredEvent.first() }
+        assertNotNull(eventReceived)
     }
 }

@@ -45,7 +45,7 @@ object ImageDownsampler {
      * re-encodes as JPEG. Returns null if the URI cannot be read/decoded as
      * an image at all (caller falls back to the original bytes/behaviour).
      */
-    fun downsample(context: Context, uri: Uri): ByteArray? {
+    fun downsample(context: Context, uri: Uri, maxDimensionPx: Int = MAX_DIMENSION_PX, quality: Int = JPEG_QUALITY): ByteArray? {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         context.contentResolver.openInputStream(uri)?.use {
             BitmapFactory.decodeStream(it, null, bounds)
@@ -53,7 +53,7 @@ object ImageDownsampler {
 
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
 
-        val sampleSize = calculateInSampleSize(bounds.outWidth, bounds.outHeight, MAX_DIMENSION_PX)
+        val sampleSize = calculateInSampleSize(bounds.outWidth, bounds.outHeight, maxDimensionPx)
         val decodeOptions = BitmapFactory.Options().apply { inSampleSize = sampleSize }
         val sampled = context.contentResolver.openInputStream(uri)?.use {
             BitmapFactory.decodeStream(it, null, decodeOptions)
@@ -74,8 +74,8 @@ object ImageDownsampler {
         // a power of two, so it can overshoot) - clamp with one more scale
         // pass if needed.
         val longEdge = maxOf(rotated.width, rotated.height)
-        val finalBitmap = if (longEdge > MAX_DIMENSION_PX) {
-            val scale = MAX_DIMENSION_PX.toFloat() / longEdge
+        val finalBitmap = if (longEdge > maxDimensionPx) {
+            val scale = maxDimensionPx.toFloat() / longEdge
             val scaled = Bitmap.createScaledBitmap(
                 rotated, (rotated.width * scale).toInt().coerceAtLeast(1),
                 (rotated.height * scale).toInt().coerceAtLeast(1), true,
@@ -88,7 +88,7 @@ object ImageDownsampler {
 
         return try {
             ByteArrayOutputStream().use { out ->
-                finalBitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, out)
+                finalBitmap.compress(Bitmap.CompressFormat.JPEG, quality, out)
                 out.toByteArray()
             }
         } finally {

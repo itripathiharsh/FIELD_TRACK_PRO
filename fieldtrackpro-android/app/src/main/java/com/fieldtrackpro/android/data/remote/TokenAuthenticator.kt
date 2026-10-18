@@ -3,25 +3,21 @@ package com.fieldtrackpro.android.data.remote
 import android.util.Log
 import com.fieldtrackpro.android.BuildConfig
 import com.fieldtrackpro.android.data.local.TokenManager
-import com.fieldtrackpro.android.data.model.LoginResponse
-import com.fieldtrackpro.android.data.model.RefreshRequest
 import com.fieldtrackpro.android.utils.SessionManager
-import com.google.gson.Gson
 import okhttp3.Authenticator
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import okhttp3.Route
-import java.util.concurrent.TimeUnit
+import java.io.IOException
 
 /**
  * Global OkHttp Authenticator for automatic 401 Bearer token refresh.
  *
  * APP-AUTH-001:
- * - Single coordinated refresh: avoids refresh storm when multiple concurrent calls 401.
- * - Thread-safe synchronization: first thread performs refresh, subsequent threads reuse the new token.
+ * - Single coordinated refresh: the actual network call is delegated to
+ *   TokenRefreshCoordinator, whose lock is shared with every OTHER caller
+ *   that can trigger a refresh (e.g. SplashScreen on cold start) - not just
+ *   concurrent requests inside this Authenticator.
  * - Single retry limit: prevents infinite retry loops.
  * - Clean session teardown: clears credentials and emits session expiration event if refresh fails.
  */
@@ -32,16 +28,36 @@ class TokenAuthenticator(
 
     companion object {
         private const val TAG = "TokenAuthenticator"
+        // Serialises concurrent 401s within THIS process's Authenticator so N requests
+        // failing on the same stale token produce exactly one refresh call, not N. This is
+        // IN ADDITION to (and taken before) TokenRefreshCoordinator's own lock, which is
+        // what actually serialises against a non-Authenticator caller like SplashScreen.
+        // Always acquired in this order (never the reverse), so nesting the two is deadlock-free.
         private val lock = Any()
-        private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
-        private val gson = Gson()
 
-        // Dedicated lightweight unauthenticated client for refresh calls
-        private val refreshHttpClient: OkHttpClient by lazy {
-            OkHttpClient.Builder()
-                .connectTimeout(15, TimeUnit.SECONDS)
-                .readTimeout(15, TimeUnit.SECONDS)
-                .build()
+        // Endpoints that are reachable WITHOUT a session. A 401 from them means "wrong credentials /
+        // bad code", NOT "your session expired": running the refresh/"session expired" path for them
+        // would (a) burn a refresh token while the user is merely mistyping a password and (b) log an
+        // already-signed-in session out. They are also sent without an Authorization header
+        // (see ApiClient's auth interceptor).
+        private val UNAUTHENTICATED_PATH_SUFFIXES = listOf(
+            "/auth/login",
+            "/auth/refresh",
+            "/auth/logout",
+            "/auth/forgot-password",
+            "/auth/verify-otp",
+            "/auth/reset-password"
+        )
+
+        /** Error codes meaning "the PASSWORD you re-entered is wrong" (e.g. DELETE /auth/me), not "session expired". */
+        val PASSWORD_FAILURE_CODES = setOf("AUTH_INVALID_PASSWORD", "INVALID_PASSWORD", "REAUTH_REQUIRED")
+
+        fun isPasswordFailureBody(errorBody: String?): Boolean =
+            !errorBody.isNullOrBlank() && ApiErrorParser.parse(401, errorBody).code in PASSWORD_FAILURE_CODES
+
+        fun isUnauthenticatedEndpoint(encodedPath: String): Boolean {
+            val path = encodedPath.trimEnd('/')
+            return UNAUTHENTICATED_PATH_SUFFIXES.any { path.endsWith(it) }
         }
     }
 
@@ -52,12 +68,25 @@ class TokenAuthenticator(
             return null
         }
 
+        // Wrong password at login, bad OTP, etc.: a 401 here is the caller's answer, not an expiry.
+        if (isUnauthenticatedEndpoint(response.request.url.encodedPath)) {
+            return null
+        }
+        // A 401 that says "wrong password" (re-authentication for a destructive action) is not an expired
+        // session: do not burn a refresh token on it, hand the answer to the caller to show inline.
+        val peeked = try { response.peekBody(8 * 1024L).string() } catch (e: Exception) { null }
+        if (isPasswordFailureBody(peeked)) return null
+        // Nothing to refresh on behalf of: the request never carried a session.
+        if (response.request.header("Authorization").isNullOrBlank()) {
+            return null
+        }
+
         synchronized(lock) {
             val currentAccessToken = tokenManager.getAccessToken()
             val requestHeader = response.request.header("Authorization")
             val requestToken = requestHeader?.removePrefix("Bearer ")?.trim()
 
-            // If another thread already refreshed the token and saved a newer one, retry immediately
+            // If another thread already refreshed the token and saved a newer one, retry immediately.
             if (currentAccessToken != null && currentAccessToken != requestToken) {
                 Log.d(TAG, "Reusing fresh access token obtained by another thread")
                 return response.request.newBuilder()
@@ -65,59 +94,39 @@ class TokenAuthenticator(
                     .build()
             }
 
-            val refreshToken = tokenManager.getRefreshToken()
-            if (refreshToken.isNullOrBlank()) {
-                Log.w(TAG, "No refresh token available; terminating session")
-                handleSessionExpired()
-                return null
-            }
-
             Log.i(TAG, "Attempting coordinated token refresh...")
-            val newTokens = performTokenRefresh(refreshToken)
-            return if (newTokens != null) {
-                tokenManager.saveTokens(newTokens.accessToken, newTokens.refreshToken)
-                Log.i(TAG, "Token refresh succeeded; retrying original request")
-                response.request.newBuilder()
-                    .header("Authorization", "Bearer ${newTokens.accessToken}")
-                    .build()
-            } else {
-                Log.w(TAG, "Token refresh rejected; clearing credentials")
-                handleSessionExpired()
-                null
+            return when (val outcome = TokenRefreshCoordinator.refresh(tokenManager, baseUrlProvider())) {
+                is TokenRefreshCoordinator.RefreshOutcome.Success -> {
+                    Log.i(TAG, "Token refresh succeeded; retrying original request")
+                    response.request.newBuilder()
+                        .header("Authorization", "Bearer ${outcome.tokens.accessToken}")
+                        .build()
+                }
+                TokenRefreshCoordinator.RefreshOutcome.Rejected -> {
+                    // The coordinator already cleared the session: 401/403 from the refresh endpoint is
+                    // the ONLY thing that logs a user out (never network errors or 5xx).
+                    Log.w(TAG, "Token refresh rejected; session ended")
+                    SessionManager.notifySessionExpired()
+                    null
+                }
+                TokenRefreshCoordinator.RefreshOutcome.NoToken -> {
+                    Log.w(TAG, "No refresh token available; terminating session")
+                    tokenManager.clear()
+                    SessionManager.notifySessionExpired()
+                    null
+                }
+                TokenRefreshCoordinator.RefreshOutcome.Transient -> {
+                    // Network error / server error: keep the session so the user is not logged out
+                    // just because connectivity dropped. Returning null here would hand the ORIGINAL
+                    // 401 back to the caller unchanged, and SyncErrorPolicy.classify(401) reads that
+                    // as AUTH_EXPIRED - pausing sync as if the session had genuinely expired. Throwing
+                    // instead fails the call with no HTTP code at all, which classify(null) correctly
+                    // reads as RETRYABLE (network failure), so the offline queue just retries later.
+                    Log.w(TAG, "Token refresh failed transiently; keeping session")
+                    throw IOException("Token refresh failed transiently (network or server error); will retry later")
+                }
             }
         }
-    }
-
-    private fun performTokenRefresh(refreshToken: String): LoginResponse? {
-        return try {
-            val baseUrl = baseUrlProvider()
-            val url = if (baseUrl.endsWith("/")) "${baseUrl}api/v1/auth/refresh" else "$baseUrl/api/v1/auth/refresh"
-            val requestBody = gson.toJson(RefreshRequest(refreshToken)).toRequestBody(JSON_MEDIA_TYPE)
-
-            val request = Request.Builder()
-                .url(url)
-                .post(requestBody)
-                .build()
-
-            val response = refreshHttpClient.newCall(request).execute()
-            if (response.isSuccessful) {
-                val bodyString = response.body?.string()
-                if (!bodyString.isNullOrBlank()) {
-                    gson.fromJson(bodyString, LoginResponse::class.java)
-                } else null
-            } else {
-                Log.e(TAG, "Refresh endpoint returned HTTP ${response.code}")
-                null
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Network error during token refresh: ${e.message}")
-            null
-        }
-    }
-
-    private fun handleSessionExpired() {
-        tokenManager.clear()
-        SessionManager.notifySessionExpired()
     }
 
     private fun responseCount(response: Response): Int {
