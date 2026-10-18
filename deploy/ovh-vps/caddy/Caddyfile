@@ -13,7 +13,10 @@
 	# API only. The admin web app is on Vercel; the Android app and the Tally sync agent also call this host.
 	reverse_proxy 127.0.0.1:8000 {
 		health_uri /health
-		health_interval 30s
+		health_interval 5s
+		# ride out a service restart/crash instead of answering 503 immediately
+		lb_try_duration 15s
+		lb_try_interval 500ms
 		# uploads (photos/signatures) can be slow on mobile networks
 		transport http {
 			response_header_timeout 120s
