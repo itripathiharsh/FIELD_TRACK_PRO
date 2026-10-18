@@ -1,0 +1,11 @@
+[Unit]
+Description=FieldTrack Pro nightly backup (database + media)
+After=postgresql.service
+
+[Service]
+Type=oneshot
+# Runs as root so it can read /etc/fieldtrack/backend.env (group fieldtrack, mode 640) and write /var/backups/fieldtrack (0700).
+ExecStart=/opt/fieldtrack/current/deploy/ovh-vps/scripts/backup.sh
+# Optional off-server target, e.g. an rclone remote you configured:  Environment=BACKUP_RCLONE_REMOTE=offsite:fieldtrack
+Nice=10
+IOSchedulingClass=idle

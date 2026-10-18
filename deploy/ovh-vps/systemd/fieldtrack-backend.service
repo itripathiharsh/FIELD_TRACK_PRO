@@ -1,0 +1,39 @@
+[Unit]
+Description=FieldTrack Pro API (uvicorn, single worker)
+Documentation=file:///opt/fieldtrack/current/fieldtrackpro-backend/ADMIN_SECURITY.md
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=fieldtrack
+Group=fieldtrack
+WorkingDirectory=/opt/fieldtrack/current/fieldtrackpro-backend
+EnvironmentFile=/etc/fieldtrack/backend.env
+# Exactly ONE worker: the scheduler (missed-visit sweep, cleanup) runs inside the API process without locking.
+# --no-proxy-headers: the app resolves the client IP itself from X-Forwarded-For (TRUSTED_PROXY_HOPS=1, i.e. Caddy).
+# Bound to loopback only; Caddy is the only thing that talks to it.
+ExecStart=/opt/fieldtrack/current/fieldtrackpro-backend/.venv/bin/uvicorn app.main:app \
+    --host 127.0.0.1 --port 8000 --workers 1 --no-proxy-headers --no-server-header --log-level info
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+ReadWritePaths=/var/lib/fieldtrack
+ReadOnlyPaths=/opt/fieldtrack /etc/fieldtrack
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

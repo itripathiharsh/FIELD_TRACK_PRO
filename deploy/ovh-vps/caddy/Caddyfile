@@ -1,0 +1,38 @@
+# FieldTrack Pro - Caddy reverse proxy (automatic HTTPS via Let's Encrypt).
+#
+# Install as /etc/caddy/Caddyfile and set the site name in /etc/caddy/env or the systemd drop-in:
+#     API_HOST=51-79-158-138.sslip.io          # TEMPORARY - works without buying a domain; switch to api.<your-domain> later
+# Requirements: DNS for API_HOST resolves to this server, ports 80 and 443 reachable (UFW + the OVH firewall).
+#
+# Caddy sets X-Forwarded-For to the real client address itself (it ignores any client-supplied value unless
+# trusted_proxies is configured), which is what TRUSTED_PROXY_HOPS=1 in backend.env expects.
+
+{$API_HOST} {
+	encode zstd gzip
+
+	# API only. The admin web app is on Vercel; the Android app and the Tally sync agent also call this host.
+	reverse_proxy 127.0.0.1:8000 {
+		health_uri /health
+		health_interval 30s
+		# uploads (photos/signatures) can be slow on mobile networks
+		transport http {
+			response_header_timeout 120s
+			dial_timeout 5s
+		}
+	}
+
+	request_body {
+		max_size 32MB    # the app itself rejects bodies over MAX_REQUEST_BODY_BYTES (30 MB)
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	# No Caddy access log on purpose: it would record full URIs including query strings (signed media-download tokens).
+	# The API keeps its own request log with query strings stripped (journalctl -u fieldtrack-backend).
+	# Caddy never logs request/response bodies, so passwords and one-time temporary passwords are not recorded either way.
+}
