@@ -30,7 +30,10 @@ poetry env use python3.11
 poetry install --only main --no-root --no-interaction
 
 chown -R root:root "$DEST"
-chmod -R go-w "$DEST"
+# Explicit modes, independent of the caller's umask: root owns and writes, everyone else (notably the unprivileged `fieldtrack`
+# service user) can read and traverse. A restrictive umask (e.g. 077 from a detached/nohup wrapper) otherwise leaves the release
+# root-only and the service cannot start. The release holds no secrets (those live in /etc/fieldtrack).
+chmod -R u=rwX,go=rX "$DEST"
 chmod 0755 "$DEST"/deploy/ovh-vps/scripts/*.sh || true
 echo "installed release $ID at $DEST"
 
