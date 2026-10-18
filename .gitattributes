@@ -1,0 +1,34 @@
+# Line endings: the repository stores LF. Git for Windows defaults to core.autocrlf=true, which silently
+# rewrote LF files to CRLF on checkout/edit and produced ~40,000 lines of whitespace-only diff noise.
+# `text=auto eol=lf` makes every text file LF in the repo AND in the working tree on every OS.
+# (Files that are already committed with CRLF are left alone by Git until they are edited.)
+* text=auto eol=lf
+
+# Windows-only scripts must keep CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary files: never convert, never diff as text
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.ico binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+*.jar binary
+*.apk binary
+*.aab binary
+*.xlsx binary
+*.xls binary
+*.pdf binary
+*.zip binary
+*.gz binary
+*.dump binary
+*.db binary
+*.keystore binary
+*.jks binary

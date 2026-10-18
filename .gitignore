@@ -120,3 +120,17 @@ fieldtrackpro-backend/scripts/cleanup_*.py
 fieldtrackpro-backend/scripts/initial_verify.py
 fieldtrackpro-backend/scripts/test_*.py
 
+# --- Client spreadsheets (business data / onboarding credentials) --------------
+# Only stops NEW files: already-tracked ones in this folder stay tracked until the
+# owner purges them from history (git rm --cached + history rewrite).
+fieldtrackpro-backend/data/sheet/*.xlsx
+
+# --- Release hardening: more secrets / local-only files (never commit) ---------
+# Firebase client config is project-specific build input, supplied at build time.
+**/google-services.json
+*.pfx
+*.p8
+id_rsa*
+id_ed25519*
+# Local AI/editor tooling config
+.claude/
