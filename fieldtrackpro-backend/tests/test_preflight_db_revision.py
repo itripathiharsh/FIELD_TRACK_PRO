@@ -1,9 +1,9 @@
-"""Pure-logic tests for scripts/check_db_revision.py (the read-only pre-migration inspector). No database needed."""
+"""Pure-logic tests for scripts/preflight_db_revision.py (the read-only pre-migration inspector). No database needed."""
 from __future__ import annotations
 
 import pytest
 
-from scripts import check_db_revision as chk
+from scripts import preflight_db_revision as chk
 
 
 @pytest.fixture(scope="module")

@@ -8,7 +8,11 @@ workspace_root = Path(__file__).resolve().parents[4]
 if (workspace_root / "tally_sync_agent").exists() and str(workspace_root) not in sys.path:
     sys.path.insert(0, str(workspace_root))
 
-from tally_sync_agent.extractors.brand_resolver import BrandResolver
+# tally_sync_agent is a sibling project that lives OUTSIDE this repository. On a checkout without it (CI, a fresh
+# clone, a release export) this module is skipped instead of aborting collection of the whole suite.
+BrandResolver = pytest.importorskip(
+    "tally_sync_agent.extractors.brand_resolver", reason="tally_sync_agent (sibling project) is not available"
+).BrandResolver
 from app.services.brand_service import (
     resolve_canonical_brand_name,
     resolve_from_outlet_code,
