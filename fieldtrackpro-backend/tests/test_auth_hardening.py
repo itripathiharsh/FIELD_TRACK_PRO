@@ -365,6 +365,72 @@ async def test_login_cookie_flags_in_production(http):
         resp = await http.post("/api/v1/auth/login", json={"email": "x@example.com", "password": "Whatever123!"})
     sc = resp.headers["set-cookie"]
     assert "HttpOnly" in sc and "Secure" in sc and "SameSite=none" in sc
+    # CHIPS: the live cookie is Partitioned (still sent when third-party cookies are blocked); the legacy
+    # unpartitioned cookie of the same name is expired in the same response.
+    cookies = resp.headers.get_list("set-cookie")
+    live = [c for c in cookies if "Max-Age=0" not in c]
+    legacy = [c for c in cookies if "Max-Age=0" in c]
+    assert len(live) == 1 and "Partitioned" in live[0] and "Path=/api/v1/auth" in live[0]
+    assert cookies[-1] == live[0], "the live cookie must be the LAST header so a browser ignoring Partitioned keeps it"
+    assert len(legacy) == 1 and "Partitioned" not in legacy[0] and "Secure" in legacy[0] and "SameSite=none" in legacy[0]
+
+
+def _set_cookie_headers(fn, *args):
+    from starlette.responses import Response as StarletteResponse
+
+    r = StarletteResponse()
+    fn(r, *args)
+    return [v.decode() for k, v in r.raw_headers if k == b"set-cookie"]
+
+
+def test_refresh_cookie_is_partitioned_in_production_and_expires_legacy_cookie():
+    from app.api.v1 import auth as auth_router
+
+    with patch.object(settings, "environment", "production"), patch.object(settings, "refresh_cookie_samesite", None):
+        legacy, live = _set_cookie_headers(auth_router._set_refresh_cookie, "tok")  # legacy expiry FIRST, live cookie LAST
+    assert "refresh_token=tok" in live and "Partitioned" in live and "Secure" in live and "SameSite=none" in live
+    assert "HttpOnly" in live and "Path=/api/v1/auth" in live
+    assert "Max-Age=0" in legacy and "Partitioned" not in legacy
+    assert "Path=/api/v1/auth" in legacy and "Secure" in legacy and "SameSite=none" in legacy and "HttpOnly" in legacy
+
+
+def test_clear_refresh_cookie_removes_partitioned_and_legacy_with_matching_attributes():
+    from app.api.v1 import auth as auth_router
+
+    with patch.object(settings, "environment", "production"), patch.object(settings, "refresh_cookie_samesite", None):
+        headers = _set_cookie_headers(auth_router._clear_refresh_cookie)
+    assert len(headers) == 2
+    assert sum("Partitioned" in h for h in headers) == 1
+    for h in headers:
+        assert h.startswith("refresh_token=;") or h.startswith('refresh_token="";')
+        assert "Max-Age=0" in h and "Path=/api/v1/auth" in h and "Secure" in h and "SameSite=none" in h and "HttpOnly" in h
+
+
+def test_refresh_cookie_not_partitioned_in_dev_http():
+    from app.api.v1 import auth as auth_router
+
+    with patch.object(settings, "environment", "dev"), patch.object(settings, "refresh_cookie_samesite", None):
+        headers = _set_cookie_headers(auth_router._set_refresh_cookie, "tok")
+    assert all("Partitioned" not in h for h in headers)  # Partitioned requires Secure; dev is plain http
+    assert "SameSite=lax" in headers[-1] and "refresh_token=tok" in headers[-1]
+
+
+@pytest.mark.asyncio
+async def test_account_deletion_clears_both_refresh_cookies():
+    from starlette.responses import Response as StarletteResponse
+
+    from app.api.v1 import account as account_router
+
+    r = StarletteResponse()
+    with patch.object(settings, "environment", "production"), patch.object(
+        settings, "refresh_cookie_samesite", None
+    ), patch.object(account_router.account_deletion_service, "delete_own_account", new=AsyncMock()):
+        await account_router.delete_my_account(
+            r, object(), object(), account_router.DeleteAccountRequest(password="x")
+        )
+    headers = [v.decode() for k, v in r.raw_headers if k == b"set-cookie"]
+    assert len(headers) == 2 and sum("Partitioned" in h for h in headers) == 1
+    assert all("Max-Age=0" in h and "Secure" in h and "SameSite=none" in h and "Path=/api/v1/auth" in h for h in headers)
 
 
 # ---------------------------------------------------------------- CORS / endpoints
