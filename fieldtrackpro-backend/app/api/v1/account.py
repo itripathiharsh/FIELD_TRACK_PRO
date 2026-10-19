@@ -51,7 +51,9 @@ async def delete_my_account(
     await account_deletion_service.delete_own_account(
         current_user, payload.reason, payload.password, session
     )
-    response.delete_cookie("refresh_token", path="/api/v1/auth")
+    from app.api.v1.auth import _clear_refresh_cookie  # same pattern as users.py (avoids a router import cycle)
+
+    _clear_refresh_cookie(response)
     return DeleteAccountResponse(
         status="DELETED",
         message=(

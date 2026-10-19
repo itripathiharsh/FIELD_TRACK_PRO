@@ -3,6 +3,7 @@ Auth router — /api/v1/auth
 """
 from __future__ import annotations
 
+from http.cookies import SimpleCookie
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Request, Response, status
@@ -52,30 +53,57 @@ def _cookie_policy() -> tuple[bool, str]:
     return secure, samesite
 
 
-def _set_refresh_cookie(response: Response, refresh_token: str) -> None:
-    """Set HttpOnly (+Secure in production) refresh token cookie."""
+def _refresh_cookie_header(value: str, *, max_age: int, partitioned: bool) -> str:
+    """
+    Build the Set-Cookie header value for the refresh cookie.
+
+    Starlette's `set_cookie(partitioned=...)` raises ValueError on Python < 3.14 (http.cookies only learned the
+    attribute in 3.14) and this service runs on 3.11, so the header is rendered with SimpleCookie (same escaping and
+    date format Starlette uses) and `Partitioned` is appended explicitly. `Partitioned` is only emitted together with
+    `Secure` (browsers reject it otherwise), i.e. in production.
+    """
     secure, samesite = _cookie_policy()
-    response.set_cookie(
-        key=REFRESH_COOKIE_NAME,
-        value=refresh_token,
-        httponly=True,
-        secure=secure,
-        samesite=samesite,
-        max_age=settings.jwt_refresh_token_expiry_days * 86400,
-        path=REFRESH_COOKIE_PATH,
+    cookie: SimpleCookie = SimpleCookie()
+    cookie[REFRESH_COOKIE_NAME] = value
+    morsel = cookie[REFRESH_COOKIE_NAME]
+    morsel["path"] = REFRESH_COOKIE_PATH
+    morsel["max-age"] = max_age
+    if max_age == 0:
+        morsel["expires"] = 0
+    morsel["httponly"] = True
+    if secure:
+        morsel["secure"] = True
+    morsel["samesite"] = samesite
+    header = morsel.OutputString()
+    if partitioned and secure:
+        header += "; Partitioned"
+    return header
+
+
+def _set_refresh_cookie(response: Response, refresh_token: str) -> None:
+    """
+    Set the HttpOnly (+Secure in production) refresh token cookie.
+
+    `Partitioned` (CHIPS): the web app (Vercel) and the API are different sites, so this is a third-party
+    cookie. Partitioned cookies are still stored/sent when the browser blocks ordinary third-party cookies
+    (Chrome/Edge 114+, Firefox 141+, Safari 26.2+). The older unpartitioned cookie of the same name is expired in
+    the same response so only one is ever sent (browsers that do not know `Partitioned` still end up with the live one).
+    """
+    # Order matters: expire the legacy cookie FIRST. A browser that ignores `Partitioned` would treat the live cookie
+    # as the same cookie as the legacy one, and expiring it afterwards would delete the session it just received.
+    response.headers.append("set-cookie", _refresh_cookie_header("", max_age=0, partitioned=False))
+    response.headers.append(
+        "set-cookie",
+        _refresh_cookie_header(refresh_token, max_age=settings.jwt_refresh_token_expiry_days * 86400, partitioned=True),
     )
 
 
 def _clear_refresh_cookie(response: Response) -> None:
-    """Clear the refresh token cookie."""
-    secure, samesite = _cookie_policy()
-    response.delete_cookie(
-        key=REFRESH_COOKIE_NAME,
-        path=REFRESH_COOKIE_PATH,
-        httponly=True,
-        secure=secure,
-        samesite=samesite,
-    )
+    """Clear the refresh token cookie: the partitioned one and any legacy unpartitioned one (distinct cookies).
+
+    Same name, path, Secure, SameSite (and Partitioned) as the cookie being removed, or the browser keeps it."""
+    response.headers.append("set-cookie", _refresh_cookie_header("", max_age=0, partitioned=True))
+    response.headers.append("set-cookie", _refresh_cookie_header("", max_age=0, partitioned=False))
 
 
 def _client_ip(request: Request) -> str | None:
