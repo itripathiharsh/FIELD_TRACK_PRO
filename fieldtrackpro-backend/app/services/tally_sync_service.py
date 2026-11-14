@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import select, func, or_
+from sqlalchemy import delete, select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services import tally_audit_service
@@ -17,7 +17,7 @@ from app.models.brand import Brand
 from app.models.customer import Customer
 from app.models.customer_brand import CustomerBrand
 from app.models.employee import Employee
-from app.models.invoice import Invoice, InvoiceSource
+from app.models.invoice import Invoice, InvoiceSource, financial_year_of
 from app.models.payment import (
     Payment,
     PaymentBrandAllocation,
@@ -203,6 +203,33 @@ async def get_integration_status(session: AsyncSession) -> TallyIntegrationStatu
 # Customer Sync
 # ---------------------------------------------------------------------------
 
+def _ledger_guid(source_reference: Optional[str]) -> Optional[str]:
+    """The ledger's Tally GUID; the agent's name-based fallback ("TALLY_LEDGER_<name>",
+    used only when Tally returned no GUID) is not an identity."""
+    ref = (source_reference or "").strip()
+    if not ref or ref.startswith("TALLY_LEDGER_"):
+        return None
+    return ref
+
+
+def _ledger_details(item) -> dict:
+    """Non-empty master fields from Tally, clipped to their column sizes."""
+    raw = {
+        "address": (item.address, None),
+        "contact_number": (item.contact_number or item.mobile, 20),
+        "contact_person": (item.contact_person, 150),
+        "gst_number": (item.gst_number, 20),
+        "email": (item.email, 255),
+        "mobile_number": (item.mobile, 50),
+    }
+    out = {}
+    for attr, (value, size) in raw.items():
+        value = (value or "").strip()
+        if value:
+            out[attr] = value[:size] if size else value
+    return out
+
+
 async def ensure_territory(session: AsyncSession, zone_name: str) -> Territory:
     clean_name = zone_name.strip().title()
     stmt = select(Territory).where(func.lower(Territory.name) == clean_name.lower())
@@ -254,10 +281,18 @@ async def sync_customers(
                     continue
 
                 clean_code = item.outlet_code.strip() if item.outlet_code else None
+                guid = _ledger_guid(item.source_reference)
+                details = _ledger_details(item)
 
-                # Look for existing customer
+                # Match: Tally ledger GUID (survives renames) -> outlet code -> exact name.
                 existing_cust: Optional[Customer] = None
-                if clean_code:
+                matched_by_guid = False
+                if guid:
+                    existing_cust = (await session.execute(
+                        select(Customer).where(Customer.tally_guid == guid)
+                    )).scalar_one_or_none()
+                    matched_by_guid = existing_cust is not None
+                if not existing_cust and clean_code:
                     stmt = select(Customer).where(Customer.outlet_code == clean_code)
                     existing_cust = (await session.execute(stmt)).scalar_one_or_none()
 
@@ -266,34 +301,38 @@ async def sync_customers(
                     existing_cust = (await session.execute(stmt_name)).scalar_one_or_none()
 
                 if existing_cust:
-                    # Update existing
+                    if guid and not existing_cust.tally_guid:
+                        existing_cust.tally_guid = guid
+                    if matched_by_guid and existing_cust.name != cust_name:
+                        existing_cust.name = cust_name  # ledger renamed in Tally
                     if clean_code and not existing_cust.outlet_code:
                         existing_cust.outlet_code = clean_code
-                    if item.address and not existing_cust.address:
-                        existing_cust.address = item.address
-                    if item.contact_number and not existing_cust.contact_number:
-                        existing_cust.contact_number = item.contact_number
-                    if item.contact_person and not existing_cust.contact_person:
-                        existing_cust.contact_person = item.contact_person
-                    if item.gst_number and not existing_cust.gst_number:
-                        existing_cust.gst_number = item.gst_number
+                    # Tally is authoritative for the ledger's master details: a value
+                    # Tally has replaces the stored one; an empty Tally field changes nothing.
+                    for attr, value in details.items():
+                        setattr(existing_cust, attr, value)
+                    # The outlet now exists in Tally: the manual-entry reminder is done.
+                    existing_cust.needs_tally_entry = False
                     customer_obj = existing_cust
                     updated_count += 1
                 else:
-                    # Create new
                     customer_obj = Customer(
                         name=cust_name,
                         outlet_code=clean_code,
-                        address=item.address or "",
-                        contact_number=item.contact_number or "",
-                        contact_person=item.contact_person,
-                        gst_number=item.gst_number,
+                        tally_guid=guid,
+                        address=details.pop("address", ""),
+                        contact_number=details.pop("contact_number", ""),
                         location_status="MISSING",
                         created_by=system_user_id,
+                        **details,
                     )
                     session.add(customer_obj)
                     await session.flush()
                     created_count += 1
+
+                if item.closing_balance is not None:
+                    customer_obj.tally_closing_balance = item.closing_balance
+                    customer_obj.tally_closing_balance_at = datetime.now(timezone.utc)
 
                 # Resolve and attach Zone (Territory) & Area if provided
                 if item.zone and item.zone.strip():
@@ -378,85 +417,112 @@ async def sync_invoices(
     created_count = 0
     updated_count = 0
     failed_count = 0
+    relabelled_count = 0
+    moved_count = 0
     errors: list[SyncErrorDetail] = []
 
     for item in batch.invoices:
         try:
-            inv_num = item.invoice_number.strip()
-            cust_name = item.customer_name.strip()
-            clean_code = item.outlet_code.strip() if item.outlet_code else None
+            # SAVEPOINT per invoice: one bad voucher (e.g. a database constraint error)
+            # fails on its own instead of aborting the whole batch.
+            async with session.begin_nested():
+                inv_num = item.invoice_number.strip()
+                cust_name = item.customer_name.strip()
+                clean_code = item.outlet_code.strip() if item.outlet_code else None
 
-            # Resolve customer
-            customer: Optional[Customer] = None
-            if clean_code:
-                c_stmt = select(Customer).where(Customer.outlet_code == clean_code)
-                customer = (await session.execute(c_stmt)).scalar_one_or_none()
+                # Resolve customer
+                customer: Optional[Customer] = None
+                if clean_code:
+                    c_stmt = select(Customer).where(Customer.outlet_code == clean_code)
+                    customer = (await session.execute(c_stmt)).scalar_one_or_none()
 
-            if not customer:
-                c_stmt_name = select(Customer).where(func.lower(Customer.name) == cust_name.lower())
-                customer = (await session.execute(c_stmt_name)).scalar_one_or_none()
+                if not customer:
+                    c_stmt_name = select(Customer).where(func.lower(Customer.name) == cust_name.lower())
+                    customer = (await session.execute(c_stmt_name)).scalar_one_or_none()
 
-            if not customer:
-                # Auto-provision customer stub if not yet synced
-                customer = Customer(
-                    name=cust_name,
-                    outlet_code=clean_code,
-                    address="",
-                    contact_number="",
-                    location_status="MISSING",
-                    created_by=system_user_id,
-                )
-                session.add(customer)
-                await session.flush()
+                if not customer:
+                    # Auto-provision customer stub if not yet synced
+                    customer = Customer(
+                        name=cust_name,
+                        outlet_code=clean_code,
+                        address="",
+                        contact_number="",
+                        location_status="MISSING",
+                        created_by=system_user_id,
+                    )
+                    session.add(customer)
+                    await session.flush()
 
-            # Resolve brand
-            brand_id_val = None
-            canonical_brand = None
-            if item.brand:
-                brand_obj = await ensure_brand(session, item.brand)
-                canonical_brand = brand_obj.name if brand_obj else resolve_canonical_brand_name(item.brand)
-                brand_id_val = brand_obj.id if brand_obj else None
+                # Resolve brand
+                brand_id_val = None
+                canonical_brand = None
+                if item.brand:
+                    brand_obj = await ensure_brand(session, item.brand)
+                    canonical_brand = brand_obj.name if brand_obj else resolve_canonical_brand_name(item.brand)
+                    brand_id_val = brand_obj.id if brand_obj else None
 
-            # Find existing invoice
-            inv_stmt = select(Invoice).where(
-                Invoice.customer_id == customer.id,
-                Invoice.invoice_number == inv_num,
-            )
-            existing_inv = (await session.execute(inv_stmt)).scalar_one_or_none()
-
-            if not existing_inv and item.source_reference:
-                ref_stmt = select(Invoice).where(Invoice.source_reference == item.source_reference)
-                existing_inv = (await session.execute(ref_stmt)).scalar_one_or_none()
-
-            if existing_inv:
-                # Update existing invoice
-                existing_inv.due_date = item.due_date or existing_inv.due_date
-                existing_inv.amount = item.amount
-                if canonical_brand:
-                    existing_inv.brand = canonical_brand
-                    existing_inv.brand_id = brand_id_val
-                if item.imported_outstanding_amount is not None:
-                    existing_inv.imported_outstanding_amount = item.imported_outstanding_amount
+                # Find existing invoice: the Tally voucher GUID is its identity. A
+                # (customer, number) match is only accepted for a row that has no GUID
+                # yet (a legacy copy) - never one carrying a different voucher's GUID,
+                # so a number reused in a later financial year is a new invoice.
+                existing_inv: Optional[Invoice] = None
                 if item.source_reference:
-                    existing_inv.source_reference = item.source_reference
-                updated_count += 1
-            else:
-                # Create invoice
-                new_inv = Invoice(
-                    customer_id=customer.id,
-                    invoice_number=inv_num,
-                    invoice_date=item.invoice_date,
-                    due_date=item.due_date,
-                    amount=item.amount,
-                    brand=canonical_brand,
-                    brand_id=brand_id_val,
-                    source=InvoiceSource.TALLY,
-                    source_reference=item.source_reference,
-                    imported_outstanding_amount=item.imported_outstanding_amount,
-                    created_by=system_user_id,
-                )
-                session.add(new_inv)
-                created_count += 1
+                    ref_stmt = select(Invoice).where(Invoice.source_reference == item.source_reference)
+                    existing_inv = (await session.execute(ref_stmt)).scalar_one_or_none()
+                if not existing_inv:
+                    inv_stmt = select(Invoice).where(
+                        Invoice.customer_id == customer.id,
+                        Invoice.invoice_number == inv_num,
+                        Invoice.financial_year == financial_year_of(item.invoice_date),
+                        or_(Invoice.source_reference.is_(None), Invoice.source_reference == (item.source_reference or "")),
+                    )
+                    existing_inv = (await session.execute(inv_stmt)).scalars().first()
+
+                if existing_inv:
+                    # The voucher's party was changed in Tally: the invoice follows it.
+                    moved = existing_inv.customer_id != customer.id
+                    existing_inv.customer_id = customer.id
+                    # Tally now owns this row: an earlier non-Tally copy (manual /
+                    # import) must not keep claiming that origin.
+                    relabelled = existing_inv.source != InvoiceSource.TALLY
+                    existing_inv.source = InvoiceSource.TALLY
+                    # Tally's due date replaces whatever was stored (including an earlier
+                    # agent default); None means Tally gives none.
+                    existing_inv.due_date = item.due_date
+                    existing_inv.invoice_date = item.invoice_date
+                    existing_inv.invoice_number = inv_num
+                    existing_inv.tally_bill_name = item.bill_name
+                    existing_inv.amount = item.amount
+                    if canonical_brand:
+                        existing_inv.brand = canonical_brand
+                        existing_inv.brand_id = brand_id_val
+                    if item.imported_outstanding_amount is not None:
+                        existing_inv.imported_outstanding_amount = item.imported_outstanding_amount
+                    if item.source_reference:
+                        existing_inv.source_reference = item.source_reference
+                    await session.flush()
+                    updated_count += 1
+                    moved_count += int(moved)
+                    relabelled_count += int(relabelled)
+                else:
+                    # Create invoice
+                    new_inv = Invoice(
+                        customer_id=customer.id,
+                        invoice_number=inv_num,
+                        invoice_date=item.invoice_date,
+                        due_date=item.due_date,
+                        amount=item.amount,
+                        brand=canonical_brand,
+                        brand_id=brand_id_val,
+                        source=InvoiceSource.TALLY,
+                        source_reference=item.source_reference,
+                        tally_bill_name=item.bill_name,
+                        imported_outstanding_amount=item.imported_outstanding_amount,
+                        created_by=system_user_id,
+                    )
+                    session.add(new_inv)
+                    await session.flush()
+                    created_count += 1
 
         except Exception as ex:
             failed_count += 1
@@ -482,6 +548,8 @@ async def sync_invoices(
             "created_count": created_count,
             "updated_count": updated_count,
             "failed_count": failed_count,
+            "relabelled_to_tally_count": relabelled_count,
+            "moved_to_other_party_count": moved_count,
         },
     )
 
@@ -519,6 +587,13 @@ async def sync_payments(
     created_count = 0
     updated_count = 0
     failed_count = 0
+    relabelled_count = 0
+    replaced_allocation_count = 0
+    unresolved_bill_count = 0
+    unresolved_bill_amount = Decimal("0.00")
+    unallocated_count = 0
+    unallocated_amount = Decimal("0.00")
+    guessed_links_removed = 0
     errors: list[SyncErrorDetail] = []
 
     for item in batch.payments:
@@ -577,7 +652,12 @@ async def sync_payments(
 
 
             if existing_payment:
-                # Update existing
+                # Update existing. A legacy import row is now owned by Tally. A
+                # MANUAL field collection read back via write-back stays MANUAL:
+                # it is the employee's operational record of the same money.
+                if existing_payment.source not in (PaymentSource.TALLY, PaymentSource.MANUAL):
+                    existing_payment.source = PaymentSource.TALLY
+                    relabelled_count += 1
                 existing_payment.amount = item.amount
                 existing_payment.payment_date = item.payment_date
                 existing_payment.payment_method = method
@@ -630,78 +710,74 @@ async def sync_payments(
                             allocated_amount=alloc.allocated_amount,
                         ))
 
-            # Handle Bill Allocations (Explicit Agst Ref or Deterministic FIFO)
+            # Bill allocations: Tally's own bill-wise settlement replaces every earlier
+            # (guessed FIFO or older Tally) link of this receipt - once validated. Only
+            # this sync creates these rows, so nothing user-entered is touched; the
+            # payment row and its amount are never changed by this step.
             if item.bill_allocations:
-                for b_alloc in item.bill_allocations:
-                    # Match invoice by invoice_number or source_reference for this customer
-                    inv_match_stmt = select(Invoice).where(
-                        Invoice.customer_id == customer.id,
-                        or_(
-                            func.lower(Invoice.invoice_number) == b_alloc.bill_name.strip().lower(),
-                            Invoice.source_reference == b_alloc.bill_name.strip(),
-                        ),
+                alloc_total = sum((b.amount for b in item.bill_allocations), Decimal("0.00"))
+                if alloc_total - item.amount > Decimal("0.01"):
+                    errors.append(SyncErrorDetail(
+                        identifier=item.source_reference,
+                        error=f"Bill allocations ({alloc_total}) exceed the receipt amount ({item.amount}); "
+                              "existing allocations kept unchanged.",
+                    ))
+                else:
+                    await session.execute(
+                        delete(PaymentInvoiceAllocation).where(PaymentInvoiceAllocation.payment_id == payment_obj.id)
                     )
-                    target_inv = (await session.execute(inv_match_stmt)).scalar_one_or_none()
-                    if target_inv:
-                        alloc_stmt = select(PaymentInvoiceAllocation).where(
-                            PaymentInvoiceAllocation.payment_id == payment_obj.id,
-                            PaymentInvoiceAllocation.invoice_id == target_inv.id,
-                        )
-                        existing_pia = (await session.execute(alloc_stmt)).scalar_one_or_none()
-                        if existing_pia:
-                            existing_pia.allocated_amount = b_alloc.amount
-                            existing_pia.bill_name = b_alloc.bill_name
-                            existing_pia.bill_type = b_alloc.bill_type
-                        else:
-                            session.add(PaymentInvoiceAllocation(
-                                payment_id=payment_obj.id,
-                                invoice_id=target_inv.id,
-                                bill_name=b_alloc.bill_name,
-                                bill_type=b_alloc.bill_type or "Agst Ref",
-                                allocated_amount=b_alloc.amount,
-                            ))
-                        if len(item.bill_allocations) == 1:
-                            payment_obj.invoice_id = target_inv.id
+                    resolved: dict[uuid.UUID, Decimal] = {}
+                    names: dict[uuid.UUID, tuple[str, Optional[str]]] = {}
+                    for b_alloc in item.bill_allocations:
+                        name = b_alloc.bill_name.strip()
+                        if (b_alloc.bill_type or "").strip().lower() in ("on account", "advance"):
+                            continue  # Tally itself keeps this part unapplied to any bill
+                        target_inv = (await session.execute(
+                            select(Invoice).where(
+                                Invoice.customer_id == customer.id,
+                                Invoice.source == InvoiceSource.TALLY,
+                                or_(
+                                    Invoice.tally_bill_name == name,
+                                    func.lower(Invoice.invoice_number) == name.lower(),
+                                    Invoice.source_reference == name,
+                                ),
+                            ).order_by(Invoice.invoice_date.desc())
+                        )).scalars().first()
+                        if target_inv is None:
+                            # A bill not in Field Track Pro (e.g. dated before the sync
+                            # start, part of the opening balance) or on-account money:
+                            # deliberately NOT re-assigned to some other invoice.
+                            unresolved_bill_count += 1
+                            unresolved_bill_amount += b_alloc.amount
+                            continue
+                        resolved[target_inv.id] = resolved.get(target_inv.id, Decimal("0.00")) + b_alloc.amount
+                        names[target_inv.id] = (name, b_alloc.bill_type)
+                    for inv_id, amt in resolved.items():
+                        bill_name, bill_type = names[inv_id]
+                        session.add(PaymentInvoiceAllocation(
+                            payment_id=payment_obj.id,
+                            invoice_id=inv_id,
+                            bill_name=bill_name,
+                            bill_type=bill_type or "Agst Ref",
+                            allocated_amount=amt,
+                        ))
+                    payment_obj.invoice_id = next(iter(resolved)) if len(resolved) == 1 else None
+                    replaced_allocation_count += 1
             else:
-                # Deterministic account-level FIFO settlement for on-account receipts
-                # Only allocate against open invoices belonging to this exact customer
-                cust_inv_stmt = select(Invoice).where(
-                    Invoice.customer_id == customer.id
-                ).order_by(Invoice.invoice_date.asc(), Invoice.created_at.asc())
-                cust_invoices = (await session.execute(cust_inv_stmt)).scalars().all()
-                
-                remaining_pay_amt = item.amount
-                for inv in cust_invoices:
-                    if remaining_pay_amt <= Decimal("0.00"):
-                        break
-                    alloc_sum_stmt = select(
-                        func.coalesce(func.sum(PaymentInvoiceAllocation.allocated_amount), Decimal("0.00"))
-                    ).where(
-                        PaymentInvoiceAllocation.invoice_id == inv.id,
-                        PaymentInvoiceAllocation.payment_id != payment_obj.id,
-                    )
-                    already_settled = (await session.execute(alloc_sum_stmt)).scalar() or Decimal("0.00")
-                    inv_unpaid = max(inv.amount - already_settled, Decimal("0.00"))
-                    if inv_unpaid > Decimal("0.00"):
-                        settle_amt = min(remaining_pay_amt, inv_unpaid)
-                        alloc_stmt = select(PaymentInvoiceAllocation).where(
-                            PaymentInvoiceAllocation.payment_id == payment_obj.id,
-                            PaymentInvoiceAllocation.invoice_id == inv.id,
-                        )
-                        existing_pia = (await session.execute(alloc_stmt)).scalar_one_or_none()
-                        if existing_pia:
-                            existing_pia.allocated_amount = settle_amt
-                            existing_pia.bill_name = inv.invoice_number
-                            existing_pia.bill_type = "FIFO_ON_ACCOUNT"
-                        else:
-                            session.add(PaymentInvoiceAllocation(
-                                payment_id=payment_obj.id,
-                                invoice_id=inv.id,
-                                bill_name=inv.invoice_number,
-                                bill_type="FIFO_ON_ACCOUNT",
-                                allocated_amount=settle_amt,
-                            ))
-                        remaining_pay_amt -= settle_amt
+                # Tally has no bill-wise allocation for this receipt: it stays
+                # unallocated (no guessed oldest-first links) and is reported for
+                # reconciliation. It still counts against the outlet's balance as
+                # on-account money (account_position). Any earlier guessed link of
+                # this receipt is removed - only this sync creates these rows.
+                removed = (await session.execute(
+                    delete(PaymentInvoiceAllocation).where(PaymentInvoiceAllocation.payment_id == payment_obj.id)
+                )).rowcount or 0
+                if removed:
+                    guessed_links_removed += removed
+                if payment_obj.source == PaymentSource.TALLY:
+                    payment_obj.invoice_id = None
+                unallocated_count += 1
+                unallocated_amount += item.amount
 
         except Exception as ex:
             failed_count += 1
@@ -727,6 +803,13 @@ async def sync_payments(
             "created_count": created_count,
             "updated_count": updated_count,
             "failed_count": failed_count,
+            "relabelled_to_tally_count": relabelled_count,
+            "bill_allocations_replaced_count": replaced_allocation_count,
+            "unresolved_bill_count": unresolved_bill_count,
+            "unresolved_bill_amount": str(unresolved_bill_amount),
+            "receipts_without_bill_allocation_count": unallocated_count,
+            "receipts_without_bill_allocation_amount": str(unallocated_amount),
+            "guessed_links_removed": guessed_links_removed,
         },
     )
 

@@ -117,6 +117,10 @@ class CustomerSyncItem(BaseModel):
     pincode: Optional[str] = None
     gst_number: Optional[str] = None
     contact_number: Optional[str] = None
+    mobile: Optional[str] = None
+    email: Optional[str] = None
+    # Ledger closing balance as Tally exports it (signed). Reference only.
+    closing_balance: Optional[Decimal] = None
     contact_person: Optional[str] = None
     zone: Optional[str] = None
     area: Optional[str] = None
@@ -143,6 +147,8 @@ class InvoiceSyncItem(BaseModel):
     brand: Optional[str] = None
     voucher_type: Optional[str] = "Sales"
     imported_outstanding_amount: Optional[Decimal] = None
+    # Name of the bill the invoice raises in Tally (what receipts reference).
+    bill_name: Optional[str] = None
 
 
 class InvoiceSyncBatch(BaseModel):

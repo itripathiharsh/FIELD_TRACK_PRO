@@ -88,7 +88,12 @@ async def setup_test_data():
 
 
 @pytest.mark.asyncio
-async def test_multi_item_requirement_and_order_flow(setup_test_data):
+@pytest.mark.parametrize("writeback_enabled", [True, False])
+async def test_multi_item_requirement_and_order_flow(setup_test_data, monkeypatch, writeback_enabled):
+    """The order is always kept in Field Track Pro; a Tally write-back job exists only when write-back is on."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "tally_writeback_enabled", writeback_enabled)
     data = setup_test_data
     admin_token = data["admin_token"]
     rep_token = data["rep_token"]
@@ -195,12 +200,15 @@ async def test_multi_item_requirement_and_order_flow(setup_test_data):
                 )
             )
             wb_job = wb_res.scalar_one_or_none()
+        if writeback_enabled:
             assert wb_job is not None
             assert wb_job.entity_type == "SALES_ORDER"
             assert wb_job.operation == "CREATE"
             assert str(wb_job.status) == "PENDING"
             assert wb_job.payload["order_number"] == order_data["order_number"]
             assert len(wb_job.payload["items"]) == 2
+        else:
+            assert wb_job is None, "no job queued for a write-back that is disabled"
 
         # 6. Verify list orders API
         res = await client.get(

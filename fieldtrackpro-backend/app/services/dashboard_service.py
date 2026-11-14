@@ -106,18 +106,21 @@ async def get_dashboard_summary(
     exc_res = await session.execute(exc_q)
     exc_row = exc_res.one()
 
-    # 5. Fetch Collections count & Realized Live Payments sum
+    # 5. Fetch Collections count & Realized Live Payments sum. Money is counted once:
+    # receipts in Tally + verified field collections not yet in Tally (payment_tally).
+    collected = payment_tally.collected_clause(employee_id)
+    posted = payment_tally.posted_clause_for(employee_id)
     if brand and brand != "ALL":
         from app.services.brand_service import resolve_canonical_brand_name
         canonical_b = resolve_canonical_brand_name(brand)
         col_q = select(
             func.count(func.distinct(Payment.id)).label("total_count"),
             func.coalesce(
-                func.sum(case((Payment.status == "VERIFIED", PaymentBrandAllocation.allocated_amount), else_=Decimal("0.00"))),
+                func.sum(case((collected, PaymentBrandAllocation.allocated_amount), else_=Decimal("0.00"))),
                 Decimal("0.00"),
             ).label("verified_sum"),
             func.coalesce(
-                func.sum(case((payment_tally.posted_clause(), PaymentBrandAllocation.allocated_amount), else_=Decimal("0.00"))),
+                func.sum(case((posted, PaymentBrandAllocation.allocated_amount), else_=Decimal("0.00"))),
                 Decimal("0.00"),
             ).label("posted_sum"),
             func.coalesce(
@@ -131,11 +134,11 @@ async def get_dashboard_summary(
         col_q = select(
             func.count(Payment.id).label("total_count"),
             func.coalesce(
-                func.sum(case((Payment.status == "VERIFIED", Payment.amount), else_=Decimal("0.00"))),
+                func.sum(case((collected, Payment.amount), else_=Decimal("0.00"))),
                 Decimal("0.00"),
             ).label("verified_sum"),
             func.coalesce(
-                func.sum(case((payment_tally.posted_clause(), Payment.amount), else_=Decimal("0.00"))),
+                func.sum(case((posted, Payment.amount), else_=Decimal("0.00"))),
                 Decimal("0.00"),
             ).label("posted_sum"),
             func.coalesce(

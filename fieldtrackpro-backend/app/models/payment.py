@@ -122,6 +122,19 @@ class Payment(Base):
     # already used for GeoVerificationLog.idempotency_key.
     idempotency_key: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
+    # A MANUAL field collection confirmed by an admin as the same money as a
+    # receipt the agent imported from Tally. Several collections may share one
+    # receipt (the accountant can batch a day's cash); their total may not
+    # exceed it. Once linked, the TALLY row carries the money in every total and
+    # this row only keeps the operational record (who collected, when, visit).
+    tally_receipt_payment_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("payments.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
+    tally_linked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    tally_linked_by: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
     created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

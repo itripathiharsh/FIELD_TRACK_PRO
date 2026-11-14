@@ -1,8 +1,9 @@
 """
-Invoice Service: invoice CRUD plus aging annotation.
+Invoice Service: invoice reads plus aging annotation.
 
-Aging is always computed here via aging_service - never stored, never
-recomputed by a caller, so it can't drift from the one authoritative rule.
+Invoices are created only by the Tally sync (tally_sync_service); there is no
+manual entry. Aging is always computed here via aging_service - never stored,
+never recomputed by a caller, so it can't drift from the one authoritative rule.
 """
 from __future__ import annotations
 
@@ -16,11 +17,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.datetime_utils import get_ist_now
 from app.exceptions.custom import BaseAPIException
 from app.models.invoice import Invoice
-from app.models.user import User
 from app.repositories.invoice_repo import InvoiceRepository
-from app.schemas.invoice import InvoiceCreate, InvoiceRead
+from app.schemas.invoice import InvoiceRead
 from app.services.aging_service import compute_invoice_aging
-from app.services.period_service import assert_period_open_for_date
 
 
 async def _verified_paid_amount(invoice_id: uuid.UUID, session: AsyncSession) -> Decimal:
@@ -53,6 +52,7 @@ async def to_invoice_read(invoice: Invoice, session: AsyncSession, today: date |
         customer_id=invoice.customer_id,
         invoice_number=invoice.invoice_number,
         invoice_date=invoice.invoice_date,
+        financial_year=invoice.financial_year,
         due_date=invoice.due_date,
         amount=invoice.amount,
         brand=invoice.brand,
@@ -68,33 +68,6 @@ async def to_invoice_read(invoice: Invoice, session: AsyncSession, today: date |
         aging_status=aging.aging_status,
         mis_bucket=aging.mis_bucket,
     )
-
-
-async def create_invoice(data: InvoiceCreate, current_user: User, session: AsyncSession) -> Invoice:
-    # Enforce financial lock: reject invoices backdated into a finalized period
-    await assert_period_open_for_date(data.invoice_date, session)
-
-    repo = InvoiceRepository(session)
-    existing = await repo.find_by_number(data.customer_id, data.invoice_number)
-    if existing is not None:
-        raise BaseAPIException(
-            status_code=409,
-            detail=f"Invoice {data.invoice_number} already exists for this outlet",
-            error_code="INVOICE_DUPLICATE",
-        )
-    invoice = Invoice(
-        customer_id=data.customer_id,
-        invoice_number=data.invoice_number,
-        invoice_date=data.invoice_date,
-        due_date=data.due_date,
-        amount=data.amount,
-        brand=data.brand,
-        source_reference=data.source_reference,
-        created_by=current_user.id,
-    )
-    await repo.add(invoice)
-    await repo.commit()
-    return invoice
 
 
 async def get_invoice(invoice_id: uuid.UUID, session: AsyncSession) -> Invoice:

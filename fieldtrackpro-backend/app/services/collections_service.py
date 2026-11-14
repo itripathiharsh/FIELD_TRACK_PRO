@@ -27,7 +27,7 @@ from app.models.area import Area
 from app.models.customer import Customer
 from app.models.employee import Employee
 from app.models.employee_area_assignment import EmployeeAreaAssignment
-from app.models.invoice import Invoice
+from app.models.invoice import Invoice, InvoiceSource
 from app.models.payment import Payment, PaymentStatus
 from app.models.territory import Territory
 from app.models.visit import Visit
@@ -191,7 +191,7 @@ async def get_collections_overview(
     # Legacy invoice-only MIS tiles (bucket_0_15 ... current_amount) and the
     # "most recent payment" cell still need per-invoice / per-payment rows.
     invoices = (await session.execute(
-        select(Invoice).where(Invoice.customer_id.in_(customer_ids))
+        select(Invoice).where(Invoice.customer_id.in_(customer_ids), Invoice.source == InvoiceSource.TALLY)
     )).scalars().all()
     payments = (await session.execute(
         select(Payment).where(Payment.customer_id.in_(customer_ids))

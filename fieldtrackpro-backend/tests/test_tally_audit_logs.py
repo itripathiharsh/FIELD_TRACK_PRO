@@ -17,6 +17,8 @@ from app.models.tally_writeback import TallyWritebackQueue, WritebackStatus
 from app.services.tally_writeback_service import enqueue_payment_writeback
 from tests.conftest import requires_db
 
+pytestmark = pytest.mark.usefixtures("tally_writeback_on")
+
 
 @pytest_asyncio.fixture
 async def audit_test_setup():

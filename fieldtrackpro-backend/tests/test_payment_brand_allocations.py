@@ -62,7 +62,7 @@ async def brand_payment_setup():
             invoice_date=date.today(),
             amount=Decimal("80000.00"),
             brand="USHA",
-            source=InvoiceSource.MANUAL,
+            source=InvoiceSource.TALLY,
             created_by=admin_user.id,
         )
         zeb_inv = Invoice(
@@ -71,7 +71,7 @@ async def brand_payment_setup():
             invoice_date=date.today(),
             amount=Decimal("60000.00"),
             brand="Zebronics",
-            source=InvoiceSource.MANUAL,
+            source=InvoiceSource.TALLY,
             created_by=admin_user.id,
         )
         hav_inv = Invoice(
@@ -80,7 +80,7 @@ async def brand_payment_setup():
             invoice_date=date.today(),
             amount=Decimal("40000.00"),
             brand="Havells",
-            source=InvoiceSource.MANUAL,
+            source=InvoiceSource.TALLY,
             created_by=admin_user.id,
         )
         session.add_all([usha_inv, zeb_inv, hav_inv])

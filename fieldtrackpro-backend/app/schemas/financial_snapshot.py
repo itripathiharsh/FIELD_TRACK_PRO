@@ -3,7 +3,12 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
+
+OUTSTANDING_UNAVAILABLE_NOTE = (
+    "Outstanding and ageing are not available for this month: no Tally balance snapshot exists for it, "
+    "and they cannot be derived from invoices alone without the balances brought forward."
+)
 
 
 class OutletFinancialSnapshotRead(BaseModel):
@@ -90,8 +95,11 @@ class MonthlyPeriodRead(BaseModel):
     total_outlets: int
     total_sales: Decimal
     total_collection: Decimal
-    total_market_os: Decimal
-    total_overdue_gt_90: Decimal
+    # None when the month has no balance snapshot (see outstanding_available).
+    total_market_os: Optional[Decimal] = None
+    total_overdue_gt_90: Optional[Decimal] = None
+    outstanding_available: bool = False
+    outstanding_note: Optional[str] = None
     opened_at: Optional[datetime] = None
     finalized_at: Optional[datetime] = None
     finalized_by: Optional[uuid.UUID] = None
@@ -102,6 +110,17 @@ class MonthlyPeriodRead(BaseModel):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+    @model_validator(mode="after")
+    def _outstanding_only_from_snapshots(self) -> "MonthlyPeriodRead":
+        # A month's closing outstanding is known only from a balance snapshot;
+        # without one the stored 0 must not be shown as "nothing outstanding".
+        self.outstanding_available = self.snapshot_count > 0
+        if not self.outstanding_available:
+            self.total_market_os = None
+            self.total_overdue_gt_90 = None
+            self.outstanding_note = OUTSTANDING_UNAVAILABLE_NOTE
+        return self
 
 
 class ReopenMonthlyPeriodRequest(BaseModel):
@@ -121,7 +140,9 @@ class MonthlyPeriodReviewSummary(BaseModel):
     collections_verified_amount: Decimal
     collections_pending_amount: Decimal
     collections_count: int
-    total_outstanding: Decimal
+    # None when the month has no balance snapshot.
+    total_outstanding: Optional[Decimal] = None
+    outstanding_available: bool = False
     total_invoices_count: int
     total_outlets_count: int
     can_finalize: bool

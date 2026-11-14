@@ -2,7 +2,8 @@ from __future__ import annotations
 import uuid
 from typing import Any, Optional
 from datetime import datetime
-from sqlalchemy import String, Integer, ForeignKey, Text, DateTime, Boolean, func
+from decimal import Decimal
+from sqlalchemy import String, Integer, ForeignKey, Text, DateTime, Boolean, Numeric, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from geoalchemy2 import Geography
 from app.database import Base
@@ -27,6 +28,15 @@ class Customer(Base):
     outlet_code: Mapped[Optional[str]] = mapped_column(String(50), unique=True, nullable=True)
     gst_number: Mapped[Optional[str]] = mapped_column(String(20), nullable=True, index=True)
     created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+
+    # Tally debtor-ledger identity: stable across ledger renames (matched first by the sync).
+    tally_guid: Mapped[Optional[str]] = mapped_column(String(255), unique=True, nullable=True)
+    email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    mobile_number: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    # The ledger closing balance exactly as Tally exported it at the last sync (signed
+    # as Tally signs it). A reference / cross-check figure; it never drives outstanding.
+    tally_closing_balance: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2), nullable=True)
+    tally_closing_balance_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Set True only for an outlet approved from a CustomerProspect submission (there is no
     # Tally writeback for customers - Tally sync is import-only - so an admin must add it to

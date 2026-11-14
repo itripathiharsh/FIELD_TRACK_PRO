@@ -18,12 +18,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.context import get_current_request_id
 from app.exceptions.custom import BaseAPIException
 from app.models.customer import Customer
-from app.models.invoice import Invoice
+from app.models.invoice import Invoice, InvoiceSource
 from app.models.monthly_reporting_period import MonthlyPeriodStatus, MonthlyReportingPeriod
 from app.models.outlet_financial_snapshot import OutletFinancialSnapshot
 from app.models.payment import Payment, PaymentStatus
 from app.models.visit import Visit, VisitStatus, VisitType
 from app.schemas.financial_snapshot import MonthlyPeriodRead, MonthlyPeriodReviewSummary
+from app.services import payment_tally
 
 logger = logging.getLogger("fieldtrackpro")
 
@@ -74,14 +75,14 @@ async def ensure_monthly_periods_synced(
         (int(r.s_year), int(r.s_month)): r for r in snap_res.all()
     }
 
-    # 1b. Fetch distinct invoice months (authoritative Tally source of truth)
+    # 1b. Fetch distinct invoice months (Tally invoices only: the authoritative sales record)
     inv_stmt = select(
         func.extract("year", Invoice.invoice_date).label("i_year"),
         func.extract("month", Invoice.invoice_date).label("i_month"),
         func.count(Invoice.id).label("inv_cnt"),
         func.count(func.distinct(Invoice.customer_id)).label("outlets_cnt"),
         func.sum(Invoice.amount).label("tot_sales"),
-    ).where(Invoice.invoice_date.isnot(None)).group_by(
+    ).where(Invoice.invoice_date.isnot(None), Invoice.source == InvoiceSource.TALLY).group_by(
         func.extract("year", Invoice.invoice_date),
         func.extract("month", Invoice.invoice_date),
     )
@@ -90,7 +91,8 @@ async def ensure_monthly_periods_synced(
         (int(r.i_year), int(r.i_month)): r for r in inv_res.all()
     }
 
-    # 1c. Fetch distinct payment months (authoritative Tally source of truth)
+    # 1c. Fetch distinct payment months: collections received, each rupee once
+    # (receipts in Tally + verified field collections not yet in Tally).
     pay_stmt = select(
         func.extract("year", Payment.payment_date).label("p_year"),
         func.extract("month", Payment.payment_date).label("p_month"),
@@ -98,7 +100,7 @@ async def ensure_monthly_periods_synced(
         func.sum(Payment.amount).label("tot_col"),
     ).where(
         Payment.payment_date.isnot(None),
-        Payment.status == PaymentStatus.VERIFIED,
+        payment_tally.collected_clause(),
     ).group_by(
         func.extract("year", Payment.payment_date),
         func.extract("month", Payment.payment_date),
@@ -129,13 +131,15 @@ async def ensure_monthly_periods_synced(
                 snap_r.s_gt90 or Decimal("0.00"),
             )
         else:
+            # No balance snapshot for the month: its closing outstanding / ageing
+            # are unknown (not derivable from invoices alone without the balances
+            # brought forward). Stored as 0 and reported as unavailable - see
+            # MonthlyPeriodRead.outstanding_available - never as sales.
             s_cnt = 0
             o_cnt = inv_r.outlets_cnt if inv_r else 0
             s_amt = inv_r.tot_sales if inv_r and inv_r.tot_sales else Decimal("0.00")
             c_amt = pay_r.tot_col if pay_r and pay_r.tot_col else Decimal("0.00")
-            os_amt = s_amt
-            gt90_amt = Decimal("0.00")
-            return s_cnt, o_cnt, s_amt, c_amt, os_amt, gt90_amt
+            return s_cnt, o_cnt, s_amt, c_amt, Decimal("0.00"), Decimal("0.00")
 
     # 2. Fetch all existing periods
     existing_res = await session.execute(select(MonthlyReportingPeriod))
@@ -273,12 +277,14 @@ async def get_monthly_period_review(period_id: uuid.UUID, session: AsyncSession)
     v_res = await session.execute(v_stmt)
     v_row = v_res.one()
 
-    # 2. Collections metrics
+    # 2. Collections metrics. A field collection linked to its imported Tally
+    # receipt is the same money as that receipt, so it is left out of the money
+    # figures here (the receipt counts); "verified" is money received, each rupee once.
     p_stmt = select(
         func.count(Payment.id).label("total_cnt"),
         func.coalesce(func.sum(Payment.amount), Decimal("0.00")).label("total_amt"),
         func.coalesce(
-            func.sum(Payment.amount).filter(Payment.status == PaymentStatus.VERIFIED),
+            func.sum(Payment.amount).filter(payment_tally.collected_clause()),
             Decimal("0.00"),
         ).label("verified_amt"),
         func.coalesce(
@@ -288,14 +294,16 @@ async def get_monthly_period_review(period_id: uuid.UUID, session: AsyncSession)
     ).where(
         Payment.payment_date >= start_date,
         Payment.payment_date <= end_date,
+        ~payment_tally.linked_clause(),
     )
     p_res = await session.execute(p_stmt)
     p_row = p_res.one()
 
-    # 3. Invoices count
+    # 3. Invoices count (Tally invoices only)
     inv_stmt = select(func.count(Invoice.id)).where(
         Invoice.invoice_date >= start_date,
         Invoice.invoice_date <= end_date,
+        Invoice.source == InvoiceSource.TALLY,
     )
     inv_cnt = (await session.execute(inv_stmt)).scalar() or 0
 
@@ -322,7 +330,8 @@ async def get_monthly_period_review(period_id: uuid.UUID, session: AsyncSession)
         collections_verified_amount=p_row.verified_amt,
         collections_pending_amount=p_row.pending_amt,
         collections_count=p_row.total_cnt or 0,
-        total_outstanding=period.total_market_os,
+        total_outstanding=period.total_market_os if period.snapshot_count else None,
+        outstanding_available=bool(period.snapshot_count),
         total_invoices_count=inv_cnt,
         total_outlets_count=outlets_cnt or 0,
         can_finalize=can_finalize,

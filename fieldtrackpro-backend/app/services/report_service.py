@@ -1101,10 +1101,15 @@ class ReportService:
             if employee_id:
                 inv_stmt = inv_stmt.where(_employee_filter(employee_id))
             inv_stmt = where_date_range(inv_stmt, Invoice.invoice_date, window.start, window.end)
+            inv_rows = (await session.execute(inv_stmt)).all()
+            # Outstanding = amount - money settled by receipts POSTED in Tally (the same
+            # rule as the outlet account). imported_outstanding_amount is a point-in-time
+            # reference figure and never drives the balance.
+            settled = await payment_tally.posted_paid_by_invoice(session, [r[0].id for r in inv_rows])
 
-            for inv, c_name, dms, z_name, a_name in (await session.execute(inv_stmt)).all():
+            for inv, c_name, dms, z_name, a_name in inv_rows:
                 inv_amt = inv.amount or Decimal("0.00")
-                inv_os = inv.imported_outstanding_amount if inv.imported_outstanding_amount is not None else inv_amt
+                inv_os = max(inv_amt - settled.get(inv.id, Decimal("0.00")), Decimal("0.00"))
                 age_days = (today - inv.invoice_date).days if inv.invoice_date else 0
                 zero = Decimal("0.00")
                 buckets = [
@@ -1135,12 +1140,11 @@ class ReportService:
                 )
             as_of = today
 
-            # Collections from VERIFIED payments, same window / brand / zone / area / employee filters.
+            # Collections received (each rupee once: receipts in Tally + verified field
+            # collections not yet in Tally), same window / brand / zone / area / employee filters.
             def _pay_filters(stmt):
-                stmt = stmt.where(Payment.status == PaymentStatus.VERIFIED)
+                stmt = stmt.where(payment_tally.collected_clause(employee_id))
                 stmt = where_date_range(stmt, Payment.payment_date, window.start, window.end)
-                if employee_id:
-                    stmt = stmt.where(Payment.employee_id == employee_id)
                 if zone_id:
                     stmt = stmt.where(Customer.territory_id == zone_id)
                 if area_id:
@@ -1163,9 +1167,9 @@ class ReportService:
                 )
             pay_stmt = _pay_filters(pay_stmt)
             total_collection = (await session.execute(pay_stmt)).scalar() or Decimal("0.00")
-            # Split of the same VERIFIED collections: in Tally vs awaiting Tally.
+            # Split of the same collections: in Tally vs awaiting Tally (posted + awaiting == total).
             total_collection_posted = (
-                await session.execute(pay_stmt.where(payment_tally.posted_clause()))
+                await session.execute(pay_stmt.where(payment_tally.posted_clause_for(employee_id)))
             ).scalar() or Decimal("0.00")
             total_collection_awaiting = (
                 await session.execute(pay_stmt.where(payment_tally.awaiting_clause()))
@@ -1295,8 +1299,12 @@ class ReportService:
         else:
             note = (
                 "No snapshot exists for the selected period, so figures come from live Tally invoices "
-                "(invoice date within the period) and verified payments (payment date within the period); "
-                "outstanding and ageing are as of today."
+                "(invoice date within the period) and collections received in the period, each rupee "
+                "counted once (receipts in Tally plus verified field collections not yet in Tally). "
+                "Outstanding and ageing are as of today: invoice amount minus receipts posted in Tally "
+                "against that invoice (bill-wise). Receipts Tally records without a bill reference are "
+                "not deducted from any invoice here (the outlet account nets them as on-account money), "
+                "and balances brought forward from before the earliest synced invoice are not included."
             )
 
         return BusinessBIDashboard(

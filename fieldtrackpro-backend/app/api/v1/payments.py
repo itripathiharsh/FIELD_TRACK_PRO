@@ -25,8 +25,11 @@ from app.schemas.payment import (
     PaymentRead,
     PaymentReviewAction,
     PaymentVerifyRequest,
+    TallyReceiptCandidate,
+    TallyReceiptLinkRequest,
+    TallyReceiptUnlinkRequest,
 )
-from app.services import payment_service
+from app.services import payment_reconciliation_service, payment_service
 from app.services.file_validation_service import FileValidationService
 from app.services.payment_tally import TallyStatus
 
@@ -135,6 +138,43 @@ async def verify_payment(
 async def tally_retry_payment(payment_id: uuid.UUID, current_user: CurrentUser, session: DbSession):
     """Admin: re-queue a FAILED Tally write-back of this payment (409 unless tally_status is FAILED)."""
     payment = await payment_service.tally_retry_payment(payment_id, current_user, session)
+    return (await payment_service.build_payment_reads([payment], session, True))[0]
+
+
+@router.get(
+    "/{payment_id}/tally-receipt-candidates",
+    response_model=list[TallyReceiptCandidate],
+    dependencies=[AdminOnly],
+)
+async def get_tally_receipt_candidates(
+    payment_id: uuid.UUID,
+    session: DbSession,
+    window_days: int = Query(default=payment_reconciliation_service.DEFAULT_WINDOW_DAYS, ge=0,
+                             le=payment_reconciliation_service.MAX_WINDOW_DAYS),
+):
+    """Admin: imported Tally receipts this field collection could be linked to. Suggestions only."""
+    return await payment_reconciliation_service.suggest_tally_receipts(session, payment_id, window_days)
+
+
+@router.post("/{payment_id}/link-tally-receipt", response_model=PaymentRead, dependencies=[AdminOnly])
+async def link_tally_receipt(
+    payment_id: uuid.UUID, data: TallyReceiptLinkRequest, current_user: CurrentUser, session: DbSession
+):
+    """Admin: confirm this verified field collection is the same money as an imported Tally receipt."""
+    actor_id = current_user.id
+    payment = await payment_reconciliation_service.link_tally_receipt(
+        session, payment_id, data.tally_receipt_payment_id, actor_id
+    )
+    return (await payment_service.build_payment_reads([payment], session, True))[0]
+
+
+@router.post("/{payment_id}/unlink-tally-receipt", response_model=PaymentRead, dependencies=[AdminOnly])
+async def unlink_tally_receipt(
+    payment_id: uuid.UUID, data: TallyReceiptUnlinkRequest, current_user: CurrentUser, session: DbSession
+):
+    """Admin: undo a wrong link (reason required); the collection returns to AWAITING_TALLY."""
+    actor_id = current_user.id
+    payment = await payment_reconciliation_service.unlink_tally_receipt(session, payment_id, data.reason, actor_id)
     return (await payment_service.build_payment_reads([payment], session, True))[0]
 
 

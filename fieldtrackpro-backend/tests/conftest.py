@@ -150,3 +150,13 @@ requires_db = pytest.mark.skipif(
     not IS_DB_MIGRATED,
     reason="Requires PostGIS PostgreSQL database migration (external prerequisite)",
 )
+
+
+@pytest.fixture
+def tally_writeback_on(monkeypatch):
+    """Exercise the Tally write-back path. Production runs with it off
+    (TALLY_WRITEBACK_ENABLED=false: receipts are keyed into Tally by hand and
+    collections are confirmed by linking the imported receipt)."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "tally_writeback_enabled", True)

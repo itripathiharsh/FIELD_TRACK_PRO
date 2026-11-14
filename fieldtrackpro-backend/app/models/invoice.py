@@ -9,13 +9,20 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    Index,
     Numeric,
     String,
-    UniqueConstraint,
     func,
+    text,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 from app.database import Base
+
+
+def financial_year_of(d: date) -> str:
+    """Indian financial year (April-March) of a date, e.g. 2026-05-01 -> "2026-27"."""
+    start = d.year if d.month >= 4 else d.year - 1
+    return f"{start}-{(start + 1) % 100:02d}"
 
 
 class InvoiceSource(str, enum.Enum):
@@ -44,6 +51,8 @@ class Invoice(Base):
     # Authoritative source for aging calculations (never due_date - see
     # aging_service.py). due_date is informational/display-only.
     invoice_date: Mapped[date] = mapped_column(Date)
+    # April-March financial year of invoice_date ("2026-27"); set automatically.
+    financial_year: Mapped[Optional[str]] = mapped_column(String(7), nullable=True, index=True)
     due_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))
     # Brand-level aggregation (P1: brand info, not SKU/product-level detail).
@@ -57,6 +66,9 @@ class Invoice(Base):
     # Original external row/reference id (Tally voucher id, Excel row), for
     # import traceability and de-duplication. Not a FieldTrack identity.
     source_reference: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    # The bill this Tally invoice raises (party entry's bill allocation name). Tally
+    # receipts settle bills by this name ("Agst Ref"); it can differ from invoice_number.
+    tally_bill_name: Mapped[Optional[str]] = mapped_column(String(150), nullable=True, index=True)
     # If the source file states its own outstanding/remaining figure for this
     # invoice, it's preserved here for reference/cross-checking - it never
     # drives `remaining_amount` (still always amount - verified payments, the
@@ -76,7 +88,16 @@ class Invoice(Base):
         "PaymentInvoiceAllocation", back_populates="invoice", cascade="all, delete-orphan"
     )
 
+    # Identity is the Tally voucher GUID (source_reference): unique where present.
+    # Invoice numbers may repeat across financial years, so (outlet, number) is a
+    # lookup, not a uniqueness rule.
     __table_args__ = (
-        # The same invoice cannot be imported/entered twice for one outlet.
-        UniqueConstraint("customer_id", "invoice_number", name="uq_invoice_customer_number"),
+        Index("ix_invoices_customer_number", "customer_id", "invoice_number"),
+        Index("uq_invoices_source_reference", "source_reference", unique=True,
+              postgresql_where=text("source_reference IS NOT NULL")),
     )
+
+    @validates("invoice_date")
+    def _derive_financial_year(self, _key, value):
+        self.financial_year = financial_year_of(value) if value else None
+        return value

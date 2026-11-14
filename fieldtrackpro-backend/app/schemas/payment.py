@@ -132,6 +132,42 @@ class PaymentReviewAction(BaseModel):
         return self
 
 
+class TallyReceiptLinkRequest(BaseModel):
+    """Body of POST /payments/{id}/link-tally-receipt: the imported TALLY receipt the admin confirms."""
+    tally_receipt_payment_id: uuid.UUID
+
+
+class TallyReceiptUnlinkRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=1000)
+
+    @field_validator("reason")
+    @classmethod
+    def _not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("reason must not be blank")
+        return v
+
+
+class TallyReceiptCandidate(BaseModel):
+    """An imported Tally receipt an admin may link a field collection to. A
+    suggestion only: nothing is linked until the admin confirms."""
+    payment_id: uuid.UUID
+    payment_date: date
+    amount: Decimal
+    payment_method: PaymentMethod
+    utr_reference: str | None = None
+    cheque_number: str | None = None
+    notes: str | None = None
+    source_reference: str | None = None
+    # Money of this receipt already covered by other linked collections, and what is left.
+    linked_amount: Decimal
+    available_amount: Decimal
+    days_apart: int
+    # Why it is offered: UTR, CHEQUE_NUMBER, AMOUNT (exact). Empty = same outlet and date window only.
+    match_reasons: list[str] = []
+
+
 class PaymentVerifyRequest(BaseModel):
     """
     Optional body of POST /payments/{id}/verify: the bank-verification record.
@@ -184,6 +220,9 @@ class PaymentRead(BaseModel):
     # payment is FAILED or AWAITING_TALLY for 30+ minutes.
     tally_error: str | None = None
     tally_stuck: bool | None = None
+    # The imported Tally receipt an admin linked this field collection to
+    # (POSTED via link; tally_posted_at is then the link time).
+    tally_receipt_payment_id: uuid.UUID | None = None
     # ADMIN-only bank-verification record (None for employees / not captured).
     bank_reference: str | None = None
     bank_verified_on: date | None = None

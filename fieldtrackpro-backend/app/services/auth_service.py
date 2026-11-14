@@ -218,7 +218,10 @@ async def refresh_tokens(raw_refresh: str, session: AsyncSession) -> TokenRespon
     if record.revoked:
         now_check = datetime.now(tz=timezone.utc)
         age = (now_check - record.rotated_at) if record.rotated_at is not None else None
-        if age is not None and age <= timedelta(seconds=settings.refresh_reuse_grace_seconds):
+        # A zero window means no grace at all - not "same clock tick allowed" (on a coarse
+        # clock a concurrent replay can read age == 0 and would otherwise slip through).
+        grace = settings.refresh_reuse_grace_seconds
+        if age is not None and grace > 0 and age <= timedelta(seconds=grace):
             # This token was revoked by a normal rotation (not logout/disable/
             # theft) a moment ago - almost certainly a race (two tabs, a
             # client retry), not a stolen token being replayed. Issue another

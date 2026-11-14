@@ -17,6 +17,7 @@ import pytest_asyncio
 from httpx import AsyncClient
 
 from tests.integration.conftest import VALID_JPEG, create_visit, db_cursor, requires_db
+from tests.invoice_helpers import create_tally_invoice
 
 pytestmark = [requires_db, pytest.mark.integration, pytest.mark.asyncio]
 
@@ -53,18 +54,10 @@ async def visit_id(client, admin_headers, seeded_world, created_visits) -> str:
 
 
 async def _create_invoice(client, admin_headers, customer_id, number, days_ago, amount, brand, created_invoices):
-    resp = await client.post(
-        "/api/v1/invoices",
-        json={
-            "customer_id": customer_id, "invoice_number": number,
-            "invoice_date": _iso_days_ago(days_ago), "amount": amount, "brand": brand,
-        },
-        headers=admin_headers,
+    """A Tally invoice (sales invoices only come from Tally; there is no manual entry)."""
+    return await create_tally_invoice(
+        customer_id, number, date.today() - timedelta(days=days_ago), amount, brand, created_invoices
     )
-    assert resp.status_code == 201, resp.text
-    body = resp.json()
-    created_invoices.append(body["id"])
-    return body
 
 
 # -- P2-A: Brand-wise history enrichment ---------------------------------------

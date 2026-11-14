@@ -317,10 +317,11 @@ def build_staff_table(rows_src: list[dict], filters) -> ReportTable:
 
 # ----------------------------------------------------------------------------- monthly periods
 def build_periods_table(periods, filters) -> ReportTable:
+    # Market OS / >90d are month-end balances: never totalled across months.
     cols = [
         Col("Period", weight=1.6), Col("Status", weight=1.0), Col("Snapshots", "int", total=True),
-        Col("Outlets", "int"), _money("Sales (INR)"), _money("Collection (INR)"), _money("Market OS (INR)"),
-        _money(">90d (INR)"), Col("Finalized On", "date"),
+        Col("Outlets", "int"), _money("Sales (INR)"), _money("Collection (INR)"), Col("Market OS (INR)", "money"),
+        Col(">90d (INR)", "money"), Col("Finalized On", "date"),
     ]
     rows = [
         [p.period_name, p.status, p.snapshot_count, p.total_outlets, p.total_sales, p.total_collection,
@@ -330,7 +331,10 @@ def build_periods_table(periods, filters) -> ReportTable:
     return ReportTable(
         title="Monthly Snapshots - Accounting Periods", sheet_name="Monthly Periods", columns=cols, rows=rows,
         filters=filters,
-        note="All monthly reporting periods that hold data; stock figures per period are that period's own snapshot totals.",
+        note=(
+            "All monthly reporting periods that hold data. Market OS and >90d are that month's own balance-snapshot "
+            "totals; they are blank for a month with no balance snapshot (not derivable from invoices alone)."
+        ),
     )
 
 
