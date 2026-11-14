@@ -118,10 +118,16 @@ async def notify_stuck_tally_posts(session: AsyncSession, now: Optional[datetime
     time and are skipped). Once per payment per 24h, deduped via existing
     notifications (same title + Notification.payment_id). Never raises.
     Returns the number of payments alerted.
+
+    With write-back disabled no agent posts receipts, so an awaiting collection
+    is waiting for the accountant and an admin link, not stuck: no alerts.
     """
+    from app.config import settings
     from app.models.notification import Notification
     from app.services import payment_tally
 
+    if not settings.tally_writeback_enabled:
+        return 0
     try:
         now = now or datetime.now(timezone.utc)
         cutoff = now - timedelta(minutes=payment_tally.TALLY_STUCK_MINUTES)

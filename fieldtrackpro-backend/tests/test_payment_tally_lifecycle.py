@@ -1,9 +1,10 @@
 """
-Regression: Tally is the final truth for outstanding balances.
+Regression: Tally is the final truth for outstanding balances - write-back path.
 
 employee records (PENDING_VERIFICATION) -> admin verifies against the bank
 (VERIFIED) -> sync agent writes the receipt to Tally (write-back job CONFIRMED).
 Only a CONFIRMED job lets invoice remaining / brand / customer account drop.
+(The manual-entry + admin-link path is in test_tally_receipt_linking.py.)
 """
 from __future__ import annotations
 
@@ -29,7 +30,7 @@ from app.models.visit import Visit, VisitStatus
 from tests.conftest import requires_db
 from tests.tally_helpers import ack_payment_in_tally, fail_payment_in_tally
 
-pytestmark = [requires_db, pytest.mark.asyncio]
+pytestmark = [requires_db, pytest.mark.asyncio, pytest.mark.usefixtures("tally_writeback_on")]
 
 
 @pytest_asyncio.fixture
@@ -51,7 +52,7 @@ async def world():
         )
         invoice = Invoice(
             customer_id=customer.id, invoice_number=f"INV-TL-{tag}", invoice_date=date.today(),
-            amount=Decimal("10000.00"), brand="USHA", source=InvoiceSource.MANUAL, created_by=admin.id,
+            amount=Decimal("10000.00"), brand="USHA", source=InvoiceSource.TALLY, created_by=admin.id,
         )
         session.add_all([visit, invoice])
         await session.commit()
@@ -200,8 +201,9 @@ async def test_onaccount_allocated_payment_reads_back_once(world):
     }]}
     assert (await c.post("/api/v1/integrations/tally/sync/payments", json=batch, headers=agent_h)).status_code == 200
     acct = await _account(w)
-    assert Decimal(acct["total_outstanding"]) == Decimal("7000.00")
-    assert (await _invoice(w))["remaining_amount"] == "7000.00"
+    assert Decimal(acct["total_outstanding"]) == Decimal("7000.00"), "netted once, not twice"
+    # On-account in Tally (no bill reference): no invoice is guessed as paid.
+    assert (await _invoice(w))["remaining_amount"] == "10000.00"
 
 
 async def test_failed_job_shows_failed_does_not_reduce_and_admin_can_retry(world):

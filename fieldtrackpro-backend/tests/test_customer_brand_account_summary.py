@@ -75,7 +75,7 @@ async def brand_summary_fixture():
                 invoice_date=date.today(),
                 amount=Decimal("45000.00"),
                 brand="Havells",
-                source=InvoiceSource.MANUAL,
+                source=InvoiceSource.TALLY,
                 created_by=admin_user.id,
             )
         )
@@ -98,7 +98,7 @@ async def brand_summary_fixture():
                 invoice_date=date.today(),
                 amount=Decimal("25000.00"),
                 brand="usha",
-                source=InvoiceSource.MANUAL,
+                source=InvoiceSource.TALLY,
                 created_by=admin_user.id,
             )
         )

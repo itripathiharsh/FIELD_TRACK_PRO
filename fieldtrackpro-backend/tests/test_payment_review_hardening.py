@@ -25,7 +25,7 @@ from app.exceptions.custom import BaseAPIException
 from app.main import app
 from app.models.customer import Customer
 from app.models.employee import Employee
-from app.models.invoice import Invoice
+from app.models.invoice import Invoice, InvoiceSource
 from app.models.login_attempt import LoginAttempt
 from app.models.payment import Payment, PaymentMethod, PaymentSource, PaymentStatus
 from app.models.tally_audit import TallyAuditLog
@@ -36,7 +36,7 @@ from app.schemas.payment import PaymentCreate
 from app.services import payment_service, tally_writeback_service
 from tests.conftest import requires_db
 
-pytestmark = [pytest.mark.asyncio, requires_db]
+pytestmark = [pytest.mark.asyncio, requires_db, pytest.mark.usefixtures("tally_writeback_on")]
 
 
 def _pc(visit_id, amount, invoice_id=None, key=None, method=PaymentMethod.CASH):
@@ -88,6 +88,7 @@ async def env():
             invoice_number=f"A2P/{tag}",
             invoice_date=date.today() - timedelta(days=5),
             amount=Decimal("1000.00"),
+            source=InvoiceSource.TALLY,
             created_by=admin.id,
         )
         s.add(invoice)

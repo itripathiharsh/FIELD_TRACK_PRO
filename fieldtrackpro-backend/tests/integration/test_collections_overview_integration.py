@@ -25,6 +25,7 @@ from tests.integration.conftest import (
     hash_password,
     requires_db,
 )
+from tests.invoice_helpers import create_tally_invoice
 
 pytestmark = [requires_db, pytest.mark.integration, pytest.mark.asyncio]
 
@@ -53,20 +54,11 @@ async def _create_customer(client, admin_headers, created_customers, *, name=Non
 
 
 async def _create_invoice(client, admin_headers, customer_id, days_ago, amount, created_invoices):
-    resp = await client.post(
-        "/api/v1/invoices",
-        json={
-            "customer_id": customer_id,
-            "invoice_number": f"__itest__OV-{uuid.uuid4().hex[:8]}",
-            "invoice_date": _iso_days_ago(days_ago),
-            "amount": amount,
-        },
-        headers=admin_headers,
+    """A Tally invoice (sales invoices only come from Tally; there is no manual entry)."""
+    return await create_tally_invoice(
+        customer_id, f"__itest__OV-{uuid.uuid4().hex[:8]}", date.today() - timedelta(days=days_ago),
+        amount, None, created_invoices,
     )
-    assert resp.status_code == 201, resp.text
-    body = resp.json()
-    created_invoices.append(body["id"])
-    return body
 
 
 @pytest_asyncio.fixture
@@ -422,16 +414,20 @@ async def test_collection_status_filter_returns_only_matching_status(
     normal_outlet = await _create_customer(client, admin_headers, created_customers)
     await _create_invoice(client, admin_headers, normal_outlet["id"], days_ago=1, amount="1000.00", created_invoices=created_invoices)
 
-    resp = await client.get(
-        "/api/v1/collections/overview",
-        params={"collection_status": "OVERDUE"},
-        headers=admin_headers,
-    )
-    body = resp.json()
-    ids = {r["customer_id"] for r in body["outlets"]}
-    assert overdue_outlet["id"] in ids
-    assert normal_outlet["id"] not in ids
-    assert all(r["collection_status"] == "OVERDUE" for r in body["outlets"])
+    # Scoped by search to this test's own outlets: the shared database can hold
+    # more than one page of OVERDUE outlets from other tests.
+    async def overdue_ids(outlet):
+        resp = await client.get(
+            "/api/v1/collections/overview",
+            params={"collection_status": "OVERDUE", "search": outlet["name"]},
+            headers=admin_headers,
+        )
+        body = resp.json()
+        assert all(r["collection_status"] == "OVERDUE" for r in body["outlets"])
+        return {r["customer_id"] for r in body["outlets"]}
+
+    assert overdue_outlet["id"] in await overdue_ids(overdue_outlet)
+    assert normal_outlet["id"] not in await overdue_ids(normal_outlet)
 
 
 # -- Pagination + totals-vs-page consistency ------------------------------------

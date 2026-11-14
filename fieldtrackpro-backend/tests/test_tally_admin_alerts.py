@@ -19,7 +19,7 @@ from app.schemas.tally_writeback import TallyWritebackFailRequest
 from app.services import tally_writeback_service as svc
 from tests.conftest import requires_db
 
-pytestmark = [requires_db, pytest.mark.asyncio]
+pytestmark = [requires_db, pytest.mark.asyncio, pytest.mark.usefixtures("tally_writeback_on")]
 
 
 async def _world(reviewed_minutes_ago: int = 5):

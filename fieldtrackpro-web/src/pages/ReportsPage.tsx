@@ -1336,11 +1336,11 @@ export const ReportsPage: React.FC = () => {
                       <span className="font-caption text-[11px] uppercase tracking-wider text-on-surface-variant block mb-0.5">Collections</span>
                       <span className="font-headline-sm text-sm font-bold text-primary block">{formatCurrency(period.total_collection)}</span>
                     </div>
-                    <div className="p-2 bg-surface-container-low rounded-lg border border-surface-container-highest">
+                    <div className="p-2 bg-surface-container-low rounded-lg border border-surface-container-highest" title={period.outstanding_note ?? undefined}>
                       <span className="font-caption text-[11px] uppercase tracking-wider text-on-surface-variant block mb-0.5">Market OS</span>
                       <span className="font-headline-sm text-sm font-bold text-primary block">{formatCurrency(period.total_market_os)}</span>
                     </div>
-                    <div className="p-2 bg-surface-container-low rounded-lg border border-surface-container-highest">
+                    <div className="p-2 bg-surface-container-low rounded-lg border border-surface-container-highest" title={period.outstanding_note ?? undefined}>
                       <span className="font-caption text-[11px] uppercase tracking-wider text-on-surface-variant block mb-0.5">&gt;90d Overdue</span>
                       <span className="font-headline-sm text-sm font-bold text-error block">{formatCurrency(period.total_overdue_gt_90)}</span>
                     </div>

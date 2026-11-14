@@ -26,6 +26,8 @@ from app.services.tally_writeback_service import (
 )
 from tests.conftest import requires_db
 
+pytestmark = pytest.mark.usefixtures("tally_writeback_on")
+
 
 @pytest_asyncio.fixture
 async def writeback_test_env():

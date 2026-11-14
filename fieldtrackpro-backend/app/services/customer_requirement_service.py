@@ -11,6 +11,7 @@ from sqlalchemy import select, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.config import settings
 from app.exceptions.custom import BaseAPIException
 from app.models.customer import Customer
 from app.models.customer_requirement import CustomerRequirement
@@ -618,27 +619,28 @@ async def confirm_and_create_order(
     req.status = "CONVERTED_TO_ORDER"
     req.total_approved_value = order_total
 
-    # Enqueue Tally Writeback Job
-    writeback_payload = {
-        "order_id": str(order.id),
-        "order_number": order.order_number,
-        "customer_id": str(order.customer_id),
-        "customer_name": customer.name,
-        "order_date": now_ts.strftime("%Y-%m-%d"),
-        "total_amount": float(order_total),
-        "items": order_item_payloads,
-    }
-
-    idempotency_key = f"so_writeback_{order.id}"
-    wb_job = TallyWritebackQueue(
-        idempotency_key=idempotency_key,
-        entity_type="SALES_ORDER",
-        entity_id=order.id,
-        operation="CREATE",
-        payload=writeback_payload,
-        status=WritebackStatus.PENDING,
-    )
-    session.add(wb_job)
+    # Enqueue the Tally write-back job only when write-back is enabled. With it
+    # off the accountant keys orders into Tally by hand; a queued job would sit
+    # unprocessed and be posted as a duplicate if write-back were enabled later.
+    # The order itself stays in Field Track Pro either way (status PENDING_TALLY).
+    if settings.tally_writeback_enabled:
+        writeback_payload = {
+            "order_id": str(order.id),
+            "order_number": order.order_number,
+            "customer_id": str(order.customer_id),
+            "customer_name": customer.name,
+            "order_date": now_ts.strftime("%Y-%m-%d"),
+            "total_amount": float(order_total),
+            "items": order_item_payloads,
+        }
+        session.add(TallyWritebackQueue(
+            idempotency_key=f"so_writeback_{order.id}",
+            entity_type="SALES_ORDER",
+            entity_id=order.id,
+            operation="CREATE",
+            payload=writeback_payload,
+            status=WritebackStatus.PENDING,
+        ))
 
     await session.commit()
     await session.refresh(order)

@@ -20,12 +20,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.config import settings
 from app.core.context import get_current_request_id
 from app.exceptions.custom import BaseAPIException
 from app.models.employee import Employee
 from app.models.payment import Payment, PaymentBrandAllocation, PaymentStatus, PaymentSource
 from app.models.payment_proof import PaymentProof
-from app.models.invoice import Invoice
+from app.models.invoice import Invoice, InvoiceSource
 from app.models.user import Role, User
 from app.models.visit import VisitStatus
 from app.repositories.payment_repo import PaymentProofRepository, PaymentRepository
@@ -218,6 +219,12 @@ async def create_payment(data: PaymentCreate, current_user: User, session: Async
                 status_code=422,
                 detail="That invoice does not belong to this visit's outlet",
                 error_code="INVOICE_OUTLET_MISMATCH",
+            )
+        if invoice.source != InvoiceSource.TALLY:
+            raise BaseAPIException(
+                status_code=422,
+                detail="That invoice is not a Tally invoice; record the collection without an invoice as an advance.",
+                error_code="INVOICE_NOT_IN_TALLY",
             )
         # Lock the invoice and cap the amount at what is still outstanding.
         # A payment with NO invoice is an on-account/advance collection, which
@@ -477,11 +484,13 @@ async def verify_payment(
     """
     Admin verification (optionally recording the bank reference / date / note).
     Verifying only marks the cash as received: outstanding balances do NOT drop
-    until the Tally write-back job is CONFIRMED (see payment_tally.py). The payment row is locked (FOR UPDATE) so concurrent
-    verify/reject calls serialise and the loser gets 409. The Tally write-back
-    job is enqueued here - and only here - inside the same transaction, keyed
-    by the unique idempotency key `fieldtrack_payment:{id}`, so a retry or a
-    double click cannot create a second job.
+    until the receipt is in Tally (see payment_tally.py). The payment row is locked (FOR UPDATE) so concurrent
+    verify/reject calls serialise and the loser gets 409. When Tally write-back
+    is enabled the job is enqueued here - and only here - inside the same
+    transaction, keyed by the unique idempotency key `fieldtrack_payment:{id}`,
+    so a retry or a double click cannot create a second job. When it is
+    disabled no job is created: the accountant keys the receipt into Tally and
+    an admin links the imported receipt (payment_reconciliation_service).
     """
     from app.services import tally_audit_service
     from app.services.tally_writeback_service import enqueue_payment_writeback
@@ -534,9 +543,11 @@ async def verify_payment(
 
     from app.models.customer import Customer
 
-    cust_obj = (await session.execute(select(Customer).where(Customer.id == payment.customer_id))).scalar_one_or_none()
-    inv_obj = await get_invoice(payment.invoice_id, session) if payment.invoice_id else None
-    job = await enqueue_payment_writeback(session, payment, customer=cust_obj, invoice=inv_obj)
+    job = None
+    if settings.tally_writeback_enabled:
+        cust_obj = (await session.execute(select(Customer).where(Customer.id == payment.customer_id))).scalar_one_or_none()
+        inv_obj = await get_invoice(payment.invoice_id, session) if payment.invoice_id else None
+        job = await enqueue_payment_writeback(session, payment, customer=cust_obj, invoice=inv_obj)
     await session.flush()
 
     await tally_audit_service.record_review_audit(
@@ -758,6 +769,12 @@ async def tally_retry_payment(payment_id: uuid.UUID, current_user: User, session
     from app.services.tally_writeback_service import retry_writeback_job
 
     actor_id = current_user.id  # captured before any rollback expires the user
+    if not settings.tally_writeback_enabled:
+        raise BaseAPIException(
+            status_code=409,
+            detail="Tally write-back is disabled; link the collection to its imported Tally receipt instead.",
+            error_code="TALLY_WRITEBACK_DISABLED",
+        )
     payment = await _lock_payment(payment_id, session)
     if payment is None:
         raise BaseAPIException(status_code=404, detail="Payment not found", error_code="PAYMENT_NOT_FOUND")

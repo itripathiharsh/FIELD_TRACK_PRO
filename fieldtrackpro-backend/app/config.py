@@ -130,6 +130,13 @@ class Settings(BaseSettings):
     # an assertion is running (FT-021).
     enable_scheduler: bool = True
 
+    # Mirrors the sync agent's own TALLY_WRITEBACK_ENABLED. When False (the
+    # accountant keys receipts into Tally by hand), verifying a collection does
+    # not enqueue a write-back job that no agent would ever process; the
+    # collection is confirmed instead by linking it to the receipt the agent
+    # imports from Tally (payment_reconciliation_service).
+    tally_writeback_enabled: bool = False
+
     # Firebase
     firebase_credentials_path: str = ""
 

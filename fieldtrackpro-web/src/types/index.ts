@@ -1448,8 +1448,11 @@ export interface MonthlyReportingPeriod {
   total_outlets: number;
   total_sales: string;
   total_collection: string;
-  total_market_os: string;
-  total_overdue_gt_90: string;
+  /** null when the month has no balance snapshot (see outstanding_available / outstanding_note). */
+  total_market_os: string | null;
+  total_overdue_gt_90: string | null;
+  outstanding_available?: boolean;
+  outstanding_note?: string | null;
   opened_at?: string | null;
   finalized_at?: string | null;
   finalized_by?: string | null;
@@ -1473,7 +1476,9 @@ export interface MonthlyPeriodReviewSummary {
   collections_verified_amount: string;
   collections_pending_amount: string;
   collections_count: number;
-  total_outstanding: string;
+  /** null when the month has no balance snapshot. */
+  total_outstanding: string | null;
+  outstanding_available?: boolean;
   total_invoices_count: number;
   total_outlets_count: number;
   can_finalize: boolean;

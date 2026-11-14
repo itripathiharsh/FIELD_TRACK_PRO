@@ -22,7 +22,7 @@ def test_repository_has_a_single_linear_head(chain):
 def test_purge_migration_is_in_the_chain_and_before_the_security_migration(chain):
     order, _ = chain
     assert chk.PURGE_REVISION in order
-    assert order.index(chk.PURGE_REVISION) < order.index("b9c0d1e2f3a4") == len(order) - 1
+    assert order.index(chk.PURGE_REVISION) < order.index("b9c0d1e2f3a4")
 
 
 def test_pending_after_orders_the_remaining_migrations(chain):

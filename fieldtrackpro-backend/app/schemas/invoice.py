@@ -7,20 +7,10 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from app.models.invoice import InvoiceSource
 from app.services.aging_service import AgingStatus, MisBucket, PaymentStatusLabel
-
-
-class InvoiceCreate(BaseModel):
-    customer_id: uuid.UUID
-    invoice_number: str = Field(min_length=1, max_length=100)
-    invoice_date: date
-    due_date: date | None = None
-    amount: Decimal = Field(gt=0)
-    brand: str | None = Field(default=None, max_length=100)
-    source_reference: str | None = Field(default=None, max_length=255)
 
 
 class InvoiceRead(BaseModel):
@@ -28,6 +18,7 @@ class InvoiceRead(BaseModel):
     customer_id: uuid.UUID
     invoice_number: str
     invoice_date: date
+    financial_year: str | None = None
     due_date: date | None
     amount: Decimal
     brand: str | None

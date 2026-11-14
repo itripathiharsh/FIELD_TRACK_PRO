@@ -12,18 +12,21 @@ Per brand (and, summed, per outlet) the position is:
 
 where
   baseline_invoiced   OutletFinancialSnapshot.sales (Tally baseline; summed over snapshots)
-  invoiced            baseline_invoiced + sum(live Invoice.amount)
+  invoiced            baseline_invoiced + sum(live TALLY Invoice.amount)
   baseline_collected  OutletFinancialSnapshot.collection (Tally baseline)
   paid_in_tally       baseline_collected + POSTED payments (receipt in Tally)
   outstanding         max(LATEST snapshot.market_outstanding per brand + live invoice remaining
-                          - POSTED on-account (unapplied) MANUAL credit, 0)
+                          - POSTED on-account (unapplied) credit, 0) - field
+                          collections and Tally receipts without bill-wise allocation
   opening_balance     DERIVED = outstanding - invoiced + paid_in_tally, i.e. the
                       Tally baseline carried forward into the period. It also
                       absorbs `advance_credit` (over-payment that cannot push
                       outstanding below zero): carried-forward balance excluding
                       advance = opening_balance - advance_credit.
   awaiting            verified MANUAL payments not yet confirmed in Tally;
-                      NOT in paid_in_tally, NOT in outstanding.
+                      NOT in paid_in_tally, NOT in outstanding. A collection
+                      linked to an imported Tally receipt is in neither: the
+                      receipt itself is the posted money (payment_tally.py).
 
 Ageing buckets (always sum to `outstanding`):
   normal / warning / overdue   live invoice remaining by
@@ -57,9 +60,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.datetime_utils import get_ist_now
 from app.models.customer_brand import CustomerBrand
-from app.models.invoice import Invoice
+from app.models.invoice import Invoice, InvoiceSource
 from app.models.outlet_financial_snapshot import OutletFinancialSnapshot
-from app.models.payment import Payment, PaymentBrandAllocation, PaymentSource, PaymentStatus
+from app.models.payment import Payment, PaymentBrandAllocation, PaymentStatus
 from app.models.payment_invoice_allocation import PaymentInvoiceAllocation
 from app.services import brand_service, payment_tally
 from app.services.aging_service import AgingStatus, compute_invoice_aging
@@ -117,7 +120,7 @@ class BrandInputs:
     invoices: list[InvoiceLine] = field(default_factory=list)
     posted_payments: Decimal = ZERO       # POSTED payment shares for this brand
     awaiting: Decimal = ZERO              # verified, not yet in Tally
-    on_account_credit: Decimal = ZERO     # unapplied part of POSTED MANUAL payments
+    on_account_credit: Decimal = ZERO     # unapplied part of POSTED payments (field or Tally)
 
 
 @dataclass(frozen=True)
@@ -330,8 +333,9 @@ async def load_outlet_positions(
             CustomerBrand.customer_id.in_(customer_ids), CustomerBrand.is_active.is_(True)
         )
     )).all()
+    # Sales invoices come only from Tally; any other invoice row is not part of the books.
     invoices = (await session.execute(
-        select(Invoice).where(Invoice.customer_id.in_(customer_ids))
+        select(Invoice).where(Invoice.customer_id.in_(customer_ids), Invoice.source == InvoiceSource.TALLY)
     )).scalars().all()
     payments = (await session.execute(
         select(Payment).where(Payment.customer_id.in_(customer_ids), Payment.status == PaymentStatus.VERIFIED)
@@ -339,7 +343,7 @@ async def load_outlet_positions(
 
     jobs = await payment_tally.load_jobs(session, [p.id for p in payments])
     posted = [p for p in payments if payment_tally.is_posted(p, jobs.get(p.id))]
-    awaiting = [p for p in payments if not payment_tally.is_posted(p, jobs.get(p.id))]
+    awaiting = [p for p in payments if payment_tally.is_awaiting(p, jobs.get(p.id))]
     paid_by_invoice = await payment_tally.posted_paid_by_invoice(session, [i.id for i in invoices])
 
     pay_ids = [p.id for p in payments]
@@ -371,8 +375,10 @@ async def load_outlet_positions(
         return [("", p.amount)]
 
     def unapplied_credit(p: Payment) -> Decimal:
-        if p.source != PaymentSource.MANUAL:
-            return ZERO
+        # On-account money (posted, not tied to a bill) still lowers the outlet's
+        # balance, as it does in Tally's ledger - for field collections and for
+        # Tally receipts that carry no bill-wise allocation alike. Nothing is
+        # guessed onto individual invoices.
         applied = applied_by_payment.get(p.id)
         if applied is None:
             applied = p.amount if p.invoice_id is not None else ZERO

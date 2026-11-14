@@ -21,7 +21,7 @@ import pytest_asyncio
 from app.database import AsyncSessionLocal
 from app.models.customer import Customer
 from app.models.employee import Employee
-from app.models.invoice import Invoice
+from app.models.invoice import Invoice, InvoiceSource
 from app.models.outlet_financial_snapshot import OutletFinancialSnapshot
 from app.models.payment import Payment, PaymentBrandAllocation, PaymentMethod, PaymentSource, PaymentStatus
 from app.models.user import Role, User
@@ -155,7 +155,7 @@ async def world():
 
         def inv(c, brand, amount, age_days, no):
             i = Invoice(customer_id=c.id, invoice_number=f"PP-{tag}-{no}", invoice_date=today - timedelta(days=age_days),
-                        amount=D(amount), brand=brand, created_by=admin.id)
+                        amount=D(amount), brand=brand, source=InvoiceSource.TALLY, created_by=admin.id)
             s.add(i)
             return i
 

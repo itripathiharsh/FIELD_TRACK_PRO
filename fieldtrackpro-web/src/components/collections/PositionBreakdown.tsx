@@ -32,7 +32,7 @@ export interface PositionData extends PositionFields {
 
 const TERMS = {
   opening: 'Balance carried forward from Tally before the app started tracking invoices (the baseline).',
-  invoiced: 'Total billed to this account: Tally baseline sales plus invoices created in the app.',
+  invoiced: 'Total billed to this account: Tally baseline sales plus the Tally invoices synced since.',
   paid: 'Money already received AND posted to Tally (Tally collection plus payments confirmed in Tally). Verified payments not yet in Tally are not included.',
   outstanding: 'What the customer still owes right now. Equals Opening + Invoiced − Paid in Tally.',
 };

@@ -17,6 +17,7 @@ import pytest_asyncio
 from httpx import AsyncClient
 
 from tests.integration.conftest import create_visit, requires_db
+from tests.invoice_helpers import create_tally_invoice
 
 pytestmark = [requires_db, pytest.mark.integration, pytest.mark.asyncio]
 
@@ -36,27 +37,15 @@ async def visit_id(client, admin_headers, seeded_world, created_visits) -> str:
 async def _create_invoice(
     client, admin_headers, customer_id, number, days_ago, amount, brand=None, created_invoices=None
 ):
-    resp = await client.post(
-        "/api/v1/invoices",
-        json={
-            "customer_id": customer_id,
-            "invoice_number": number,
-            "invoice_date": _iso_days_ago(days_ago),
-            "amount": amount,
-            "brand": brand,
-        },
-        headers=admin_headers,
+    """A Tally invoice (sales invoices only come from Tally; there is no manual entry)."""
+    return await create_tally_invoice(
+        customer_id, number, date.today() - timedelta(days=days_ago), amount, brand, created_invoices
     )
-    assert resp.status_code == 201, resp.text
-    body = resp.json()
-    if created_invoices is not None:
-        created_invoices.append(body["id"])
-    return body
 
 
-# -- Invoice creation + aging --------------------------------------------------
+# -- Invoice aging + no manual entry -------------------------------------------
 
-async def test_admin_can_create_invoice_with_correct_aging(
+async def test_tally_invoice_has_correct_aging(
     client: AsyncClient, admin_headers, seeded_world, created_invoices
 ):
     inv = await _create_invoice(
@@ -67,6 +56,8 @@ async def test_admin_can_create_invoice_with_correct_aging(
     assert inv["days_outstanding"] == 5
     assert inv["remaining_amount"] == "10000.00"
     assert inv["mis_bucket"] == "0-15"
+    fetched = await client.get(f"/api/v1/invoices/{inv['id']}", headers=admin_headers)
+    assert fetched.status_code == 200 and fetched.json()["source"] == "TALLY"
 
 
 @pytest.mark.parametrize(
@@ -83,49 +74,18 @@ async def test_invoice_aging_boundaries_via_api(
     assert inv["aging_status"] == expected_status
 
 
-async def test_employee_cannot_create_invoice(client: AsyncClient, employee_headers, seeded_world):
+@pytest.mark.parametrize("who", ["admin", "employee"])
+async def test_no_manual_invoice_entry(client: AsyncClient, admin_headers, employee_headers, seeded_world, who):
+    """Sales invoices come only from Tally: there is no endpoint to create one, for anyone."""
     resp = await client.post(
         "/api/v1/invoices",
         json={
-            "customer_id": seeded_world["customer_id"],
-            "invoice_number": "__itest__SHOULD-FAIL",
-            "invoice_date": _iso_days_ago(1),
-            "amount": "100.00",
+            "customer_id": seeded_world["customer_id"], "invoice_number": "__itest__SHOULD-FAIL",
+            "invoice_date": _iso_days_ago(1), "amount": "100.00",
         },
-        headers=employee_headers,
+        headers=admin_headers if who == "admin" else employee_headers,
     )
-    assert resp.status_code == 403
-
-
-async def test_duplicate_invoice_number_for_same_outlet_rejected(
-    client: AsyncClient, admin_headers, seeded_world, created_invoices
-):
-    number = f"__itest__DUP-{uuid.uuid4().hex[:8]}"
-    first = await _create_invoice(
-        client, admin_headers, seeded_world["customer_id"], number,
-        days_ago=1, amount="500.00", created_invoices=created_invoices,
-    )
-    assert first
-    resp = await client.post(
-        "/api/v1/invoices",
-        json={
-            "customer_id": seeded_world["customer_id"], "invoice_number": number,
-            "invoice_date": _iso_days_ago(1), "amount": "500.00",
-        },
-        headers=admin_headers,
-    )
-    assert resp.status_code == 409
-
-
-async def test_unauthenticated_cannot_create_invoice(client: AsyncClient, seeded_world):
-    resp = await client.post(
-        "/api/v1/invoices",
-        json={
-            "customer_id": seeded_world["customer_id"], "invoice_number": "x",
-            "invoice_date": _iso_days_ago(1), "amount": "1.00",
-        },
-    )
-    assert resp.status_code == 401
+    assert resp.status_code == 404
 
 
 # -- Outlet account visibility -------------------------------------------------

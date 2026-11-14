@@ -8,7 +8,7 @@ from sqlalchemy import select
 
 from app.database import AsyncSessionLocal
 from app.models.customer import Customer
-from app.models.invoice import Invoice
+from app.models.invoice import Invoice, InvoiceSource
 from app.models.outlet_financial_snapshot import OutletFinancialSnapshot
 from app.models.payment import Payment, PaymentBrandAllocation, PaymentMethod, PaymentStatus
 from app.models.user import Role, User
@@ -248,7 +248,8 @@ async def test_headline_outstanding_equals_sum_of_brands_with_baseline_and_invoi
         session.add(
             Invoice(
                 customer_id=cust.id, invoice_number=f"INV-HL-{uuid.uuid4().hex[:6]}",
-                invoice_date=date.today(), amount=Decimal("7000.00"), brand="VU", created_by=admin_user.id,
+                invoice_date=date.today(), amount=Decimal("7000.00"), brand="VU",
+                source=InvoiceSource.TALLY, created_by=admin_user.id,
             )
         )
         await session.commit()
@@ -289,7 +290,8 @@ async def test_collections_overview_outstanding_matches_account_headline():
         session.add(
             Invoice(
                 customer_id=cust.id, invoice_number=f"INV-CO-{uuid.uuid4().hex[:6]}",
-                invoice_date=date.today(), amount=Decimal("4000.00"), brand="Zebronics", created_by=admin_user.id,
+                invoice_date=date.today(), amount=Decimal("4000.00"), brand="Zebronics",
+                source=InvoiceSource.TALLY, created_by=admin_user.id,
             )
         )
         await session.commit()
