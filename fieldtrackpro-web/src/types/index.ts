@@ -506,8 +506,36 @@ export type InvoiceSource = 'MANUAL' | 'EXCEL_IMPORT' | 'TALLY';
 export type PaymentStatusLabel = 'UNPAID' | 'PARTIALLY_PAID' | 'PAID';
 export type AgingStatus = 'NORMAL' | 'WARNING' | 'OVERDUE' | 'PAID';
 export type MisBucket = '0-15' | '16-30' | '31-60' | '61-90' | '90+';
-export type PaymentMethod = 'CASH' | 'CHEQUE' | 'ONLINE';
+/** UNSPECIFIED: a Tally receipt whose voucher states no mode (never chosen for a field collection). */
+export type PaymentMethod = 'CASH' | 'CHEQUE' | 'ONLINE' | 'UNSPECIFIED';
 export type PaymentStatus = 'PENDING_VERIFICATION' | 'VERIFIED' | 'REJECTED';
+
+/** `GET /api/v1/integrations/tally/reconciliation` (admin): FieldTrack vs Tally per debtor. */
+export interface TallyReconciliationDifference {
+  customer_id: string;
+  name: string;
+  outlet_code: string | null;
+  opening: string;
+  invoiced: string;
+  adjustments: string;
+  received: string;
+  closing: string;
+  difference: string;
+  closing_at: string | null;
+}
+
+export interface TallyReconciliation {
+  totals: Record<'opening' | 'invoiced' | 'adjustments' | 'received' | 'closing' | 'open_bills' | 'difference', string>;
+  counts: { debtors: number; invoices: number; receipts: number; adjustments: number; open_bills: number };
+  debtors_reconciled: number;
+  debtors_with_difference: number;
+  differences: TallyReconciliationDifference[];
+  unallocated_total: string;
+  retired: { kind: string; reason: string | null; count: number; amount: string }[];
+  field_collections_linked_to_retired_receipt: number;
+  non_debtor_customers: number;
+  latest_snapshots: Record<string, string | number | null>[];
+}
 
 export interface TallyIntegrationStatus {
   is_connected: boolean;
@@ -640,6 +668,10 @@ export interface Payment {
   cheque_bank_name: string | null;
   utr_reference: string | null;
   notes: string | null;
+  /** Tally receipt details exactly as the voucher states them. */
+  tally_voucher_type?: string | null;
+  tally_transaction_type?: string | null;
+  narration?: string | null;
   status: PaymentStatus;
   rejection_reason: string | null;
   reviewed_by: string | null;
@@ -687,6 +719,15 @@ export interface PositionFields {
   advance_credit?: string;
   ageing?: AgeingBreakdown;
   reconciles?: boolean;
+  /** Net Tally credit/debit notes, journals etc. (+ increases what is owed). */
+  adjustments?: string;
+  /** TALLY: outstanding = Tally's own open bills + unallocated ledger balance. */
+  balance_source?: 'TALLY' | 'BASELINE';
+  balance_as_of?: string | null;
+  tally_opening_balance?: string | null;
+  tally_closing_balance?: string | null;
+  /** Tally opening + invoiced + adjustments - paid - Tally closing; must be 0.00. */
+  tally_difference?: string | null;
 }
 
 export interface BrandSummary extends PositionFields {

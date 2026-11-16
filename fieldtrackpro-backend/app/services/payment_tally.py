@@ -347,7 +347,46 @@ async def posted_paid_by_invoice(
     ).all()
     for inv_id, amt in direct_rows:
         out[inv_id] += amt or Decimal("0.00")
+    await _apply_tally_open_bills(session, ids, out)
     return out
+
+
+async def _apply_tally_open_bills(session: AsyncSession, ids: list[uuid.UUID], out: dict[uuid.UUID, Decimal]) -> None:
+    """Tally-balance mode: for a Tally invoice of a Tally debtor, what is still open is
+    Tally's own pending amount for its bill in the latest Bills Receivable snapshot
+    (0 when the bill is no longer open), so settled = amount - pending. Invoices
+    keyed in after that snapshot, or without a bill name, keep the allocation figure."""
+    from app.models.customer import Customer
+    from app.models.invoice import Invoice, InvoiceSource
+    from app.models.tally_ledger import TallyOpenBill, TallySnapshotRun
+
+    run = (await session.execute(
+        select(TallySnapshotRun).where(TallySnapshotRun.kind == "BILLS", TallySnapshotRun.status == "COMPLETE")
+        .order_by(TallySnapshotRun.as_of_date.desc(), TallySnapshotRun.completed_at.desc()).limit(1)
+    )).scalar_one_or_none()
+    if run is None:
+        return
+    rows = (await session.execute(
+        select(Invoice.id, Invoice.customer_id, Invoice.tally_bill_name, Invoice.amount)
+        .join(Customer, Customer.id == Invoice.customer_id)
+        .where(
+            Invoice.id.in_(ids), Invoice.source == InvoiceSource.TALLY, Invoice.tally_bill_name.is_not(None),
+            Invoice.created_at <= run.started_at, Customer.tally_is_debtor.is_(True),
+        )
+    )).all()
+    if not rows:
+        return
+    pending: dict[tuple[uuid.UUID, str], Decimal] = {}
+    for cid, name, amt in (await session.execute(
+        select(TallyOpenBill.customer_id, TallyOpenBill.bill_name, func.sum(TallyOpenBill.pending_amount))
+        .where(TallyOpenBill.as_of_date == run.as_of_date,
+               TallyOpenBill.customer_id.in_({r.customer_id for r in rows}))
+        .group_by(TallyOpenBill.customer_id, TallyOpenBill.bill_name)
+    )).all():
+        pending[(cid, name)] = amt or Decimal("0.00")
+    for inv_id, cid, name, amount in rows:
+        still_open = max(min(pending.get((cid, name), Decimal("0.00")), amount), Decimal("0.00"))
+        out[inv_id] = amount - still_open
 
 
 async def awaiting_by_invoice(

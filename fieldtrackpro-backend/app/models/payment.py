@@ -5,6 +5,7 @@ from typing import Optional
 from datetime import date, datetime
 from decimal import Decimal
 from sqlalchemy import (
+    BigInteger,
     Date,
     DateTime,
     Enum,
@@ -15,6 +16,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
@@ -23,6 +25,9 @@ class PaymentMethod(str, enum.Enum):
     CASH = "CASH"
     CHEQUE = "CHEQUE"
     ONLINE = "ONLINE"
+    # Tally receipt whose voucher states no transaction type and whose money did not
+    # go to a cash ledger: the mode is unknown and is not guessed.
+    UNSPECIFIED = "UNSPECIFIED"
 
 
 class PaymentStatus(str, enum.Enum):
@@ -35,6 +40,8 @@ class PaymentSource(str, enum.Enum):
     MANUAL = "MANUAL"
     EXCEL_IMPORT = "EXCEL_IMPORT"
     TALLY = "TALLY"
+    # A Tally receipt Tally no longer has as a customer receipt (kept for history).
+    TALLY_RETIRED = "TALLY_RETIRED"
 
 
 class Payment(Base):
@@ -103,6 +110,21 @@ class Payment(Base):
     # import traceability and idempotency (re-import updates the same row).
     source_reference: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     rejection_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Tally v2: the voucher this row comes from (one voucher can yield several rows,
+    # one per debtor ledger), its type, Tally's change counter and narration. A row
+    # Tally no longer has (cancelled, optional, deleted, changed into another type or
+    # party) is RETIRED: source -> TALLY_RETIRED (so it drops out of every TALLY money
+    # query), never deleted.
+    tally_voucher_guid: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    tally_voucher_type: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    tally_alter_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    narration: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    tally_retired_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    tally_retired_reason: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    # Raw bank-allocation transaction type (Cash, Cheque, Cheque/DD, Inter Bank Transfer ...)
+    # and every bank allocation line exactly as Tally gave it.
+    tally_transaction_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    tally_bank_details: Mapped[Optional[list[dict]]] = mapped_column(JSONB, nullable=True)
     reviewed_by: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

@@ -43,7 +43,20 @@ from app.schemas.tally_writeback import (
     TallyWritebackFailRequest,
     TallyWritebackJobRead,
 )
-from app.services import tally_audit_service, tally_sync_service, tally_writeback_service
+from app.schemas.tally_sync_v2 import (
+    BillsSyncBatch,
+    LedgerSyncBatch,
+    ManifestSyncBatch,
+    V2SyncResult,
+    VoucherSyncBatch,
+)
+from app.services import (
+    tally_audit_service,
+    tally_reconciliation,
+    tally_sync_service,
+    tally_v2_sync,
+    tally_writeback_service,
+)
 
 
 router = APIRouter(prefix="/integrations/tally", tags=["tally-integration"])
@@ -192,6 +205,43 @@ async def sync_payments(
 ):
     """Idempotently sync payment / receipt records from Tally."""
     return await tally_sync_service.sync_payments(agent, batch, session)
+
+
+# ---------------------------------------------------------------------------
+# Agent 2.0 sync (ledgers, every debtor voucher, Bills Receivable, GUID manifest)
+# ---------------------------------------------------------------------------
+
+@router.post("/sync/ledgers", response_model=V2SyncResult)
+async def sync_ledgers_v2(batch: LedgerSyncBatch, agent: AuthenticatedAgent, session: DbSession):
+    """Ledger masters (debtors in full, other ledgers by GUID/group) and balance snapshots."""
+    return await tally_v2_sync.sync_ledgers(agent, batch, session)
+
+
+@router.post("/sync/vouchers", response_model=V2SyncResult)
+async def sync_vouchers_v2(batch: VoucherSyncBatch, agent: AuthenticatedAgent, session: DbSession):
+    """Changed vouchers with their debtor lines; classified into invoices, receipts, adjustments."""
+    return await tally_v2_sync.sync_vouchers(agent, batch, session)
+
+
+@router.post("/sync/bills", response_model=V2SyncResult)
+async def sync_bills_v2(batch: BillsSyncBatch, agent: AuthenticatedAgent, session: DbSession):
+    """Tally's Bills Receivable report as on a date (chunked snapshot)."""
+    return await tally_v2_sync.sync_bills(agent, batch, session)
+
+
+@router.post("/sync/manifest", response_model=V2SyncResult)
+async def sync_manifest_v2(batch: ManifestSyncBatch, agent: AuthenticatedAgent, session: DbSession):
+    """Every voucher GUID in a date window; synced rows absent from it are retired."""
+    return await tally_v2_sync.sync_manifest(agent, batch, session)
+
+
+@router.get("/reconciliation", dependencies=[AdminOnly])
+async def get_tally_reconciliation(
+    session: DbSession,
+    limit: int = Query(200, ge=1, le=5000),
+):
+    """FieldTrack vs Tally, per debtor: opening + synced movements - closing (must be 0)."""
+    return await tally_reconciliation.build_report(session, limit=limit)
 
 
 # ---------------------------------------------------------------------------

@@ -171,7 +171,7 @@ async def get_integration_status(session: AsyncSession) -> TallyIntegrationStatu
     is_tally_online = is_agent_online and (tally_status_val in ["RUNNING", "ONLINE", "CONNECTED"])
 
     if is_tally_online:
-        msg = "TallyPrime live & bi-directional sync operational."
+        msg = "TallyPrime online; read-only sync operational (no write-back)."
     elif is_agent_online:
         msg = "Sync Agent online, but local TallyPrime application is closed / port 9000 unreachable."
     else:

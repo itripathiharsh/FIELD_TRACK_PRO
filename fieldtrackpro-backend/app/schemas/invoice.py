@@ -24,6 +24,8 @@ class InvoiceRead(BaseModel):
     brand: str | None
     source: InvoiceSource
     source_reference: str | None
+    tally_bill_name: str | None = None
+    tally_voucher_type: str | None = None
     created_by: uuid.UUID
     created_at: datetime
 

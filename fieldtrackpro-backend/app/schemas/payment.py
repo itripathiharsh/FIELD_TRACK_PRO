@@ -72,6 +72,8 @@ class PaymentCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_method_specific_fields(self) -> "PaymentCreate":
+        if self.payment_method == PaymentMethod.UNSPECIFIED:
+            raise ValueError("payment_method must be CASH, CHEQUE or ONLINE for a field collection")
         if self.payment_method == PaymentMethod.CHEQUE and not self.cheque_number:
             raise ValueError("cheque_number is required for CHEQUE payments")
         if self.payment_method == PaymentMethod.ONLINE and not self.utr_reference:
@@ -204,6 +206,10 @@ class PaymentRead(BaseModel):
     source: PaymentSource = PaymentSource.MANUAL
     source_reference: str | None = None
     rejection_reason: str | None
+    # Tally receipt details exactly as the voucher states them (None when Tally has none).
+    tally_voucher_type: str | None = None
+    tally_transaction_type: str | None = None
+    narration: str | None = None
     reviewed_by: uuid.UUID | None
     reviewed_at: datetime | None
     created_by: uuid.UUID

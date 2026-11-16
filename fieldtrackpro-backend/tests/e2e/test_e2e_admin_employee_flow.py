@@ -36,6 +36,17 @@ from tests.integration.conftest import (  # noqa: E402
 
 pytestmark = pytest.mark.skipif(not DB_AVAILABLE, reason="needs migrated PostGIS DB (fieldtrackpro_e2e)")
 
+
+@pytest.fixture(autouse=True, scope="module")
+def _writeback_queue_on():
+    """This flow exercises the write-back queue mechanics, which production keeps OFF by
+    default (TALLY_WRITEBACK_ENABLED=false); switch it on explicitly for this module only."""
+    from app.config import settings
+    old = settings.tally_writeback_enabled
+    settings.tally_writeback_enabled = True
+    yield
+    settings.tally_writeback_enabled = old
+
 API = "/api/v1"
 PW = "E2eFlow!Pass2026"
 RUN = uuid.uuid4().hex[:8]

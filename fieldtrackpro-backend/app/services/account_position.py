@@ -42,6 +42,22 @@ Ageing buckets (always sum to `outstanding`):
   baseline_overdue, overdue, baseline_current, warning, normal.
   overdue_amount = overdue + baseline_overdue.
 
+Tally-balance mode (agent 2.0; used for an outlet that is a Tally debtor with a
+ledger balance, once a complete Bills Receivable snapshot exists - otherwise the
+baseline model above applies unchanged):
+  outstanding        Tally's own open bills (latest Bills Receivable snapshot) per
+                     brand, plus - on the Unbranded row - the ledger's unallocated
+                     remainder (Tally closing balance - sum of its open bills)
+  ageing             each open bill by its bill date (same 21/26-day rule); the
+                     unallocated remainder is unaged (baseline_current); open credit
+                     bills and credit remainder are netted oldest first as above
+  invoiced / paid    TALLY invoices / POSTED payments dated on or after the ledger's
+                     opening-balance date (Tally's current period start)
+  adjustments        credit / debit notes, journals ... (TallyLedgerAdjustment)
+  opening_balance    derived per brand: outstanding - invoiced - adjustments + paid
+  outlet check       tally_difference = Tally opening + invoiced + adjustments - paid
+                     - Tally closing; `reconciles` is False unless it is 0.00.
+
 Both the single-outlet path (account_service) and the bulk path
 (collections_service) call `load_outlet_positions`, which batches the queries
 and then calls the same pure `compute_brand_position` / `sum_positions`.
@@ -51,7 +67,7 @@ from __future__ import annotations
 import uuid
 from collections import defaultdict
 from dataclasses import dataclass, field, replace
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Iterable
 
@@ -59,13 +75,15 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.datetime_utils import get_ist_now
+from app.models.customer import Customer
 from app.models.customer_brand import CustomerBrand
 from app.models.invoice import Invoice, InvoiceSource
 from app.models.outlet_financial_snapshot import OutletFinancialSnapshot
 from app.models.payment import Payment, PaymentBrandAllocation, PaymentStatus
 from app.models.payment_invoice_allocation import PaymentInvoiceAllocation
+from app.models.tally_ledger import ADJUSTMENT_ACTIVE, TallyLedgerAdjustment, TallyOpenBill, TallySnapshotRun
 from app.services import brand_service, payment_tally
-from app.services.aging_service import AgingStatus, compute_invoice_aging
+from app.services.aging_service import AgingStatus, classify_age_days, compute_invoice_aging
 
 ZERO = Decimal("0.00")
 _CENT = Decimal("0.01")
@@ -138,6 +156,12 @@ class Position:
     max_days_outstanding: int = 0
     collection_status: AgingStatus = AgingStatus.PAID
     reconciles: bool = True
+    adjustments: Decimal = ZERO
+    balance_source: str = "BASELINE"          # BASELINE | TALLY
+    balance_as_of: datetime | None = None
+    tally_opening_balance: Decimal | None = None   # receivable sign (+ = owed)
+    tally_closing_balance: Decimal | None = None
+    tally_difference: Decimal | None = None
 
 
 def _q(v: Decimal) -> Decimal:
@@ -158,7 +182,7 @@ def derive_status(outstanding: Decimal, overdue: Decimal, ageing: Ageing) -> Agi
 def check_reconciles(p: Position) -> bool:
     """Derived self-check: the arithmetic adds up and every figure is sane."""
     return (
-        p.opening_balance + p.invoiced - p.paid_in_tally == p.outstanding
+        p.opening_balance + p.invoiced + p.adjustments - p.paid_in_tally == p.outstanding
         and p.ageing.total == p.outstanding
         and p.outstanding >= 0
         and 0 <= p.overdue <= p.outstanding
@@ -229,6 +253,72 @@ def compute_brand_position(i: BrandInputs) -> Position:
     return replace(pos, reconciles=check_reconciles(pos))
 
 
+@dataclass
+class TallyBrandInputs:
+    """Raw facts for one brand of one outlet in Tally-balance mode."""
+
+    bills: list[InvoiceLine] = field(default_factory=list)  # remaining = Tally pending (signed)
+    residue: Decimal = ZERO          # unallocated ledger remainder (Unbranded row only)
+    invoiced: Decimal = ZERO
+    adjustments: Decimal = ZERO
+    posted_payments: Decimal = ZERO
+    awaiting: Decimal = ZERO
+
+
+def compute_tally_brand_position(t: TallyBrandInputs) -> Position:
+    buckets = {name: ZERO for name in _NETTING_ORDER}
+    credits = ZERO
+    max_days = 0
+    for line in t.bills:
+        if line.remaining < 0:
+            credits += -line.remaining
+            continue
+        if line.remaining == 0:
+            continue
+        max_days = max(max_days, line.days_outstanding)
+        if line.days_outstanding < 0:
+            buckets["baseline_current"] += line.remaining  # undated bill: unaged
+        elif line.aging_status == AgingStatus.OVERDUE:
+            buckets["overdue"] += line.remaining
+        elif line.aging_status == AgingStatus.WARNING:
+            buckets["warning"] += line.remaining
+        else:
+            buckets["normal"] += line.remaining
+    if t.residue > 0:
+        buckets["baseline_current"] += t.residue
+    else:
+        credits += -t.residue
+    gross = sum(buckets.values(), ZERO)
+    raw = gross - credits
+    outstanding = max(raw, ZERO)
+    advance_credit = max(-raw, ZERO)
+    reduce = gross - outstanding
+    for name in _NETTING_ORDER:
+        if reduce <= 0:
+            break
+        take = min(max(buckets[name], ZERO), reduce)
+        buckets[name] -= take
+        reduce -= take
+    buckets["baseline_current"] += outstanding - sum(buckets.values(), ZERO)
+    ageing = Ageing(**buckets)
+    overdue = min(ageing.overdue + ageing.baseline_overdue, outstanding)
+    pos = Position(
+        opening_balance=outstanding - t.invoiced - t.adjustments + t.posted_payments,
+        invoiced=t.invoiced,
+        paid_in_tally=t.posted_payments,
+        verified_awaiting_tally=t.awaiting,
+        outstanding=outstanding,
+        overdue=overdue,
+        advance_credit=advance_credit,
+        ageing=ageing,
+        max_days_outstanding=max_days,
+        collection_status=derive_status(outstanding, overdue, ageing),
+        adjustments=t.adjustments,
+        balance_source="TALLY",
+    )
+    return replace(pos, reconciles=check_reconciles(pos))
+
+
 def sum_positions(positions: Iterable[Position]) -> Position:
     """Outlet (or any group) position = exact sum of its brand positions."""
     ps = list(positions)
@@ -250,6 +340,8 @@ def sum_positions(positions: Iterable[Position]) -> Position:
         ageing=ageing,
         max_days_outstanding=max((p.max_days_outstanding for p in ps), default=0),
         collection_status=derive_status(outstanding, overdue, ageing),
+        adjustments=sum((p.adjustments for p in ps), ZERO),
+        balance_source="TALLY" if ps and all(p.balance_source == "TALLY" for p in ps) else "BASELINE",
     )
     return replace(total, reconciles=all(p.reconciles for p in ps) and check_reconciles(total))
 
@@ -270,6 +362,12 @@ def position_fields(p: Position) -> dict:
             "baseline_overdue": p.ageing.baseline_overdue,
         },
         "reconciles": p.reconciles,
+        "adjustments": p.adjustments,
+        "balance_source": p.balance_source,
+        "balance_as_of": p.balance_as_of,
+        "tally_opening_balance": p.tally_opening_balance,
+        "tally_closing_balance": p.tally_closing_balance,
+        "tally_difference": p.tally_difference,
     }
 
 
@@ -476,4 +574,127 @@ async def load_outlet_positions(
             invoice_settled_total=settled.get(cid, ZERO),
             posted_payment_ids=posted_ids.get(cid, set()),
         )
+
+    await _apply_tally_balance_mode(
+        session, customer_ids, today, out, invoices, posted, awaiting, shares, display, assigned, paid_by_invoice,
+    )
     return out
+
+
+async def _apply_tally_balance_mode(
+    session, customer_ids, today, out, invoices, posted, awaiting, shares, display, assigned, paid_by_invoice,
+) -> None:
+    """Replace the baseline position by the Tally-balance position for every outlet
+    that is a Tally debtor with a ledger balance, once open bills exist."""
+    run = (await session.execute(
+        select(TallySnapshotRun).where(TallySnapshotRun.kind == "BILLS", TallySnapshotRun.status == "COMPLETE")
+        .order_by(TallySnapshotRun.as_of_date.desc(), TallySnapshotRun.completed_at.desc()).limit(1)
+    )).scalar_one_or_none()
+    if run is None:
+        return
+    custs = {c.id: c for c in (await session.execute(
+        select(Customer).where(
+            Customer.id.in_(customer_ids), Customer.tally_is_debtor.is_(True),
+            Customer.tally_closing_balance_at.is_not(None),
+        )
+    )).scalars()}
+    if not custs:
+        return
+    ids = list(custs)
+    bills = (await session.execute(
+        select(TallyOpenBill).where(TallyOpenBill.customer_id.in_(ids), TallyOpenBill.as_of_date == run.as_of_date)
+    )).scalars().all()
+    adjustments = (await session.execute(
+        select(TallyLedgerAdjustment).where(
+            TallyLedgerAdjustment.customer_id.in_(ids), TallyLedgerAdjustment.state == ADJUSTMENT_ACTIVE
+        )
+    )).scalars().all()
+
+    def since_ok(cid, d) -> bool:
+        since = custs[cid].tally_opening_balance_as_of
+        return since is None or d >= since
+
+    brand_of_bill: dict[tuple[uuid.UUID, str], str | None] = {}
+    for inv in invoices:
+        if inv.customer_id in custs and inv.tally_bill_name:
+            brand_of_bill.setdefault((inv.customer_id, inv.tally_bill_name), inv.brand)
+
+    t_inputs: dict[uuid.UUID, dict[str, TallyBrandInputs]] = defaultdict(dict)
+    t_names: dict[uuid.UUID, dict[str, str]] = defaultdict(dict)
+    t_meta: dict[uuid.UUID, dict[str, dict]] = defaultdict(dict)
+
+    def entry(cid, raw) -> TallyBrandInputs:
+        k = brand_key(raw)
+        if k not in t_inputs[cid]:
+            t_inputs[cid][k] = TallyBrandInputs()
+            t_names[cid][k] = display(raw)
+            t_meta[cid][k] = {"invoice_count": 0, "payment_count": 0, "latest_invoice": None, "latest_payment": None}
+        return t_inputs[cid][k]
+
+    for cid in ids:
+        entry(cid, None)  # the Unbranded row carries the unallocated remainder
+    for cid, b in assigned:
+        if cid in custs and b:
+            entry(cid, b)
+    bills_total: dict[uuid.UUID, Decimal] = defaultdict(lambda: ZERO)
+    for b in bills:
+        days = (today - b.bill_date).days if b.bill_date else -1
+        status = classify_age_days(max(days, 0))
+        entry(b.customer_id, brand_of_bill.get((b.customer_id, b.bill_name))).bills.append(
+            InvoiceLine(b.pending_amount, b.pending_amount, days, status)
+        )
+        bills_total[b.customer_id] += b.pending_amount
+    for inv in invoices:
+        if inv.customer_id in custs and since_ok(inv.customer_id, inv.invoice_date):
+            entry(inv.customer_id, inv.brand).invoiced += inv.amount
+            m = t_meta[inv.customer_id][brand_key(inv.brand)]
+            m["invoice_count"] += 1
+            if m["latest_invoice"] is None or inv.invoice_date > m["latest_invoice"]:
+                m["latest_invoice"] = inv.invoice_date
+    posted_total: dict[uuid.UUID, Decimal] = defaultdict(lambda: ZERO)
+    posted_ids: dict[uuid.UUID, set[uuid.UUID]] = defaultdict(set)
+    for p in posted:
+        if p.customer_id in custs and since_ok(p.customer_id, p.payment_date):
+            posted_total[p.customer_id] += p.amount
+            posted_ids[p.customer_id].add(p.id)
+            for brand, amount in shares(p):
+                entry(p.customer_id, brand).posted_payments += amount
+                m = t_meta[p.customer_id][brand_key(brand)]
+                m["payment_count"] += 1
+                if m["latest_payment"] is None or p.payment_date > m["latest_payment"]:
+                    m["latest_payment"] = p.payment_date
+    for p in awaiting:
+        if p.customer_id in custs:
+            for brand, amount in shares(p):
+                entry(p.customer_id, brand).awaiting += amount
+    for a in adjustments:
+        if since_ok(a.customer_id, a.voucher_date):
+            entry(a.customer_id, None).adjustments += a.amount
+
+    for cid, c in custs.items():
+        closing = -(c.tally_closing_balance or ZERO)
+        opening = -(c.tally_opening_balance or ZERO)
+        entry(cid, None).residue = closing - bills_total.get(cid, ZERO)
+        brands = []
+        for k, ti in sorted(t_inputs[cid].items(), key=lambda kv: t_names[cid][kv[0]]):
+            m = t_meta[cid][k]
+            brands.append(BrandDetail(
+                brand=t_names[cid][k], position=compute_tally_brand_position(ti),
+                invoice_count=m["invoice_count"], payment_count=m["payment_count"],
+                latest_invoice_date=m["latest_invoice"], latest_payment_date=m["latest_payment"],
+            ))
+        total = sum_positions(b.position for b in brands)
+        diff = _q(opening + total.invoiced + total.adjustments - total.paid_in_tally - closing)
+        total = replace(
+            total, balance_as_of=c.tally_closing_balance_at, tally_opening_balance=opening,
+            tally_closing_balance=closing, tally_difference=diff,
+            reconciles=total.reconciles and diff == ZERO,
+        )
+        out[cid] = OutletDetail(
+            outlet=total, brands=brands,
+            posted_payments_total=posted_total.get(cid, ZERO),
+            invoice_settled_total=sum(
+                (paid_by_invoice.get(i.id, ZERO) for i in invoices if i.customer_id == cid), ZERO
+            ),
+            posted_payment_ids=posted_ids.get(cid, set()),
+        )

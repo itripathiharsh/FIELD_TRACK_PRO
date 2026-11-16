@@ -54,6 +54,12 @@ def _build_customer_search_filter(search: str, scope_clause=None):
     return and_(*token_clauses)
 
 
+# Outlet lists exclude customers whose Tally ledger is not a debtor (bank, supplier,
+# expense ledgers the old sync imported). They are kept, never deleted, and still
+# open by id; NULL (never seen in a Tally ledger snapshot / created in FieldTrack) shows.
+OUTLET_CLAUSE = Customer.tally_is_debtor.is_not(False)
+
+
 class CustomerRepository(BaseRepository[Customer]):
     def __init__(self, session: AsyncSession) -> None:
         super().__init__(Customer, session)
@@ -66,7 +72,7 @@ class CustomerRepository(BaseRepository[Customer]):
         area_id: uuid.UUID | None = None,
         search: str | None = None,
     ) -> tuple[list[Customer], int]:
-        filters = []
+        filters = [OUTLET_CLAUSE]
         if territory_id:
             filters.append(Customer.territory_id == territory_id)
         if area_id:
@@ -150,7 +156,7 @@ class CustomerRepository(BaseRepository[Customer]):
         caller redacts contact/financial fields for out-of-scope rows.
         """
         scope = self.employee_scope_clause(employee_id, home_territory_id)
-        filters = []
+        filters = [OUTLET_CLAUSE]
         if territory_id:
             filters.append(Customer.territory_id == territory_id)
         if area_id:
@@ -197,7 +203,7 @@ class CustomerRepository(BaseRepository[Customer]):
         area_id: uuid.UUID | None = None,
         home_territory_id: uuid.UUID | None = None,
     ) -> list[Customer]:
-        filters = [Customer.location.is_not(None), self.employee_scope_clause(employee_id, home_territory_id)]
+        filters = [Customer.location.is_not(None), OUTLET_CLAUSE, self.employee_scope_clause(employee_id, home_territory_id)]
         if territory_id is not None:
             filters.append(Customer.territory_id == territory_id)
         if area_id is not None:
@@ -229,7 +235,7 @@ class CustomerRepository(BaseRepository[Customer]):
         Returns active customer records that possess non-null geographic locations
         for lightweight map rendering (WEB-CUST-002).
         """
-        filters = [Customer.location.is_not(None)]
+        filters = [Customer.location.is_not(None), OUTLET_CLAUSE]
         if territory_id is not None:
             filters.append(Customer.territory_id == territory_id)
         if area_id is not None:

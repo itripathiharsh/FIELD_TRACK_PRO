@@ -37,6 +37,9 @@ export const PaymentMethodBadge: React.FC<PaymentMethodBadgeProps> = ({
     dotColor = 'bg-blue-500';
     Icon = Smartphone;
     label = 'ONLINE';
+  } else if (normalized === 'UNSPECIFIED') {
+    // Tally receipt whose voucher states no payment mode: shown as such, never guessed.
+    label = 'MODE NOT IN TALLY';
   } else if (normalized === 'CHEQUE' || normalized === 'CHECK') {
     // Cheque payments are distinct & focused with royal purple styling
     styles = 'bg-purple-50 text-purple-800 border-purple-300 dark:bg-purple-950/50 dark:text-purple-200 dark:border-purple-700/70 shadow-sm';

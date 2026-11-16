@@ -42,6 +42,28 @@ const BASE_ACCOUNT: AccountSummary = {
 };
 
 describe('AccountSummaryCard', () => {
+  it('shows the Tally ledger balance and flags a reconciliation difference', () => {
+    const account: AccountSummary = {
+      ...BASE_ACCOUNT, balance_source: 'TALLY', balance_as_of: '2026-11-16T10:00:00Z',
+      tally_opening_balance: '2000.00', adjustments: '-200.00', tally_closing_balance: '5300.00', tally_difference: '0.00',
+    };
+    const { rerender } = render(<MemoryRouter><AccountSummaryCard account={account} /></MemoryRouter>);
+    expect(screen.getByTestId('tally-balance')).toHaveTextContent('Balance as per Tally');
+    expect(screen.getByTestId('tally-balance')).toHaveTextContent('₹5,300.00');
+    expect(screen.queryByText(/differs from this Tally ledger/)).not.toBeInTheDocument();
+    rerender(<MemoryRouter><AccountSummaryCard account={{ ...account, tally_difference: '120.00' }} /></MemoryRouter>);
+    expect(screen.getByText(/differs from this Tally ledger by ₹120.00/)).toBeInTheDocument();
+  });
+
+  it('shows a Tally receipt with no stated mode as such, with its narration', () => {
+    const pay = { ...BASE_ACCOUNT.most_recent_payment!, id: 'pay-t', payment_method: 'UNSPECIFIED' as const,
+      tally_voucher_type: 'BANK RECEIPT', tally_transaction_type: 'Cheque', narration: 'eRTGS/ICIC0007405/OLEAD' };
+    render(<MemoryRouter><AccountSummaryCard account={{ ...BASE_ACCOUNT, recent_payments: [pay] }} /></MemoryRouter>);
+    expect(screen.getByText('MODE NOT IN TALLY')).toBeInTheDocument();
+    expect(screen.getByText('eRTGS/ICIC0007405/OLEAD')).toBeInTheDocument();
+    expect(screen.getByText(/BANK RECEIPT \(Cheque\)/)).toBeInTheDocument();
+  });
+
   it('shows the Total Billed tile using total_invoiced', () => {
     render(<MemoryRouter><AccountSummaryCard account={BASE_ACCOUNT} /></MemoryRouter>);
     expect(screen.getByText('Total Billed')).toBeInTheDocument();

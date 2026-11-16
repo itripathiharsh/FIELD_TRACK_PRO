@@ -70,6 +70,7 @@ import {
   QuestionType,
   SignatureDownloadResponse,
   TallyIntegrationStatus,
+  TallyReconciliation,
   TallyAuditLogFilterParams,
   TallyAuditLogsResponse,
   Territory,
@@ -2640,6 +2641,10 @@ export class ApiClient {
     return this.request<{ status: string; marked_read: number }>('/api/v1/notifications/read-all', {
       method: 'PATCH',
     });
+  }
+
+  async getTallyReconciliation(limit = 200): Promise<TallyReconciliation> {
+    return this.request<TallyReconciliation>(`/api/v1/integrations/tally/reconciliation?limit=${limit}`);
   }
 
   async getTallyStatus(): Promise<TallyIntegrationStatus> {

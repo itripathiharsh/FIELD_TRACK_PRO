@@ -1,3 +1,4 @@
+import { TallyReconciliationPanel } from '../components/tally/TallyReconciliationPanel';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   Building2,
@@ -786,7 +787,7 @@ export const SettingsPage: React.FC = () => {
                   <div className="p-3.5 bg-amber-500/10 border border-amber-300 rounded-xl flex items-center gap-3 text-xs text-amber-900">
                     <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
                     <span>
-                      <strong>TallyPrime is currently closed / port 9000 unreachable.</strong> Launch TallyPrime with company <strong>{tallyStatus?.tally_company_name || 'SGRG SERVICES (OPC) PRIVATE LIMITED'}</strong> on this PC to enable live bi-directional sync. Pending writes are safely queued.
+                      <strong>TallyPrime is currently closed / port 9000 unreachable.</strong> Launch TallyPrime with company <strong>{tallyStatus?.tally_company_name || 'SGRG SERVICES (OPC) PRIVATE LIMITED'}</strong> on this PC to resume the read-only sync.
                     </span>
                   </div>
                 )}
@@ -856,6 +857,8 @@ export const SettingsPage: React.FC = () => {
                     </p>
                   </div>
                 </div>
+
+                <TallyReconciliationPanel />
 
                 {/* Chronological Activity & Audit Log */}
                 <div className="space-y-4 pt-2">

@@ -5,6 +5,7 @@ from typing import Optional
 from datetime import date, datetime
 from decimal import Decimal
 from sqlalchemy import (
+    BigInteger,
     Date,
     DateTime,
     Enum,
@@ -12,6 +13,7 @@ from sqlalchemy import (
     Index,
     Numeric,
     String,
+    Text,
     func,
     text,
 )
@@ -29,6 +31,8 @@ class InvoiceSource(str, enum.Enum):
     MANUAL = "MANUAL"
     EXCEL_IMPORT = "EXCEL_IMPORT"
     TALLY = "TALLY"
+    # A Tally invoice Tally no longer has as a live sales voucher (kept for history).
+    TALLY_RETIRED = "TALLY_RETIRED"
 
 
 class Invoice(Base):
@@ -75,6 +79,17 @@ class Invoice(Base):
     # one authoritative computation). Kept only so source information isn't
     # silently discarded when it doesn't reconcile with our own math.
     imported_outstanding_amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2), nullable=True)
+    # Tally v2: the voucher this row comes from (one voucher can yield several rows,
+    # one per debtor ledger), its type, Tally's change counter and narration. A row
+    # Tally no longer has (cancelled, optional, deleted, changed into another type or
+    # party) is RETIRED: source -> TALLY_RETIRED (so it drops out of every TALLY money
+    # query), never deleted.
+    tally_voucher_guid: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    tally_voucher_type: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    tally_alter_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    narration: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    tally_retired_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    tally_retired_reason: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
