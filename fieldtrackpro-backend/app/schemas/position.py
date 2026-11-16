@@ -9,7 +9,9 @@ app/services/account_position.py - one calculation, no per-screen formulas.
 """
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal
+from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -40,6 +42,12 @@ class PositionFields(BaseModel):
     )
     advance_credit: Decimal = Field(default=Decimal("0.00"), description="On-account credit beyond what is owed (clamped out of outstanding).")
     ageing: AgeingBreakdown = Field(default_factory=AgeingBreakdown)
+    adjustments: Decimal = Field(default=Decimal("0.00"), description="Net Tally credit/debit notes, journals and other debtor adjustments (+ = increases what is owed).")
+    balance_source: str = Field(default="BASELINE", description="TALLY = outstanding is Tally's own open bills + unallocated ledger balance; BASELINE = snapshot model.")
+    balance_as_of: Optional[datetime] = Field(default=None, description="Time of the Tally ledger balance used (TALLY mode).")
+    tally_opening_balance: Optional[Decimal] = Field(default=None, description="Tally ledger opening balance (+ = owed) at the current period start.")
+    tally_closing_balance: Optional[Decimal] = Field(default=None, description="Tally ledger closing balance (+ = owed).")
+    tally_difference: Optional[Decimal] = Field(default=None, description="Tally opening + invoiced + adjustments - paid - Tally closing. Must be 0.00.")
     reconciles: bool = Field(
         default=True,
         description="Derived check: opening + invoiced - paid_in_tally == outstanding, ageing sums to outstanding, 0 <= overdue <= outstanding.",

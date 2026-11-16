@@ -128,6 +128,22 @@ export const AccountSummaryCard: React.FC<AccountSummaryCardProps> = ({ account,
         </div>
       </div>
 
+      {account.balance_source === 'TALLY' && (
+        <div data-testid="tally-balance" className="p-3 rounded-xl border border-outline-variant/60 bg-surface-container-low text-xs text-on-surface-variant space-y-1">
+          <p>
+            <span className="font-semibold text-primary">Balance as per Tally</span>
+            {account.balance_as_of && ` (as of ${new Date(account.balance_as_of).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })})`}
+            : opening {formatCurrency(account.tally_opening_balance ?? 0)} · adjustments (credit notes, journals) {formatCurrency(account.adjustments ?? 0)} · closing {formatCurrency(account.tally_closing_balance ?? 0)}.
+            Outstanding and ageing are Tally's own open bills.
+          </p>
+          {account.tally_difference && Number(account.tally_difference) !== 0 && (
+            <p className="text-amber-700 font-semibold">
+              FieldTrack differs from this Tally ledger by {formatCurrency(account.tally_difference)}; see the Tally reconciliation in Settings.
+            </p>
+          )}
+        </div>
+      )}
+
       {showPosition && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           <PositionBreakdown position={account} />
@@ -316,7 +332,10 @@ export const AccountSummaryCard: React.FC<AccountSummaryCardProps> = ({ account,
                     <span className="text-on-surface-variant text-xs">
                       {p.payment_date}
                       {p.utr_reference ? ` · UTR ${p.utr_reference}` : ''}
+                      {p.tally_voucher_type ? ` · ${p.tally_voucher_type}` : ''}
+                      {p.tally_transaction_type ? ` (${p.tally_transaction_type})` : ''}
                     </span>
+                    {p.narration && <span className="basis-full text-[11px] text-on-surface-variant/80 break-words">{p.narration}</span>}
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     {p.proofs.length > 0 && (

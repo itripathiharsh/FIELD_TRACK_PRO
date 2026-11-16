@@ -58,6 +58,8 @@ async def to_invoice_read(invoice: Invoice, session: AsyncSession, today: date |
         brand=invoice.brand,
         source=invoice.source,
         source_reference=invoice.source_reference,
+        tally_bill_name=invoice.tally_bill_name,
+        tally_voucher_type=invoice.tally_voucher_type,
         created_by=invoice.created_by,
         created_at=invoice.created_at,
         verified_paid_amount=paid,

@@ -3,7 +3,9 @@ import uuid
 from typing import Any, Optional
 from datetime import datetime
 from decimal import Decimal
-from sqlalchemy import String, Integer, ForeignKey, Text, DateTime, Boolean, Numeric, func
+from datetime import date
+from sqlalchemy import String, Integer, ForeignKey, Text, DateTime, Date, Boolean, Numeric, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from geoalchemy2 import Geography
 from app.database import Base
@@ -37,6 +39,19 @@ class Customer(Base):
     # as Tally signs it). A reference / cross-check figure; it never drives outstanding.
     tally_closing_balance: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2), nullable=True)
     tally_closing_balance_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Tally v2 ledger master facts (all exactly as Tally reports them; never inferred).
+    # tally_is_debtor: True = ledger under Sundry Debtors; False = a Tally ledger that is
+    # NOT a debtor (bank, supplier, expense ...) and so not an outlet - hidden from outlet
+    # lists, never deleted; None = not (yet) seen in a full Tally ledger snapshot.
+    tally_is_debtor: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True, index=True)
+    tally_parent_group: Mapped[Optional[str]] = mapped_column(String(150), nullable=True)
+    tally_aliases: Mapped[Optional[list[str]]] = mapped_column(JSONB, nullable=True)
+    tally_is_bill_wise: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    tally_credit_period: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    # Ledger opening balance = position at the start of Tally's current period
+    # (tally_opening_balance_as_of, e.g. 2026-04-01 = the 31-03-2026 closing). Signed as Tally.
+    tally_opening_balance: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2), nullable=True)
+    tally_opening_balance_as_of: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
 
     # Set True only for an outlet approved from a CustomerProspect submission (there is no
     # Tally writeback for customers - Tally sync is import-only - so an admin must add it to

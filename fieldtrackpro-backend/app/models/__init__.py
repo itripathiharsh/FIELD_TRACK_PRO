@@ -58,6 +58,7 @@ from app.models.sync_agent import SyncAgent
 from app.models.payment_invoice_allocation import PaymentInvoiceAllocation
 from app.models.tally_writeback import TallyWritebackQueue, WritebackStatus
 from app.models.tally_audit import TallyAuditLog
+from app.models.tally_ledger import TallyLedgerAdjustment, TallyOpenBill, TallySnapshotRun, TallyManifestGuid
 from app.models.security_audit import SecurityAuditLog
 
 
@@ -136,5 +137,9 @@ __all__ = [
     "TallyWritebackQueue",
     "WritebackStatus",
     "TallyAuditLog",
+    "TallyLedgerAdjustment",
+    "TallyOpenBill",
+    "TallySnapshotRun",
+    "TallyManifestGuid",
     "SecurityAuditLog",
 ]
