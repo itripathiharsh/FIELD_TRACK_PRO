@@ -158,18 +158,22 @@ def upgrade() -> None:
             op.add_column("sync_agents", sa.Column(name, type_, nullable=True))
 
     # ---- 1:1 backfill (idempotent) ---------------------------------------------------------------
+    # `source` is compared as TEXT: when this runs in the same `alembic upgrade head` transaction as
+    # g1a2b3c4d5e6 (production goes b9c0d1e2f3a4 -> h1b2c3d4e5f6 in one run), the enum value
+    # 'TALLY_RETIRED' added there is not yet committed, and PostgreSQL refuses to use an uncommitted
+    # new enum value as a literal (UnsafeNewEnumValueUsage). Text comparison needs no enum literal.
     op.execute(BACKFILL_LEDGERS_SQL)
     op.execute("""
         UPDATE invoices i SET tally_debtor_ledger_id = l.id
           FROM tally_debtor_ledgers l
          WHERE l.customer_id = i.customer_id AND l.is_primary AND i.tally_debtor_ledger_id IS NULL
-           AND i.source IN ('TALLY', 'TALLY_RETIRED')
+           AND i.source::text IN ('TALLY', 'TALLY_RETIRED')
     """)
     op.execute("""
         UPDATE payments p SET tally_debtor_ledger_id = l.id
           FROM tally_debtor_ledgers l
          WHERE l.customer_id = p.customer_id AND l.is_primary AND p.tally_debtor_ledger_id IS NULL
-           AND p.source IN ('TALLY', 'TALLY_RETIRED')
+           AND p.source::text IN ('TALLY', 'TALLY_RETIRED')
     """)
     for table in ("tally_ledger_adjustments", "tally_open_bills"):
         op.execute(f"""
