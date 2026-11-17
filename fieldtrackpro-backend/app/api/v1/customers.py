@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.deps.auth import CurrentUser, require_role
 from app.database import get_async_session
 from app.models.user import Role
-from app.schemas.account import AccountSummary
+from app.schemas.account import AccountSummary, HistoryPage
 from app.schemas.customer import (
     CustomerCreate,
     CustomerMapLocation,
@@ -45,6 +45,7 @@ from app.services import (
     invoice_service,
     location_proposal_service,
     media_service,
+    outlet_link_service,  # release 2.1.0: ledgers of the physical outlet
     outlet_proof_service,  # live outlet proof: additive CustomerRead fields
 )
 
@@ -175,6 +176,7 @@ async def list_customers(
     area_id: uuid.UUID | None = Query(default=None),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, le=5000),
+    include_merged: bool = Query(default=False, description="Admin only: also list customers merged into an outlet"),
 ):
     """
     An ADMIN sees the full outlet directory. An EMPLOYEE sees only outlets in
@@ -185,7 +187,8 @@ async def list_customers(
     Returns X-Total-Count header for scalable server-side pagination.
     """
     customers, total_count, in_scope = await customer_service.list_customers(
-        session, current_user, territory_id, skip, limit, area_id, search
+        session, current_user, territory_id, skip, limit, area_id, search,
+        include_merged=include_merged and current_user.is_admin,
     )
     response.headers["X-Total-Count"] = str(total_count)
     out = []
@@ -200,6 +203,7 @@ async def list_customers(
     await outlet_proof_service.enrich_customer_reads(
         session, [r for r in out if in_scope is None or r.id in in_scope]
     )
+    await outlet_link_service.enrich_ledger_summary(session, [r for r in out if in_scope is None or r.id in in_scope])
     return out
 
 
@@ -250,6 +254,7 @@ async def get_customer(customer_id: uuid.UUID, current_user: CurrentUser, sessio
     customer = await customer_service.get_customer(customer_id, session)
     read = CustomerRead.from_model(customer)
     await outlet_proof_service.enrich_customer_reads(session, [read])
+    await outlet_link_service.enrich_ledger_summary(session, [read], with_ledgers=True)
     return read
 
 
@@ -274,6 +279,15 @@ async def get_customer_account(customer_id: uuid.UUID, current_user: CurrentUser
     view any outlet's account.
     """
     return await account_service.get_account_summary(customer_id, current_user, session)
+
+
+@router.get("/{customer_id}/history", response_model=HistoryPage, dependencies=[AnyAuth])
+async def get_customer_history(
+    customer_id: uuid.UUID, current_user: CurrentUser, session: DbSession,
+    limit: int = Query(default=200, ge=1, le=1000), offset: int = Query(default=0, ge=0),
+):
+    """Full Tally account history of the physical outlet across all its ledgers (release 2.1.0)."""
+    return await account_service.get_account_history(customer_id, current_user, session, limit, offset)
 
 
 @router.get("/{customer_id}/invoices", response_model=list[InvoiceRead], dependencies=[AnyAuth])

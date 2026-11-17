@@ -51,6 +51,10 @@ class Invoice(Base):
     customer_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("customers.id", ondelete="RESTRICT"), index=True
     )
+    # Release 2.1.0: the original Tally ledger of this row (customer_id = its physical outlet).
+    tally_debtor_ledger_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("tally_debtor_ledgers.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
     invoice_number: Mapped[str] = mapped_column(String(100))
     # Authoritative source for aging calculations (never due_date - see
     # aging_service.py). due_date is informational/display-only.

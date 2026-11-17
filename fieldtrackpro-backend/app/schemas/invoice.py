@@ -26,6 +26,9 @@ class InvoiceRead(BaseModel):
     source_reference: str | None
     tally_bill_name: str | None = None
     tally_voucher_type: str | None = None
+    # Release 2.1.0: the Tally ledger this invoice was raised on (the outlet may hold several).
+    tally_debtor_ledger_id: uuid.UUID | None = None
+    tally_ledger_name: str | None = None
     created_by: uuid.UUID
     created_at: datetime
 

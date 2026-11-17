@@ -37,6 +37,46 @@ class BrandSummary(PositionFields):
     latest_payment_date: date | None
 
 
+class LedgerPosition(BaseModel):
+    """One Tally ledger of the physical outlet (receivable sign: + = owed). Release 2.1.0."""
+
+    ledger_id: uuid.UUID | None = None
+    tally_guid: str | None = None
+    name: str
+    brand: str | None = None
+    tally_outlet_code: str | None = None
+    opening_balance: Decimal = Decimal("0.00")
+    closing_balance: Decimal = Decimal("0.00")
+    invoiced: Decimal = Decimal("0.00")
+    paid_in_tally: Decimal = Decimal("0.00")
+    adjustments: Decimal = Decimal("0.00")
+    outstanding: Decimal = Decimal("0.00")
+    open_bills_total: Decimal = Decimal("0.00")
+    unallocated: Decimal = Decimal("0.00")
+    tally_difference: Decimal = Decimal("0.00")
+    reconciles: bool = True
+
+
+class HistoryItem(BaseModel):
+    date: date
+    kind: str  # INVOICE | PAYMENT | ADJUSTMENT
+    voucher_type: str | None = None
+    voucher_number: str | None = None
+    amount: Decimal
+    brand: str | None = None
+    ledger_id: uuid.UUID | None = None
+    ledger_name: str | None = None
+    bill_name: str | None = None
+    narration: str | None = None
+    retired: bool = False
+    retired_reason: str | None = None
+
+
+class HistoryPage(BaseModel):
+    items: list[HistoryItem]
+    total: int
+
+
 class AccountSummary(PositionFields):
     customer_id: uuid.UUID
     customer_name: str
@@ -71,3 +111,5 @@ class AccountSummary(PositionFields):
     # Legacy gross view (snapshot columns + invoice remaining by 0-30/31-60/...),
     # NOT netted for on-account credit. The authoritative split is `ageing`.
     aging_buckets: dict[str, Decimal] = {}
+    # Release 2.1.0: per Tally ledger of this physical outlet (TALLY balance mode; else empty).
+    ledgers: list[LedgerPosition] = []

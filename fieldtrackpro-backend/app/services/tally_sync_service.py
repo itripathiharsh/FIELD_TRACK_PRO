@@ -103,6 +103,84 @@ async def register_agent(data: SyncAgentCreate, session: AsyncSession) -> tuple[
     return agent, raw_key
 
 
+async def _physical_outlet(session: AsyncSession, customer: Optional[Customer]) -> Optional[Customer]:
+    """v1 sync (agent 1.2.x): a customer merged into a physical outlet resolves to that outlet."""
+    if customer is None or not getattr(customer, "merged_into_customer_id", None):
+        return customer
+    from app.services.tally_v2_sync import outlet_of
+    return await outlet_of(session, customer)
+
+
+HEALTH_MAX_BYTES = 32 * 1024
+
+
+def _store_health(agent: SyncAgent, checkpoints: Optional[dict], now: datetime) -> None:
+    """Release 2.1.0: `_health` (agent 2.1+) -> sync_agents.health, the rest -> last_checkpoints.
+    A heartbeat without `_health` (agent 1.2.1 / 2.0) leaves the stored health unchanged."""
+    if not checkpoints:
+        return
+    import json
+
+    checkpoints = dict(checkpoints)
+    health = checkpoints.pop("_health", None)
+    try:
+        agent.last_checkpoints = checkpoints if len(json.dumps(checkpoints, default=str)) <= HEALTH_MAX_BYTES \
+            else {"error": "checkpoints too large"}
+    except (TypeError, ValueError):
+        agent.last_checkpoints = {"error": "checkpoints not serialisable"}
+    if health is None:
+        return
+    try:
+        too_big = len(json.dumps(health, default=str)) > HEALTH_MAX_BYTES
+    except (TypeError, ValueError):
+        too_big = True
+    agent.health = {"error": "health too large"} if too_big or not isinstance(health, dict) else health
+    agent.health_reported_at = now
+
+
+def compute_sync_state(agent: Optional[SyncAgent], now: datetime) -> str:
+    """CONTRACTS_2.1.0 C3, first matching rule wins."""
+    if agent is None:
+        return "NOT_CONFIGURED"
+    if not agent.last_heartbeat_at or (now - agent.last_heartbeat_at).total_seconds() > 180:
+        return "OFFLINE"
+    h = agent.health if isinstance(agent.health, dict) and "error" not in agent.health else None
+    if h is None:
+        online = (agent.tally_status or "").upper() in ("RUNNING", "ONLINE", "CONNECTED")
+        return "OK" if online else "TALLY_UNAVAILABLE"
+    status = (h.get("last_cycle_status") or "").upper()
+    if status == "TALLY_UNAVAILABLE":
+        return "TALLY_UNAVAILABLE"
+    if (h.get("phase") or "").upper() in ("INITIAL_LOAD", "MANIFEST"):
+        return "SYNCING"
+    try:
+        interval = float(h.get("interval_seconds") or 300)
+    except (TypeError, ValueError):
+        interval = 300.0
+    done = h.get("last_cycle_completed_at")
+    done_at = None
+    if done:
+        try:
+            done_at = datetime.fromisoformat(str(done).replace("Z", "+00:00"))
+            if done_at.tzinfo is None:
+                done_at = done_at.replace(tzinfo=timezone.utc)
+        except ValueError:
+            done_at = None
+    if done_at is None or (now - done_at).total_seconds() > 3 * interval:
+        return "STALLED"
+    rq = h.get("retry_queue") or {}
+    q = h.get("quarantine") or {}
+    try:
+        degraded = (int(rq.get("rejected_4xx") or 0) > 0
+                    or float(rq.get("oldest_age_seconds") or 0) > 3600
+                    or int(q.get("unresolved") or 0) > 0)
+    except (TypeError, ValueError):
+        degraded = True
+    if degraded or status in ("BACKEND_ERROR", "AUTH_ERROR", "ERROR", "WRONG_COMPANY", "NO_COMPANY_LOADED"):
+        return "DEGRADED"
+    return "OK"
+
+
 async def record_heartbeat(
     agent: SyncAgent, data: HeartbeatRequest, session: AsyncSession
 ) -> HeartbeatResponse:
@@ -111,6 +189,7 @@ async def record_heartbeat(
     agent.last_heartbeat_at = now
     agent.agent_version = data.agent_version
     agent.tally_status = data.tally_status or "OFFLINE"
+    _store_health(agent, data.checkpoints, now)
     if data.company_name:
         agent.tally_company_name = data.company_name
     if data.company_guid:
@@ -156,6 +235,7 @@ async def get_integration_status(session: AsyncSession) -> TallyIntegrationStatu
             total_payments_synced=total_pay,
             total_customers_synced=total_cust,
             message="No Tally Sync Agent is registered.",
+            sync_state="NOT_CONFIGURED",
         )
 
     now = datetime.now(timezone.utc)
@@ -196,6 +276,9 @@ async def get_integration_status(session: AsyncSession) -> TallyIntegrationStatu
         total_payments_synced=total_pay,
         total_customers_synced=total_cust,
         message=msg,
+        health=agent.health,
+        health_reported_at=agent.health_reported_at,
+        sync_state=compute_sync_state(agent, now),
     )
 
 
@@ -439,6 +522,7 @@ async def sync_invoices(
                 if not customer:
                     c_stmt_name = select(Customer).where(func.lower(Customer.name) == cust_name.lower())
                     customer = (await session.execute(c_stmt_name)).scalar_one_or_none()
+                customer = await _physical_outlet(session, customer)  # 2.1.0: merged -> its outlet
 
                 if not customer:
                     # Auto-provision customer stub if not yet synced
@@ -610,6 +694,7 @@ async def sync_payments(
             if not customer:
                 c_stmt_name = select(Customer).where(func.lower(Customer.name) == cust_name.lower())
                 customer = (await session.execute(c_stmt_name)).scalar_one_or_none()
+            customer = await _physical_outlet(session, customer)  # 2.1.0: merged -> its outlet
 
             if not customer:
                 customer = Customer(

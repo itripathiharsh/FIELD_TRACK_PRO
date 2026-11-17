@@ -47,6 +47,12 @@ async def to_invoice_read(invoice: Invoice, session: AsyncSession, today: date |
     aging = compute_invoice_aging(
         invoice.invoice_date, invoice.amount, paid, today or get_ist_now().date()
     )
+    ledger_name = None
+    lid = getattr(invoice, "tally_debtor_ledger_id", None)
+    if lid is not None:
+        from app.models.tally_debtor_ledger import TallyDebtorLedger
+        led = await session.get(TallyDebtorLedger, lid)
+        ledger_name = led.name if led is not None else None
     return InvoiceRead(
         id=invoice.id,
         customer_id=invoice.customer_id,
@@ -60,6 +66,8 @@ async def to_invoice_read(invoice: Invoice, session: AsyncSession, today: date |
         source_reference=invoice.source_reference,
         tally_bill_name=invoice.tally_bill_name,
         tally_voucher_type=invoice.tally_voucher_type,
+        tally_debtor_ledger_id=lid,
+        tally_ledger_name=ledger_name,
         created_by=invoice.created_by,
         created_at=invoice.created_at,
         verified_paid_amount=paid,

@@ -30,6 +30,7 @@ import { Select } from '../components/ui/Select';
 import { Textarea } from '../components/ui/Textarea';
 import { BrandSelect } from '../components/ui/BrandSelect';
 import { AccountSummaryCard } from '../components/ui/AccountSummaryCard';
+import { AccountHistoryTable } from '../components/customers/AccountHistoryTable';
 import { AddBrandModal } from '../components/ui/AddBrandModal';
 import { CustomerOutletProofSection } from '../components/outlet-proofs/CustomerOutletProofSection';
 
@@ -100,6 +101,11 @@ export const CustomerDetailPage: React.FC = () => {
         apiClient.getCustomerLocationProposals(id).catch(() => [] as LocationProposal[]),
         apiClient.getBrands().catch(() => [] as Brand[]),
       ]);
+      if (cust?.merged_into_customer_id && cust.merged_into_customer_id !== id) {
+        // 2.1.0: this outlet was merged into the physical shop's outlet - old links keep working.
+        navigate(`/customers/${cust.merged_into_customer_id}`, { replace: true });
+        return;
+      }
       setCustomer(cust);
       setVisitHistory(Array.isArray(history) ? history : []);
       setAccount(acct);
@@ -116,7 +122,7 @@ export const CustomerDetailPage: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [id]);
+  }, [id, navigate]);
 
   useEffect(() => {
     load();
@@ -626,7 +632,9 @@ export const CustomerDetailPage: React.FC = () => {
         )}
       </Card>
 
-      {account && <AccountSummaryCard account={account} />}
+      {account && <AccountSummaryCard account={account} ledgers={customer.ledgers} />}
+
+      {id && <AccountHistoryTable customerId={id} />}
 
       {/* Order History */}
       <Card>

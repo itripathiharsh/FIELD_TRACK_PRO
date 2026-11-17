@@ -30,6 +30,7 @@ from app.api.v1 import (
     organization,
     visit_planning,
     tally_integration,
+    outlet_mapping,
     orders,
     account,
     security_audit,
@@ -72,4 +73,5 @@ api_router.include_router(field_exceptions.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(visit_planning.router)
 api_router.include_router(tally_integration.router)
+api_router.include_router(outlet_mapping.router)
 

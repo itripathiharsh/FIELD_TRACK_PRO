@@ -17,6 +17,7 @@ import {
   ClipboardList,
   SearchCheck,
   Camera,
+  Link2,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { isAdmin, resolveRole } from '../../utils/roles';
@@ -40,6 +41,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => 
     { name: 'Territories',          path: '/territories', icon: Globe2,        roles: ['ADMIN'] },
     { name: 'Customers',            path: '/customers', icon: Building2,       roles: ['ADMIN'] },
     { name: 'Outlet Verification',  path: '/customers/outlet-verification', icon: Camera, roles: ['ADMIN'] },
+    { name: 'Outlet Mapping',       path: '/customers/outlet-mapping', icon: Link2, roles: ['ADMIN'] },
     { name: 'Visits',               path: '/visits',    icon: CalendarCheck,   roles: ['ADMIN', 'EMPLOYEE'] },
     { name: 'Ad-hoc Review',        path: '/visits/adhoc-review', icon: SearchCheck, roles: ['ADMIN'] },
     { name: 'Map',                  path: '/map',       icon: Globe2,          roles: ['ADMIN'] },
@@ -95,7 +97,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => 
                 `flex items-center gap-space-3 px-space-3 py-space-2 rounded-lg transition-colors ${
                   isActive &&
                   !(item.path === '/visits' && pathname.startsWith('/visits/adhoc-review')) &&
-                  !(item.path === '/customers' && pathname.startsWith('/customers/outlet-verification'))
+                  !(item.path === '/customers' &&
+                    (pathname.startsWith('/customers/outlet-verification') || pathname.startsWith('/customers/outlet-mapping')))
                     ? 'bg-primary-container text-secondary-container font-headline-sm border-r-4 border-secondary-container opacity-95 shadow-xs'
                     : 'text-on-surface-variant hover:bg-surface-container'
                 }`
