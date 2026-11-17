@@ -258,6 +258,14 @@ export interface Customer {
   primary_outlet_proof_id?: string | null;
   outlet_proof_count?: number;
   outlet_location_confirmations?: number;
+  /** 2.1.0: number of Tally debtor ledgers linked to this physical outlet. */
+  ledger_count?: number;
+  /** 2.1.0: Tally codes of every linked ledger (search matches any of them). */
+  tally_codes?: string[];
+  /** 2.1.0: set when this outlet was merged into another one (hidden from lists). */
+  merged_into_customer_id?: string | null;
+  /** 2.1.0 (detail only): the Tally ledgers linked to this outlet. */
+  ledgers?: LedgerRead[];
 }
 
 export type OutletProofKind = 'INITIAL' | 'CONFIRMATION' | 'CHANGE_REQUEST';
@@ -556,6 +564,10 @@ export interface TallyIntegrationStatus {
   total_payments_synced: number;
   total_customers_synced: number;
   message?: string | null;
+  /** 2.1.0: agent health from the latest heartbeat (null for older agents). */
+  health?: AgentHealth | null;
+  health_reported_at?: string | null;
+  sync_state?: SyncState;
 }
 
 export interface TallyAuditLogItem {
@@ -600,6 +612,9 @@ export interface TallyAuditLogFilterParams {
 export interface Invoice {
   id: string;
   customer_id: string;
+  /** 2.1.0: the original Tally ledger of this invoice (null for non-Tally rows). */
+  tally_debtor_ledger_id?: string | null;
+  tally_ledger_name?: string | null;
   invoice_number: string;
   invoice_date: string;
   due_date: string | null;
@@ -657,6 +672,9 @@ export interface PaymentVerifyInput {
 /** Response of `GET/POST /api/v1/payments*` (the "Collection"). */
 export interface Payment {
   id: string;
+  /** 2.1.0: the original Tally ledger of this receipt (null for field collections). */
+  tally_debtor_ledger_id?: string | null;
+  tally_ledger_name?: string | null;
   visit_id: string;
   customer_id: string;
   employee_id: string;
@@ -763,6 +781,8 @@ export interface AccountSummary extends PositionFields {
   recent_payments: Payment[];
   brand_summary: BrandSummary[];
   aging_buckets?: Record<string, string>;
+  /** 2.1.0: per Tally ledger position (outlet totals = sum of ledgers). */
+  ledgers?: LedgerPosition[];
 }
 
 /** One row of `GET /api/v1/collections/overview` - the outlet-list financial overview (Meeting 2). */
@@ -1879,3 +1899,171 @@ export interface NotificationItem {
 }
 
 
+
+// ---------------------------------------------------------------------------
+// 2.1.0: physical outlet <-> Tally debtor ledgers, account history, mapping, sync health
+// (contract: release_v2/final_agent/CONTRACTS_2.1.0.md C3-C5)
+// ---------------------------------------------------------------------------
+
+export type LedgerMappingStatus = 'AUTO_1TO1' | 'NEW_UNREVIEWED' | 'CONFIRMED' | 'REVIEW';
+export type LedgerBrandSource = 'TALLY' | 'OVERRIDE' | 'NONE';
+
+/** One Tally debtor ledger linked to a physical outlet. Balances in receivable sign (+ = owed). */
+export interface LedgerRead {
+  id: string;
+  tally_guid: string;
+  name: string;
+  parent_group: string | null;
+  tally_outlet_code: string | null;
+  brand: string | null;
+  brand_source: LedgerBrandSource;
+  is_primary: boolean;
+  is_debtor: boolean | null;
+  mapping_status: LedgerMappingStatus;
+  opening_balance: string | null;
+  closing_balance: string | null;
+  closing_balance_at: string | null;
+  gst_number: string | null;
+  mobile: string | null;
+  pincode: string | null;
+}
+
+/** Queue entries carry the outlet the ledger currently belongs to. */
+export interface LedgerQueueItem extends LedgerRead {
+  customer_id: string;
+}
+
+/** Per-ledger position inside an outlet's account (receivable sign). */
+export interface LedgerPosition {
+  ledger_id: string;
+  tally_guid: string;
+  name: string;
+  brand: string | null;
+  tally_outlet_code: string | null;
+  opening_balance: string | null;
+  closing_balance: string | null;
+  invoiced: string;
+  paid_in_tally: string;
+  adjustments: string;
+  outstanding: string;
+  open_bills_total: string;
+  unallocated: string;
+  tally_difference: string | null;
+  reconciles: boolean;
+}
+
+export type AccountHistoryKind = 'INVOICE' | 'PAYMENT' | 'ADJUSTMENT';
+
+export interface AccountHistoryItem {
+  date: string;
+  kind: AccountHistoryKind;
+  voucher_type: string | null;
+  voucher_number: string | null;
+  amount: string;
+  brand: string | null;
+  ledger_id: string | null;
+  ledger_name: string | null;
+  bill_name: string | null;
+  narration: string | null;
+  retired: boolean;
+  retired_reason: string | null;
+}
+
+export interface AccountHistoryResponse {
+  items: AccountHistoryItem[];
+  total: number;
+}
+
+export type LinkEventAction =
+  | 'LINK' | 'UNLINK' | 'SET_PRIMARY' | 'BRAND_OVERRIDE' | 'OUTLET_CODE' | 'RENAME' | 'BULK_APPLY' | 'BULK_REVERT' | 'REVIEW';
+
+export interface LinkEventRead {
+  id: string;
+  action: LinkEventAction;
+  ledger_id: string | null;
+  ledger_name: string | null;
+  from_customer_id: string | null;
+  to_customer_id: string | null;
+  batch_id: string | null;
+  actor: string | null;
+  note: string | null;
+  created_at: string;
+}
+
+export interface OutletMappingQueues {
+  new_unreviewed: LedgerQueueItem[];
+  missing_brand: LedgerQueueItem[];
+  missing_code: LedgerQueueItem[];
+  linked_outlets: number;
+}
+
+export interface ImportPreviewLink {
+  ledger_id: string;
+  ledger_name: string;
+  from_customer_id: string;
+  to_outlet_id_label: string;
+  to_customer_id: string | null;
+}
+
+export interface ImportPreviewIssue {
+  row: number;
+  tally_id: string | null;
+  message: string;
+}
+
+export interface ImportPreview {
+  preview_id: string;
+  expires_at: string;
+  rows: number;
+  confirmed_rows: number;
+  ignored_rows: number;
+  links: ImportPreviewLink[];
+  brand_updates: { ledger_id: string; brand: string }[];
+  code_updates: { customer_id: string; outlet_code: string }[];
+  errors: ImportPreviewIssue[];
+  warnings: (ImportPreviewIssue | string)[];
+  outlets_before: number;
+  outlets_after: number;
+  totals_before: { outstanding: string };
+  totals_after: { outstanding: string };
+  invariants_ok: boolean;
+}
+
+export interface ImportApplyResult {
+  batch_id: string;
+  applied: number;
+  events: number;
+}
+
+export interface ImportRevertResult {
+  batch_id: string;
+  reverted: number;
+}
+
+export type SyncState = 'NOT_CONFIGURED' | 'OFFLINE' | 'TALLY_UNAVAILABLE' | 'SYNCING' | 'STALLED' | 'DEGRADED' | 'OK';
+export type AgentPhase = 'IDLE' | 'CYCLE' | 'INITIAL_LOAD' | 'MANIFEST' | 'SNAPSHOT';
+
+/** `_health` reported by Agent 2.1.0 in its heartbeat. */
+export interface AgentHealth {
+  instance?: string;
+  agent_version?: string;
+  phase?: AgentPhase;
+  phase_detail?: string | null;
+  cycle_started_at?: string | null;
+  cycle_running_seconds?: number;
+  last_cycle_completed_at?: string | null;
+  last_cycle_status?: string | null;
+  last_cycle_duration_seconds?: number | null;
+  last_success?: Partial<Record<'vouchers' | 'masters' | 'ledgers' | 'bills' | 'manifest', string | null>>;
+  retry_queue?: {
+    pending: number;
+    oldest_age_seconds: number | null;
+    max_attempts: number;
+    rejected_4xx: number;
+    last_error: string | null;
+  };
+  quarantine?: { unresolved: number; oldest_guid: string | null };
+  last_error?: { at: string; message: string } | null;
+  interval_seconds?: number;
+  error?: string;
+}

@@ -4,6 +4,12 @@ import { filenameFromContentDisposition } from '../utils/download';
 import { REPORT_ENDPOINTS, ReportKey } from '../utils/reportFilters';
 import {
   AccountSummary,
+  AccountHistoryResponse,
+  ImportApplyResult,
+  ImportPreview,
+  ImportRevertResult,
+  LinkEventRead,
+  OutletMappingQueues,
   AdminPasswordReset,
   Area,
   Brand,
@@ -2649,6 +2655,77 @@ export class ApiClient {
 
   async getTallyStatus(): Promise<TallyIntegrationStatus> {
     return this.request<TallyIntegrationStatus>('/api/v1/integrations/tally/status');
+  }
+
+  // -- 2.1.0: account history across linked Tally ledgers, outlet mapping ------------------
+
+  /** Full account history of a physical outlet: every linked ledger's invoices, receipts and adjustments, newest first. */
+  async getCustomerHistory(customerId: string, params?: { limit?: number; offset?: number }): Promise<AccountHistoryResponse> {
+    const q = new URLSearchParams({
+      limit: String(params?.limit ?? 200),
+      offset: String(params?.offset ?? 0),
+    });
+    return this.request<AccountHistoryResponse>(`/api/v1/customers/${customerId}/history?${q.toString()}`);
+  }
+
+  async getOutletMappingQueues(): Promise<OutletMappingQueues> {
+    return this.request<OutletMappingQueues>('/api/v1/outlet-mapping/queues');
+  }
+
+  private outletMappingPost<T>(path: string, body: unknown): Promise<T> {
+    return this.request<T>(`/api/v1/outlet-mapping/${path}`, { method: 'POST', body: JSON.stringify(body) });
+  }
+
+  async linkLedger(ledgerId: string, targetCustomerId: string, note?: string): Promise<LinkEventRead> {
+    return this.outletMappingPost('link', { ledger_id: ledgerId, target_customer_id: targetCustomerId, note });
+  }
+
+  /** Mark a new Tally ledger as reviewed: it stays its own outlet (action REVIEW). */
+  async reviewLedger(ledgerId: string): Promise<LinkEventRead> {
+    return this.outletMappingPost('review', { ledger_id: ledgerId, decision: 'KEEP_SEPARATE' });
+  }
+
+  async unlinkLedger(ledgerId: string, note?: string): Promise<LinkEventRead> {
+    return this.outletMappingPost('unlink', { ledger_id: ledgerId, note });
+  }
+
+  async setPrimaryLedger(ledgerId: string): Promise<LinkEventRead> {
+    return this.outletMappingPost('primary', { ledger_id: ledgerId });
+  }
+
+  async setLedgerBrand(ledgerId: string, brand: string | null): Promise<LinkEventRead> {
+    return this.outletMappingPost('brand', { ledger_id: ledgerId, brand });
+  }
+
+  async setOutletCode(customerId: string, outletCode: string | null): Promise<LinkEventRead> {
+    return this.outletMappingPost('outlet-code', { customer_id: customerId, outlet_code: outletCode });
+  }
+
+  async renameOutlet(customerId: string, name: string): Promise<LinkEventRead> {
+    return this.outletMappingPost('rename', { customer_id: customerId, name });
+  }
+
+  /** Upload the client-confirmed workbook; nothing is applied - returns a server-side preview (24 h). */
+  async previewOutletMappingImport(file: File): Promise<ImportPreview> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.request<ImportPreview>('/api/v1/outlet-mapping/import/preview', { method: 'POST', body: formData });
+  }
+
+  async applyOutletMappingImport(previewId: string): Promise<ImportApplyResult> {
+    return this.outletMappingPost('import/apply', { preview_id: previewId });
+  }
+
+  async revertOutletMappingImport(batchId: string): Promise<ImportRevertResult> {
+    return this.outletMappingPost('import/revert', { batch_id: batchId });
+  }
+
+  async getOutletMappingEvents(params?: { batch_id?: string; ledger_id?: string; limit?: number }): Promise<LinkEventRead[]> {
+    const q = new URLSearchParams();
+    if (params?.batch_id) q.set('batch_id', params.batch_id);
+    if (params?.ledger_id) q.set('ledger_id', params.ledger_id);
+    q.set('limit', String(params?.limit ?? 200));
+    return this.request<LinkEventRead[]>(`/api/v1/outlet-mapping/events?${q.toString()}`);
   }
 
   async getTallyAuditLogs(params?: TallyAuditLogFilterParams): Promise<TallyAuditLogsResponse> {

@@ -197,4 +197,27 @@ describe('CustomerDetailPage', () => {
         expect(screen.getByText('Test Employee')).toBeInTheDocument();
         expect(screen.getByText(/1 visit recorded/i)).toBeInTheDocument();
     });
+
+    it('redirects a merged outlet to the physical shop it was merged into (2.1.0)', async () => {
+        const target = { ...CUSTOMER, id: 'shop-1', name: 'Advik Home' };
+        const notMocked = () => json({ error: { code: 'NOT_MOCKED', message: 'not mocked' } }, 404);
+        mockApi({
+            ...baseRoutes(ADMIN_USER),
+            '/api/v1/customers/shop-1/account': notMocked,
+            '/api/v1/customers/shop-1/orders': notMocked,
+            '/api/v1/customers/shop-1/history': { items: [], total: 0 },
+            '/api/v1/customers/shop-1/location-proposals': [],
+            '/api/v1/customers/shop-1/requirements': [],
+            '/api/v1/customers/merged-1/account': notMocked,
+            '/api/v1/customers/merged-1/orders': notMocked,
+            '/api/v1/customers/merged-1/location-proposals': [],
+            '/api/v1/customers/merged-1/requirements': [],
+            '/api/v1/customers': route((url) =>
+                url.includes('merged-1') ? json({ ...CUSTOMER, id: 'merged-1', merged_into_customer_id: 'shop-1' }) : json(target),
+            ),
+        });
+        renderCustomerDetail('merged-1');
+        // The merged outlet's page replaces itself with the physical shop's page.
+        expect(await screen.findByText('Advik Home')).toBeInTheDocument();
+    });
 });

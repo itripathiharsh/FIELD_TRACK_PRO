@@ -64,6 +64,18 @@ class Customer(Base):
     )
     tally_entry_marked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     
+    # Release 2.1.0: a customer is the PHYSICAL OUTLET. A customer emptied by linking its
+    # ledger(s) to another outlet is kept, hidden, and points to that outlet (never deleted).
+    merged_into_customer_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("customers.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    merged_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    merged_by: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    # TALLY_PRIMARY = the outlet name follows its primary ledger; ADMIN = renamed by an admin.
+    outlet_name_source: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="TALLY_PRIMARY", server_default="TALLY_PRIMARY"
+    )
+
     # Zone (Territory) & Area
     territory_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("territories.id", ondelete="SET NULL"), nullable=True)
     area_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("areas.id", ondelete="SET NULL"), nullable=True, index=True)

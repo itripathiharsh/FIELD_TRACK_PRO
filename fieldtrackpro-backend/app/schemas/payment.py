@@ -210,6 +210,9 @@ class PaymentRead(BaseModel):
     tally_voucher_type: str | None = None
     tally_transaction_type: str | None = None
     narration: str | None = None
+    # Release 2.1.0: the Tally ledger of a Tally receipt (the outlet may hold several).
+    tally_debtor_ledger_id: uuid.UUID | None = None
+    tally_ledger_name: str | None = None
     reviewed_by: uuid.UUID | None
     reviewed_at: datetime | None
     created_by: uuid.UUID

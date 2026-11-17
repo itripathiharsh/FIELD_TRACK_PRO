@@ -110,7 +110,7 @@ async def get_collections_overview(
         .outerjoin(Territory, Territory.id == Customer.territory_id)
         .outerjoin(Area, Area.id == Customer.area_id)
         # A Tally ledger that is not a debtor (bank, supplier, expense) is not an outlet.
-        .where(Customer.tally_is_debtor.is_not(False))
+        .where(Customer.tally_is_debtor.is_not(False), Customer.merged_into_customer_id.is_(None))
     )
     if search:
         like = like_pattern(search)

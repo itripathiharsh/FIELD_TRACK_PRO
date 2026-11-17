@@ -7,7 +7,8 @@ import { PaymentMethodBadge } from './PaymentMethodBadge';
 import { AwaitingTallyAmount } from './AwaitingTallyAmount';
 import { TallyStatusBadge } from './TallyStatusBadge';
 import { apiClient } from '../../api/client';
-import { AccountSummary } from '../../types';
+import { AccountSummary, LedgerRead } from '../../types';
+import { TallyLedgersPanel } from '../customers/TallyLedgersPanel';
 import { getAgeingTextClass } from '../../utils/ageing';
 import { PositionBreakdown, AgeingTable, ReconcileWarning } from '../collections/PositionBreakdown';
 import { hasPosition } from '../collections/positionFormat';
@@ -17,13 +18,15 @@ interface AccountSummaryCardProps {
   account: AccountSummary;
   /** Provided only in the employee/visit context - shows the "Collect Payment" action. */
   onCollectPayment?: () => void;
+  /** 2.1.0: ledger master rows of this outlet (primary marker, brand source) for the Tally ledgers panel. */
+  ledgers?: LedgerRead[];
 }
 
 /**
  * Outlet "Account / Collections" panel: outstanding/due/overdue, aging,
  * recent invoice/payment history, and brand-wise totals.
  */
-export const AccountSummaryCard: React.FC<AccountSummaryCardProps> = ({ account, onCollectPayment }) => {
+export const AccountSummaryCard: React.FC<AccountSummaryCardProps> = ({ account, onCollectPayment, ledgers }) => {
   const [viewingProofId, setViewingProofId] = useState<string | null>(null);
 
   const viewProof = async (proofId: string) => {
@@ -143,6 +146,8 @@ export const AccountSummaryCard: React.FC<AccountSummaryCardProps> = ({ account,
           )}
         </div>
       )}
+
+      <TallyLedgersPanel positions={account.ledgers} ledgers={ledgers} />
 
       {showPosition && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">

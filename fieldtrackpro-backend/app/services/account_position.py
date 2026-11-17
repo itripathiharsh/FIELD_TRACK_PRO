@@ -386,9 +386,30 @@ class BrandDetail:
 
 
 @dataclass
+class LedgerPosition:
+    """One Tally ledger of a physical outlet (receivable sign: + = owed). Release 2.1.0."""
+    ledger_id: uuid.UUID | None
+    tally_guid: str | None
+    name: str
+    brand: str | None
+    tally_outlet_code: str | None
+    opening_balance: Decimal = ZERO
+    closing_balance: Decimal = ZERO
+    invoiced: Decimal = ZERO
+    paid_in_tally: Decimal = ZERO
+    adjustments: Decimal = ZERO
+    outstanding: Decimal = ZERO
+    open_bills_total: Decimal = ZERO
+    unallocated: Decimal = ZERO
+    tally_difference: Decimal = ZERO
+    reconciles: bool = True
+
+
+@dataclass
 class OutletDetail:
     outlet: Position
     brands: list[BrandDetail]
+    ledgers: list[LedgerPosition] = field(default_factory=list)
     # Sum of POSTED payment amounts (legacy `total_paid` = posted payments only,
     # excludes the snapshot baseline collection).
     posted_payments_total: Decimal = ZERO
@@ -581,26 +602,85 @@ async def load_outlet_positions(
     return out
 
 
+@dataclass
+class _Led:
+    """A ledger row, or a stand-in built from a legacy customer that has no ledger row yet."""
+    id: uuid.UUID | None
+    customer_id: uuid.UUID
+    tally_guid: str | None
+    name: str
+    brand: str | None
+    code: str | None
+    opening: Decimal
+    closing: Decimal
+    opening_as_of: date | None
+    closing_at: datetime | None
+    is_primary: bool
+    # Brand set explicitly by an admin / the client sheet (brand_override). Only this fills a missing
+    # invoice or bill brand: the Tally-derived ledger brand never moves money between brand rows, so
+    # bills and the unallocated remainder net exactly as in release 2.0 (rehearsal M1).
+    override: str | None = None
+
+
+async def _tally_ledgers(session, customer_ids) -> dict[uuid.UUID, list[_Led]]:
+    """Debtor ledgers with a Tally balance, per outlet (TALLY mode inputs)."""
+    from app.models.tally_debtor_ledger import TallyDebtorLedger
+
+    custs = {c.id: c for c in (await session.execute(
+        select(Customer).where(Customer.id.in_(customer_ids), Customer.tally_is_debtor.is_(True))
+    )).scalars()}
+    if not custs:
+        return {}
+    out: dict[uuid.UUID, list[_Led]] = defaultdict(list)
+    rows = (await session.execute(
+        select(TallyDebtorLedger).where(TallyDebtorLedger.customer_id.in_(list(custs)))
+    )).scalars().all()
+    with_rows = set()
+    for l in rows:
+        with_rows.add(l.customer_id)
+        if l.is_debtor is False or l.closing_balance_at is None:
+            continue
+        out[l.customer_id].append(_Led(
+            l.id, l.customer_id, l.tally_guid, l.name, l.effective_brand, l.tally_outlet_code,
+            -(l.opening_balance or ZERO), -(l.closing_balance or ZERO), l.opening_balance_as_of,
+            l.closing_balance_at, bool(l.is_primary), (l.brand_override or None)))
+    for cid, c in custs.items():  # legacy customer without ledger rows: itself is its ledger
+        if cid not in with_rows and c.tally_closing_balance_at is not None:
+            out[cid].append(_Led(None, cid, c.tally_guid, c.name, None, c.outlet_code,
+                                 -(c.tally_opening_balance or ZERO), -(c.tally_closing_balance or ZERO),
+                                 c.tally_opening_balance_as_of, c.tally_closing_balance_at, True))
+    for cid in out:
+        out[cid].sort(key=lambda x: (not x.is_primary, x.name.lower()))
+    return dict(out)
+
+
 async def _apply_tally_balance_mode(
     session, customer_ids, today, out, invoices, posted, awaiting, shares, display, assigned, paid_by_invoice,
 ) -> None:
     """Replace the baseline position by the Tally-balance position for every outlet
-    that is a Tally debtor with a ledger balance, once open bills exist."""
+    that is a Tally debtor with ledger balances, once open bills exist.
+
+    Release 2.1.0: an outlet (physical shop) may hold several Tally ledgers (one per
+    brand). Each ledger keeps its own opening / closing balance, open bills and
+    unallocated remainder; brand rows aggregate across ledgers by brand; the outlet is
+    the sum of its ledgers, and `ledgers[]` gives the per-ledger breakdown."""
     run = (await session.execute(
         select(TallySnapshotRun).where(TallySnapshotRun.kind == "BILLS", TallySnapshotRun.status == "COMPLETE")
         .order_by(TallySnapshotRun.as_of_date.desc(), TallySnapshotRun.completed_at.desc()).limit(1)
     )).scalar_one_or_none()
     if run is None:
         return
-    custs = {c.id: c for c in (await session.execute(
-        select(Customer).where(
-            Customer.id.in_(customer_ids), Customer.tally_is_debtor.is_(True),
-            Customer.tally_closing_balance_at.is_not(None),
-        )
-    )).scalars()}
-    if not custs:
+    leds = await _tally_ledgers(session, customer_ids)
+    if not leds:
         return
-    ids = list(custs)
+    ids = list(leds)
+    by_id: dict[uuid.UUID, _Led] = {l.id: l for ls in leds.values() for l in ls if l.id is not None}
+
+    def ledger_of(cid, ledger_id) -> _Led:
+        """The row's own ledger when it belongs to this outlet, else the outlet's primary ledger."""
+        l = by_id.get(ledger_id) if ledger_id is not None else None
+        return l if l is not None and l.customer_id == cid else leds[cid][0]
+
     bills = (await session.execute(
         select(TallyOpenBill).where(TallyOpenBill.customer_id.in_(ids), TallyOpenBill.as_of_date == run.as_of_date)
     )).scalars().all()
@@ -610,88 +690,128 @@ async def _apply_tally_balance_mode(
         )
     )).scalars().all()
 
-    def since_ok(cid, d) -> bool:
-        since = custs[cid].tally_opening_balance_as_of
-        return since is None or d >= since
+    def since_ok(l: _Led, d) -> bool:
+        return l.opening_as_of is None or d >= l.opening_as_of
 
-    brand_of_bill: dict[tuple[uuid.UUID, str], str | None] = {}
+    def lkey(l: _Led):
+        return l.id or ("legacy", l.customer_id)
+
+    brand_of_bill: dict[tuple, str | None] = {}
     for inv in invoices:
-        if inv.customer_id in custs and inv.tally_bill_name:
-            brand_of_bill.setdefault((inv.customer_id, inv.tally_bill_name), inv.brand)
+        if inv.customer_id in leds and inv.tally_bill_name:
+            l = ledger_of(inv.customer_id, getattr(inv, "tally_debtor_ledger_id", None))
+            brand_of_bill.setdefault((lkey(l), inv.tally_bill_name), inv.brand or l.override)
 
-    t_inputs: dict[uuid.UUID, dict[str, TallyBrandInputs]] = defaultdict(dict)
+    # Inputs are kept per (ledger, brand): every ledger nets its own bills, credits and unallocated
+    # remainder exactly as a single-ledger outlet did in 2.0, and brand rows / the outlet are SUMS of
+    # those positions. A credit on one brand ledger therefore never reduces another brand ledger's
+    # outstanding (strict brand isolation), and linking ledgers never changes any figure.
+    t_inputs: dict[uuid.UUID, dict[tuple, TallyBrandInputs]] = defaultdict(dict)
     t_names: dict[uuid.UUID, dict[str, str]] = defaultdict(dict)
     t_meta: dict[uuid.UUID, dict[str, dict]] = defaultdict(dict)
+    acc: dict = defaultdict(lambda: {"invoiced": ZERO, "paid": ZERO, "adj": ZERO, "bills": ZERO})
 
-    def entry(cid, raw) -> TallyBrandInputs:
+    def entry(cid, l: _Led, raw) -> TallyBrandInputs:
         k = brand_key(raw)
-        if k not in t_inputs[cid]:
-            t_inputs[cid][k] = TallyBrandInputs()
+        if k not in t_names[cid]:
             t_names[cid][k] = display(raw)
             t_meta[cid][k] = {"invoice_count": 0, "payment_count": 0, "latest_invoice": None, "latest_payment": None}
-        return t_inputs[cid][k]
+        key = (lkey(l), k)
+        if key not in t_inputs[cid]:
+            t_inputs[cid][key] = TallyBrandInputs()
+        return t_inputs[cid][key]
 
     for cid in ids:
-        entry(cid, None)  # the Unbranded row carries the unallocated remainder
+        for l in leds[cid]:
+            entry(cid, l, None)  # each ledger's Unbranded row carries its own unallocated remainder
     for cid, b in assigned:
-        if cid in custs and b:
-            entry(cid, b)
-    bills_total: dict[uuid.UUID, Decimal] = defaultdict(lambda: ZERO)
+        if cid in leds and b:
+            entry(cid, leds[cid][0], b)
     for b in bills:
+        l = ledger_of(b.customer_id, getattr(b, "tally_debtor_ledger_id", None))
         days = (today - b.bill_date).days if b.bill_date else -1
         status = classify_age_days(max(days, 0))
-        entry(b.customer_id, brand_of_bill.get((b.customer_id, b.bill_name))).bills.append(
-            InvoiceLine(b.pending_amount, b.pending_amount, days, status)
-        )
-        bills_total[b.customer_id] += b.pending_amount
+        brand = brand_of_bill.get((lkey(l), b.bill_name)) or l.override
+        entry(b.customer_id, l, brand).bills.append(InvoiceLine(b.pending_amount, b.pending_amount, days, status))
+        acc[lkey(l)]["bills"] += b.pending_amount
     for inv in invoices:
-        if inv.customer_id in custs and since_ok(inv.customer_id, inv.invoice_date):
-            entry(inv.customer_id, inv.brand).invoiced += inv.amount
-            m = t_meta[inv.customer_id][brand_key(inv.brand)]
+        if inv.customer_id not in leds:
+            continue
+        l = ledger_of(inv.customer_id, getattr(inv, "tally_debtor_ledger_id", None))
+        if since_ok(l, inv.invoice_date):
+            brand = inv.brand or l.override
+            entry(inv.customer_id, l, brand).invoiced += inv.amount
+            acc[lkey(l)]["invoiced"] += inv.amount
+            m = t_meta[inv.customer_id][brand_key(brand)]
             m["invoice_count"] += 1
             if m["latest_invoice"] is None or inv.invoice_date > m["latest_invoice"]:
                 m["latest_invoice"] = inv.invoice_date
     posted_total: dict[uuid.UUID, Decimal] = defaultdict(lambda: ZERO)
     posted_ids: dict[uuid.UUID, set[uuid.UUID]] = defaultdict(set)
     for p in posted:
-        if p.customer_id in custs and since_ok(p.customer_id, p.payment_date):
+        if p.customer_id not in leds:
+            continue
+        l = ledger_of(p.customer_id, getattr(p, "tally_debtor_ledger_id", None))
+        if since_ok(l, p.payment_date):
             posted_total[p.customer_id] += p.amount
             posted_ids[p.customer_id].add(p.id)
+            acc[lkey(l)]["paid"] += p.amount
             for brand, amount in shares(p):
-                entry(p.customer_id, brand).posted_payments += amount
+                brand = brand or l.override
+                entry(p.customer_id, l, brand).posted_payments += amount
                 m = t_meta[p.customer_id][brand_key(brand)]
                 m["payment_count"] += 1
                 if m["latest_payment"] is None or p.payment_date > m["latest_payment"]:
                     m["latest_payment"] = p.payment_date
     for p in awaiting:
-        if p.customer_id in custs:
+        if p.customer_id in leds:
+            l = ledger_of(p.customer_id, getattr(p, "tally_debtor_ledger_id", None))
             for brand, amount in shares(p):
-                entry(p.customer_id, brand).awaiting += amount
+                entry(p.customer_id, l, brand).awaiting += amount
     for a in adjustments:
-        if since_ok(a.customer_id, a.voucher_date):
-            entry(a.customer_id, None).adjustments += a.amount
+        l = ledger_of(a.customer_id, getattr(a, "tally_debtor_ledger_id", None))
+        if since_ok(l, a.voucher_date):
+            entry(a.customer_id, l, None).adjustments += a.amount
+            acc[lkey(l)]["adj"] += a.amount
 
-    for cid, c in custs.items():
-        closing = -(c.tally_closing_balance or ZERO)
-        opening = -(c.tally_opening_balance or ZERO)
-        entry(cid, None).residue = closing - bills_total.get(cid, ZERO)
+    for cid, ls in leds.items():
+        ledger_rows: list[LedgerPosition] = []
+        for l in ls:
+            x = acc[lkey(l)]
+            unallocated = l.closing - x["bills"]
+            entry(cid, l, None).residue = unallocated
+            diff = _q(l.opening + x["invoiced"] + x["adj"] - x["paid"] - l.closing)
+            ledger_rows.append(LedgerPosition(
+                ledger_id=l.id, tally_guid=l.tally_guid, name=l.name, brand=l.brand, tally_outlet_code=l.code,
+                opening_balance=_q(l.opening), closing_balance=_q(l.closing), invoiced=_q(x["invoiced"]),
+                paid_in_tally=_q(x["paid"]), adjustments=_q(x["adj"]), outstanding=_q(l.closing),
+                open_bills_total=_q(x["bills"]), unallocated=_q(unallocated), tally_difference=diff,
+                reconciles=diff == ZERO,
+            ))
+        by_brand: dict[str, list[Position]] = defaultdict(list)
+        for (_lk, k), ti in t_inputs[cid].items():
+            by_brand[k].append(compute_tally_brand_position(ti))
         brands = []
-        for k, ti in sorted(t_inputs[cid].items(), key=lambda kv: t_names[cid][kv[0]]):
+        for k in sorted(by_brand, key=lambda kk: t_names[cid][kk]):
             m = t_meta[cid][k]
+            ps = by_brand[k]
             brands.append(BrandDetail(
-                brand=t_names[cid][k], position=compute_tally_brand_position(ti),
+                brand=t_names[cid][k], position=ps[0] if len(ps) == 1 else sum_positions(ps),
                 invoice_count=m["invoice_count"], payment_count=m["payment_count"],
                 latest_invoice_date=m["latest_invoice"], latest_payment_date=m["latest_payment"],
             ))
         total = sum_positions(b.position for b in brands)
+        opening = sum((l.opening for l in ls), ZERO)
+        closing = sum((l.closing for l in ls), ZERO)
         diff = _q(opening + total.invoiced + total.adjustments - total.paid_in_tally - closing)
+        as_of = max((l.closing_at for l in ls if l.closing_at), default=None)
         total = replace(
-            total, balance_as_of=c.tally_closing_balance_at, tally_opening_balance=opening,
+            total, balance_as_of=as_of, tally_opening_balance=opening,
             tally_closing_balance=closing, tally_difference=diff,
             reconciles=total.reconciles and diff == ZERO,
         )
         out[cid] = OutletDetail(
-            outlet=total, brands=brands,
+            outlet=total, brands=brands, ledgers=ledger_rows,
             posted_payments_total=posted_total.get(cid, ZERO),
             invoice_settled_total=sum(
                 (paid_by_invoice.get(i.id, ZERO) for i in invoices if i.customer_id == cid), ZERO

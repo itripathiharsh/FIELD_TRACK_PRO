@@ -19,7 +19,7 @@ from app.repositories.customer_repo import CustomerRepository
 from app.repositories.invoice_repo import InvoiceRepository
 from app.repositories.payment_repo import PaymentRepository
 from app.repositories.visit_repo import VisitRepository
-from app.schemas.account import AccountSummary, BrandSummary
+from app.schemas.account import AccountSummary, BrandSummary, LedgerPosition
 from app.schemas.invoice import AgingStatus, InvoiceRead
 from app.schemas.payment import PaymentRead
 from app.services import account_position, invoice_service, payment_tally
@@ -45,6 +45,58 @@ async def assert_employee_can_view_account(
     from app.services.customer_service import assert_employee_can_view_customer
 
     await assert_employee_can_view_customer(customer_id, current_user, session)
+
+
+async def _attach_ledger_names(session: AsyncSession, payments) -> None:
+    from app.models.tally_debtor_ledger import TallyDebtorLedger
+    ids = {p.tally_debtor_ledger_id for p in payments if getattr(p, "tally_debtor_ledger_id", None)}
+    if not ids:
+        return
+    names = dict((await session.execute(
+        select(TallyDebtorLedger.id, TallyDebtorLedger.name).where(TallyDebtorLedger.id.in_(ids))
+    )).all())
+    for p in payments:
+        p._tally_ledger_name = names.get(getattr(p, "tally_debtor_ledger_id", None))
+
+
+async def get_account_history(customer_id: uuid.UUID, current_user: User, session: AsyncSession,
+                              limit: int = 200, offset: int = 0):
+    """Every Tally invoice, receipt and adjustment of every ledger of this physical outlet, newest
+    first, with ledger and brand (retired rows included and marked). Release 2.1.0."""
+    from sqlalchemy import text
+    from app.schemas.account import HistoryItem, HistoryPage
+
+    await assert_employee_can_view_account(customer_id, current_user, session)
+    if await CustomerRepository(session).get_by_id(customer_id) is None:
+        raise BaseAPIException(status_code=404, detail="Outlet not found", error_code="CUSTOMER_NOT_FOUND")
+    base = """
+      SELECT i.invoice_date d, 'INVOICE' kind, i.tally_voucher_type vt, i.invoice_number vn, i.amount amt,
+             COALESCE(i.brand, NULLIF(l.brand_override, ''), l.brand_tally) brand, l.id lid, l.name lname,
+             i.tally_bill_name bill, i.narration narr, (i.source = 'TALLY_RETIRED') retired, i.tally_retired_reason rr,
+             i.created_at ts
+        FROM invoices i LEFT JOIN tally_debtor_ledgers l ON l.id = i.tally_debtor_ledger_id
+       WHERE i.customer_id = :cid AND i.source IN ('TALLY', 'TALLY_RETIRED')
+      UNION ALL
+      SELECT p.payment_date, 'PAYMENT', p.tally_voucher_type, NULL, p.amount,
+             COALESCE((SELECT min(a.brand) FROM payment_brand_allocations a WHERE a.payment_id = p.id),
+                      NULLIF(l.brand_override, ''), l.brand_tally),
+             l.id, l.name, NULL, p.narration, (p.source = 'TALLY_RETIRED'), p.tally_retired_reason, p.created_at
+        FROM payments p LEFT JOIN tally_debtor_ledgers l ON l.id = p.tally_debtor_ledger_id
+       WHERE p.customer_id = :cid AND p.source IN ('TALLY', 'TALLY_RETIRED')
+      UNION ALL
+      SELECT a.voucher_date, 'ADJUSTMENT', a.voucher_type, a.voucher_number, a.amount,
+             COALESCE(NULLIF(l.brand_override, ''), l.brand_tally), l.id, l.name, NULL, a.narration,
+             (a.state = 'RETIRED'), a.retired_reason, a.created_at
+        FROM tally_ledger_adjustments a LEFT JOIN tally_debtor_ledgers l ON l.id = a.tally_debtor_ledger_id
+       WHERE a.customer_id = :cid
+    """
+    total = (await session.execute(text(f"SELECT count(*) FROM ({base}) h"), {"cid": customer_id})).scalar() or 0
+    rows = (await session.execute(text(f"SELECT * FROM ({base}) h ORDER BY d DESC, ts DESC LIMIT :lim OFFSET :off"),
+                                  {"cid": customer_id, "lim": limit, "off": offset})).mappings().all()
+    return HistoryPage(total=total, items=[HistoryItem(
+        date=r["d"], kind=r["kind"], voucher_type=r["vt"], voucher_number=r["vn"], amount=r["amt"], brand=r["brand"],
+        ledger_id=r["lid"], ledger_name=r["lname"], bill_name=r["bill"], narration=r["narr"],
+        retired=bool(r["retired"]), retired_reason=r["rr"]) for r in rows])
 
 
 async def get_account_summary(
@@ -93,6 +145,7 @@ async def get_account_summary(
     payments = await pay_repo.list_by_customer(customer_id)
     is_admin = current_user.is_admin
     jobs = await payment_tally.load_jobs(session, [p.id for p in payments])
+    await _attach_ledger_names(session, payments)
 
     # Per-invoice display rows (recent list + legacy gross MIS view below); the
     # headline / brand figures come from `detail`, never from these.
@@ -163,5 +216,6 @@ async def get_account_summary(
         recent_payments=[to_payment_read(p, jobs.get(p.id), is_admin) for p in sorted_payments[:20]],
         brand_summary=brand_summary,
         aging_buckets=aging_buckets,
+        ledgers=[LedgerPosition(**vars(l)) for l in detail.ledgers],
         **position_fields(outlet),
     )

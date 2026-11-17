@@ -247,8 +247,20 @@ describe('CustomersPage', () => {
     await waitFor(() => expect(screen.queryByText('Acme Industrial')).not.toBeInTheDocument());
     expect(screen.getByText('Zebra Logistics')).toBeInTheDocument();
   });
+
+  it('shows one row per physical outlet with its Tally ledger count and brands (2.1.0)', async () => {
+    mockApi({
+      ...baseRoutes(ADMIN_USER),
+      '/api/v1/customers': [
+        { ...CUSTOMER, ledger_count: 4, brands: ['RR', 'USHA'] },
+        { ...CUSTOMER, id: 'merged-x', name: 'Hidden Merged', merged_into_customer_id: CUSTOMER.id },
+      ],
+      '/api/v1/territories': [TERRITORY],
+    });
+    renderWithProviders(<CustomersPage />);
+    await waitFor(() => expect(screen.getByText('Acme Industrial')).toBeInTheDocument());
+    expect(screen.getByTestId('ledger-count')).toHaveTextContent('4 Tally ledgers');
+    expect(screen.getByText('RR')).toBeInTheDocument();
+    expect(screen.queryByText('Hidden Merged')).not.toBeInTheDocument();
+  });
 });
-
-
-
-

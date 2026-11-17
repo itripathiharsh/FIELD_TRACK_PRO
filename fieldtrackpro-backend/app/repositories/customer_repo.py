@@ -9,6 +9,7 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.customer import Customer
+from app.models.tally_debtor_ledger import TallyDebtorLedger
 from app.models.employee_area_assignment import EmployeeAreaAssignment
 from app.models.employee_customer_assignment import EmployeeCustomerAssignment
 from app.core.datetime_utils import get_ist_today_range
@@ -49,6 +50,12 @@ def _build_customer_search_filter(search: str, scope_clause=None):
                 Customer.outlet_code.ilike(pattern, escape="\\"),
                 Customer.address.ilike(pattern, escape="\\"),
                 contact_match,
+                # Release 2.1.0: an outlet is also found by any of its linked Tally ledgers.
+                Customer.id.in_(select(TallyDebtorLedger.customer_id).where(or_(
+                    TallyDebtorLedger.name.ilike(pattern, escape="\\"),
+                    TallyDebtorLedger.tally_outlet_code.ilike(pattern, escape="\\"),
+                    TallyDebtorLedger.tally_guid.ilike(pattern, escape="\\"),
+                ))),
             )
         )
     return and_(*token_clauses)
@@ -57,7 +64,9 @@ def _build_customer_search_filter(search: str, scope_clause=None):
 # Outlet lists exclude customers whose Tally ledger is not a debtor (bank, supplier,
 # expense ledgers the old sync imported). They are kept, never deleted, and still
 # open by id; NULL (never seen in a Tally ledger snapshot / created in FieldTrack) shows.
-OUTLET_CLAUSE = Customer.tally_is_debtor.is_not(False)
+# Release 2.1.0: a customer merged into a physical outlet (its ledgers linked elsewhere) is hidden too.
+OUTLET_CLAUSE_WITH_MERGED = Customer.tally_is_debtor.is_not(False)
+OUTLET_CLAUSE = and_(OUTLET_CLAUSE_WITH_MERGED, Customer.merged_into_customer_id.is_(None))
 
 
 class CustomerRepository(BaseRepository[Customer]):
@@ -71,8 +80,9 @@ class CustomerRepository(BaseRepository[Customer]):
         limit: int = 50,
         area_id: uuid.UUID | None = None,
         search: str | None = None,
+        include_merged: bool = False,
     ) -> tuple[list[Customer], int]:
-        filters = [OUTLET_CLAUSE]
+        filters = [OUTLET_CLAUSE_WITH_MERGED if include_merged else OUTLET_CLAUSE]
         if territory_id:
             filters.append(Customer.territory_id == territory_id)
         if area_id:

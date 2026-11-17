@@ -412,6 +412,15 @@ export const CustomersPage: React.FC = () => {
                 {cust.outlet_code}
               </span>
             )}
+            {(cust.ledger_count ?? 0) > 1 && (
+              <span
+                data-testid="ledger-count"
+                className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-sky-100 text-sky-900 border border-sky-300"
+                title="Number of Tally ledgers (one per brand) linked to this shop"
+              >
+                {cust.ledger_count} Tally ledgers
+              </span>
+            )}
             <p className="font-caption text-xs text-on-surface-variant">
               Contact: {cust.contact_person || '—'}
             </p>
@@ -716,9 +725,9 @@ export const CustomersPage: React.FC = () => {
           ) : (
             <DataTable
               columns={columns}
-              data={customers}
+              data={customers.filter((c) => !c.merged_into_customer_id)}
               isLoading={isLoading}
-              searchPlaceholder="Search customers by name, code, GST, address, contact..."
+              searchPlaceholder="Search customers by name, code (any linked Tally ledger), GST, address, contact..."
               serverSide={true}
               totalCount={totalCount}
               page={page}

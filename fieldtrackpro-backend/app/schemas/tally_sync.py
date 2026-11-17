@@ -56,6 +56,10 @@ class TallyIntegrationStatusResponse(BaseModel):
     total_payments_synced: int = 0
     total_customers_synced: int = 0
     message: Optional[str] = None
+    # Release 2.1.0 (additive): the agent's own health block and the derived sync state.
+    health: Optional[dict[str, Any]] = None
+    health_reported_at: Optional[datetime] = None
+    sync_state: str = "NOT_CONFIGURED"  # NOT_CONFIGURED|OFFLINE|TALLY_UNAVAILABLE|SYNCING|STALLED|DEGRADED|OK
 
 
 class TallyAuditLogItem(BaseModel):

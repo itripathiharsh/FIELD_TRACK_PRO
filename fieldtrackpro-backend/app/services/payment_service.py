@@ -135,6 +135,8 @@ def to_payment_read(payment: Payment, job=None, is_admin: bool = False) -> Payme
         tally_voucher_type=payment.tally_voucher_type,
         tally_transaction_type=payment.tally_transaction_type,
         narration=payment.narration,
+        tally_debtor_ledger_id=getattr(payment, "tally_debtor_ledger_id", None),
+        tally_ledger_name=getattr(payment, "_tally_ledger_name", None),
         rejection_reason=payment.rejection_reason,
         reviewed_by=payment.reviewed_by,
         reviewed_at=payment.reviewed_at,

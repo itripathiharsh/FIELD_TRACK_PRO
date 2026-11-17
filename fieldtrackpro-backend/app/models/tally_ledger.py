@@ -51,6 +51,10 @@ class TallyLedgerAdjustment(Base):
     customer_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("customers.id", ondelete="RESTRICT"), index=True
     )
+    # Release 2.1.0: the original Tally ledger of this row (customer_id = its physical outlet).
+    tally_debtor_ledger_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("tally_debtor_ledgers.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
     # Line identity: the voucher GUID, or "<GUID>::<ledger name>" for a voucher that
     # touches several debtor ledgers.
     source_reference: Mapped[str] = mapped_column(String(255), unique=True)
@@ -79,6 +83,10 @@ class TallyOpenBill(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     customer_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("customers.id", ondelete="CASCADE"), index=True
+    )
+    # Release 2.1.0: the original Tally ledger of this row (customer_id = its physical outlet).
+    tally_debtor_ledger_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("tally_debtor_ledgers.id", ondelete="RESTRICT"), nullable=True, index=True
     )
     as_of_date: Mapped[date] = mapped_column(Date, index=True)
     snapshot_id: Mapped[str] = mapped_column(String(64), index=True)

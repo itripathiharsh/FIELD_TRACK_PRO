@@ -1,4 +1,5 @@
 import { TallyReconciliationPanel } from '../components/tally/TallyReconciliationPanel';
+import { SyncHealthCard } from '../components/tally/SyncHealthCard';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   Building2,
@@ -781,6 +782,8 @@ export const SettingsPage: React.FC = () => {
                     </button>
                   </div>
                 </div>
+
+                <SyncHealthCard status={tallyStatus} />
 
                 {/* Tally App Closed Warning Notice */}
                 {tallyStatus?.agent_status === 'ONLINE' && tallyStatus?.tally_status !== 'ONLINE' && (

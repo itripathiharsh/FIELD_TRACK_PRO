@@ -82,6 +82,7 @@ async def list_customers(
     limit: int = 50,
     area_id: uuid.UUID | None = None,
     search: str | None = None,
+    include_merged: bool = False,
 ) -> tuple[list[Customer], int, set[uuid.UUID] | None]:
     """
     Returns (customers, total_count, in_scope_ids).
@@ -113,6 +114,7 @@ async def list_customers(
         limit=limit,
         area_id=area_id,
         search=search,
+        include_merged=include_merged,
     )
     return customers, total, None
 

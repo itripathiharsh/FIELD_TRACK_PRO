@@ -172,4 +172,24 @@ describe('AccountSummaryCard', () => {
     expect(screen.getByTestId('brand-opening-Aquafina')).toHaveTextContent('₹5,000');
     expect(screen.getByTestId('reconcile-warning')).toBeInTheDocument();
   });
+
+  it('shows the Tally ledgers of a multi-brand shop (2.1.0)', () => {
+    const ledger = {
+      ledger_id: 'l1', tally_guid: 'g1', name: 'Advik Home (USHA)', brand: 'USHA', tally_outlet_code: null,
+      opening_balance: '0.00', closing_balance: '6000.00', invoiced: '6000.00', paid_in_tally: '0.00', adjustments: '0.00',
+      outstanding: '6000.00', open_bills_total: '6000.00', unallocated: '0.00', tally_difference: '0.00', reconciles: true,
+    };
+    render(
+      <MemoryRouter>
+        <AccountSummaryCard account={{ ...BASE_ACCOUNT, ledgers: [ledger, { ...ledger, ledger_id: 'l2', name: 'Advik Home (RR)', brand: 'RR' }] }} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByTestId('tally-ledgers')).toBeInTheDocument();
+    expect(screen.getAllByTestId('tally-ledger-row')).toHaveLength(2);
+  });
+
+  it('shows no ledgers panel for an account without ledgers (older backend)', () => {
+    render(<MemoryRouter><AccountSummaryCard account={BASE_ACCOUNT} /></MemoryRouter>);
+    expect(screen.queryByTestId('tally-ledgers')).not.toBeInTheDocument();
+  });
 });

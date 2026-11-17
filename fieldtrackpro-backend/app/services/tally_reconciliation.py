@@ -22,30 +22,45 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 ZERO = Decimal("0.00")
 
-_PER_DEBTOR = text("""
-WITH c AS (
-  SELECT id, name, outlet_code, tally_opening_balance_as_of AS since,
-         -COALESCE(tally_opening_balance, 0) AS opening,
-         -COALESCE(tally_closing_balance, 0) AS closing,
-         tally_closing_balance_at AS closing_at
-    FROM customers WHERE tally_is_debtor IS TRUE
+# Release 2.1.0: per Tally LEDGER (an outlet may hold several), rolled up per physical outlet.
+# A row belongs to a ledger by tally_debtor_ledger_id; a row without one (pre-2.1.0) to the
+# outlet's primary ledger. A legacy debtor customer without ledger rows is its own ledger.
+_LEDGER_MATCH = ("(x.tally_debtor_ledger_id = l.lid OR (x.tally_debtor_ledger_id IS NULL AND l.is_primary "
+                 "AND x.customer_id = l.cid))")
+_PER_DEBTOR = text(f"""
+WITH l AS (
+  SELECT d.id AS lid, d.customer_id AS cid, d.name, d.tally_outlet_code AS outlet_code,
+         d.opening_balance_as_of AS since, -COALESCE(d.opening_balance, 0) AS opening,
+         -COALESCE(d.closing_balance, 0) AS closing, d.closing_balance_at AS closing_at, d.is_primary
+    FROM tally_debtor_ledgers d WHERE d.is_debtor IS TRUE
+  UNION ALL
+  SELECT NULL, c.id, c.name, c.outlet_code, c.tally_opening_balance_as_of,
+         -COALESCE(c.tally_opening_balance, 0), -COALESCE(c.tally_closing_balance, 0), c.tally_closing_balance_at, TRUE
+    FROM customers c
+   WHERE c.tally_is_debtor IS TRUE AND c.merged_into_customer_id IS NULL
+     AND NOT EXISTS (SELECT 1 FROM tally_debtor_ledgers z WHERE z.customer_id = c.id)
+     -- a merged customer's ledger now lives on its outlet; its stale balance fields are history only
 ),
-inv AS (SELECT i.customer_id, SUM(i.amount) s, COUNT(*) n FROM invoices i JOIN c ON c.id = i.customer_id
-         WHERE i.source = 'TALLY' AND (c.since IS NULL OR i.invoice_date >= c.since) GROUP BY 1),
-pay AS (SELECT p.customer_id, SUM(p.amount) s, COUNT(*) n FROM payments p JOIN c ON c.id = p.customer_id
-         WHERE p.source = 'TALLY' AND (c.since IS NULL OR p.payment_date >= c.since) GROUP BY 1),
-adj AS (SELECT a.customer_id, SUM(a.amount) s, COUNT(*) n FROM tally_ledger_adjustments a JOIN c ON c.id = a.customer_id
-         WHERE a.state = 'ACTIVE' AND (c.since IS NULL OR a.voucher_date >= c.since) GROUP BY 1),
+inv AS (SELECT l.lid, l.cid, SUM(x.amount) s, COUNT(*) n FROM invoices x JOIN l ON {_LEDGER_MATCH}
+         WHERE x.source = 'TALLY' AND (l.since IS NULL OR x.invoice_date >= l.since) GROUP BY 1, 2),
+pay AS (SELECT l.lid, l.cid, SUM(x.amount) s, COUNT(*) n FROM payments x JOIN l ON {_LEDGER_MATCH}
+         WHERE x.source = 'TALLY' AND (l.since IS NULL OR x.payment_date >= l.since) GROUP BY 1, 2),
+adj AS (SELECT l.lid, l.cid, SUM(x.amount) s, COUNT(*) n FROM tally_ledger_adjustments x JOIN l ON {_LEDGER_MATCH}
+         WHERE x.state = 'ACTIVE' AND (l.since IS NULL OR x.voucher_date >= l.since) GROUP BY 1, 2),
 lb AS (SELECT MAX(as_of_date) d FROM tally_open_bills),
-bills AS (SELECT b.customer_id, SUM(b.pending_amount) s, COUNT(*) n FROM tally_open_bills b, lb
-           WHERE b.as_of_date = lb.d GROUP BY 1)
-SELECT c.id, c.name, c.outlet_code, c.since, c.closing_at,
-       c.opening, COALESCE(inv.s,0) invoiced, COALESCE(inv.n,0) invoice_count,
+bills AS (SELECT l.lid, l.cid, SUM(x.pending_amount) s, COUNT(*) n FROM tally_open_bills x JOIN l ON {_LEDGER_MATCH}, lb
+           WHERE x.as_of_date = lb.d GROUP BY 1, 2)
+SELECT l.cid AS id, l.lid AS ledger_id, l.name, l.outlet_code, l.since, l.closing_at,
+       l.opening, COALESCE(inv.s,0) invoiced, COALESCE(inv.n,0) invoice_count,
        COALESCE(adj.s,0) adjustments, COALESCE(adj.n,0) adjustment_count,
        COALESCE(pay.s,0) received, COALESCE(pay.n,0) receipt_count,
-       c.closing, COALESCE(bills.s,0) open_bills, COALESCE(bills.n,0) open_bill_count
-  FROM c LEFT JOIN inv ON inv.customer_id = c.id LEFT JOIN pay ON pay.customer_id = c.id
-         LEFT JOIN adj ON adj.customer_id = c.id LEFT JOIN bills ON bills.customer_id = c.id
+       l.closing, COALESCE(bills.s,0) open_bills, COALESCE(bills.n,0) open_bill_count,
+       o.name AS outlet_name
+  FROM l JOIN customers o ON o.id = l.cid
+         LEFT JOIN inv ON inv.cid = l.cid AND inv.lid IS NOT DISTINCT FROM l.lid
+         LEFT JOIN pay ON pay.cid = l.cid AND pay.lid IS NOT DISTINCT FROM l.lid
+         LEFT JOIN adj ON adj.cid = l.cid AND adj.lid IS NOT DISTINCT FROM l.lid
+         LEFT JOIN bills ON bills.cid = l.cid AND bills.lid IS NOT DISTINCT FROM l.lid
 """)
 
 
@@ -54,6 +69,7 @@ async def build_report(session: AsyncSession, limit: int = 200) -> dict:
     totals = {k: ZERO for k in ("opening", "invoiced", "adjustments", "received", "closing", "open_bills")}
     counts = {"debtors": 0, "invoices": 0, "receipts": 0, "adjustments": 0, "open_bills": 0}
     differences = []
+    outlet_diff: dict = {}
     for r in rows:
         diff = (r["opening"] + r["invoiced"] + r["adjustments"] - r["received"] - r["closing"]).quantize(Decimal("0.01"))
         for k in totals:
@@ -63,9 +79,11 @@ async def build_report(session: AsyncSession, limit: int = 200) -> dict:
         counts["receipts"] += r["receipt_count"]
         counts["adjustments"] += r["adjustment_count"]
         counts["open_bills"] += r["open_bill_count"]
+        outlet_diff[r["id"]] = outlet_diff.get(r["id"], ZERO) + diff
         if diff != ZERO:
             differences.append({
-                "customer_id": str(r["id"]), "name": r["name"], "outlet_code": r["outlet_code"],
+                "customer_id": str(r["id"]), "ledger_id": str(r["ledger_id"]) if r["ledger_id"] else None,
+                "outlet_name": r["outlet_name"], "name": r["name"], "outlet_code": r["outlet_code"],
                 "opening": str(r["opening"]), "invoiced": str(r["invoiced"]), "adjustments": str(r["adjustments"]),
                 "received": str(r["received"]), "closing": str(r["closing"]), "difference": str(diff),
                 "closing_at": r["closing_at"].isoformat() if r["closing_at"] else None,
@@ -98,6 +116,8 @@ async def build_report(session: AsyncSession, limit: int = 200) -> dict:
         "totals": {k: str(v) for k, v in totals.items()} | {"difference": str(total_diff)},
         "counts": counts,
         "debtors_reconciled": counts["debtors"] - len(differences),
+        "outlets": len(outlet_diff),
+        "outlets_with_difference": sum(1 for v in outlet_diff.values() if v != ZERO),
         "debtors_with_difference": len(differences),
         "differences": differences[:limit],
         "unallocated_total": str(totals["closing"] - totals["open_bills"]),

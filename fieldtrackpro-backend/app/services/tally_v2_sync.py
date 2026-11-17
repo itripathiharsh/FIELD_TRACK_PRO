@@ -45,6 +45,7 @@ from app.models.payment import (
 )
 from app.models.payment_invoice_allocation import PaymentInvoiceAllocation
 from app.models.sync_agent import SyncAgent
+from app.models.tally_debtor_ledger import MAPPING_AUTO, MAPPING_NEW, TallyDebtorLedger
 from app.models.tally_ledger import (
     ADJUSTMENT_ACTIVE,
     ADJUSTMENT_RETIRED,
@@ -240,33 +241,102 @@ async def system_user_id(session: AsyncSession) -> uuid.UUID:
     return await _get_system_user_id(session)
 
 
-class CustomerResolver:
-    """Ledger -> customer, by Tally ledger GUID first, then exact name (cached per batch)."""
+async def outlet_of(session: AsyncSession, cust: Optional[Customer]) -> Optional[Customer]:
+    """The physical outlet a customer row stands for (follows merged_into; never loops)."""
+    seen = set()
+    while cust is not None and cust.merged_into_customer_id and cust.id not in seen:
+        seen.add(cust.id)
+        nxt = await session.get(Customer, cust.merged_into_customer_id)
+        if nxt is None:
+            break
+        cust = nxt
+    return cust
+
+
+async def ensure_ledger_for_customer(session: AsyncSession, cust: Customer,
+                                     status: str = MAPPING_AUTO) -> Optional[TallyDebtorLedger]:
+    """A customer that holds a Tally GUID but no ledger row yet (created by the v1 sync after the
+    migration, or by an older path) gets its 1:1 primary ledger - exactly what the migration backfill does."""
+    if not cust.tally_guid:
+        return None
+    led = (await session.execute(
+        select(TallyDebtorLedger).where(TallyDebtorLedger.tally_guid == cust.tally_guid)
+    )).scalar_one_or_none()
+    if led is not None:
+        return led
+    has_primary = (await session.execute(
+        select(TallyDebtorLedger.id).where(TallyDebtorLedger.customer_id == cust.id, TallyDebtorLedger.is_primary)
+    )).first() is not None
+    led = TallyDebtorLedger(
+        customer_id=cust.id, tally_guid=cust.tally_guid, name=(cust.name or cust.tally_guid)[:150],
+        parent_group=cust.tally_parent_group, aliases=cust.tally_aliases, tally_outlet_code=cust.outlet_code,
+        is_debtor=cust.tally_is_debtor, is_bill_wise=cust.tally_is_bill_wise, credit_period=cust.tally_credit_period,
+        opening_balance=cust.tally_opening_balance, opening_balance_as_of=cust.tally_opening_balance_as_of,
+        closing_balance=cust.tally_closing_balance, closing_balance_at=cust.tally_closing_balance_at,
+        gst_number=cust.gst_number, mobile=cust.mobile_number or None, address=cust.address or None,
+        is_primary=not has_primary, mapping_status=status,
+    )
+    session.add(led)
+    await session.flush()
+    return led
+
+
+class LedgerResolver:
+    """Tally ledger -> (physical outlet, ledger row), cached per batch.
+
+    By ledger GUID first (the ledger row, else a legacy customer holding that GUID, which gets its
+    1:1 ledger), then by exact LEDGER name (unique). A legacy customer without a ledger row is
+    matched by exact name only when unique and not merged (pre-2.1.0 compatibility)."""
 
     def __init__(self, session: AsyncSession):
         self.session = session
-        self.cache: dict[tuple[Optional[str], str], Optional[Customer]] = {}
+        self.cache: dict[tuple[Optional[str], str], tuple[Optional[Customer], Optional[TallyDebtorLedger]]] = {}
 
-    async def get(self, ledger_guid: Optional[str], ledger_name: str) -> Optional[Customer]:
+    async def resolve(self, ledger_guid: Optional[str], ledger_name: str
+                      ) -> tuple[Optional[Customer], Optional[TallyDebtorLedger]]:
         key = (ledger_guid, ledger_name.strip().lower())
         if key in self.cache:
             return self.cache[key]
-        cust = None
+        s = self.session
+        led = None
         if ledger_guid:
-            cust = (await self.session.execute(
-                select(Customer).where(Customer.tally_guid == ledger_guid)
+            led = (await s.execute(
+                select(TallyDebtorLedger).where(TallyDebtorLedger.tally_guid == ledger_guid)
             )).scalar_one_or_none()
-        if cust is None:
-            rows = (await self.session.execute(
-                select(Customer).where(func.lower(Customer.name) == key[1])
+            if led is None:
+                cust = (await s.execute(select(Customer).where(Customer.tally_guid == ledger_guid))).scalar_one_or_none()
+                if cust is not None:
+                    led = await ensure_ledger_for_customer(s, cust)
+        if led is None:
+            rows = (await s.execute(
+                select(TallyDebtorLedger).where(func.lower(TallyDebtorLedger.name) == key[1])
             )).scalars().all()
+            if len(rows) > 1:
+                debtors = [r for r in rows if r.is_debtor]
+                rows = debtors if len(debtors) == 1 else []
+            led = rows[0] if len(rows) == 1 else None
+        if led is None:
+            rows = (await s.execute(
+                select(Customer).where(func.lower(Customer.name) == key[1], Customer.merged_into_customer_id.is_(None))
+            )).scalars().all()
+            if len(rows) > 1:
+                debtors = [r for r in rows if r.tally_is_debtor]
+                rows = debtors if len(debtors) == 1 else []
             if len(rows) == 1:
                 cust = rows[0]
-            elif len(rows) > 1:
-                debtors = [r for r in rows if r.tally_is_debtor]
-                cust = debtors[0] if len(debtors) == 1 else None
-        self.cache[key] = cust
-        return cust
+                led = await ensure_ledger_for_customer(s, cust)
+                if led is None:  # a customer never seen in Tally (no GUID): outlet only
+                    self.cache[key] = (cust, None)
+                    return self.cache[key]
+        cust = await outlet_of(s, await s.get(Customer, led.customer_id)) if led is not None else None
+        self.cache[key] = (cust, led)
+        return self.cache[key]
+
+    async def get(self, ledger_guid: Optional[str], ledger_name: str) -> Optional[Customer]:
+        return (await self.resolve(ledger_guid, ledger_name))[0]
+
+
+CustomerResolver = LedgerResolver  # backwards-compatible name
 
 
 def _voucher_rows_clause(model, guid: str):
@@ -354,7 +424,8 @@ class _Stats:
 
 
 async def _apply_receipt_bills(
-    session: AsyncSession, payment: Payment, customer_id: uuid.UUID, bills: list[BillAllocation], st: _Stats
+    session: AsyncSession, payment: Payment, customer_id: uuid.UUID, bills: list[BillAllocation], st: _Stats,
+    ledger_id: Optional[uuid.UUID] = None,
 ) -> None:
     """Tally's bill-wise settlement replaces every earlier link of this receipt.
     Against-reference parts link to the invoice raising that bill; on-account /
@@ -373,6 +444,9 @@ async def _apply_receipt_bills(
                 Invoice.customer_id == customer_id,
                 Invoice.source == InvoiceSource.TALLY,
                 Invoice.tally_bill_name == name,
+                # A shop's brand ledgers may reuse a bill name: match within the receipt's own ledger.
+                *([or_(Invoice.tally_debtor_ledger_id == ledger_id, Invoice.tally_debtor_ledger_id.is_(None))]
+                  if ledger_id else []),
             ).order_by(Invoice.invoice_date.desc())
         )).scalars().first()
         if inv is None:
@@ -394,7 +468,7 @@ async def _apply_receipt_bills(
     payment.invoice_id = next(iter(resolved)) if len(resolved) == 1 else None
 
 
-async def _upsert_invoice(session, v: VoucherItem, p: LinePlan, cust: Customer, uid, now) -> bool:
+async def _upsert_invoice(session, v: VoucherItem, p: LinePlan, cust: Customer, uid, now, ledger_id=None) -> bool:
     number = (v.voucher_number or "").strip()
     if not number:
         raise ValueError("sales voucher has no voucher number")
@@ -405,6 +479,7 @@ async def _upsert_invoice(session, v: VoucherItem, p: LinePlan, cust: Customer, 
         inv = Invoice(source_reference=p.key, created_by=uid, due_date=None)
         session.add(inv)
     inv.customer_id = cust.id
+    inv.tally_debtor_ledger_id = ledger_id
     inv.invoice_number = number[:100]
     inv.invoice_date = v.date
     inv.amount = p.receivable
@@ -424,7 +499,8 @@ async def _upsert_invoice(session, v: VoucherItem, p: LinePlan, cust: Customer, 
     return created
 
 
-async def _upsert_payment(session, v: VoucherItem, p: LinePlan, cust: Customer, uid, now, st: _Stats) -> bool:
+async def _upsert_payment(session, v: VoucherItem, p: LinePlan, cust: Customer, uid, now, st: _Stats,
+                          ledger_id=None) -> bool:
     d = payment_details(v)
     pay = (await session.execute(
         select(Payment).where(Payment.source_reference == p.key).order_by(Payment.created_at)
@@ -438,6 +514,8 @@ async def _upsert_payment(session, v: VoucherItem, p: LinePlan, cust: Customer, 
     elif pay.source != PaymentSource.MANUAL:
         pay.source = PaymentSource.TALLY  # legacy import / retired copy is Tally's again
     pay.customer_id = cust.id
+    if pay.source != PaymentSource.MANUAL:
+        pay.tally_debtor_ledger_id = ledger_id
     pay.amount = amount
     pay.payment_date = v.date
     pay.payment_method = d["method"]
@@ -464,11 +542,11 @@ async def _upsert_payment(session, v: VoucherItem, p: LinePlan, cust: Customer, 
         if brand:
             session.add(PaymentBrandAllocation(payment_id=pay.id, brand=brand, brand_id=brand_id,
                                                allocated_amount=amount))
-        await _apply_receipt_bills(session, pay, cust.id, p.bills, st)
+        await _apply_receipt_bills(session, pay, cust.id, p.bills, st, ledger_id)
     return created
 
 
-async def _upsert_adjustment(session, v: VoucherItem, p: LinePlan, cust: Customer) -> bool:
+async def _upsert_adjustment(session, v: VoucherItem, p: LinePlan, cust: Customer, ledger_id=None) -> bool:
     adj = (await session.execute(
         select(TallyLedgerAdjustment).where(TallyLedgerAdjustment.source_reference == p.key)
     )).scalar_one_or_none()
@@ -477,6 +555,7 @@ async def _upsert_adjustment(session, v: VoucherItem, p: LinePlan, cust: Custome
         adj = TallyLedgerAdjustment(source_reference=p.key)
         session.add(adj)
     adj.customer_id = cust.id
+    adj.tally_debtor_ledger_id = ledger_id
     adj.tally_voucher_guid = v.guid
     adj.voucher_type = v.voucher_type[:100]
     adj.voucher_parent = _clip(v.voucher_parent, 100)
@@ -525,15 +604,18 @@ async def _sync_one_voucher(session, v: VoucherItem, resolver: CustomerResolver,
     plans = plan_voucher(v)
     keep: dict[str, set[str]] = {KIND_INVOICE: set(), KIND_PAYMENT: set(), KIND_ADJUSTMENT: set()}
     for p in plans:
-        cust = await resolver.get(p.ledger_guid, p.ledger_name)
+        cust, led = await resolver.resolve(p.ledger_guid, p.ledger_name)
         if cust is None:
             raise LookupError(f"ledger '{p.ledger_name}' is not a known customer (sync ledgers first)")
+        lid = led.id if led is not None else None
+        if p.brand is None and led is not None and led.effective_brand:
+            p.brand = led.effective_brand  # the ledger's (Tally or client-confirmed) brand
         if p.kind == KIND_INVOICE:
-            created = await _upsert_invoice(session, v, p, cust, uid, now)
+            created = await _upsert_invoice(session, v, p, cust, uid, now, lid)
         elif p.kind == KIND_PAYMENT:
-            created = await _upsert_payment(session, v, p, cust, uid, now, st)
+            created = await _upsert_payment(session, v, p, cust, uid, now, st, lid)
         else:
-            created = await _upsert_adjustment(session, v, p, cust)
+            created = await _upsert_adjustment(session, v, p, cust, lid)
         keep[p.kind].add(p.key)
         st.by_kind[p.kind] += 1
         if created:
@@ -618,94 +700,169 @@ async def latest_complete_run(session: AsyncSession, kind: str) -> Optional[Tall
 # Ledgers
 # ---------------------------------------------------------------------------
 
+def _ledger_facts(led: TallyDebtorLedger, item: LedgerItem, batch: LedgerSyncBatch, brand: Optional[str]) -> None:
+    """Tally facts of ONE ledger, exactly as exported (never touched by mapping)."""
+    led.name = item.name.strip()[:150]
+    led.parent_group = _clip(item.parent, 150)
+    led.aliases = [a for a in item.aliases if a.strip()] or None
+    code = (item.outlet_code or "").strip() or None
+    if code:
+        led.tally_outlet_code = code[:50]
+    if brand:
+        led.brand_tally = brand
+    led.is_debtor = bool(item.is_debtor)
+    if item.is_debtor:
+        led.is_bill_wise = item.is_bill_wise
+        led.credit_period = _clip(item.credit_period, 50)
+        for attr, value, size in (("gst_number", item.gst_number, 20), ("mobile", item.mobile or item.contact_number, 50),
+                                  ("address", item.address, None), ("pincode", item.pincode, 20),
+                                  ("state", item.state, 100)):
+            value = (value or "").strip()
+            if value:
+                setattr(led, attr, value[:size] if size else value)
+        if batch.snapshot_id:  # balances are only taken from a full snapshot (consistent as-of)
+            led.opening_balance = item.opening_balance if item.opening_balance is not None else ZERO
+            led.opening_balance_as_of = batch.period_start
+            led.closing_balance = item.closing_balance if item.closing_balance is not None else ZERO
+            led.closing_balance_at = batch.as_of or _now()
+
+
+async def _refresh_outlet_debtor_flag(session, cust: Customer) -> None:
+    """An outlet is hidden as "not a debtor" only when ALL its ledgers are non-debtors."""
+    flags = (await session.execute(
+        select(TallyDebtorLedger.is_debtor).where(TallyDebtorLedger.customer_id == cust.id)
+    )).scalars().all()
+    if flags:
+        if any(f for f in flags):
+            cust.tally_is_debtor = True
+        elif all(f is False for f in flags):
+            cust.tally_is_debtor = False
+
+
 async def _upsert_debtor(session, item: LedgerItem, batch: LedgerSyncBatch, uid, st: _Stats, conflicts: list):
     from app.services.tally_sync_service import ensure_area, ensure_territory
 
     name = item.name.strip()
     code = (item.outlet_code or "").strip() or None
-    cust = (await session.execute(select(Customer).where(Customer.tally_guid == item.guid))).scalar_one_or_none()
-    if cust is None and code:
-        cust = (await session.execute(
-            select(Customer).where(Customer.outlet_code == code, Customer.tally_guid.is_(None))
-        )).scalar_one_or_none()
-    if cust is None:
-        rows = (await session.execute(
-            select(Customer).where(func.lower(Customer.name) == name.lower(), Customer.tally_guid.is_(None))
-        )).scalars().all()
-        cust = rows[0] if len(rows) == 1 else None
-    details = {
-        "address": (item.address, None), "contact_number": (item.contact_number or item.mobile, 20),
-        "contact_person": (item.contact_person, 150), "gst_number": (item.gst_number, 20),
-        "email": (item.email, 255), "mobile_number": (item.mobile, 50),
-    }
-    if cust is None:
-        cust = Customer(name=name, tally_guid=item.guid, address="", contact_number="",
-                        location_status="MISSING", created_by=uid)
-        session.add(cust)
-        st.created += 1
+    brand, brand_id = (await _brand(session, item.brand)) if item.brand else (None, None)
+
+    led = (await session.execute(
+        select(TallyDebtorLedger).where(TallyDebtorLedger.tally_guid == item.guid)
+    )).scalar_one_or_none()
+    if led is None:
+        cust = (await session.execute(select(Customer).where(Customer.tally_guid == item.guid))).scalar_one_or_none()
+        if cust is None and code:
+            cust = (await session.execute(
+                select(Customer).where(Customer.outlet_code == code, Customer.tally_guid.is_(None))
+            )).scalar_one_or_none()
+        if cust is None:
+            rows = (await session.execute(
+                select(Customer).where(func.lower(Customer.name) == name.lower(), Customer.tally_guid.is_(None),
+                                       Customer.merged_into_customer_id.is_(None))
+            )).scalars().all()
+            cust = rows[0] if len(rows) == 1 else None
+        status = MAPPING_AUTO
+        if cust is None:  # a ledger FieldTrack has never seen: its own outlet, flagged for review
+            cust = Customer(name=name, tally_guid=item.guid, address="", contact_number="",
+                            location_status="MISSING", created_by=uid)
+            session.add(cust)
+            st.created += 1
+            status = MAPPING_NEW
+        else:
+            st.updated += 1
+        cust.tally_guid = cust.tally_guid or item.guid
+        await session.flush()
+        has_primary = (await session.execute(select(TallyDebtorLedger.id).where(
+            TallyDebtorLedger.customer_id == cust.id, TallyDebtorLedger.is_primary))).first() is not None
+        led = TallyDebtorLedger(customer_id=cust.id, tally_guid=item.guid, name=name[:150],
+                                is_primary=not has_primary, mapping_status=status)
+        session.add(led)
     else:
+        cust = await outlet_of(session, await session.get(Customer, led.customer_id))
         st.updated += 1
-    cust.tally_guid = item.guid
-    cust.name = name
-    for attr, (value, size) in details.items():
-        value = (value or "").strip()
-        if value:
-            setattr(cust, attr, value[:size] if size else value)
-    if code:
-        if not cust.outlet_code:
-            taken = (await session.execute(
-                select(Customer.id).where(Customer.outlet_code == code, Customer.id != cust.id)
-            )).first() if cust.id else (await session.execute(
-                select(Customer.id).where(Customer.outlet_code == code))).first()
-            if taken:
-                conflicts.append({"ledger": name, "outlet_code": code, "issue": "code already used by another outlet"})
-            else:
-                cust.outlet_code = code
-        elif cust.outlet_code != code:
-            conflicts.append({"ledger": name, "outlet_code": code, "stored": cust.outlet_code,
-                              "issue": "stored code differs from Tally alias (kept)"})
-    cust.tally_is_debtor = True
-    cust.tally_parent_group = _clip(item.parent, 150)
-    cust.tally_aliases = [a for a in item.aliases if a.strip()] or None
-    cust.tally_is_bill_wise = item.is_bill_wise
-    cust.tally_credit_period = _clip(item.credit_period, 50)
-    cust.needs_tally_entry = False
-    if batch.snapshot_id:  # balances are only taken from a full snapshot (consistent as-of)
-        cust.tally_opening_balance = item.opening_balance if item.opening_balance is not None else ZERO
-        cust.tally_opening_balance_as_of = batch.period_start
-        cust.tally_closing_balance = item.closing_balance if item.closing_balance is not None else ZERO
-        cust.tally_closing_balance_at = batch.as_of or _now()
+    _ledger_facts(led, item, batch, brand)
     await session.flush()
-    if item.zone and item.zone.strip():
-        terr = await ensure_territory(session, item.zone)
-        cust.territory_id = terr.id
-        if item.area and item.area.strip():
-            cust.area_id = (await ensure_area(session, item.area, terr.id)).id
-    if item.brand:
-        brand, brand_id = await _brand(session, item.brand)
-        if brand and not (await session.execute(select(CustomerBrand.id).where(
+
+    if led.is_primary and cust.id == led.customer_id:
+        # The outlet's master data follows its primary ledger (customers.tally_* = primary ledger).
+        if cust.outlet_name_source != "ADMIN":
+            cust.name = name
+        details = {
+            "address": (item.address, None), "contact_number": (item.contact_number or item.mobile, 20),
+            "contact_person": (item.contact_person, 150), "gst_number": (item.gst_number, 20),
+            "email": (item.email, 255), "mobile_number": (item.mobile, 50),
+        }
+        for attr, (value, size) in details.items():
+            value = (value or "").strip()
+            if value:
+                setattr(cust, attr, value[:size] if size else value)
+        if code:
+            if not cust.outlet_code:
+                taken = (await session.execute(
+                    select(Customer.id).where(Customer.outlet_code == code, Customer.id != cust.id)
+                )).first()
+                if taken:
+                    conflicts.append({"ledger": name, "outlet_code": code, "issue": "code already used by another outlet"})
+                else:
+                    cust.outlet_code = code
+            elif cust.outlet_code != code:
+                conflicts.append({"ledger": name, "outlet_code": code, "stored": cust.outlet_code,
+                                  "issue": "stored code differs from Tally alias (kept)"})
+        cust.tally_parent_group = led.parent_group
+        cust.tally_aliases = led.aliases
+        cust.tally_is_bill_wise = led.is_bill_wise
+        cust.tally_credit_period = led.credit_period
+        if batch.snapshot_id:
+            cust.tally_opening_balance = led.opening_balance
+            cust.tally_opening_balance_as_of = led.opening_balance_as_of
+            cust.tally_closing_balance = led.closing_balance
+            cust.tally_closing_balance_at = led.closing_balance_at
+        if item.zone and item.zone.strip():
+            terr = await ensure_territory(session, item.zone)
+            cust.territory_id = terr.id
+            if item.area and item.area.strip():
+                cust.area_id = (await ensure_area(session, item.area, terr.id)).id
+    cust.tally_is_debtor = True
+    cust.needs_tally_entry = False
+    await session.flush()
+    if brand and not (await session.execute(select(CustomerBrand.id).where(
             CustomerBrand.customer_id == cust.id, CustomerBrand.brand == brand))).first():
-            session.add(CustomerBrand(customer_id=cust.id, brand=brand, brand_id=brand_id, is_active=True))
-            await session.flush()
+        session.add(CustomerBrand(customer_id=cust.id, brand=brand, brand_id=brand_id, is_active=True))
+        await session.flush()
 
 
 async def _mark_non_debtor(session, item: LedgerItem, st: _Stats) -> bool:
-    cust = (await session.execute(select(Customer).where(Customer.tally_guid == item.guid))).scalar_one_or_none()
-    if cust is None:
-        rows = (await session.execute(
-            select(Customer).where(func.lower(Customer.name) == item.name.strip().lower(), Customer.tally_guid.is_(None))
-        )).scalars().all()
-        cust = rows[0] if len(rows) == 1 else None
-        if cust is not None:
-            cust.tally_guid = item.guid
-    if cust is None:
-        return False  # a non-debtor ledger never becomes a customer
-    changed = cust.tally_is_debtor is not False
-    cust.tally_is_debtor = False
-    cust.tally_parent_group = _clip(item.parent, 150)
-    cust.tally_aliases = [a for a in item.aliases if a.strip()] or None
+    led = (await session.execute(
+        select(TallyDebtorLedger).where(TallyDebtorLedger.tally_guid == item.guid)
+    )).scalar_one_or_none()
+    if led is None:
+        cust = (await session.execute(select(Customer).where(Customer.tally_guid == item.guid))).scalar_one_or_none()
+        if cust is None:
+            rows = (await session.execute(
+                select(Customer).where(func.lower(Customer.name) == item.name.strip().lower(),
+                                       Customer.tally_guid.is_(None), Customer.merged_into_customer_id.is_(None))
+            )).scalars().all()
+            cust = rows[0] if len(rows) == 1 else None
+            if cust is not None:
+                cust.tally_guid = item.guid
+        if cust is None:
+            return False  # a non-debtor ledger never becomes a customer
+        led = await ensure_ledger_for_customer(session, cust)
+    was_debtor = led.is_debtor is not False
+    led.is_debtor = False
+    led.parent_group = _clip(item.parent, 150)
+    led.aliases = [a for a in item.aliases if a.strip()] or None
+    cust = await session.get(Customer, led.customer_id)
+    if led.is_primary:
+        cust.tally_parent_group = led.parent_group
+        cust.tally_aliases = led.aliases
+    await session.flush()
+    before = cust.tally_is_debtor
+    await _refresh_outlet_debtor_flag(session, cust)
+    if cust.tally_is_debtor is None:  # the only ledger is now known to be a non-debtor
+        cust.tally_is_debtor = False
     st.updated += 1
-    return changed
+    return was_debtor and before is not False and cust.tally_is_debtor is False
 
 
 async def sync_ledgers(agent: SyncAgent, batch: LedgerSyncBatch, session: AsyncSession) -> V2SyncResult:
@@ -744,25 +901,38 @@ async def sync_ledgers(agent: SyncAgent, batch: LedgerSyncBatch, session: AsyncS
 
 
 async def _finish_ledger_snapshot(session, run: TallySnapshotRun, st: _Stats) -> list[str]:
-    """A customer whose Tally ledger GUID is absent from a complete snapshot no longer
-    exists in Tally: it stops being treated as a debtor (never deleted)."""
+    """A ledger whose GUID is absent from a complete snapshot no longer exists in Tally: it stops
+    being treated as a debtor (never deleted); its outlet too once none of its ledgers is a debtor."""
     seen = select(TallyManifestGuid.guid).where(TallyManifestGuid.snapshot_id == run.id)
-    known = (await session.execute(
-        select(func.count()).select_from(Customer).where(Customer.tally_guid.is_not(None))
-    )).scalar() or 0
+    known = (await session.execute(select(func.count()).select_from(
+        select(TallyDebtorLedger.tally_guid).union(
+            select(Customer.tally_guid).where(Customer.tally_guid.is_not(None))).subquery()))).scalar() or 0
     seen_n = (await session.execute(select(func.count()).select_from(seen.subquery()))).scalar() or 0
     missing: list[str] = []
     if known and Decimal(seen_n) < SNAPSHOT_COMPLETENESS_FLOOR * known:
         run.status = "FAILED"
         run.details = {"error": f"snapshot has {seen_n} ledgers, FieldTrack knows {known}: not applied"}
     else:
-        rows = (await session.execute(
-            select(Customer).where(Customer.tally_guid.is_not(None), Customer.tally_guid.not_in(seen),
-                                   or_(Customer.tally_is_debtor.is_(None), Customer.tally_is_debtor.is_(True)))
+        # Legacy customers holding a GUID without a ledger row get one first (1:1).
+        for c in (await session.execute(select(Customer).where(
+            Customer.tally_guid.is_not(None),
+            ~select(TallyDebtorLedger.id).where(TallyDebtorLedger.tally_guid == Customer.tally_guid).exists(),
+        ))).scalars().all():
+            await ensure_ledger_for_customer(session, c)
+        gone = (await session.execute(
+            select(TallyDebtorLedger).where(TallyDebtorLedger.tally_guid.not_in(seen),
+                                            or_(TallyDebtorLedger.is_debtor.is_(None), TallyDebtorLedger.is_debtor.is_(True)))
         )).scalars().all()
-        for c in rows:
-            c.tally_is_debtor = False
-            missing.append(c.name)
+        outlets = set()
+        for led in gone:
+            led.is_debtor = False
+            missing.append(led.name)
+            outlets.add(led.customer_id)
+        await session.flush()
+        for cid in outlets:
+            c = await session.get(Customer, cid)
+            if c is not None:
+                await _refresh_outlet_debtor_flag(session, c)
         run.status = "COMPLETE"
         run.details = {"ledgers": seen_n, "missing_from_tally": len(missing)}
     run.completed_at = _now()
@@ -782,15 +952,16 @@ async def sync_bills(agent: SyncAgent, batch: BillsSyncBatch, session: AsyncSess
     skipped_non_debtor = 0
     unknown: list[str] = []
     for b in batch.bills:
-        cust = await resolver.get(b.ledger_guid, b.ledger_name)
+        cust, led = await resolver.resolve(b.ledger_guid, b.ledger_name)
         if cust is None:
             unknown.append(b.ledger_name)
             continue
-        if cust.tally_is_debtor is False:
+        if (led.is_debtor if led is not None else cust.tally_is_debtor) is False:
             skipped_non_debtor += 1
             continue
         session.add(TallyOpenBill(
-            customer_id=cust.id, as_of_date=batch.as_of_date, snapshot_id=run.id, bill_name=b.bill_name[:150],
+            customer_id=cust.id, tally_debtor_ledger_id=led.id if led is not None else None,
+            as_of_date=batch.as_of_date, snapshot_id=run.id, bill_name=b.bill_name[:150],
             bill_date=b.bill_date, due_date=b.due_date, pending_amount=_q(-Decimal(b.pending_amount)),
             overdue_days=b.overdue_days,
         ))
@@ -826,6 +997,8 @@ async def _finish_bills_snapshot(session, run: TallySnapshotRun) -> dict:
             FROM tally_open_bills b
             WHERE b.snapshot_id = :sid AND b.due_date IS NOT NULL
               AND i.customer_id = b.customer_id AND i.tally_bill_name = b.bill_name
+              AND (b.tally_debtor_ledger_id IS NULL OR i.tally_debtor_ledger_id IS NULL
+                   OR i.tally_debtor_ledger_id = b.tally_debtor_ledger_id)
               AND i.source = 'TALLY' AND i.due_date IS DISTINCT FROM b.due_date
         """), {"sid": run.id})
         due_updates = res.rowcount or 0

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import re
 import uuid
+from decimal import Decimal
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
@@ -188,6 +189,38 @@ class CustomerMapLocation(BaseModel):
 
 
 
+class LedgerRead(BaseModel):
+    """One Tally ledger linked to a physical outlet (balances in receivable sign: + = owed)."""
+
+    id: uuid.UUID
+    tally_guid: str
+    name: str
+    parent_group: str | None = None
+    tally_outlet_code: str | None = None
+    brand: str | None = None
+    brand_source: str = "NONE"  # TALLY | OVERRIDE | NONE
+    is_primary: bool = False
+    is_debtor: bool | None = None
+    mapping_status: str = "AUTO_1TO1"
+    opening_balance: Decimal | None = None
+    closing_balance: Decimal | None = None
+    closing_balance_at: datetime | None = None
+    gst_number: str | None = None
+    mobile: str | None = None
+    pincode: str | None = None
+
+    @classmethod
+    def from_model(cls, l) -> "LedgerRead":
+        return cls(
+            id=l.id, tally_guid=l.tally_guid, name=l.name, parent_group=l.parent_group,
+            tally_outlet_code=l.tally_outlet_code, brand=l.effective_brand, brand_source=l.brand_source,
+            is_primary=bool(l.is_primary), is_debtor=l.is_debtor, mapping_status=l.mapping_status,
+            opening_balance=None if l.opening_balance is None else -l.opening_balance,
+            closing_balance=None if l.closing_balance is None else -l.closing_balance,
+            closing_balance_at=l.closing_balance_at, gst_number=l.gst_number, mobile=l.mobile, pincode=l.pincode,
+        )
+
+
 class CustomerRead(BaseModel):
     """
     Customer projection returned by the API.
@@ -213,6 +246,11 @@ class CustomerRead(BaseModel):
     created_by: uuid.UUID
     created_at: datetime
     needs_tally_entry: bool = False
+    # Release 2.1.0 (additive): the outlet is a physical shop; its Tally ledgers.
+    ledger_count: int = 0
+    tally_codes: list[str] = []
+    merged_into_customer_id: uuid.UUID | None = None
+    ledgers: list[LedgerRead] = []
     # --- live outlet proof (additive; filled by outlet_proof_service.enrich_customer_reads) ---
     primary_outlet_image_available: bool = False
     primary_outlet_proof_id: uuid.UUID | None = None  # stream via GET /customers/outlet-proofs/{id}/image
@@ -274,6 +312,7 @@ class CustomerRead(BaseModel):
             created_by=customer.created_by,
             created_at=customer.created_at,
             needs_tally_entry=getattr(customer, "needs_tally_entry", False) or False,
+            merged_into_customer_id=getattr(customer, "merged_into_customer_id", None),
         )
 
 
