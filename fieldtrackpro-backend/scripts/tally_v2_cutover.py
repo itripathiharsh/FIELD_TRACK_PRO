@@ -1,5 +1,5 @@
 """
-FieldTrack Pro - Tally v2 cut-over data step (run once, after migration g1a2b3c4d5e6,
+FieldTrack Pro - Tally v2 cut-over data step (run once, after migration g1a2b3c4d5e6 or later,
 BEFORE agent 2.0 performs its first full load).
 
 What it changes (nothing is deleted):
@@ -26,6 +26,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import _script_env
 
+SUPPORTED_REVISIONS = ("g1a2b3c4d5e6", "h1b2c3d4e5f6")
+
 DEFAULTED_DUE_DATES = """
     SELECT count(*), COALESCE(sum(amount), 0) FROM invoices
      WHERE source = 'TALLY' AND due_date IS NOT NULL AND due_date = invoice_date + 21
@@ -36,8 +38,11 @@ def run_cutover(cur) -> None:
     cur.execute("SELECT version_num FROM alembic_version")
     head = cur.fetchone()[0]
     print(f"Database revision: {head}")
-    if head != "g1a2b3c4d5e6":
-        raise SystemExit("REFUSING: run `alembic upgrade head` (g1a2b3c4d5e6) first.")
+    # The cut-over needs the Tally v2 schema (g1a2b3c4d5e6) or a later revision that includes it:
+    # release 2.1.0's head h1b2c3d4e5f6 (production migrates b9c0d1e2f3a4 -> h1b2c3d4e5f6 in one run).
+    if head not in SUPPORTED_REVISIONS:
+        raise SystemExit(f"REFUSING: database is at {head}; run `alembic upgrade head` first "
+                         f"(expected one of {', '.join(SUPPORTED_REVISIONS)}).")
 
     cur.execute("SELECT count(*), count(due_date) FROM invoices WHERE source = 'TALLY'")
     total, with_due = cur.fetchone()
