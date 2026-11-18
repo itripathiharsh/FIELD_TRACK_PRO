@@ -1000,6 +1000,11 @@ async def _finish_bills_snapshot(session, run: TallySnapshotRun) -> dict:
               AND (b.tally_debtor_ledger_id IS NULL OR i.tally_debtor_ledger_id IS NULL
                    OR i.tally_debtor_ledger_id = b.tally_debtor_ledger_id)
               AND i.source = 'TALLY' AND i.due_date IS DISTINCT FROM b.due_date
+              -- 2.2.0 (B6): a bill name used by two invoices of the customer (numbers restart each FY)
+              -- is matched on its date too
+              AND (b.bill_date IS NULL OR i.invoice_date = b.bill_date
+                   OR (SELECT count(*) FROM invoices i2 WHERE i2.customer_id = i.customer_id
+                         AND i2.tally_bill_name = i.tally_bill_name AND i2.source = 'TALLY') = 1)
         """), {"sid": run.id})
         due_updates = res.rowcount or 0
     run.details = {"bills": run.received_count, "invoice_due_dates_set": due_updates}

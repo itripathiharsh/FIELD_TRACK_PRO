@@ -167,6 +167,17 @@ async def get_tally_audit_logs(
 # Agent Communication Endpoints (Authenticated by X-Agent-Id + X-Agent-Key)
 # ---------------------------------------------------------------------------
 
+@router.get("/capabilities")
+async def agent_capabilities(agent: AuthenticatedAgent):
+    """Release 2.2.0: what this backend guarantees to the agent. `history_safe` = Tally rows dated before the
+    reporting floor (historical financial years) cannot create pending-close reporting periods (B1), are kept
+    out of live screens / BI / ageing (B4), and bill due dates are matched on date when bill names repeat (B6).
+    The 2.2.0 agent uploads a historical FY only when this is true (and the FY is listed in HISTORY_UPLOAD)."""
+    from app.services.reporting_floor import reporting_floor
+    return {"history_safe": True, "reporting_floor": reporting_floor().isoformat(), "backend_release": "2.2.0",
+            "agent_id": str(agent.id)}
+
+
 @router.post("/heartbeat", response_model=HeartbeatResponse)
 async def agent_heartbeat(
     data: HeartbeatRequest,

@@ -367,7 +367,7 @@ async def _apply_tally_open_bills(session: AsyncSession, ids: list[uuid.UUID], o
     if run is None:
         return
     rows = (await session.execute(
-        select(Invoice.id, Invoice.customer_id, Invoice.tally_bill_name, Invoice.amount)
+        select(Invoice.id, Invoice.customer_id, Invoice.tally_bill_name, Invoice.amount, Invoice.invoice_date)
         .join(Customer, Customer.id == Invoice.customer_id)
         .where(
             Invoice.id.in_(ids), Invoice.source == InvoiceSource.TALLY, Invoice.tally_bill_name.is_not(None),
@@ -376,16 +376,27 @@ async def _apply_tally_open_bills(session: AsyncSession, ids: list[uuid.UUID], o
     )).all()
     if not rows:
         return
-    pending: dict[tuple[uuid.UUID, str], Decimal] = {}
-    for cid, name, amt in (await session.execute(
-        select(TallyOpenBill.customer_id, TallyOpenBill.bill_name, func.sum(TallyOpenBill.pending_amount))
-        .where(TallyOpenBill.as_of_date == run.as_of_date,
-               TallyOpenBill.customer_id.in_({r.customer_id for r in rows}))
-        .group_by(TallyOpenBill.customer_id, TallyOpenBill.bill_name)
+    customers = {r.customer_id for r in rows}
+    # 2.2.0 (B6): invoice numbers restart every financial year, so the same bill name can belong to two
+    # invoices of one customer. When it does, the open bill is matched on its date as well.
+    repeats = {(cid, name) for cid, name, n in (await session.execute(
+        select(Invoice.customer_id, Invoice.tally_bill_name, func.count())
+        .where(Invoice.customer_id.in_(customers), Invoice.source == InvoiceSource.TALLY, Invoice.tally_bill_name.is_not(None))
+        .group_by(Invoice.customer_id, Invoice.tally_bill_name)
+    )).all() if n > 1}
+    by_name: dict[tuple[uuid.UUID, str], Decimal] = {}
+    by_date: dict[tuple[uuid.UUID, str, object], Decimal] = {}
+    for cid, name, bdate, amt in (await session.execute(
+        select(TallyOpenBill.customer_id, TallyOpenBill.bill_name, TallyOpenBill.bill_date, func.sum(TallyOpenBill.pending_amount))
+        .where(TallyOpenBill.as_of_date == run.as_of_date, TallyOpenBill.customer_id.in_(customers))
+        .group_by(TallyOpenBill.customer_id, TallyOpenBill.bill_name, TallyOpenBill.bill_date)
     )).all():
-        pending[(cid, name)] = amt or Decimal("0.00")
-    for inv_id, cid, name, amount in rows:
-        still_open = max(min(pending.get((cid, name), Decimal("0.00")), amount), Decimal("0.00"))
+        amt = amt or Decimal("0.00")
+        by_name[(cid, name)] = by_name.get((cid, name), Decimal("0.00")) + amt
+        by_date[(cid, name, bdate)] = by_date.get((cid, name, bdate), Decimal("0.00")) + amt
+    for inv_id, cid, name, amount, inv_date in rows:
+        pend = by_date.get((cid, name, inv_date), Decimal("0.00")) if (cid, name) in repeats else by_name.get((cid, name), Decimal("0.00"))
+        still_open = max(min(pend, amount), Decimal("0.00"))
         out[inv_id] = amount - still_open
 
 

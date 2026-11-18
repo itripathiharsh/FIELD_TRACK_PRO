@@ -25,6 +25,7 @@ from app.models.payment import Payment, PaymentStatus
 from app.models.visit import Visit, VisitStatus, VisitType
 from app.schemas.financial_snapshot import MonthlyPeriodRead, MonthlyPeriodReviewSummary
 from app.services import payment_tally
+from app.services.reporting_floor import reporting_floor
 
 logger = logging.getLogger("fieldtrackpro")
 
@@ -109,6 +110,14 @@ async def ensure_monthly_periods_synced(
     pay_months = {
         (int(r.p_year), int(r.p_month)): r for r in pay_res.all()
     }
+
+    # Release 2.2.0 (B1): months before the live FY (reporting floor) are HISTORY. Historical Tally invoices /
+    # receipts never create a reporting period and never enter the close workflow (no PENDING_CLOSE for
+    # FY 2025-26 or earlier). Snapshot months and existing periods are unchanged.
+    floor = reporting_floor()
+    floor_ym = (floor.year, floor.month)
+    inv_months = {ym: r for ym, r in inv_months.items() if ym >= floor_ym}
+    pay_months = {ym: r for ym, r in pay_months.items() if ym >= floor_ym}
 
     # Unified set of all known months with real data
     all_data_months = set(snap_months.keys()) | set(inv_months.keys()) | set(pay_months.keys())

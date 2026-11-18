@@ -55,6 +55,7 @@ from app.services.brand_service import (
     normalize_brand_name,
     BRAND_ALIASES,
 )
+from app.services.reporting_floor import effective_start
 from app.services.report_filters import (
     SnapshotWindow,
     ist_now,
@@ -1100,7 +1101,8 @@ class ReportService:
                 inv_stmt = inv_stmt.where(Customer.area_id == area_id)
             if employee_id:
                 inv_stmt = inv_stmt.where(_employee_filter(employee_id))
-            inv_stmt = where_date_range(inv_stmt, Invoice.invoice_date, window.start, window.end)
+            # 2.2.0 (B4): no explicit start = the live FY; an explicit window may reach into history.
+            inv_stmt = where_date_range(inv_stmt, Invoice.invoice_date, effective_start(window.start), window.end)
             inv_rows = (await session.execute(inv_stmt)).all()
             # Outstanding = amount - money settled by receipts POSTED in Tally (the same
             # rule as the outlet account). imported_outstanding_amount is a point-in-time
@@ -1144,7 +1146,7 @@ class ReportService:
             # collections not yet in Tally), same window / brand / zone / area / employee filters.
             def _pay_filters(stmt):
                 stmt = stmt.where(payment_tally.collected_clause(employee_id))
-                stmt = where_date_range(stmt, Payment.payment_date, window.start, window.end)
+                stmt = where_date_range(stmt, Payment.payment_date, effective_start(window.start), window.end)
                 if zone_id:
                     stmt = stmt.where(Customer.territory_id == zone_id)
                 if area_id:
