@@ -41,6 +41,7 @@ from app.services import account_position, payment_tally
 from app.services.account_position import position_fields, sum_positions
 from app.services.aging_service import AgingStatus, MisBucket, compute_invoice_aging, compute_mis_bucket
 from app.services.report_filters import ist_now, like_pattern, validate_date_order
+from app.services.reporting_floor import live_invoice_clause, live_payment_clause
 
 ZERO = Decimal("0")
 
@@ -193,10 +194,12 @@ async def get_collections_overview(
     # Legacy invoice-only MIS tiles (bucket_0_15 ... current_amount) and the
     # "most recent payment" cell still need per-invoice / per-payment rows.
     invoices = (await session.execute(
-        select(Invoice).where(Invoice.customer_id.in_(customer_ids), Invoice.source == InvoiceSource.TALLY)
+        # 2.2.0 (B4): live-FY Tally invoices only; historical ones are long settled and would show as overdue.
+        select(Invoice).where(Invoice.customer_id.in_(customer_ids), Invoice.source == InvoiceSource.TALLY,
+                              live_invoice_clause(Invoice))
     )).scalars().all()
     payments = (await session.execute(
-        select(Payment).where(Payment.customer_id.in_(customer_ids))
+        select(Payment).where(Payment.customer_id.in_(customer_ids), live_payment_clause(Payment))
     )).scalars().all()
     jobs = await payment_tally.load_jobs(session, [p.id for p in payments])
     verified_payments = [

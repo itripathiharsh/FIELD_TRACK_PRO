@@ -21,6 +21,7 @@ from app.repositories.payment_repo import PaymentRepository
 from app.repositories.visit_repo import VisitRepository
 from app.schemas.account import AccountSummary, BrandSummary, LedgerPosition
 from app.schemas.invoice import AgingStatus, InvoiceRead
+from app.services.reporting_floor import is_live_invoice, is_live_payment
 from app.schemas.payment import PaymentRead
 from app.services import account_position, invoice_service, payment_tally
 from app.services.account_position import position_fields
@@ -139,10 +140,11 @@ async def get_account_summary(
     outlet = detail.outlet
 
     inv_repo = InvoiceRepository(session)
-    invoices = await inv_repo.list_by_customer(customer_id)
+    # 2.2.0 (B4): the summary is a live-FY view; history stays in get_account_history.
+    invoices = [i for i in await inv_repo.list_by_customer(customer_id) if is_live_invoice(i)]
 
     pay_repo = PaymentRepository(session)
-    payments = await pay_repo.list_by_customer(customer_id)
+    payments = [p for p in await pay_repo.list_by_customer(customer_id) if is_live_payment(p)]
     is_admin = current_user.is_admin
     jobs = await payment_tally.load_jobs(session, [p.id for p in payments])
     await _attach_ledger_names(session, payments)

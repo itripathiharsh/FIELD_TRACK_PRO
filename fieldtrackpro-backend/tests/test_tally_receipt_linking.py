@@ -438,7 +438,12 @@ async def test_bi_dashboard_outstanding_is_invoice_minus_receipts_in_tally(clien
     assert (t, po, aw) == (D("5000.00"), D("4000.00"), D("1000.00"))
 
 
-async def test_monthly_period_outstanding_is_unavailable_not_sales(client):
+async def test_monthly_period_outstanding_is_unavailable_not_sales(client, monkeypatch):
+    # This test uses a 2011 sandbox month. Release 2.2.0 (B1) keeps months before the reporting floor out of
+    # reporting periods; that rule has its own test (test_release_2_2_0_history_safety). Here the floor is moved
+    # before the sandbox month so the period-metrics logic itself is still exercised.
+    from app.config import settings as _settings
+    monkeypatch.setattr(_settings, "tally_reporting_floor", "2000-01-01")
     day = TEST_MONTH.replace(month=TEST_MONTH.month + 1, day=3)
     month = day.strftime("%Y-%m")
 

@@ -122,6 +122,10 @@ class Settings(BaseSettings):
     # JWT_SECRET (domain-separated) when unset.
     otp_hmac_secret: str | None = None
 
+    # Release 2.2.0: first day of the LIVE financial year (= agent SYNC_FROM_DATE). Tally rows dated before it
+    # are history: excluded from live screens and reporting periods (app/services/reporting_floor.py).
+    tally_reporting_floor: str = "2026-04-01"
+
     # Twilio sender (was read by sms_service but never declared)
     twilio_from_number: str | None = None
 
