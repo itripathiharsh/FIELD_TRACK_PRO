@@ -129,6 +129,9 @@ class Payment(Base):
     # and every bank allocation line exactly as Tally gave it.
     tally_transaction_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     tally_bank_details: Mapped[Optional[list[dict]]] = mapped_column(JSONB, nullable=True)
+    # The receipt's Tally bill allocations, signed exactly as Tally gives them (+ settles a bill,
+    # - re-opens one). Kept so the receipt can be linked to an invoice that arrives later.
+    tally_bill_allocations: Mapped[Optional[list[dict]]] = mapped_column(JSONB, nullable=True)
     reviewed_by: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
