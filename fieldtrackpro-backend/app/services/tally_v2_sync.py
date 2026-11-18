@@ -423,39 +423,75 @@ class _Stats:
     errors: list = field(default_factory=list)
 
 
+def _named_bill_totals(bills: Iterable[BillAllocation]) -> tuple[dict[str, Decimal], dict[str, str]]:
+    """Signed total per bill name, exactly as Tally gives it on a receipt's debtor line: + settles the bill,
+    - re-opens it (money moved from one bill to another inside the receipt). A Tally bill is the ledger + its
+    name, whatever the allocation type (Agst Ref, New Ref, Advance), so every named allocation counts;
+    only On Account (no bill) is skipped."""
+    totals: dict[str, Decimal] = {}
+    types: dict[str, str] = {}
+    for b in bills:
+        name = (b.name or "").strip()
+        btype = (b.bill_type or "").strip()
+        if not name or btype.lower() == "on account":
+            continue
+        totals[name] = totals.get(name, ZERO) + _q(Decimal(b.amount))
+        types.setdefault(name, btype or "Agst Ref")
+    return totals, types
+
+
+async def _invoice_for_bill(session: AsyncSession, customer_id: uuid.UUID, ledger_id: Optional[uuid.UUID],
+                            name: str, on: Optional[date]) -> Optional[Invoice]:
+    """The invoice that raised this Tally bill for this customer (within the receipt's own ledger: a shop's brand
+    ledgers may reuse a bill name). When several invoices carry the name (numbers restart each FY), the latest
+    one dated on or before the receipt; when every one is later (an advance received before its invoice), the
+    earliest of them."""
+    rows = (await session.execute(
+        select(Invoice).where(
+            Invoice.customer_id == customer_id,
+            Invoice.source == InvoiceSource.TALLY,
+            Invoice.tally_bill_name == name,
+            *([or_(Invoice.tally_debtor_ledger_id == ledger_id, Invoice.tally_debtor_ledger_id.is_(None))]
+              if ledger_id else []),
+        ).order_by(Invoice.invoice_date, Invoice.created_at)
+    )).scalars().all()
+    if not rows:
+        return None
+    if on is None:
+        return rows[-1]
+    before = [i for i in rows if i.invoice_date <= on]
+    return before[-1] if before else rows[0]
+
+
 async def _apply_receipt_bills(
     session: AsyncSession, payment: Payment, customer_id: uuid.UUID, bills: list[BillAllocation], st: _Stats,
     ledger_id: Optional[uuid.UUID] = None,
 ) -> None:
     """Tally's bill-wise settlement replaces every earlier link of this receipt.
-    Against-reference parts link to the invoice raising that bill; on-account /
-    advance parts and bills not in FieldTrack stay unlinked (never re-assigned)."""
+
+    Each named allocation links, with its Tally sign, to the invoice raising that bill: + settles it, - re-opens
+    it (a receipt may move money between bills; only the net equals the receipt). Allocations to the same
+    invoice are netted. On-account parts and bills not (yet) in FieldTrack stay unlinked; the receipt's
+    allocations are kept on the payment, so a bill whose invoice arrives later is linked then
+    (relink_receipts_for_invoice)."""
     await session.execute(delete(PaymentInvoiceAllocation).where(PaymentInvoiceAllocation.payment_id == payment.id))
+    totals, types = _named_bill_totals(bills)
     resolved: dict[uuid.UUID, Decimal] = {}
-    names: dict[uuid.UUID, tuple[str, Optional[str]]] = {}
-    for b in bills:
-        name = (b.name or "").strip()
-        btype = (b.bill_type or "").strip()
-        if not name or btype.lower() in ("on account", "advance", "new ref"):
+    names: dict[uuid.UUID, tuple[str, str]] = {}
+    for name, amt in totals.items():
+        if amt == ZERO:
             continue
-        amt = _q(Decimal(b.amount).copy_abs())
-        inv = (await session.execute(
-            select(Invoice).where(
-                Invoice.customer_id == customer_id,
-                Invoice.source == InvoiceSource.TALLY,
-                Invoice.tally_bill_name == name,
-                # A shop's brand ledgers may reuse a bill name: match within the receipt's own ledger.
-                *([or_(Invoice.tally_debtor_ledger_id == ledger_id, Invoice.tally_debtor_ledger_id.is_(None))]
-                  if ledger_id else []),
-            ).order_by(Invoice.invoice_date.desc())
-        )).scalars().first()
+        inv = await _invoice_for_bill(session, customer_id, ledger_id, name, payment.payment_date)
         if inv is None:
             st.unresolved_bills += 1
-            st.unresolved_bill_amount += amt
+            st.unresolved_bill_amount += amt.copy_abs()
             continue
         resolved[inv.id] = resolved.get(inv.id, ZERO) + amt
-        names[inv.id] = (name, btype or "Agst Ref")
-    total = sum(resolved.values(), ZERO)
+        names.setdefault(inv.id, (name, types[name]))
+    resolved = {k: v for k, v in resolved.items() if v != ZERO}
+    # Guard against inconsistent data: Tally's own allocations of this line (every one, signed, on-account
+    # included) never exceed the receipt. The linked part alone may (a re-opened bill not in FieldTrack).
+    total = sum((_q(Decimal(b.amount)) for b in bills), ZERO)
     if total - payment.amount > CENT:
         st.errors.append({"identifier": payment.source_reference,
                           "error": f"bill allocations {total} exceed receipt {payment.amount}; left unlinked"})
@@ -465,7 +501,53 @@ async def _apply_receipt_bills(
             payment_id=payment.id, invoice_id=inv_id, bill_name=names[inv_id][0][:150],
             bill_type=names[inv_id][1][:50], allocated_amount=amt,
         ))
-    payment.invoice_id = next(iter(resolved)) if len(resolved) == 1 else None
+    settled = [k for k, v in resolved.items() if v > ZERO]
+    payment.invoice_id = settled[0] if len(settled) == 1 and len(resolved) == 1 else None
+
+
+def _stored_bills(raw: Optional[list[dict]]) -> list[BillAllocation]:
+    return [BillAllocation(**b) for b in (raw or []) if isinstance(b, dict) and b.get("amount") is not None]
+
+
+async def relink_receipts_for_invoice(session: AsyncSession, inv: Invoice, st: Optional[_Stats] = None) -> int:
+    """An invoice raising a bill has arrived (or changed): every Tally receipt of the same customer whose stored
+    allocations name that bill is linked again from those allocations. Covers receipts loaded before their
+    invoice (a historical year loaded after the live one; an advance received before the invoice).
+    Returns the number of receipts re-linked."""
+    name = (inv.tally_bill_name or "").strip()
+    if not name:
+        return 0
+    pays = (await session.execute(
+        select(Payment).where(
+            Payment.customer_id == inv.customer_id,
+            Payment.source == PaymentSource.TALLY,
+            Payment.tally_bill_allocations.is_not(None),
+            Payment.tally_bill_allocations.contains([{"name": name}]),
+            *([or_(Payment.tally_debtor_ledger_id == inv.tally_debtor_ledger_id,
+                   Payment.tally_debtor_ledger_id.is_(None))] if inv.tally_debtor_ledger_id else []),
+        )
+    )).scalars().all()
+    stats = st or _Stats()
+    for pay in pays:
+        await _apply_receipt_bills(session, pay, pay.customer_id, _stored_bills(pay.tally_bill_allocations), stats,
+                                   pay.tally_debtor_ledger_id)
+    if pays:
+        await session.flush()
+    return len(pays)
+
+
+async def relink_all_receipts(session: AsyncSession) -> dict:
+    """Maintenance: rebuild the links of every Tally receipt that carries its stored allocations."""
+    st = _Stats()
+    pays = (await session.execute(
+        select(Payment).where(Payment.source == PaymentSource.TALLY, Payment.tally_bill_allocations.is_not(None))
+    )).scalars().all()
+    for pay in pays:
+        await _apply_receipt_bills(session, pay, pay.customer_id, _stored_bills(pay.tally_bill_allocations), st,
+                                   pay.tally_debtor_ledger_id)
+    await session.flush()
+    return {"receipts": len(pays), "unresolved_bills": st.unresolved_bills,
+            "unresolved_bill_amount": str(st.unresolved_bill_amount), "errors": st.errors}
 
 
 async def _upsert_invoice(session, v: VoucherItem, p: LinePlan, cust: Customer, uid, now, ledger_id=None) -> bool:
@@ -496,6 +578,7 @@ async def _upsert_invoice(session, v: VoucherItem, p: LinePlan, cust: Customer, 
     inv.tally_retired_at = None
     inv.tally_retired_reason = None
     await session.flush()
+    await relink_receipts_for_invoice(session, inv)  # receipts that reached FieldTrack before this invoice
     return created
 
 
@@ -524,6 +607,7 @@ async def _upsert_payment(session, v: VoucherItem, p: LinePlan, cust: Customer, 
     pay.utr_reference = d["utr_reference"]
     pay.tally_transaction_type = d["transaction_type"]
     pay.tally_bank_details = d["bank_details"]
+    pay.tally_bill_allocations = _bill_json(p.bills)
     label = f"Tally {v.voucher_type} {v.voucher_number or ''}".strip()
     pay.notes = v.narration or label
     pay.narration = v.narration

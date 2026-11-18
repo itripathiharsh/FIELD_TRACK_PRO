@@ -39,6 +39,7 @@ MILESTONES: list[tuple[str, str]] = [
     ("b9c0d1e2f3a4", "security_audit_logs"),
     ("d1e2f3a4b5c6", "payments.tally_receipt_payment_id"),
     ("e2f3a4b5c6d7", "customers.tally_guid"),
+    ("i2c3d4e5f6a7", "payments.tally_bill_allocations"),
 ]
 
 KEY_TABLES = ["users", "employees", "customers", "invoices", "payments", "visits", "territories", "areas"]
