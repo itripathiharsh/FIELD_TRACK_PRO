@@ -82,7 +82,8 @@ async def require_admin_or_agent(
     if credentials is None:
         raise UnauthorizedException("Authentication required")
     user = await _get_user_from_token(credentials, session)
-    if not user.is_admin:
+    # The read-only ACCOUNTANT may READ the integration status; every write stays Administrator-only.
+    if not (user.is_admin or (user.role == Role.ACCOUNTANT and request.method.upper() in ("GET", "HEAD"))):
         raise ForbiddenException("Access restricted to Administrators")
 
 

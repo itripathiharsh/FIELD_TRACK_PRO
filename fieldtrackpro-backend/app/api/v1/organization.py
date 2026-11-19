@@ -29,7 +29,7 @@ async def get_organization_profile(
     master entity statistics. EMPLOYEE: only the non-sensitive public subset
     (name, timezone, currency).
     """
-    if not current_user.is_admin:
+    if not current_user.has_global_scope:
         return OrganizationPublicProfile(
             organization_name=settings.organization_name,
             timezone=settings.organization_timezone,

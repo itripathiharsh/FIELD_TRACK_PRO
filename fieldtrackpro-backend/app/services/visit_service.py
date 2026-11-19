@@ -68,7 +68,7 @@ async def _resolve_employee_scope(
     re-implementing it (the audit found the same check copy-pasted four times,
     and absent entirely from the two read paths).
     """
-    if current_user.is_admin:
+    if current_user.has_global_scope:
         return None
     employee = await get_employee_by_user_id(current_user.id, session)
     return employee.id
@@ -205,7 +205,7 @@ async def create_adhoc_visit(
     """
     customer = await get_customer(data.customer_id, session)
 
-    if current_user.is_admin:
+    if current_user.has_global_scope:
         try:
             employee = await get_employee_by_user_id(current_user.id, session)
         except BaseAPIException:
@@ -272,7 +272,7 @@ async def create_adhoc_visit(
         customer.id,
         data.adhoc_reason,
     )
-    if not current_user.is_admin:
+    if not current_user.has_global_scope:
         await _notify_admins_adhoc_outside(visit, employee, customer, session)
     return await repo.get_full(visit.id)
 
@@ -337,7 +337,7 @@ async def list_visits(
         skip=skip,
         limit=limit,
     )
-    if current_user.is_admin:
+    if current_user.has_global_scope:
         await annotate_adhoc_review(visits, session)
     return visits, total
 

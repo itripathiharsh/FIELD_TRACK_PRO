@@ -20,7 +20,7 @@ import {
   Link2,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { isAccountant, isAdmin, resolveRole } from '../../utils/roles';
+import { canViewAdmin, isAccountant, resolveRole } from '../../utils/roles';
 
 interface SidebarProps {
   isOpen?: boolean;
@@ -30,7 +30,8 @@ interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => {
   const { user, logout } = useAuth();
   const { pathname } = useLocation();
-  const userIsAdmin = isAdmin(user);
+  // Admin pages are visible to administrators and the accountant (the accountant mostly reads).
+  const userIsAdmin = canViewAdmin(user);
   const visitPlanningPath = userIsAdmin ? '/admin/visit-planning' : '/visit-planning';
 
   const navItems = [
@@ -48,7 +49,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => 
     { name: 'Customer Requirements',path: '/requirements', icon: ClipboardList, roles: ['ADMIN'] },
     { name: 'Requirement Forms',    path: '/forms',     icon: FileText,        roles: ['ADMIN'] },
     { name: 'Payment Collections',  path: '/payments',  icon: Wallet,          roles: ['ADMIN'] },
-    { name: 'Reports & Collections',path: '/reports',   icon: BarChart3,       roles: ['ADMIN', 'ACCOUNTANT'] },
+    { name: 'Reports & Collections',path: '/reports',   icon: BarChart3,       roles: ['ADMIN'] },
   ];
 
   const visibleNavItems = navItems.filter((item) => {
@@ -82,7 +83,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => 
             <h1 className="font-headline-md text-headline-md text-primary tracking-tight">FieldTrack Pro</h1>
           </div>
           <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">
-            {userIsAdmin ? 'Admin Dashboard' : isAccountant(user) ? 'Accountant (read-only)' : 'Employee Portal'}
+            {isAccountant(user) ? 'Accountant' : userIsAdmin ? 'Admin Dashboard' : 'Employee Portal'}
           </p>
         </div>
 

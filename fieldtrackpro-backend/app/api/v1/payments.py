@@ -64,14 +64,14 @@ async def get_review_queue(
 @router.post("", response_model=PaymentRead, status_code=201, dependencies=[AnyAuth])
 async def create_payment(data: PaymentCreate, current_user: CurrentUser, session: DbSession):
     """Employee: record a field collection. visit_id determines the outlet/employee - see payment_service."""
-    is_admin = current_user.is_admin  # captured first: a rollback in the service expires current_user
+    is_admin = current_user.has_global_scope  # captured first: a rollback in the service expires current_user
     payment = await payment_service.create_payment(data, current_user, session)
     return (await payment_service.build_payment_reads([payment], session, is_admin))[0]
 
 
 @router.get("/{payment_id}", response_model=PaymentRead, dependencies=[AnyAuth])
 async def get_payment(payment_id: uuid.UUID, current_user: CurrentUser, session: DbSession):
-    is_admin = current_user.is_admin
+    is_admin = current_user.has_global_scope
     payment = await payment_service.get_payment_for_user(payment_id, current_user, session)
     return await payment_service.to_payment_read_for_queue(payment, session, is_admin=is_admin)
 

@@ -283,7 +283,7 @@ async def get_daily_analytics(
     target_date: date = Query(..., alias="date", description="Calendar date (YYYY-MM-DD)"),
 ) -> DailyAnalytics:
     """Daily planned vs actual breakdown. Employees can only query their own data."""
-    if not current_user.is_admin:
+    if not current_user.has_global_scope:
         from app.services.employee_service import get_employee_by_user_id
         caller_emp = await get_employee_by_user_id(current_user.id, session)
         if caller_emp.id != employee_id:

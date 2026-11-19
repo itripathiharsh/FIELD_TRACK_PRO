@@ -180,7 +180,7 @@ async def create_requirement(
             error_code="CUSTOMER_NOT_FOUND",
         )
 
-    is_admin = current_user.is_admin
+    is_admin = current_user.has_global_scope
 
     # Optional visit validation. An EMPLOYEE may only attach a requirement to
     # a visit that is theirs (object-level ownership), and the visit must be
@@ -815,7 +815,7 @@ async def update_requirement(
             error_code="REQUIREMENT_NOT_FOUND",
         )
 
-    if not current_user.is_admin:
+    if not current_user.has_global_scope:
         _assert_employee_may_edit(req, current_user)
         # Status and approval figures are admin-decision fields.
         if data.status is not None:
@@ -866,7 +866,7 @@ async def attach_requirement_photo(
             error_code="REQUIREMENT_NOT_FOUND",
         )
 
-    if not current_user.is_admin:
+    if not current_user.has_global_scope:
         _assert_employee_may_edit(req, current_user)
 
     mime_type, _ = mimetypes.guess_type(filename)

@@ -170,7 +170,7 @@ async def list_prospects(
     session: AsyncSession, current_user: User, status: Optional[ProspectStatus] = None
 ) -> list[CustomerProspect]:
     stmt = select(CustomerProspect).options(*_EAGER).order_by(CustomerProspect.submitted_at.desc())
-    if not current_user.is_admin:
+    if not current_user.has_global_scope:
         stmt = stmt.where(CustomerProspect.submitted_by == current_user.id)
     if status is not None:
         stmt = stmt.where(CustomerProspect.status == status)
@@ -182,7 +182,7 @@ async def get_prospect(prospect_id: uuid.UUID, current_user: User, session: Asyn
     prospect = (await session.execute(stmt)).scalar_one_or_none()
     if prospect is None:
         raise BaseAPIException(status_code=404, detail="Prospect not found", error_code="PROSPECT_NOT_FOUND")
-    if not current_user.is_admin and prospect.submitted_by != current_user.id:
+    if not current_user.has_global_scope and prospect.submitted_by != current_user.id:
         raise BaseAPIException(status_code=403, detail="Not your submission", error_code="FORBIDDEN")
     return prospect
 

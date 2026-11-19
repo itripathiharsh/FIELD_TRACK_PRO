@@ -1,10 +1,11 @@
-"""ACCOUNTANT role (19-Nov-2026): web-only, READ-ONLY access to the financial reports and collections.
+"""ACCOUNTANT role (policy approved 19-Nov-2026).
 
-* Only endpoints that name ACCOUNTANT in their role check admit it, and every one of them is a GET.
-* It fails CLOSED: endpoints that only require "a signed-in user" (visits, media, signatures, form
-  submissions, ...) answer 403 to an accountant, so code that treats "not an EMPLOYEE" as "an admin"
-  can never be reached by it. A short self-service list (own profile, own password, own notifications)
-  stays open.
+* READ: every GET an Admin may make, except the import credentials download and the security audit log.
+* WRITE: ONLY the explicit allow-list (field-staff profile edit and territory / area assignment, territories
+  and areas create/edit, customers, outlet mapping, outlet verification). Everything else - user / role /
+  password management, deletes, payments, visits, forms, imports, month close - is refused.
+* Field-staff only: an accountant can never edit an Admin / Super Admin / Accountant profile.
+* Super-Admin-only and employee-only (field app) routes never admit an accountant.
 * Only a Super Admin may create an ACCOUNTANT.
 """
 from __future__ import annotations
@@ -18,6 +19,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import delete, select
 
 from app.config import settings
+from app.core.deps.auth import _ACCOUNTANT_READ_DENY, _ACCOUNTANT_WRITE_ALLOW, accountant_may
 from app.core.security import create_access_token, hash_password
 from app.database import AsyncSessionLocal
 from app.main import app
@@ -27,20 +29,6 @@ from app.models.user import Role, User
 from tests.conftest import admin_headers, employee_headers, requires_db
 
 P = settings.api_v1_prefix.rstrip("/")
-
-#: The complete, reviewed list of what an accountant can call by role (all read-only).
-EXPECTED_ACCOUNTANT_ROUTES = {
-    "/areas", "/brands", "/territories",
-    "/collections/overview", "/collections/overview/export",
-    "/dashboard/history-periods",
-    "/reports/business-summary", "/reports/business-summary/export",
-    "/reports/collections", "/reports/collections/export",
-    "/reports/monthly-periods", "/reports/monthly-periods/export",
-    "/reports/monthly-periods/{period_id}/review",
-    "/reports/outlets", "/reports/outlets/export",
-    "/reports/outstanding", "/reports/outstanding/export",
-    "/reports/overview", "/reports/overview/export",
-}
 
 
 def _flat(routes):
@@ -62,35 +50,88 @@ def _role_checks(dep, out):
     return out
 
 
-def test_only_reviewed_read_only_routes_admit_the_accountant():
-    admitted = {}
+def _admitted():
+    """(method, path) -> admitted for an accountant, from the real route table and the real policy."""
+    res = {}
     for r in _flat(app.routes):
+        path = r.path.removeprefix(P)
         checks = _role_checks(r.dependant, [])
-        if checks and all(Role.ACCOUNTANT in c for c in checks):
-            admitted[r.path.removeprefix(P)] = r.methods
-    assert set(admitted) == EXPECTED_ACCOUNTANT_ROUTES
-    assert all(m == {"GET"} for m in admitted.values()), admitted
+        for m in r.methods:
+            if checks:
+                res[(m, path)] = all(accountant_may(m, path, c) for c in checks)
+            else:
+                res[(m, path)] = accountant_may(m, path, None)
+    return res
+
+
+def test_accountant_writes_are_exactly_the_approved_list():
+    adm = _admitted()
+    role_checked_writes = set()
+    for r in _flat(app.routes):
+        path = r.path.removeprefix(P)
+        if _role_checks(r.dependant, []):
+            for m in r.methods - {"GET", "HEAD"}:
+                if adm[(m, path)]:
+                    role_checked_writes.add((m, path))
+    assert role_checked_writes == set(_ACCOUNTANT_WRITE_ALLOW), role_checked_writes ^ set(_ACCOUNTANT_WRITE_ALLOW)
+    assert set(_ACCOUNTANT_WRITE_ALLOW) <= set(adm), "every allow-listed write must exist"
+
+
+def test_never_admitted_routes():
+    adm = _admitted()
+    for key in _ACCOUNTANT_READ_DENY:
+        assert adm.get(key) is False, key
+    must_refuse = [
+        ("POST", "/users"), ("PATCH", "/users/{user_id}/role"), ("PATCH", "/users/{user_id}/activate"),
+        ("PATCH", "/users/{user_id}/deactivate"), ("POST", "/employees"), ("POST", "/employees/register"),
+        ("POST", "/employees/{employee_id}/reset-password"), ("DELETE", "/territories/{territory_id}"),
+        ("DELETE", "/areas/{area_id}"), ("POST", "/outlet-mapping/import/apply"), ("POST", "/outlet-mapping/import/revert"),
+        ("POST", "/reports/monthly-periods/{period_id}/finalize"), ("POST", "/reports/monthly-periods/{period_id}/reopen"),
+        ("GET", "/dashboard/my-day"), ("POST", "/devices/register"), ("DELETE", "/auth/me"),
+    ]
+    for key in must_refuse:
+        assert key in adm, key
+        assert adm[key] is False, key
+
+
+def test_reads_mirror_admin_reads():
+    adm = _admitted()
+    for r in _flat(app.routes):
+        path = r.path.removeprefix(P)
+        checks = _role_checks(r.dependant, [])
+        if "GET" in r.methods and checks and all(Role.ADMIN in c for c in checks) and ("GET", path) not in _ACCOUNTANT_READ_DENY:
+            assert adm[("GET", path)] is True, path
 
 
 # ---------------------------------------------------------------------------------------------------------
-# HTTP behaviour with a real accountant account
+# HTTP behaviour with real accounts
 # ---------------------------------------------------------------------------------------------------------
+
+async def _make(role: Role, name: str):
+    uid = uuid.uuid4()
+    eid = uuid.uuid4()
+    async with AsyncSessionLocal() as s:
+        s.add(User(id=uid, email=f"acct_{uid.hex[:10]}@fieldtrack.test", password_hash=hash_password("x" * 16),
+                   role=role, is_active=True))
+        await s.flush()
+        s.add(Employee(id=eid, user_id=uid, full_name=name, must_change_password=False))
+        await s.commit()
+    return uid, eid
+
+
+async def _drop(*uids):
+    async with AsyncSessionLocal() as s:
+        await s.execute(delete(Employee).where(Employee.user_id.in_(uids)))
+        await s.execute(delete(User).where(User.id.in_(uids)))
+        await s.commit()
+
 
 @pytest_asyncio.fixture
 async def accountant():
-    uid = uuid.uuid4()
-    async with AsyncSessionLocal() as s:
-        s.add(User(id=uid, email=f"acct_{uid.hex[:10]}@fieldtrack.test", password_hash=hash_password("x" * 16),
-                   role=Role.ACCOUNTANT, is_active=True))
-        await s.flush()
-        s.add(Employee(id=uuid.uuid4(), user_id=uid, full_name="Acct Test", must_change_password=False))
-        await s.commit()
+    uid, eid = await _make(Role.ACCOUNTANT, "Acct Test")
     token = create_access_token(str(uid), Role.ACCOUNTANT.value, token_version=0)
     yield {"id": uid, "h": {"Authorization": f"Bearer {token}"}}
-    async with AsyncSessionLocal() as s:
-        await s.execute(delete(Employee).where(Employee.user_id == uid))
-        await s.execute(delete(User).where(User.id == uid))
-        await s.commit()
+    await _drop(uid)
 
 
 @pytest_asyncio.fixture
@@ -101,53 +142,77 @@ async def http():
 
 @requires_db
 @pytest.mark.asyncio
-async def test_accountant_reads_financial_reports(http, accountant):
+async def test_accountant_reads_admin_pages(http, accountant):
     h = accountant["h"]
     for path, params in [
-        ("/reports/business-summary", {"month": "FY2025-26"}),
-        ("/reports/overview", {}),
-        ("/reports/outstanding", {}),
-        ("/reports/outlets", {"limit": "5"}),
-        ("/reports/collections", {}),
-        ("/reports/monthly-periods", {}),
-        ("/collections/overview", {"limit": "5"}),
-        ("/dashboard/history-periods", {}),
-        ("/territories", {}), ("/areas", {}), ("/brands", {}),
-        ("/auth/me", {}), ("/employees/me", {}),
-        ("/notifications/unread-count", {}),
+        ("/reports/business-summary", {"month": "FY2025-26"}), ("/reports/employees", {}), ("/reports/visits-detailed", {}),
+        ("/collections/overview", {"limit": "5"}), ("/dashboard/summary", {}), ("/dashboard/history-periods", {}),
+        ("/employees", {"limit": "5"}), ("/customers", {"limit": "5"}), ("/territories", {}), ("/areas", {}),
+        ("/payments/queue", {}), ("/outlet-mapping/queues", {}), ("/customers/outlet-proofs", {}),
+        ("/location-proposals", {}), ("/organization", {}), ("/auth/me", {}), ("/employees/me", {}),
     ]:
         r = await http.get(P + path, params=params, headers=h)
         assert r.status_code == 200, (path, r.status_code, r.text[:200])
-    r = await http.get(P + "/reports/business-summary/export", params={"month": "FY2025-26", "format": "xlsx"},
-                       headers=h)
-    assert r.status_code == 200
-    me = (await http.get(P + "/auth/me", headers=h)).json()
-    assert me["role"] == "ACCOUNTANT"
+    # global scope: the customer list is not limited to an (empty) employee scope
+    r = await http.get(P + "/customers", params={"limit": "5"}, headers=h)
+    r_admin = await http.get(P + "/customers", params={"limit": "5"}, headers=admin_headers())
+    assert r.headers.get("X-Total-Count") == r_admin.headers.get("X-Total-Count")
 
 
 @requires_db
 @pytest.mark.asyncio
-async def test_accountant_is_refused_everything_else(http, accountant):
+async def test_accountant_refused_writes_and_hidden_reads(http, accountant):
     h = accountant["h"]
     rid = str(uuid.uuid4())
-    refused = [
-        # admin areas: staff, user management, operations
-        ("GET", "/employees"), ("GET", f"/employees/{rid}"), ("GET", "/customers"),
-        ("GET", f"/invoices/{rid}"), ("GET", "/payments/queue"), ("GET", f"/payments/{rid}"), ("GET", "/reports/employees"), ("GET", "/reports/employees-master"),
-        ("GET", "/reports/visits-detailed"), ("GET", "/reports/geo-verification"), ("GET", "/reports/productivity"),
-        ("GET", f"/reports/customers/{rid}/history"),
-        # closing / reopening a month is an admin write
-        ("POST", f"/reports/monthly-periods/{rid}/finalize"), ("POST", f"/reports/monthly-periods/{rid}/reopen"),
-        # "any signed-in user" endpoints fail closed for the accountant
-        ("GET", "/dashboard/summary"), ("GET", "/visits/me/today"), ("GET", "/form-submissions"),
-        ("GET", f"/media/{rid}"), ("DELETE", f"/media/{rid}"), ("GET", f"/visits/{rid}/signatures"),
-        ("GET", f"/visits/{rid}/geo-logs"), ("POST", "/devices/register"),
-        # writes on the lists it can read
-        ("POST", "/territories"), ("POST", "/areas"), ("POST", "/brands"),
-    ]
-    for method, path in refused:
+    for method, path in [
+        ("POST", "/employees/register"), ("POST", f"/employees/{rid}/reset-password"), ("POST", "/users"),
+        ("PATCH", f"/users/{rid}/role"), ("PATCH", f"/users/{rid}/deactivate"),
+        ("DELETE", f"/territories/{rid}"), ("DELETE", f"/areas/{rid}"),
+        ("POST", f"/reports/monthly-periods/{rid}/finalize"), ("POST", "/outlet-mapping/import/apply"),
+        ("POST", "/customers/prospect"), ("POST", f"/visits/{rid}/check-in"), ("DELETE", f"/media/{rid}"),
+        ("POST", "/devices/register"), ("GET", "/dashboard/my-day"), ("GET", "/security-audit-logs"),
+        ("GET", f"/imports/{rid}/credentials.xlsx"),
+    ]:
         r = await http.request(method, P + path, headers=h, json={})
         assert r.status_code == 403, (method, path, r.status_code, r.text[:200])
+
+
+@requires_db
+@pytest.mark.asyncio
+async def test_accountant_edits_field_staff_but_never_admin_profiles(http, accountant):
+    h = accountant["h"]
+    staff_uid, staff_eid = await _make(Role.EMPLOYEE, "Field Staff Edit Target")
+    admin_uid, admin_eid = await _make(Role.ADMIN, "Admin Edit Target")
+    try:
+        r = await http.patch(P + f"/employees/{staff_eid}", json={"working_profile": "FOS"}, headers=h)
+        assert r.status_code == 200, r.text
+        async with AsyncSessionLocal() as s:
+            assert (await s.execute(select(Employee.working_profile).where(Employee.id == staff_eid))).scalar_one() == "FOS"
+        r = await http.patch(P + f"/employees/{admin_eid}", json={"full_name": "Hijacked"}, headers=h)
+        assert r.status_code == 403, r.text
+        r = await http.post(P + f"/employees/{admin_eid}/areas", json={"area_id": str(uuid.uuid4())}, headers=h)
+        assert r.status_code == 403, r.text
+        async with AsyncSessionLocal() as s:
+            assert (await s.execute(select(Employee.full_name).where(Employee.id == admin_eid))).scalar_one() == "Admin Edit Target"
+    finally:
+        await _drop(staff_uid, admin_uid)
+
+
+@requires_db
+@pytest.mark.asyncio
+async def test_accountant_creates_and_edits_territories_but_cannot_delete(http, accountant):
+    h = accountant["h"]
+    name = f"Acct Zone {uuid.uuid4().hex[:6]}"
+    r = await http.post(P + "/territories", json={"name": name}, headers=h)
+    assert r.status_code in (200, 201), r.text
+    tid = r.json()["id"]
+    try:
+        r = await http.patch(P + f"/territories/{tid}", json={"name": name + " X"}, headers=h)
+        assert r.status_code == 200, r.text
+        r = await http.delete(P + f"/territories/{tid}", headers=h)
+        assert r.status_code == 403, r.text
+    finally:
+        await http.delete(P + f"/territories/{tid}", headers=admin_headers())
 
 
 @requires_db
@@ -157,6 +222,7 @@ async def test_admin_and_employee_access_unchanged(http):
     assert (await http.get(P + "/reports/business-summary", headers=admin_headers())).status_code == 200
     assert (await http.get(P + "/reports/business-summary", headers=employee_headers())).status_code == 403
     assert (await http.get(P + "/territories", headers=employee_headers())).status_code == 200
+    assert (await http.get(P + "/employees", headers=employee_headers())).status_code == 403
 
 
 @requires_db

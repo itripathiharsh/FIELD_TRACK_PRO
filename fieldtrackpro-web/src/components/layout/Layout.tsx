@@ -2,14 +2,18 @@ import React, { useState } from 'react';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 import { ErrorBoundary } from '../ui/ErrorBoundary';
+import { useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { accountantCanWriteOn, isAccountant } from '../../utils/roles';
 
 interface LayoutProps {
   children: React.ReactNode;
 }
 
 export const Layout: React.FC<LayoutProps> = ({ children }) => {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
+  const { pathname } = useLocation();
+  const readOnlyNotice = isAccountant(user) && pathname !== '/profile' && !accountantCanWriteOn(pathname);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   if (isLoading) {
@@ -36,6 +40,16 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
       <div className="flex-1 ml-0 md:ml-[240px] flex flex-col min-h-screen min-w-0">
         <Header onMobileMenuToggle={() => setIsMobileMenuOpen(!isMobileMenuOpen)} />
         <main className="p-space-4 md:p-space-8 flex-1 max-w-[1440px] w-full mx-auto">
+          {readOnlyNotice && (
+            <div
+              role="status"
+              data-testid="accountant-read-only"
+              className="mb-space-4 rounded-lg border border-outline-variant bg-surface-container-low px-4 py-2 text-xs text-on-surface-variant"
+            >
+              <span className="font-semibold">Read-only.</span> Your Accountant role can view this page; changes here are
+              made by an administrator.
+            </div>
+          )}
           <ErrorBoundary inline>
             {children}
           </ErrorBoundary>

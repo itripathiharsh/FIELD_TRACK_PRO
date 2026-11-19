@@ -79,7 +79,7 @@ async def create_customer_prospect(
     EMPLOYEE caller's submission is held as a CustomerProspect for admin
     review instead - nothing is created yet; see POST /customers/prospects/{id}/approve.
     """
-    if current_user.is_admin:
+    if current_user.has_global_scope:
         customer = await customer_service.create_customer_prospect(data, current_user, session)
         return CustomerProspectSubmitResponse(
             status="CREATED",
@@ -188,7 +188,7 @@ async def list_customers(
     """
     customers, total_count, in_scope = await customer_service.list_customers(
         session, current_user, territory_id, skip, limit, area_id, search,
-        include_merged=include_merged and current_user.is_admin,
+        include_merged=include_merged and current_user.has_global_scope,
     )
     response.headers["X-Total-Count"] = str(total_count)
     out = []
@@ -339,7 +339,7 @@ async def list_customer_location_proposals(
         session=session,
         status="ALL",
         customer_id=customer_id,
-        submitted_by=current_user.id if not current_user.is_admin else None,
+        submitted_by=current_user.id if not current_user.has_global_scope else None,
     )
 
 
@@ -357,7 +357,7 @@ async def list_customer_requirements(
     return await customer_requirement_service.list_requirements_for_customer(
         customer_id=customer_id,
         session=session,
-        created_by=current_user.id if not current_user.is_admin else None,
+        created_by=current_user.id if not current_user.has_global_scope else None,
     )
 
 

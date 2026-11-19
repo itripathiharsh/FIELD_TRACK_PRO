@@ -145,7 +145,7 @@ async def get_account_summary(
 
     pay_repo = PaymentRepository(session)
     payments = [p for p in await pay_repo.list_by_customer(customer_id) if is_live_payment(p)]
-    is_admin = current_user.is_admin
+    is_admin = current_user.has_global_scope
     jobs = await payment_tally.load_jobs(session, [p.id for p in payments])
     await _attach_ledger_names(session, payments)
 

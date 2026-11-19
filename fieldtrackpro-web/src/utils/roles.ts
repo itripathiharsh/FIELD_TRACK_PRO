@@ -26,20 +26,31 @@ export function isAdmin(user: Pick<User, 'role'> | null | undefined): boolean {
 }
 
 /**
- * True only for ACCOUNTANT: web-only, READ-ONLY access to Reports & Collections (financial reports,
- * collections, exports). Never an administrator and never a field employee.
+ * True only for ACCOUNTANT: web-only back-office role. Reads every admin page; writes only employee
+ * (field staff) profiles, territories / areas, customers, outlet mapping and outlet verification. Never an
+ * administrator and never a field employee. The backend enforces every rule.
  */
 export function isAccountant(user: Pick<User, 'role'> | null | undefined): boolean {
   return user?.role === 'ACCOUNTANT';
 }
 
-/** Who may open Reports & Collections: administrators and the read-only accountant. */
-export function canViewFinance(user: Pick<User, 'role'> | null | undefined): boolean {
+/** Who sees the admin pages (read): administrators and the accountant. Writes are decided per action. */
+export function canViewAdmin(user: Pick<User, 'role'> | null | undefined): boolean {
   return isAdmin(user) || isAccountant(user);
 }
 
-/** The only pages an accountant may open; everything else redirects to Reports & Collections. */
-export const ACCOUNTANT_PATHS: readonly string[] = ['/reports', '/profile'];
+/** Kept for Reports & Collections: same audience as the admin pages. */
+export const canViewFinance = canViewAdmin;
+
+/** Field-app pages an accountant never uses (they belong to field employees). */
+export const ACCOUNTANT_BLOCKED_PATHS: readonly string[] = ['/visit-planning'];
+
+/** Admin pages where the accountant may also WRITE (everything else is read-only for her). */
+export const ACCOUNTANT_WRITE_PATHS: readonly string[] = ['/employees', '/territories', '/customers'];
+
+export function accountantCanWriteOn(pathname: string): boolean {
+  return ACCOUNTANT_WRITE_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'));
+}
 
 /** True only for an exact SUPER_ADMIN: the sole role that may manage roles. */
 export function isSuperAdmin(user: Pick<User, 'role'> | null | undefined): boolean {

@@ -136,7 +136,7 @@ async def list_templates(
     `status` is honoured only for ADMIN (who still manages DRAFT/ARCHIVED
     templates here), overridden server-side for everyone else.
     """
-    if not current_user.is_admin:
+    if not current_user.has_global_scope:
         status = FormStatus.PUBLISHED
     templates = await form_template_service.list_templates(session, status=status, category_id=category_id)
     result = []
@@ -164,7 +164,7 @@ async def get_template(template_id: uuid.UUID, current_user: CurrentUser, sessio
     already enforced on /render. ADMIN keeps full management access.
     """
     template = await form_template_service.get_template(session, template_id)
-    if not current_user.is_admin and template.status != FormStatus.PUBLISHED:
+    if not current_user.has_global_scope and template.status != FormStatus.PUBLISHED:
         raise BaseAPIException(status_code=403, detail="This form is not available", error_code="FORM_NOT_PUBLISHED")
     return _enrich_template_read(template)
 
@@ -295,7 +295,7 @@ async def delete_option(option_id: uuid.UUID, session: AsyncSession = Depends(ge
 @router.get("/form-templates/{template_id}/render", response_model=FormRenderRead, dependencies=[AnyAuth])
 async def render_form(template_id: uuid.UUID, session: AsyncSession = Depends(get_async_session), current_user: CurrentUser = None):
     template = await form_template_service.get_template(session, template_id)
-    if not current_user.is_admin and template.status != FormStatus.PUBLISHED:
+    if not current_user.has_global_scope and template.status != FormStatus.PUBLISHED:
         # Employees fill PUBLISHED forms only. Admins still use this endpoint
         # to preview a DRAFT/ARCHIVED form's employee-facing rendering.
         raise BaseAPIException(status_code=403, detail="This form is not available", error_code="FORM_NOT_PUBLISHED")
@@ -396,7 +396,7 @@ async def create_submission(data: SubmissionCreate, session: AsyncSession = Depe
     submission = await form_template_service.create_or_update_submission(
         session=session, form_id=data.form_id, visit_id=data.visit_id,
         user_id=current_user.id, answers=[a.model_dump() for a in data.answers], submit=False,
-        is_admin=current_user.is_admin,
+        is_admin=current_user.has_global_scope,
     )
     return SubmissionRead.model_validate(submission)
 
@@ -404,7 +404,7 @@ async def create_submission(data: SubmissionCreate, session: AsyncSession = Depe
 @router.post("/form-submissions/{submission_id}/submit", response_model=SubmissionRead)
 async def submit_form(submission_id: uuid.UUID, session: AsyncSession = Depends(get_async_session), current_user: CurrentUser = None):
     submission = await form_template_service.get_submission(session, submission_id)
-    if submission.submitted_by != current_user.id and not current_user.is_admin:
+    if submission.submitted_by != current_user.id and not current_user.has_global_scope:
         raise BaseAPIException(status_code=404, detail="Submission not found", error_code="SUBMISSION_NOT_FOUND")
     submission = await form_template_service.finalize_submission(session, submission_id)
     return SubmissionRead.model_validate(submission)
@@ -472,7 +472,7 @@ def _sections_from_live_template(template: FormTemplate) -> list[SectionRead]:
 @router.get("/form-submissions/{submission_id}", response_model=SubmissionDetailRead)
 async def get_submission_detail(submission_id: uuid.UUID, session: AsyncSession = Depends(get_async_session), current_user: CurrentUser = None):
     submission = await form_template_service.get_submission(session, submission_id)
-    if submission.submitted_by != current_user.id and not current_user.is_admin:
+    if submission.submitted_by != current_user.id and not current_user.has_global_scope:
         raise BaseAPIException(status_code=404, detail="Submission not found", error_code="SUBMISSION_NOT_FOUND")
 
     template = await form_template_service.get_template(session, submission.form_id)
@@ -600,7 +600,7 @@ async def list_submissions(
     """P1-15: paginated (matching this codebase's existing skip/limit
     convention, e.g. GET /customers, GET /payments/queue) and batch-resolves
     per-row context instead of the previous one-round-trip-per-row N+1."""
-    user_id = None if current_user.is_admin else current_user.id
+    user_id = None if current_user.has_global_scope else current_user.id
     submissions = await form_template_service.list_submissions(
         session, form_id=form_id, visit_id=visit_id, user_id=user_id, skip=skip, limit=limit,
     )
