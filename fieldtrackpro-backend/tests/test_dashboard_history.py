@@ -103,6 +103,7 @@ async def test_history_period_shows_past_year_and_stays_apart_from_live(env):
     assert fy25["start"] == "2025-04-01" and fy25["end"] == "2026-03-31"
     months = {m["value"]: m for m in fy25["months"]}
     assert months["2025-07"]["invoices"] >= 1 and months["2025-08"]["payments"] >= 1 and "2026-03" in months
+    assert list(months) == [f"2025-{m:02d}" for m in range(4, 13)] + ["2026-01", "2026-02", "2026-03"],         "all twelve months of the financial year, April to March"
     assert all(m["value"] < "2026-04" for m in fy25["months"]), "only months before the floor"
     assert all(p["value"] != "FY2026-27" for p in body["periods"]), "the live year is not history"
 
