@@ -55,7 +55,7 @@ async def create_user(data: UserCreate, session: AsyncSession, actor: User, clie
     )
     await repo.add(user)
     await session.flush()
-    if data.role == Role.ADMIN:
+    if data.role in (Role.ADMIN, Role.ACCOUNTANT):   # privileged grants are audited
         security_audit_service.record(
             session, "USER_CREATE_PRIVILEGED", "SUCCESS",
             actor_user_id=actor.id, target_user_id=user.id, new_role=data.role.value, client_ip=client_ip,

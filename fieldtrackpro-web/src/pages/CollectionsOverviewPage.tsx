@@ -16,6 +16,8 @@ import { AppliedFiltersStrip } from '../components/reports/AppliedFiltersStrip';
 import { ExportButtons } from '../components/reports/ExportButtons';
 import { useReportExport } from '../components/reports/useReportExport';
 import { apiClient } from '../api/client';
+import { useAuth } from '../context/AuthContext';
+import { isAdmin as isAdminRole } from '../utils/roles';
 import { Area, CollectionsOverviewTotals, Employee, OutletCollectionRow, Territory } from '../types';
 import { formatCalendarDate } from '../utils/ist';
 import {
@@ -87,6 +89,9 @@ export interface CollectionsOverviewPageProps {
  */
 export const CollectionsOverviewPage: React.FC<CollectionsOverviewPageProps> = ({ hideHeader = false, externalRequest }) => {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  // The read-only accountant sees the workbench but not the staff list or the (admin) outlet pages.
+  const canManage = isAdminRole(user);
   const [rows, setRows] = useState<OutletCollectionRow[]>([]);
   const [totals, setTotals] = useState<CollectionsOverviewTotals | null>(null);
   const [totalCount, setTotalCount] = useState(0);
@@ -114,10 +119,10 @@ export const CollectionsOverviewPage: React.FC<CollectionsOverviewPageProps> = (
   const { exporting, run: runExport } = useReportExport(setError);
 
   useEffect(() => {
-    apiClient.getEmployees().then(setEmployees).catch(() => setEmployees([]));
+    if (canManage) apiClient.getEmployees().then(setEmployees).catch(() => setEmployees([]));
     apiClient.getTerritories().then(setTerritories).catch(() => setTerritories([]));
     apiClient.getAreas().then(setAreas).catch(() => setAreas([]));
-  }, []);
+  }, [canManage]);
 
   // Area options narrow to the selected Zone, since an outlet's Area always
   // belongs to exactly one Zone - picking a Zone first is how "Zone -> Area
@@ -489,7 +494,7 @@ export const CollectionsOverviewPage: React.FC<CollectionsOverviewPageProps> = (
         rowKey={(row) => row.customer_id}
         isLoading={isLoading}
         emptyMessage="No outlets match the current filters"
-        onRowClick={(row) => navigate(`/customers/${row.customer_id}`)}
+        onRowClick={canManage ? (row) => navigate(`/customers/${row.customer_id}`) : undefined}
         serverSide
         totalCount={totalCount}
         pageSize={PAGE_SIZE}

@@ -28,6 +28,8 @@ import { AppliedFiltersStrip } from '../components/reports/AppliedFiltersStrip';
 import { ExportButtons, ExportFormat } from '../components/reports/ExportButtons';
 import { useReportExport } from '../components/reports/useReportExport';
 import { CollectionsOverviewPage } from './CollectionsOverviewPage';
+import { useAuth } from '../context/AuthContext';
+import { isAdmin as isAdminRole } from '../utils/roles';
 import { apiClient } from '../api/client';
 import { formatCalendarDate, formatIstDate, formatIstDateTime, formatIstTime } from '../utils/ist';
 import {
@@ -67,6 +69,8 @@ interface DateRange {
 export type TabType = ReportTabId | 'business_bi';
 
 const TAB_IDS: TabType[] = ['financial_bi', 'business_bi', 'collections_workbench', 'outstanding', 'outlets', 'employees', 'visits', 'monthly'];
+/** Staff and visit tabs are operational, not financial: administrators only (the read-only accountant never sees them). */
+const ADMIN_ONLY_TABS: TabType[] = ['employees', 'visits'];
 
 const SEARCH_DEBOUNCE_MS = 350;
 
@@ -74,9 +78,16 @@ const CONTROL_CLASS =
   'w-full h-9 bg-surface border border-outline-variant rounded-lg px-2.5 py-1.5 text-xs text-on-surface font-body-md focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-surface-container-low';
 
 export const ReportsPage: React.FC = () => {
+  const { user } = useAuth();
+  // Administrators manage; the only other role allowed here (ACCOUNTANT) reads the financial tabs only.
+  const canManage = isAdminRole(user);
+  const allowedTabs = useMemo(
+    () => (canManage ? TAB_IDS : TAB_IDS.filter((t) => !ADMIN_ONLY_TABS.includes(t))),
+    [canManage],
+  );
   const [searchParams, setSearchParams] = useSearchParams();
   const rawTab = searchParams.get('tab') as TabType | null;
-  const initialTab: TabType = rawTab && TAB_IDS.includes(rawTab)
+  const initialTab: TabType = rawTab && allowedTabs.includes(rawTab)
     ? (rawTab === 'business_bi' ? 'financial_bi' : rawTab)
     : 'financial_bi';
 
@@ -88,10 +99,10 @@ export const ReportsPage: React.FC = () => {
 
   useEffect(() => {
     const tabParam = searchParams.get('tab') as TabType;
-    if (tabParam && TAB_IDS.includes(tabParam)) {
+    if (tabParam && allowedTabs.includes(tabParam)) {
       setActiveTab(tabParam === 'business_bi' ? 'financial_bi' : tabParam);
     }
-  }, [searchParams]);
+  }, [searchParams, allowedTabs]);
 
   const handleTabChange = (tab: TabType) => {
     setActiveTab(tab);
@@ -168,16 +179,14 @@ export const ReportsPage: React.FC = () => {
   useEffect(() => {
     const loadMasters = async () => {
       try {
-        const [tList, aList, eList, pList, bList] = await Promise.all([
+        const [tList, aList, pList, bList] = await Promise.all([
           apiClient.getTerritories().catch(() => [] as Territory[]),
           apiClient.getAreas().catch(() => [] as Area[]),
-          apiClient.getEmployees().catch(() => [] as Employee[]),
           apiClient.getMonthlyPeriods().catch(() => [] as MonthlyReportingPeriod[]),
           apiClient.getBrands(true).catch(() => [] as Brand[]),
         ]);
         setTerritories(tList || []);
         setAreas(aList || []);
-        setEmployeeOptions(eList || []);
         setMonthlyPeriods(pList || []);
         setMasterBrands(bList || []);
       } catch (err) {
@@ -190,6 +199,18 @@ export const ReportsPage: React.FC = () => {
       .then((r) => setHistoryPeriods(r?.periods || []))
       .catch(() => setHistoryPeriods([]));
   }, []);
+
+  // The staff list (employee filter) is admin-only on the server: the read-only accountant never asks for it.
+  useEffect(() => {
+    if (!canManage) {
+      setEmployeeOptions([]);
+      return;
+    }
+    apiClient
+      .getEmployees()
+      .then((eList) => setEmployeeOptions(eList || []))
+      .catch(() => setEmployeeOptions([]));
+  }, [canManage]);
 
   /** Label of the selected History period ("FY 2025-26 (full year)" or "July 2025 · FY 2025-26"), or null. */
   const selectedHistoryLabel = useMemo(() => {
@@ -778,7 +799,7 @@ export const ReportsPage: React.FC = () => {
           { id: 'employees', label: 'employees', display: 'Field Staff', icon: Users },
           { id: 'visits', label: 'visits', display: 'Visits & GPS', icon: Clock },
           { id: 'monthly', label: 'monthly', display: 'Monthly Snapshots', icon: Calendar },
-        ].map((tab) => {
+        ].filter((tab) => allowedTabs.includes(tab.id as TabType)).map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id || (tab.id === 'financial_bi' && activeTab === 'business_bi');
           return (
@@ -1409,7 +1430,7 @@ export const ReportsPage: React.FC = () => {
                       >
                         Review
                       </Button>
-                      {isLocked ? (
+                      {!canManage ? null : isLocked ? (
                         <Button
                           size="sm"
                           variant="ghost"
@@ -1515,7 +1536,7 @@ export const ReportsPage: React.FC = () => {
               >
                 Cancel
               </Button>
-              {reviewPeriod.status !== 'FINALIZED' && (
+              {canManage && reviewPeriod.status !== 'FINALIZED' && (
                 <Button
                   variant="secondary"
                   size="sm"

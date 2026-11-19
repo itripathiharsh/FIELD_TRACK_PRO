@@ -108,7 +108,8 @@ async def assert_may_assign_role_on_create(actor: User, role: Role, session: Asy
     """
     Creating an account with a privileged role is itself a grant of privilege:
       * SUPER_ADMIN can never be created through the API (bootstrap script / role-change workflow only);
-      * ADMIN may only be created by a Super Admin.
+      * ADMIN may only be created by a Super Admin;
+      * ACCOUNTANT (read-only finance access) may only be created by a Super Admin.
     """
     if role == Role.SUPER_ADMIN:
         exc = _forbidden(
@@ -117,6 +118,8 @@ async def assert_may_assign_role_on_create(actor: User, role: Role, session: Asy
         )
     elif role == Role.ADMIN and not actor.is_super_admin:
         exc = _forbidden("Only a Super Admin can create an Admin account.", "ROLE_ASSIGNMENT_FORBIDDEN")
+    elif role == Role.ACCOUNTANT and not actor.is_super_admin:
+        exc = _forbidden("Only a Super Admin can create an Accountant account.", "ROLE_ASSIGNMENT_FORBIDDEN")
     else:
         return
     raise await _deny(

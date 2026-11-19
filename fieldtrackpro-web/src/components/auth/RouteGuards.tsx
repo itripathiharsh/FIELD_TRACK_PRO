@@ -1,8 +1,8 @@
 import React from 'react';
-import { Link, Navigate } from 'react-router-dom';
+import { Link, Navigate, useLocation } from 'react-router-dom';
 import { ShieldAlert } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { isAdmin } from '../../utils/roles';
+import { ACCOUNTANT_PATHS, canViewFinance, isAccountant, isAdmin } from '../../utils/roles';
 import { ReconnectingScreen } from './ReconnectingScreen';
 import { ChangePasswordRequiredPage } from '../../pages/ChangePasswordRequiredPage';
 
@@ -54,5 +54,31 @@ export const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }
   }
   if (user?.must_change_password === true) return <ChangePasswordRequiredPage />;
   if (!isAdmin(user)) return <NotAuthorizedPage />;
+  return <>{children}</>;
+};
+
+/** Reports & Collections: ADMIN / SUPER_ADMIN and the read-only ACCOUNTANT. Anyone else sees not-authorized. */
+export const FinanceRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user, isAuthenticated, isLoading, sessionExpired, reconnecting } = useAuth();
+  if (reconnecting && !isAuthenticated) return <ReconnectingScreen />;
+  if (isLoading) return <AuthLoadingFallback />;
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace state={sessionExpired ? { reason: 'session_expired' } : undefined} />;
+  }
+  if (user?.must_change_password === true) return <ChangePasswordRequiredPage />;
+  if (!canViewFinance(user)) return <NotAuthorizedPage />;
+  return <>{children}</>;
+};
+
+/**
+ * Keeps an ACCOUNTANT inside the pages it may use (Reports & Collections, own profile): any other page,
+ * including the dashboard, redirects to Reports. Other roles pass through untouched.
+ */
+export const AccountantScope: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user } = useAuth();
+  const { pathname } = useLocation();
+  if (isAccountant(user) && !ACCOUNTANT_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'))) {
+    return <Navigate to="/reports" replace />;
+  }
   return <>{children}</>;
 };

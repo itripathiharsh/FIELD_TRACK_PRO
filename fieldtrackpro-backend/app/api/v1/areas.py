@@ -22,6 +22,8 @@ router = APIRouter(prefix="/areas", tags=["areas"])
 DbSession = Annotated[AsyncSession, Depends(get_async_session)]
 AdminOnly = Depends(require_role(Role.ADMIN))
 AnyAuth = Depends(require_role(Role.ADMIN, Role.EMPLOYEE))
+# Read-only lists for the report filters (GET only).
+ReadLists = Depends(require_role(Role.ADMIN, Role.EMPLOYEE, Role.ACCOUNTANT))
 
 
 @router.post("", response_model=AreaRead, status_code=201, dependencies=[AdminOnly])
@@ -30,7 +32,7 @@ async def create_area(data: AreaCreate, session: DbSession):
     return area_service.to_area_read(area)
 
 
-@router.get("", response_model=list[AreaRead], dependencies=[AnyAuth])
+@router.get("", response_model=list[AreaRead], dependencies=[ReadLists])
 async def list_areas(session: DbSession, territory_id: uuid.UUID | None = Query(default=None)):
     areas = await area_service.list_areas(session, territory_id)
     return [area_service.to_area_read(a) for a in areas]

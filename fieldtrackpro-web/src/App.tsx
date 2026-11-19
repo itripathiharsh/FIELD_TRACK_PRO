@@ -1,7 +1,7 @@
 import React, { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
-import { AdminRoute, ProtectedRoute } from './components/auth/RouteGuards';
+import { AccountantScope, AdminRoute, FinanceRoute, ProtectedRoute } from './components/auth/RouteGuards';
 import { Layout } from './components/layout/Layout';
 import { LoginPage } from './pages/LoginPage';
 import { RouteFallback } from './components/ui/RouteFallback';
@@ -59,6 +59,7 @@ export function AppContent() {
         path="/*"
         element={
           <ProtectedRoute>
+            <AccountantScope>
             <Layout>
               <LazyRoutes>
               <Routes>
@@ -90,7 +91,7 @@ export function AppContent() {
                 <Route path="/forms/:id/submissions" element={<AdminRoute><FormSubmissionsPage /></AdminRoute>} />
                 <Route path="/forms/:id/submissions/:submissionId" element={<AdminRoute><FormSubmissionDetailPage /></AdminRoute>} />
                 <Route path="/visits/:visitId/forms/:formId" element={<FormFillPage />} />
-                <Route path="/reports" element={<AdminRoute><ReportsPage /></AdminRoute>} />
+                <Route path="/reports" element={<FinanceRoute><ReportsPage /></FinanceRoute>} />
                 <Route path="/collections" element={<Navigate to="/reports?tab=collections_workbench" replace />} />
                 <Route path="/payments" element={<AdminRoute><PaymentReviewPage /></AdminRoute>} />
                 <Route path="/requirements" element={<AdminRoute><RequirementsPage /></AdminRoute>} />
@@ -100,6 +101,7 @@ export function AppContent() {
               </Routes>
               </LazyRoutes>
             </Layout>
+            </AccountantScope>
           </ProtectedRoute>
         }
       />

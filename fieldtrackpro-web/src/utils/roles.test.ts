@@ -6,12 +6,13 @@ import type { User } from '../types';
 const SUPER_ADMIN_USER: User = { ...ADMIN_USER, role: 'SUPER_ADMIN' };
 
 describe('roles', () => {
-  it('only SUPER_ADMIN, ADMIN and EMPLOYEE are valid', () => {
-    expect([...VALID_ROLES]).toEqual(['SUPER_ADMIN', 'ADMIN', 'EMPLOYEE']);
+  it('only SUPER_ADMIN, ADMIN, EMPLOYEE and ACCOUNTANT are valid', () => {
+    expect([...VALID_ROLES]).toEqual(['SUPER_ADMIN', 'ADMIN', 'EMPLOYEE', 'ACCOUNTANT']);
     expect(isValidRole('SUPER_ADMIN')).toBe(true);
     expect(isValidRole('ADMIN')).toBe(true);
     expect(isValidRole('EMPLOYEE')).toBe(true);
-    for (const bad of ['MANAGER', 'admin', 'super_admin', 'SUPERUSER', '', null, undefined, 1]) {
+    expect(isValidRole('ACCOUNTANT')).toBe(true);
+    for (const bad of ['MANAGER', 'admin', 'super_admin', 'SUPERUSER', 'accountant', '', null, undefined, 1]) {
       expect(isValidRole(bad)).toBe(false);
     }
   });

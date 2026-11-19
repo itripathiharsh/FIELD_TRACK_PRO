@@ -20,6 +20,7 @@ DbSession = Annotated[AsyncSession, Depends(get_async_session)]
 AdminOnly = Depends(require_role(Role.ADMIN))
 EmployeeOnly = Depends(require_role(Role.EMPLOYEE))
 AnyAuth = Depends(require_role(Role.ADMIN, Role.EMPLOYEE))
+FinanceRead = Depends(require_role(Role.ADMIN, Role.ACCOUNTANT))
 
 
 @router.get("/summary", response_model=DashboardSummaryResponse, dependencies=[AnyAuth])
@@ -55,7 +56,7 @@ async def get_dashboard_summary(
     )
 
 
-@router.get("/history-periods", response_model=HistoryPeriodsResponse, dependencies=[AdminOnly])
+@router.get("/history-periods", response_model=HistoryPeriodsResponse, dependencies=[FinanceRead])
 async def get_history_periods(session: DbSession):
     """Read-only History periods for the dashboard filter: past financial years (before the reporting floor)
     that hold Tally data, with their months. Separate from the monthly reporting periods (no close workflow)."""
