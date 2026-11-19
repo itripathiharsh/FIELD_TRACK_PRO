@@ -10,7 +10,7 @@ from app.models.customer import Customer
 from app.models.employee import Employee
 from app.models.employee_customer_assignment import EmployeeCustomerAssignment
 from app.models.field_exception import FieldException, ExceptionStatus
-from app.models.payment import Payment
+from app.models.payment import Payment, PaymentBrandAllocation
 from app.models.user import Role, User
 from app.models.visit import Visit, VisitStatus
 from app.models.visit_media import MediaType, VisitMedia
@@ -19,6 +19,8 @@ from app.schemas.dashboard import (
     DashboardSummaryResponse,
     EmployeeDayDashboardResponse,
 )
+from app.services.report_filters import parse_month
+from app.services.reporting_floor import live_payment_clause, reporting_floor
 from app.services import field_exception_service, payment_tally, report_service
 from app.services.employee_service import get_employee_by_user_id
 
@@ -37,6 +39,11 @@ async def get_dashboard_summary(
     Unified Dashboard aggregation sharing 100% single source of truth with ReportService.
     Eliminates redundant execution of get_business_bi_dashboard.
     """
+    # The period: None = Current Live Data; 'YYYY-MM' = one month; 'FYyyyy-yy' = a whole financial year.
+    # A period before the reporting floor is HISTORY (read-only view; no reporting period, no close workflow).
+    period = parse_month(month)
+    is_history = bool(period and period[0] < reporting_floor())
+
     # 1. Fetch Business BI multi-dimensional summaries (single execution)
     bi_data = await report_service.ReportService.get_business_bi_dashboard(
         session=session,
@@ -81,17 +88,8 @@ async def get_dashboard_summary(
             visit_q = visit_q.where(Customer.territory_id == zone_id)
         if area_id:
             visit_q = visit_q.where(Customer.area_id == area_id)
-    if month and month != "ALL":
-        try:
-            m_y, m_m = [int(x) for x in month.split("-")]
-            visit_q = visit_q.where(
-                and_(
-                    func.extract("year", Visit.scheduled_at) == m_y,
-                    func.extract("month", Visit.scheduled_at) == m_m,
-                )
-            )
-        except Exception:
-            pass
+    if period:  # the same window as the BI figures: a month, or a whole financial year (history)
+        visit_q = visit_q.where(func.date(Visit.scheduled_at).between(period[0], period[1]))
 
     v_res = await session.execute(visit_q)
     v_row = v_res.one()
@@ -154,17 +152,12 @@ async def get_dashboard_summary(
             col_q = col_q.where(Customer.territory_id == zone_id)
         if area_id:
             col_q = col_q.where(Customer.area_id == area_id)
-    if month and month != "ALL":
-        try:
-            m_y, m_m = [int(x) for x in month.split("-")]
-            col_q = col_q.where(
-                and_(
-                    func.extract("year", Payment.payment_date) == m_y,
-                    func.extract("month", Payment.payment_date) == m_m,
-                )
-            )
-        except Exception:
-            pass
+    if period:  # the same window as the BI figures: a month, or a whole financial year (history)
+        col_q = col_q.where(Payment.payment_date.between(period[0], period[1]))
+    else:
+        # Current Live Data: Tally receipts dated before the reporting floor are HISTORY and never counted here
+        # (field collections are always live). Before this, the live collection tile included past years.
+        col_q = col_q.where(live_payment_clause(Payment))
 
     col_res = (await session.execute(col_q)).one()
     col_count = col_res.total_count or 0
@@ -205,17 +198,8 @@ async def get_dashboard_summary(
         emp_uid = (await session.execute(emp_user_stmt)).scalar_one_or_none()
         if emp_uid:
             order_q = order_q.where(VisitMedia.uploaded_by == emp_uid)
-    if month and month != "ALL":
-        try:
-            m_y, m_m = [int(x) for x in month.split("-")]
-            order_q = order_q.where(
-                and_(
-                    func.extract("year", VisitMedia.created_at) == m_y,
-                    func.extract("month", VisitMedia.created_at) == m_m,
-                )
-            )
-        except Exception:
-            pass
+    if period:  # the same window as the BI figures: a month, or a whole financial year (history)
+        order_q = order_q.where(func.date(VisitMedia.uploaded_at).between(period[0], period[1]))
     order_count = (await session.execute(order_q)).scalar_one() or 0
 
     # 7. Recent Exceptions for preview
@@ -269,6 +253,7 @@ async def get_dashboard_summary(
     return DashboardSummaryResponse(
         period=month if month and month != "ALL" else "LIVE",
         is_historical=bool(month and month != "ALL"),
+        is_history=is_history,
         kpis=kpis,
         brand_breakdown=bi_data.brand_summaries,
         fos_breakdown=bi_data.fos_summaries,
@@ -344,3 +329,37 @@ async def get_employee_day_dashboard(
         collections_today_amount=col_sum or Decimal("0.00"),
         orders_today_count=orders_count or 0,
     )
+
+
+async def get_history_periods(session: AsyncSession) -> dict:
+    """Financial years before the reporting floor that hold Tally invoices or receipts, with their months.
+    Read-only; creates nothing (no reporting period, no close workflow)."""
+    import calendar
+    from datetime import date as _date
+    from app.models.invoice import Invoice, InvoiceSource
+    from app.models.payment import PaymentSource
+    floor = reporting_floor()
+    counts: dict[tuple[int, int], list[int]] = {}
+    for model, col, src, idx in ((Invoice, Invoice.invoice_date, InvoiceSource.TALLY, 0),
+                                 (Payment, Payment.payment_date, PaymentSource.TALLY, 1)):
+        rows = (await session.execute(
+            select(func.extract("year", col), func.extract("month", col), func.count())
+            .where(model.source == src, col < floor)
+            .group_by(func.extract("year", col), func.extract("month", col))
+        )).all()
+        for y, m, n in rows:
+            counts.setdefault((int(y), int(m)), [0, 0])[idx] += int(n)
+    fys: dict[int, list] = {}
+    for (y, m), (ni, npay) in counts.items():
+        fys.setdefault(y if m >= 4 else y - 1, []).append((y, m, ni, npay))
+    periods = []
+    for fy in sorted(fys, reverse=True):
+        months = sorted(fys[fy], key=lambda r: (r[0], r[1]))
+        periods.append({
+            "value": f"FY{fy}-{str(fy + 1)[2:]}", "label": f"FY {fy}-{str(fy + 1)[2:]}",
+            "start": _date(fy, 4, 1).isoformat(), "end": _date(fy + 1, 3, 31).isoformat(),
+            "invoices": sum(r[2] for r in months), "payments": sum(r[3] for r in months),
+            "months": [{"value": f"{y}-{m:02d}", "label": f"{calendar.month_name[m]} {y}", "invoices": ni, "payments": npay}
+                       for y, m, ni, npay in months],
+        })
+    return {"reporting_floor": floor.isoformat(), "periods": periods}

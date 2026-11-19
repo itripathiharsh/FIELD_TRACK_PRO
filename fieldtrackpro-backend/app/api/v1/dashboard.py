@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.deps.auth import CurrentUser, require_role
 from app.database import get_async_session
 from app.models.user import Role
-from app.schemas.dashboard import DashboardSummaryResponse, EmployeeDayDashboardResponse
+from app.schemas.dashboard import DashboardSummaryResponse, EmployeeDayDashboardResponse, HistoryPeriodsResponse
 from app.services import dashboard_service
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
@@ -53,6 +53,13 @@ async def get_dashboard_summary(
         ageing_bucket=ageing_bucket,
         month=month,
     )
+
+
+@router.get("/history-periods", response_model=HistoryPeriodsResponse, dependencies=[AdminOnly])
+async def get_history_periods(session: DbSession):
+    """Read-only History periods for the dashboard filter: past financial years (before the reporting floor)
+    that hold Tally data, with their months. Separate from the monthly reporting periods (no close workflow)."""
+    return await dashboard_service.get_history_periods(session)
 
 
 @router.get("/my-day", response_model=EmployeeDayDashboardResponse, dependencies=[EmployeeOnly])

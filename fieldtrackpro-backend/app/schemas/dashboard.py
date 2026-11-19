@@ -31,8 +31,11 @@ class DashboardExecutiveKPIs(BaseModel):
 
 
 class DashboardSummaryResponse(BaseModel):
-    period: str  # e.g. "LIVE" or "2026-08"
+    period: str  # e.g. "LIVE", "2026-08" or "FY2025-26"
     is_historical: bool
+    # True when the period lies before the reporting floor (a past financial year): a read-only history view,
+    # kept apart from Current Live Data and from the monthly close workflow.
+    is_history: bool = False
     kpis: DashboardExecutiveKPIs
     brand_breakdown: list[BusinessSummaryRow]
     fos_breakdown: list[BusinessSummaryRow]
@@ -53,3 +56,25 @@ class EmployeeDayDashboardResponse(BaseModel):
     collections_today_count: int
     collections_today_amount: Decimal
     orders_today_count: int
+
+
+class HistoryMonth(BaseModel):
+    value: str          # "2025-07"
+    label: str          # "July 2025"
+    invoices: int
+    payments: int
+
+
+class HistoryPeriod(BaseModel):
+    value: str          # "FY2025-26"
+    label: str          # "FY 2025-26"
+    start: str
+    end: str
+    invoices: int
+    payments: int
+    months: list[HistoryMonth]
+
+
+class HistoryPeriodsResponse(BaseModel):
+    reporting_floor: str
+    periods: list[HistoryPeriod]

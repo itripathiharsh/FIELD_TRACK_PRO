@@ -24,6 +24,8 @@ ALL = "All"
 
 
 def _month_label(month: str) -> str:
+    if month.startswith("FY"):
+        return f"Financial year {month[2:]} (history)"
     y, m = month.split("-")
     return f"{calendar.month_name[int(m)]} {y}"
 
