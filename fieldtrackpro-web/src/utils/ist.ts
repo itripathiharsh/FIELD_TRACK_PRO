@@ -53,6 +53,8 @@ export const formatCalendarDate = (value: string | null | undefined): string => 
 
 /** "September 2026" from `YYYY-MM`. */
 export const formatMonthLabel = (month: string): string => {
+  const fy = /^FY(\d{4})-(\d{2})$/.exec(month);
+  if (fy) return `FY ${fy[1]}-${fy[2]} (full year)`;
   const m = /^(\d{4})-(\d{2})$/.exec(month);
   if (!m) return month;
   const names = [

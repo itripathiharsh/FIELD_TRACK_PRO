@@ -113,3 +113,44 @@ async def test_history_period_shows_past_year_and_stays_apart_from_live(env):
 async def test_history_periods_endpoint_is_admin_only(env):
     r = await env["c"].get("/api/v1/dashboard/history-periods")
     assert r.status_code in (401, 403)
+
+
+@requires_db
+@pytest.mark.asyncio
+async def test_reports_accept_history_periods(env):
+    """Reports & Collections: the Month Period filter offers the same History periods. Financial & BI shows the
+    past year's Tally sales / collections; the snapshot tabs and the exports accept the period without error."""
+    t = env["tag"]
+    brand = f"RepHist{t}"
+    (a,) = await _setup_debtors(env, 1)
+    res = await _post(env, "vouchers", {"vouchers": [
+        _sale(env, "RH1", a, brand, "1000", "2025-07-10"),
+        _sale(env, "RH2", a, brand, "300", "2026-03-31"),
+        _receipt(env, "RHR", a, brand, "500", "2025-08-05"),
+        _sale(env, "RL1", a, brand, "2000", "2026-06-15"),
+    ]})
+    assert res["failed_count"] == 0, res
+    h = env["admin_h"]
+    c = env["c"]
+
+    async def bi(month):
+        r = await c.get("/api/v1/reports/business-summary", params={"month": month, "brand": brand}, headers=h)
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    fy = await bi("FY2025-26")
+    assert fy["month_period"] == "FY2025-26" and fy["is_finalized"] is False
+    assert fy["period_start"] == "2025-04-01" and fy["period_end"] == "2026-03-31"
+    if fy["data_source"] == "LIVE_INVOICES":   # production has no outlet snapshots
+        assert D(str(fy["total_sales"])) == D("1300.00")
+        assert D(str(fy["total_collection"])) == D("500.00")
+        jul = await bi("2025-07")
+        assert D(str(jul["total_sales"])) == D("1000.00")
+
+    for path in ("overview", "outstanding", "outlets", "collections"):
+        r = await c.get(f"/api/v1/reports/{path}", params={"month": "FY2025-26"}, headers=h)
+        assert r.status_code == 200, (path, r.text)
+    for path in ("business-summary", "outstanding", "outlets"):
+        for fmt in ("xlsx", "pdf"):
+            r = await c.get(f"/api/v1/reports/{path}/export", params={"month": "FY2025-26", "format": fmt}, headers=h)
+            assert r.status_code == 200, (path, fmt, r.text[:300])
