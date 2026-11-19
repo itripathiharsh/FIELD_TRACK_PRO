@@ -33,18 +33,68 @@ _PASSWORD_CHANGE_EXEMPT: set[tuple[str, str]] = {
 }
 
 
-# Self-service endpoints an ACCOUNTANT may call without an explicit role grant (own session, own
-# password, own profile, own notifications). Every other endpoint must admit ACCOUNTANT by name
-# through require_role(...); see _enforce_accountant_scope.
+# ---------------------------------------------------------------------------
+# ACCOUNTANT policy (approved 19-Nov-2026)
+#
+#   READ : every GET an Admin may make, except _ACCOUNTANT_READ_DENY (passwords, security audit log).
+#   WRITE: ONLY the routes in _ACCOUNTANT_WRITE_ALLOW (employee profile edit + territory / area
+#          assignment of FIELD STAFF, territories and areas create/edit, customers, outlet mapping,
+#          outlet verification). Every other write - user / role / password management, deletes,
+#          payments, visits, forms, imports, month close - answers 403.
+#   Super-Admin-only and employee-only (field app) routes never admit an accountant.
+# Keys are (METHOD, route template relative to the API prefix).
+# ---------------------------------------------------------------------------
+_ACCOUNTANT_READ_METHODS = frozenset({"GET", "HEAD"})
+
+_ACCOUNTANT_READ_DENY: frozenset[tuple[str, str]] = frozenset({
+    ("GET", "/imports/{batch_id}/credentials.xlsx"),   # generated passwords of imported accounts
+    ("GET", "/security-audit-logs"),
+})
+
+_ACCOUNTANT_WRITE_ALLOW: frozenset[tuple[str, str]] = frozenset({
+    # Employees: edit FIELD STAFF profiles and their territory / area assignments (target checked in the endpoint)
+    ("PATCH", "/employees/{employee_id}"),
+    ("POST", "/employees/{employee_id}/territory-assignments"),
+    ("POST", "/employees/{employee_id}/areas"),
+    ("DELETE", "/employees/{employee_id}/areas/{area_id}"),
+    # Territories and areas: create / edit (no delete)
+    ("POST", "/territories"),
+    ("PATCH", "/territories/{territory_id}"),
+    ("POST", "/areas"),
+    ("PATCH", "/areas/{area_id}"),
+    # Customers
+    ("POST", "/customers"),
+    ("PATCH", "/customers/{customer_id}"),
+    ("POST", "/customers/{customer_id}/mark-tally-entry-done"),
+    ("PATCH", "/customers/prospects/{prospect_id}"),
+    ("POST", "/customers/prospects/{prospect_id}/approve"),
+    ("POST", "/customers/prospects/{prospect_id}/reject"),
+    ("POST", "/location-proposals/{proposal_id}/approve"),
+    ("POST", "/location-proposals/{proposal_id}/reject"),
+    # Outlet verification
+    ("POST", "/customers/outlet-proofs/{proof_id}/approve"),
+    ("POST", "/customers/outlet-proofs/{proof_id}/reject"),
+    # Outlet mapping (Admin-level actions; applying / reverting a batch stays Super Admin only)
+    ("POST", "/outlet-mapping/import/preview"),
+    ("POST", "/outlet-mapping/review"),
+    ("POST", "/outlet-mapping/link"),
+    ("POST", "/outlet-mapping/unlink"),
+    ("POST", "/outlet-mapping/primary"),
+    ("POST", "/outlet-mapping/rename"),
+    ("POST", "/outlet-mapping/brand"),
+    ("POST", "/outlet-mapping/outlet-code"),
+})
+
+# Self-service writes an accountant may make on endpoints without a role check (own session / password /
+# notifications). Reads on such endpoints follow the READ rule.
 _ACCOUNTANT_SELF_SERVICE: set[tuple[str, str]] = _PASSWORD_CHANGE_EXEMPT | {
-    ("GET", "/employees/me"),
-    ("GET", "/notifications/me"),
-    ("GET", "/notifications/unread-count"),
     ("PATCH", "/notifications/read-all"),
+    ("PATCH", "/notifications/{notification_id}/read"),
 }
 
-#: request.state flag set by a require_role(...) check that lists ACCOUNTANT, BEFORE the user resolves.
-_ACCOUNTANT_GRANT_FLAG = "accountant_role_granted"
+#: request.state flag set by every require_role(...) check BEFORE the user resolves: the role check itself
+#: then decides for the accountant (see _check), so _enforce_accountant_scope defers to it.
+_ACCOUNTANT_GRANT_FLAG = "accountant_role_check_present"
 
 
 def _api_path(request: Request) -> str:
@@ -55,22 +105,49 @@ def _api_path(request: Request) -> str:
     return path.rstrip("/") or "/"
 
 
+def _route_key(request: Request) -> tuple[str, str]:
+    """(METHOD, route template relative to the API prefix), e.g. ("PATCH", "/employees/{employee_id}")."""
+    route = request.scope.get("route")
+    path = getattr(route, "path", None) or request.url.path
+    prefix = settings.api_v1_prefix.rstrip("/")
+    if prefix and path.startswith(prefix):
+        path = path[len(prefix):]
+    return request.method.upper(), (path.rstrip("/") or "/")
+
+
+def accountant_may(method: str, route_path: str, allowed: frozenset | set | None) -> bool:
+    """
+    The accountant policy for one endpoint. ``allowed`` = the roles of its role check, or None when the
+    endpoint only requires a signed-in user.
+    """
+    key = (method.upper(), route_path)
+    reading = key[0] in _ACCOUNTANT_READ_METHODS and key not in _ACCOUNTANT_READ_DENY
+    if allowed is None:
+        return reading or key in _ACCOUNTANT_SELF_SERVICE
+    if Role.ACCOUNTANT in allowed:
+        return True
+    if Role.ADMIN in allowed:
+        return reading or key in _ACCOUNTANT_WRITE_ALLOW
+    return False   # Super-Admin-only or employee-only (field app)
+
+
 def _is_password_change_exempt(request: Request) -> bool:
     return (request.method.upper(), _api_path(request)) in _PASSWORD_CHANGE_EXEMPT
 
 
 def _enforce_accountant_scope(user: User, request: Request) -> None:
     """
-    ACCOUNTANT is read-only finance access and must never fall into code that treats "not an EMPLOYEE"
-    as "an administrator". It therefore fails CLOSED: an accountant passes authentication only on an
-    endpoint whose role check names ACCOUNTANT explicitly, or on the short self-service list above.
-    Endpoints that merely require "any signed-in user" answer 403 to an accountant.
+    ACCOUNTANT must never fall into code that treats "not an EMPLOYEE" as "an administrator" for WRITES.
+    On an endpoint with a role check, that check applies the accountant policy itself. On an endpoint
+    that only requires a signed-in user, the accountant may read (GET) and use the self-service list,
+    nothing else.
     """
     if user.role != Role.ACCOUNTANT:
         return
     if getattr(request.state, _ACCOUNTANT_GRANT_FLAG, False):
         return
-    if (request.method.upper(), _api_path(request)) in _ACCOUNTANT_SELF_SERVICE:
+    method, path = _route_key(request)
+    if accountant_may(method, path, None):
         return
     raise ForbiddenException("Insufficient permissions")
 
@@ -180,15 +257,23 @@ def require_role(*roles: Role):
     allowed = set(roles)
     if Role.ADMIN in allowed:
         allowed.add(Role.SUPER_ADMIN)
-    grants_accountant = Role.ACCOUNTANT in allowed
+    frozen = frozenset(allowed)
 
     async def _grant(request: Request) -> None:
-        # Runs before the user is resolved (declared first): tells _enforce_accountant_scope that this
-        # endpoint names ACCOUNTANT explicitly. Grants nothing by itself - _check below still decides.
-        if grants_accountant:
-            setattr(request.state, _ACCOUNTANT_GRANT_FLAG, True)
+        # Runs before the user is resolved (declared first): tells _enforce_accountant_scope that a role
+        # check is present and will apply the accountant policy itself. Grants nothing by itself.
+        setattr(request.state, _ACCOUNTANT_GRANT_FLAG, True)
 
-    async def _check(_granted: None = Depends(_grant), current_user: User = Depends(_get_enforced_user)) -> User:
+    async def _check(
+        request: Request,
+        _granted: None = Depends(_grant),
+        current_user: User = Depends(_get_enforced_user),
+    ) -> User:
+        if current_user.role == Role.ACCOUNTANT:
+            method, path = _route_key(request)
+            if not accountant_may(method, path, frozen):
+                raise ForbiddenException("Insufficient permissions")
+            return current_user
         if current_user.role not in allowed:
             raise ForbiddenException("Insufficient permissions")
         return current_user

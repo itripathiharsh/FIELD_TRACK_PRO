@@ -264,7 +264,7 @@ async def create_customer_prospect(
                     status_code=409,
                     detail=(
                         f"Possible existing customer found: '{dup_cust.name}' (Phone: {dup_cust.contact_number}, GST: {dup_cust.gst_number or 'N/A'})."
-                        if current_user.is_admin
+                        if current_user.has_global_scope
                         else f"Possible existing customer found: '{dup_cust.name}'. Search for it by name and start an ad-hoc visit instead."
                     ),
                     error_code="DUPLICATE_CUSTOMER",
@@ -275,7 +275,7 @@ async def create_customer_prospect(
     # 2. Location & Status Handling
     # For an Admin, coordinates entered directly are official & VERIFIED immediately.
     # For field employees, coordinates are submitted as PENDING_APPROVAL until admin review.
-    is_admin = getattr(current_user, "role", None) in (Role.ADMIN, Role.SUPER_ADMIN, "ADMIN", "SUPER_ADMIN")
+    is_admin = getattr(current_user, "role", None) in (Role.ADMIN, Role.SUPER_ADMIN, Role.ACCOUNTANT, "ADMIN", "SUPER_ADMIN", "ACCOUNTANT")
     if is_admin and data.location is not None:
         official_location = from_shape(Point(data.location.longitude, data.location.latitude), srid=4326)
         loc_status = "VERIFIED"
@@ -418,7 +418,7 @@ async def assert_employee_can_view_customer(
     goes through the redacted search in GET /customers, not through this check.
     """
     await get_customer(customer_id, session)
-    if current_user.is_admin:
+    if current_user.has_global_scope:
         return
     emp = await _employee_for_scope(current_user, session)
     allowed = (

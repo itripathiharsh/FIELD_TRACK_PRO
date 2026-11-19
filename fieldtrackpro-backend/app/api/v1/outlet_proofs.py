@@ -115,7 +115,7 @@ async def reject_outlet_proof(
 async def list_customer_outlet_proofs(customer_id: uuid.UUID, current_user: CurrentUser, session: DbSession):
     """Admin: every proof of this outlet. Employee: only their own, and only for outlets in their scope."""
     await customer_service.assert_employee_can_view_customer(customer_id, current_user, session)
-    is_admin = current_user.is_admin
+    is_admin = current_user.has_global_scope
     proofs, _ = await outlet_proof_service.list_outlet_proofs(
         session, status="ALL", customer_id=customer_id,
         submitted_by=None if is_admin else current_user.id, skip=0, limit=500,

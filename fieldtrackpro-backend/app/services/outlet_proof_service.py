@@ -877,7 +877,7 @@ async def list_outlet_proofs(
 async def get_proof_for_viewer(proof_id: uuid.UUID, current_user: User, session: AsyncSession) -> OutletProof:
     """Admin: any proof. Employee: only their own; anything else looks non-existent (404)."""
     proof = (await session.execute(select(OutletProof).where(OutletProof.id == proof_id))).scalar_one_or_none()
-    if proof is None or (not current_user.is_admin and proof.submitted_by != current_user.id):
+    if proof is None or (not current_user.has_global_scope and proof.submitted_by != current_user.id):
         raise _err(404, "OUTLET_PROOF_NOT_FOUND", "Outlet proof not found.")
     return proof
 

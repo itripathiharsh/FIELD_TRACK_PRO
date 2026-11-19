@@ -11,7 +11,7 @@ import { Modal } from '../components/ui/Modal';
 import { PageHeader } from '../components/ui/PageHeader';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { useAuth } from '../context/AuthContext';
-import { isAdmin as isAdminRole } from '../utils/roles';
+import { canViewAdmin as isAdminRole } from '../utils/roles';  // admin VIEW (accountant included); writes are enforced server-side
 import { apiClient, RequirementCategory } from '../api/client';
 import { Customer, FormStatus, FormSubmission, FormTemplateSummary, Visit } from '../types';
 

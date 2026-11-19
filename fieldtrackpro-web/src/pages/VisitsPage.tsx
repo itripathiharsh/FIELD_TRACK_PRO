@@ -28,7 +28,7 @@ import { ErrorBanner } from '../components/ui/ErrorBanner';
 import { Card } from '../components/ui/Card';
 import { VisitReviewBadge } from '../components/ui/VisitReviewBadge';
 import { useAuth } from '../context/AuthContext';
-import { isAdmin as isAdminRole } from '../utils/roles';
+import { canViewAdmin as isAdminRole } from '../utils/roles';  // admin VIEW (accountant included); writes are enforced server-side
 import { apiClient } from '../api/client';
 import {
   Area,

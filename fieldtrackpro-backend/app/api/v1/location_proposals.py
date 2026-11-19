@@ -40,7 +40,7 @@ async def list_location_proposals(
         session=session,
         status=status,
         customer_id=customer_id,
-        submitted_by=current_user.id if not current_user.is_admin else None,
+        submitted_by=current_user.id if not current_user.has_global_scope else None,
         skip=skip,
         limit=limit,
     )

@@ -323,7 +323,7 @@ async def update_payment_allocations(
     Allows Admins to correct the brand breakdown (e.g. from bank statement) before final verification.
     """
     req_id = get_current_request_id()
-    if not current_user.is_admin:
+    if not current_user.has_global_scope:
         logger.warning("event=payment_reallocate result=rejected reason=ADMIN_REQUIRED request_id=%s user_id=%s", req_id, current_user.id)
         raise BaseAPIException(
             status_code=403,
@@ -404,7 +404,7 @@ async def _assert_payment_visible(payment: Payment, current_user: User, session:
     ADMIN sees any payment. EMPLOYEE may only see their own collections - not
     other reps' (an employee cannot browse a colleague's collections/proofs).
     """
-    if current_user.is_admin:
+    if current_user.has_global_scope:
         return payment
     from app.services.employee_service import get_employee_by_user_id
 

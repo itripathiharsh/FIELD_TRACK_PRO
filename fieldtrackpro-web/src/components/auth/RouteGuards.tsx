@@ -2,7 +2,7 @@ import React from 'react';
 import { Link, Navigate, useLocation } from 'react-router-dom';
 import { ShieldAlert } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { ACCOUNTANT_PATHS, canViewFinance, isAccountant, isAdmin } from '../../utils/roles';
+import { ACCOUNTANT_BLOCKED_PATHS, canViewAdmin, canViewFinance, isAccountant } from '../../utils/roles';
 import { ReconnectingScreen } from './ReconnectingScreen';
 import { ChangePasswordRequiredPage } from '../../pages/ChangePasswordRequiredPage';
 
@@ -44,7 +44,7 @@ export const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ childr
   return <>{children}</>;
 };
 
-/** Requires the ADMIN role. Any other role (EMPLOYEE, unknown) sees a not-authorized page. */
+/** Admin pages: ADMIN / SUPER_ADMIN, and the ACCOUNTANT (reads; the backend allows only her approved writes). */
 export const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, isAuthenticated, isLoading, sessionExpired, reconnecting } = useAuth();
   if (reconnecting && !isAuthenticated) return <ReconnectingScreen />;
@@ -53,7 +53,7 @@ export const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }
     return <Navigate to="/login" replace state={sessionExpired ? { reason: 'session_expired' } : undefined} />;
   }
   if (user?.must_change_password === true) return <ChangePasswordRequiredPage />;
-  if (!isAdmin(user)) return <NotAuthorizedPage />;
+  if (!canViewAdmin(user)) return <NotAuthorizedPage />;
   return <>{children}</>;
 };
 
@@ -71,14 +71,17 @@ export const FinanceRoute: React.FC<{ children: React.ReactNode }> = ({ children
 };
 
 /**
- * Keeps an ACCOUNTANT inside the pages it may use (Reports & Collections, own profile): any other page,
- * including the dashboard, redirects to Reports. Other roles pass through untouched.
+ * Keeps an ACCOUNTANT out of the field-app pages (employee visit planning, form filling): those redirect to
+ * the dashboard. Every admin page is open to her. Other roles pass through untouched.
  */
 export const AccountantScope: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
   const { pathname } = useLocation();
-  if (isAccountant(user) && !ACCOUNTANT_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'))) {
-    return <Navigate to="/reports" replace />;
+  const fieldPage =
+    ACCOUNTANT_BLOCKED_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/')) ||
+    /^\/visits\/[^/]+\/forms\//.test(pathname);
+  if (isAccountant(user) && fieldPage) {
+    return <Navigate to="/" replace />;
   }
   return <>{children}</>;
 };

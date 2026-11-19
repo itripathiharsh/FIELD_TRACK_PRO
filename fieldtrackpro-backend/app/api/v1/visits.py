@@ -170,7 +170,7 @@ async def get_visit(
 ):
     """FT-002: object-level ownership is enforced, not just role membership."""
     visit = await visit_service.get_visit_for_user(visit_id, current_user, session)
-    if current_user.is_admin:
+    if current_user.has_global_scope:
         await visit_service.annotate_adhoc_review([visit], session)
     return visit
 
@@ -274,7 +274,7 @@ async def list_visit_requirements(
         .where(CustomerRequirement.visit_id == visit_id)
         .where(
             CustomerRequirement.created_by == current_user.id
-            if not current_user.is_admin
+            if not current_user.has_global_scope
             else True
         )
         .order_by(CustomerRequirement.created_at.desc())

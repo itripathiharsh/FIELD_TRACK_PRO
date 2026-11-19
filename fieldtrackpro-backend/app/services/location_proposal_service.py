@@ -205,7 +205,7 @@ async def approve_location_proposal(
     session: AsyncSession,
 ) -> LocationProposalRead:
     req_id = get_current_request_id()
-    if not admin_user.is_admin:
+    if not admin_user.has_global_scope:
         logger.warning("event=location_approval result=rejected reason=FORBIDDEN_APPROVAL request_id=%s user_id=%s", req_id, admin_user.id)
         raise BaseAPIException(
             status_code=403,
@@ -276,7 +276,7 @@ async def reject_location_proposal(
     session: AsyncSession,
 ) -> LocationProposalRead:
     req_id = get_current_request_id()
-    if not admin_user.is_admin:
+    if not admin_user.has_global_scope:
         logger.warning("event=location_rejection result=rejected reason=FORBIDDEN_REJECTION request_id=%s user_id=%s", req_id, admin_user.id)
         raise BaseAPIException(
             status_code=403,

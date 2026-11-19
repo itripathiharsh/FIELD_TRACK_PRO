@@ -44,7 +44,7 @@ async def list_orders(
 
 
 async def _employee_scope(current_user, session):
-    if current_user.is_admin:
+    if current_user.has_global_scope:
         return None
     from app.services.employee_service import get_employee_by_user_id
 

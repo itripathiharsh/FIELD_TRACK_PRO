@@ -274,7 +274,7 @@ async def get_employee_plan(
     session: AsyncSession,
 ) -> MonthlyVisitPlanRead:
     """Admin or owner: retrieve specified employee's monthly plan."""
-    if not current_user.is_admin:
+    if not current_user.has_global_scope:
         caller_emp = await get_employee_by_user_id(current_user.id, session)
         if caller_emp.id != employee_id:
             raise ResourceNotFoundException("Employee not found")
@@ -291,7 +291,7 @@ async def list_monthly_plans(
     session: AsyncSession,
 ) -> list[MonthlyPlanSummaryRead]:
     """Admin: list monthly planning summaries across all active employees."""
-    if not current_user.is_admin:
+    if not current_user.has_global_scope:
         raise ForbiddenException("Admin authorization required")
 
     # Fetch active employees
@@ -356,7 +356,7 @@ async def get_team_plan(
     employee_id: Optional[uuid.UUID] = None,
 ) -> TeamMonthlyPlanRead:
     """Admin: retrieve planned visits across all employees (or a filtered employee) for the month."""
-    if not current_user.is_admin:
+    if not current_user.has_global_scope:
         raise ForbiddenException("Admin authorization required")
 
     stmt = (
@@ -402,7 +402,7 @@ async def create_planned_visit(
     req_id = get_current_request_id()
 
     # Determine target employee
-    if current_user.is_admin:
+    if current_user.has_global_scope:
         if data.employee_id:
             target_employee_id = data.employee_id
         else:
@@ -420,7 +420,7 @@ async def create_planned_visit(
     customer = await get_customer(data.customer_id, session)
 
     # Date validation: employees cannot plan visits in the past
-    if not current_user.is_admin and data.planned_date < date.today():
+    if not current_user.has_global_scope and data.planned_date < date.today():
         raise ValidationException("Cannot plan visits for past dates")
 
     # Get or create monthly plan for the target date's month
@@ -487,7 +487,7 @@ async def update_planned_visit(
         raise ResourceNotFoundException("Planned visit not found")
 
     # Authorization
-    if not current_user.is_admin:
+    if not current_user.has_global_scope:
         caller_emp = await get_employee_by_user_id(current_user.id, session)
         if visit.employee_id != caller_emp.id:
             raise ResourceNotFoundException("Planned visit not found")
@@ -508,7 +508,7 @@ async def update_planned_visit(
     await session.refresh(visit)
 
     # If an employee made the change, notify active Admins
-    if not current_user.is_admin:
+    if not current_user.has_global_scope:
         emp_name = visit.employee.full_name if visit.employee else "Employee"
         cust_name = visit.customer.name if visit.customer else "Customer"
         date_str = visit.planned_date.strftime("%d %b %Y")
@@ -548,7 +548,7 @@ async def reschedule_planned_visit(
         raise ResourceNotFoundException("Planned visit not found")
 
     # Authorization
-    if not current_user.is_admin:
+    if not current_user.has_global_scope:
         caller_emp = await get_employee_by_user_id(current_user.id, session)
         if visit.employee_id != caller_emp.id:
             raise ResourceNotFoundException("Planned visit not found")
@@ -586,7 +586,7 @@ async def reschedule_planned_visit(
     )
 
     # If an employee rescheduled the visit, notify active Admins
-    if not current_user.is_admin:
+    if not current_user.has_global_scope:
         emp_name = visit.employee.full_name if visit.employee else "Employee"
         cust_name = visit.customer.name if visit.customer else "Customer"
         old_str = old_date.strftime("%d %b %Y")
@@ -626,7 +626,7 @@ async def delete_planned_visit(
         raise ResourceNotFoundException("Planned visit not found")
 
     # Authorization
-    if not current_user.is_admin:
+    if not current_user.has_global_scope:
         caller_emp = await get_employee_by_user_id(current_user.id, session)
         if visit.employee_id != caller_emp.id:
             raise ResourceNotFoundException("Planned visit not found")
@@ -644,7 +644,7 @@ async def delete_planned_visit(
     logger.info("event=planned_visit_cancelled request_id=%s visit_id=%s", req_id, visit_id)
 
     # If an employee cancelled the visit, notify active Admins
-    if not current_user.is_admin:
+    if not current_user.has_global_scope:
         emp_name = visit.employee.full_name if visit.employee else "Employee"
         cust_name = visit.customer.name if visit.customer else "Customer"
         date_str = visit.planned_date.strftime("%d %b %Y")
@@ -670,7 +670,7 @@ async def reassign_planned_visit(
     session: AsyncSession,
 ) -> PlannedVisitRead:
     """Admin: reassign a planned visit to another employee."""
-    if not current_user.is_admin:
+    if not current_user.has_global_scope:
         raise ForbiddenException("Only administrators can reassign planned visits")
 
     stmt = (

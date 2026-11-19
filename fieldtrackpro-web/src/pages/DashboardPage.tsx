@@ -33,7 +33,7 @@ import { Card, CardHeader, CardTitle, CardSubtitle } from '../components/ui/Card
 import { Button } from '../components/ui/Button';
 import { ErrorBanner } from '../components/ui/ErrorBanner';
 import { useAuth } from '../context/AuthContext';
-import { isAdmin as isAdminRole } from '../utils/roles';
+import { canViewAdmin as isAdminRole } from '../utils/roles';  // admin VIEW (accountant included); writes are enforced server-side
 import { apiClient } from '../api/client';
 import {
   Customer,

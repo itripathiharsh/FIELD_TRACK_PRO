@@ -5,7 +5,7 @@ import { ReportsPage } from './ReportsPage';
 import { ADMIN_USER, baseRoutes, mockApi, renderWithProviders, signIn } from '../test/utils';
 import type { User } from '../types';
 
-/** ACCOUNTANT on Reports & Collections: financial tabs only, read-only (no month close / reopen), no staff list. */
+/** ACCOUNTANT on Reports & Collections: every tab readable, but no month Close & Lock / Reopen. */
 const ACCOUNTANT_USER: User = { ...ADMIN_USER, id: '55555555-5555-5555-5555-555555555555', role: 'ACCOUNTANT' };
 
 const PERIOD = {
@@ -14,13 +14,13 @@ const PERIOD = {
   snapshot_count: 0, total_outlets: 3,
 };
 
-describe('ReportsPage - Accountant (read-only)', () => {
+describe('ReportsPage - Accountant', () => {
   beforeEach(() => {
     localStorage.clear();
     signIn(ACCOUNTANT_USER);
   });
 
-  it('hides the staff and visit tabs, never asks for the staff list, and offers no Close & Lock', async () => {
+  it('shows every tab and the staff filter, but offers no Close & Lock / Reopen', async () => {
     const calls: string[] = [];
     const fetchSpy = mockApi({
       ...baseRoutes(ACCOUNTANT_USER),
@@ -30,33 +30,22 @@ describe('ReportsPage - Accountant (read-only)', () => {
       },
       '/api/v1/employees': (url: string) => {
         calls.push(url);
-        return new Response('{"detail":"Insufficient permissions"}', { status: 403 });
+        return new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } });
       },
     });
 
     renderWithProviders(<ReportsPage />, { route: '/reports?tab=monthly' });
 
     expect(await screen.findByRole('button', { name: 'business_bi' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'collections' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'outstanding' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'employees' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'visits' })).not.toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'employees' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'visits' })).toBeInTheDocument();
 
     expect(await screen.findByText(/October 2026/)).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: /Review/ }).length).toBeGreaterThan(0);
     expect(screen.queryByRole('button', { name: /Close & Lock/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Reopen/ })).not.toBeInTheDocument();
 
-    await waitFor(() => expect(calls.some((u) => u.includes('/reports/monthly-periods'))).toBe(true));
-    expect(calls.some((u) => /\/api\/v1\/employees(\?|$)/.test(u))).toBe(false);
-    fetchSpy.mockRestore();
-  });
-
-  it('opening a staff tab by URL falls back to Financial & BI', async () => {
-    const fetchSpy = mockApi({ ...baseRoutes(ACCOUNTANT_USER) });
-    renderWithProviders(<ReportsPage />, { route: '/reports?tab=employees' });
-    expect(await screen.findByRole('button', { name: 'business_bi' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'employees' })).not.toBeInTheDocument();
+    await waitFor(() => expect(calls.some((u) => /\/api\/v1\/employees(\?|$)/.test(u))).toBe(true));
     fetchSpy.mockRestore();
   });
 });

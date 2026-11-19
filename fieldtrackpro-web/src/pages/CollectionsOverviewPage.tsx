@@ -17,7 +17,7 @@ import { ExportButtons } from '../components/reports/ExportButtons';
 import { useReportExport } from '../components/reports/useReportExport';
 import { apiClient } from '../api/client';
 import { useAuth } from '../context/AuthContext';
-import { isAdmin as isAdminRole } from '../utils/roles';
+import { canViewAdmin } from '../utils/roles';
 import { Area, CollectionsOverviewTotals, Employee, OutletCollectionRow, Territory } from '../types';
 import { formatCalendarDate } from '../utils/ist';
 import {
@@ -90,8 +90,8 @@ export interface CollectionsOverviewPageProps {
 export const CollectionsOverviewPage: React.FC<CollectionsOverviewPageProps> = ({ hideHeader = false, externalRequest }) => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  // The read-only accountant sees the workbench but not the staff list or the (admin) outlet pages.
-  const canManage = isAdminRole(user);
+  // Admins and the accountant read the staff list and open the outlet pages.
+  const canManage = canViewAdmin(user);
   const [rows, setRows] = useState<OutletCollectionRow[]>([]);
   const [totals, setTotals] = useState<CollectionsOverviewTotals | null>(null);
   const [totalCount, setTotalCount] = useState(0);

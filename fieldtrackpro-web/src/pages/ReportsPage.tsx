@@ -29,7 +29,7 @@ import { ExportButtons, ExportFormat } from '../components/reports/ExportButtons
 import { useReportExport } from '../components/reports/useReportExport';
 import { CollectionsOverviewPage } from './CollectionsOverviewPage';
 import { useAuth } from '../context/AuthContext';
-import { isAdmin as isAdminRole } from '../utils/roles';
+import { canViewAdmin, isAdmin as isAdminRole } from '../utils/roles';
 import { apiClient } from '../api/client';
 import { formatCalendarDate, formatIstDate, formatIstDateTime, formatIstTime } from '../utils/ist';
 import {
@@ -79,11 +79,12 @@ const CONTROL_CLASS =
 
 export const ReportsPage: React.FC = () => {
   const { user } = useAuth();
-  // Administrators manage; the only other role allowed here (ACCOUNTANT) reads the financial tabs only.
+  // Administrators manage (close / reopen a month); the accountant reads every tab.
   const canManage = isAdminRole(user);
+  const canView = canViewAdmin(user);
   const allowedTabs = useMemo(
-    () => (canManage ? TAB_IDS : TAB_IDS.filter((t) => !ADMIN_ONLY_TABS.includes(t))),
-    [canManage],
+    () => (canView ? TAB_IDS : TAB_IDS.filter((t) => !ADMIN_ONLY_TABS.includes(t))),
+    [canView],
   );
   const [searchParams, setSearchParams] = useSearchParams();
   const rawTab = searchParams.get('tab') as TabType | null;
@@ -200,9 +201,9 @@ export const ReportsPage: React.FC = () => {
       .catch(() => setHistoryPeriods([]));
   }, []);
 
-  // The staff list (employee filter) is admin-only on the server: the read-only accountant never asks for it.
+  // The staff list feeds the employee filter (admins and the accountant may read it).
   useEffect(() => {
-    if (!canManage) {
+    if (!canView) {
       setEmployeeOptions([]);
       return;
     }
@@ -210,7 +211,7 @@ export const ReportsPage: React.FC = () => {
       .getEmployees()
       .then((eList) => setEmployeeOptions(eList || []))
       .catch(() => setEmployeeOptions([]));
-  }, [canManage]);
+  }, [canView]);
 
   /** Label of the selected History period ("FY 2025-26 (full year)" or "July 2025 · FY 2025-26"), or null. */
   const selectedHistoryLabel = useMemo(() => {

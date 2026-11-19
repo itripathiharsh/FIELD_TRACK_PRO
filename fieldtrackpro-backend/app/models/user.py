@@ -66,5 +66,15 @@ class User(Base):
         return self.role in ADMIN_ROLES
 
     @property
+    def has_global_scope(self) -> bool:
+        """
+        True for ADMIN, SUPER_ADMIN and ACCOUNTANT: sees every record (not only an employee's own scope).
+        This is about SCOPE only. What an accountant may WRITE is decided centrally by the route policy
+        (app.core.deps.auth.accountant_may); security decisions (password resets, role changes, account
+        deletion) keep using ``is_admin``.
+        """
+        return self.role in ADMIN_ROLES or self.role == Role.ACCOUNTANT
+
+    @property
     def is_super_admin(self) -> bool:
         return self.role == Role.SUPER_ADMIN

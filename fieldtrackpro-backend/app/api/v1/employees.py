@@ -33,6 +33,23 @@ AdminOnly = Depends(require_role(Role.ADMIN))
 AnyAuth = Depends(require_role(Role.ADMIN, Role.EMPLOYEE))
 
 
+async def _accountant_targets_field_staff_only(employee_id: uuid.UUID, actor, session: AsyncSession) -> None:
+    """An ACCOUNTANT may change FIELD STAFF (EMPLOYEE) profiles and assignments only - never an Admin,
+    Super Admin or Accountant profile (whose login email / mobile the edit form could change)."""
+    if actor.role != Role.ACCOUNTANT:
+        return
+    from sqlalchemy import select
+    from app.exceptions.custom import ForbiddenException
+    from app.models.employee import Employee
+    from app.models.user import User
+
+    target_role = (
+        await session.execute(select(User.role).join(Employee, Employee.user_id == User.id).where(Employee.id == employee_id))
+    ).scalar_one_or_none()
+    if target_role is not None and target_role != Role.EMPLOYEE:
+        raise ForbiddenException("An Accountant can only change field staff profiles")
+
+
 @router.post("/register", response_model=EmployeeReadWithUser, status_code=201, dependencies=[AdminOnly])
 async def register_employee(data: EmployeeRegistration, request: Request, current_user: CurrentUser, session: DbSession):
     """
@@ -97,6 +114,7 @@ async def get_employee(employee_id: uuid.UUID, session: DbSession):
 async def update_employee(
     employee_id: uuid.UUID, data: EmployeeUpdate, request: Request, current_user: CurrentUser, session: DbSession
 ):
+    await _accountant_targets_field_staff_only(employee_id, current_user, session)
     return await employee_service.update_employee(employee_id, data, session, current_user, get_client_ip(request))
 
 
@@ -154,6 +172,7 @@ async def create_territory_assignment(
     employee_id: uuid.UUID, data: TerritoryAssignmentCreate, current_user: CurrentUser, session: DbSession
 ):
     """Admin: create a permanent or temporary territory reassignment (P2-D)."""
+    await _accountant_targets_field_staff_only(employee_id, current_user, session)
     assignment = await territory_assignment_service.create_assignment(employee_id, data, current_user, session)
     history = await territory_assignment_service.get_assignment_history(employee_id, session)
     return next(a for a in history.assignments if a.id == assignment.id)
@@ -184,10 +203,12 @@ async def assign_employee_area(
     employee_id: uuid.UUID, data: EmployeeAreaAssignmentCreate, current_user: CurrentUser, session: DbSession
 ):
     """Admin: assign this employee to cover an additional Area."""
+    await _accountant_targets_field_staff_only(employee_id, current_user, session)
     return await employee_area_service.assign_area(employee_id, data.area_id, current_user, session)
 
 
 @router.delete("/{employee_id}/areas/{area_id}", status_code=204, dependencies=[AdminOnly])
-async def unassign_employee_area(employee_id: uuid.UUID, area_id: uuid.UUID, session: DbSession):
+async def unassign_employee_area(employee_id: uuid.UUID, area_id: uuid.UUID, current_user: CurrentUser, session: DbSession):
     """Admin: remove this employee's coverage of an Area."""
+    await _accountant_targets_field_staff_only(employee_id, current_user, session)
     await employee_area_service.unassign_area(employee_id, area_id, session)

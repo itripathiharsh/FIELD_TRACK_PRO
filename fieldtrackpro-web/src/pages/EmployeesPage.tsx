@@ -12,7 +12,7 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { ErrorBanner } from '../components/ui/ErrorBanner';
 import { apiClient } from '../api/client';
 import { useAuth } from '../context/AuthContext';
-import { isSuperAdmin, roleLabel } from '../utils/roles';
+import { isAdmin, isSuperAdmin, roleLabel } from '../utils/roles';
 import { Employee, Territory, UserRole } from '../types';
 import { validatePhoneNumber } from '../utils/phoneValidation';
 import { fieldErrorsOf } from '../utils/errors';
@@ -22,6 +22,8 @@ export const EmployeesPage: React.FC = () => {
   const { user: currentUser } = useAuth();
   // Only a Super Admin may create an Admin; the backend refuses it for anyone else, so don't offer it.
   const canCreateAdmin = isSuperAdmin(currentUser);
+  // The accountant edits field staff but never creates accounts.
+  const canCreateEmployee = isAdmin(currentUser);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [territories, setTerritories] = useState<Territory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -314,9 +316,11 @@ export const EmployeesPage: React.FC = () => {
         title="Field Representatives & Staff"
         subtitle="Manage field agents and system administrator accounts with server-side pagination."
         actions={
-          <Button variant="secondary" size="sm" icon={UserPlus} onClick={() => setIsModalOpen(true)}>
-            Add Employee
-          </Button>
+          canCreateEmployee ? (
+            <Button variant="secondary" size="sm" icon={UserPlus} onClick={() => setIsModalOpen(true)}>
+              Add Employee
+            </Button>
+          ) : undefined
         }
       />
 
@@ -420,9 +424,11 @@ export const EmployeesPage: React.FC = () => {
           title="No employees registered yet"
           subtitle="Register a field representative to start assigning visits."
           action={
-            <Button variant="secondary" size="sm" icon={UserPlus} onClick={() => setIsModalOpen(true)}>
-              Add Employee
-            </Button>
+            canCreateEmployee ? (
+              <Button variant="secondary" size="sm" icon={UserPlus} onClick={() => setIsModalOpen(true)}>
+                Add Employee
+              </Button>
+            ) : undefined
           }
         />
       ) : (
