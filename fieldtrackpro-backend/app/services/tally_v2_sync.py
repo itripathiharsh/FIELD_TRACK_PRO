@@ -453,7 +453,7 @@ async def _invoice_for_bill(session: AsyncSession, customer_id: uuid.UUID, ledge
             Invoice.tally_bill_name == name,
             *([or_(Invoice.tally_debtor_ledger_id == ledger_id, Invoice.tally_debtor_ledger_id.is_(None))]
               if ledger_id else []),
-        ).order_by(Invoice.invoice_date, Invoice.created_at)
+        ).order_by(Invoice.invoice_date, Invoice.source_reference)
     )).scalars().all()
     if not rows:
         return None
