@@ -225,3 +225,28 @@ async def test_r4_one_bill_raised_by_two_invoices_on_one_date_shows_tally_pendin
             await s.execute(delete(TallySnapshotRun).where(TallySnapshotRun.id == sid))
             await s.execute(delete(Invoice).where(Invoice.id.in_([big.id, small.id, other.id])))
             await s.commit()
+
+
+@requires_db
+@pytest.mark.asyncio
+async def test_r5_link_choice_is_deterministic_for_invoices_of_one_bill_and_date(env):
+    """The client's bill SGRG/UNO/911 (D K Mobile Safipur): two invoices of 15-Jun-2026 raise the same bill. A repeat
+    upload moved the receipt's link from one to the other (tie on the creation time of a batch). The choice now
+    depends on Tally data only (date, then voucher key) and never changes on re-send."""
+    t = env["tag"]
+    (a,) = await _setup_debtors(env, 1)
+    s1 = _sale(env, "S1", a, f"UNO/911/{t}", "60950", "2026-06-15")
+    s2 = _sale(env, "S2", a, f"UNO/911/{t}", "45712", "2026-06-15")
+    rec = _receipt(env, "R", a, "97607.47", [(f"UNO/911/{t}", "Agst Ref", "97607.47")], "2026-08-14")
+    seen = set()
+    # S2 reaches FieldTrack first, S1 later (load order opposite to the voucher keys), then re-sends in any order.
+    for i, batch in enumerate(([s2], [s1, rec], [rec], [s1, s2], [s2, s1, rec])):
+        await _post(env, "vouchers", {"vouchers": batch})
+        if i == 0:
+            continue                         # the receipt is not in FieldTrack yet
+        async with AsyncSessionLocal() as s:
+            got = (await s.execute(select(Invoice.source_reference).join(PIA, PIA.invoice_id == Invoice.id)
+                                   .join(Payment, Payment.id == PIA.payment_id)
+                                   .where(Payment.source_reference == f"R-{t}"))).scalars().all()
+        seen.add(tuple(got))
+    assert seen == {(f"S2-{t}",)}, seen      # latest key of the two same-day invoices, every time
