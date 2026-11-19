@@ -354,7 +354,11 @@ async def get_history_periods(session: AsyncSession) -> dict:
         fys.setdefault(y if m >= 4 else y - 1, []).append((y, m, ni, npay))
     periods = []
     for fy in sorted(fys, reverse=True):
-        months = sorted(fys[fy], key=lambda r: (r[0], r[1]))
+        # Every month of the financial year (April .. March) is offered, also a month without Tally data.
+        have = {(y, m): (ni, npay) for y, m, ni, npay in fys[fy]}
+        months = [(y, m, *have.get((y, m), (0, 0)))
+                  for y, m in [(fy, mm) for mm in range(4, 13)] + [(fy + 1, mm) for mm in range(1, 4)]]
+        months = [r for r in months if _date(r[0], r[1], 1) < floor]
         periods.append({
             "value": f"FY{fy}-{str(fy + 1)[2:]}", "label": f"FY {fy}-{str(fy + 1)[2:]}",
             "start": _date(fy, 4, 1).isoformat(), "end": _date(fy + 1, 3, 31).isoformat(),
