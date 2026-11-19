@@ -180,3 +180,48 @@ async def test_resend_creates_no_duplicate_rows_or_links(env):
                                   .where(Payment.source_reference == f"R-{t}"))).scalar_one()
     assert (n_pay, n_inv, n_link) == (1, 1, 1)
     assert await _links(env, "R") == {f"{t}/9": D("40000.00")}   # the -10000 bill is not in FieldTrack
+
+
+@requires_db
+@pytest.mark.asyncio
+async def test_r4_one_bill_raised_by_two_invoices_on_one_date_shows_tally_pending_once():
+    """The client's bill SGRG/25-26/2645 (SGRG Automobiles): invoices 2693 (Rs 28,500) and 2708 (Rs 2,899), both
+    19-Dec-2025, each raise Rs 2,899 on the same bill; Tally's pending is Rs 5,798. Before the fix every invoice
+    of the bill got the whole pending (5,798 + 2,899 = 8,697 open)."""
+    from datetime import date
+    from sqlalchemy import delete
+    from app.models.tally_ledger import TallyOpenBill, TallySnapshotRun
+    from app.services import payment_tally
+    from app.services.tally_v2_sync import _finish_bills_snapshot
+    from tests.test_release_2_2_0_history_safety import _customer, _invoice
+
+    bill, d = f"SGRG/25-26/{__import__('uuid').uuid4().hex[:6]}", date(2025, 12, 19)
+    sid = f"BILLS-R4-{__import__('uuid').uuid4().hex}"
+    async with AsyncSessionLocal() as s:
+        cust = await _customer(s)
+        if not cust.tally_is_debtor:
+            pytest.skip("needs a Tally debtor customer in the test database")
+        big = await _invoice(s, cust.id, d, "28500.00", bill)
+        small = await _invoice(s, cust.id, d, "2899.00", bill)
+        other = await _invoice(s, cust.id, date(2026, 5, 1), "1000.00", bill)   # same name, other date (B6 repeat)
+        await s.commit()
+        run = TallySnapshotRun(id=sid, kind="BILLS", as_of_date=date(2099, 1, 2), status="RECEIVING")
+        s.add(run)
+        s.add(TallyOpenBill(customer_id=cust.id, as_of_date=date(2099, 1, 2), snapshot_id=sid, bill_name=bill,
+                            bill_date=d, due_date=d, pending_amount=D("5798.00")))
+        await s.flush()
+        try:
+            await _finish_bills_snapshot(s, run)
+            await s.commit()
+            paid = await payment_tally.posted_paid_by_invoice(s, [big.id, small.id, other.id])
+            open_ = {k: inv.amount - paid[inv.id] for k, inv in (("big", big), ("small", small), ("other", other))}
+            assert open_["big"] + open_["small"] == D("5798.00"), open_
+            assert open_["other"] == D("0.00"), open_
+            # Asking for one invoice alone gives the same share as asking for all of them.
+            alone = await payment_tally.posted_paid_by_invoice(s, [small.id])
+            assert small.amount - alone[small.id] == open_["small"]
+        finally:
+            await s.execute(delete(TallyOpenBill).where(TallyOpenBill.snapshot_id == sid))
+            await s.execute(delete(TallySnapshotRun).where(TallySnapshotRun.id == sid))
+            await s.execute(delete(Invoice).where(Invoice.id.in_([big.id, small.id, other.id])))
+            await s.commit()

@@ -394,10 +394,33 @@ async def _apply_tally_open_bills(session: AsyncSession, ids: list[uuid.UUID], o
         amt = amt or Decimal("0.00")
         by_name[(cid, name)] = by_name.get((cid, name), Decimal("0.00")) + amt
         by_date[(cid, name, bdate)] = by_date.get((cid, name, bdate), Decimal("0.00")) + amt
+    # One Tally bill may be raised by several invoices (the same name, and with repeats the same date too):
+    # its pending is shared out among ALL of them - newest first, each capped at its amount - so the invoices
+    # of one bill together show exactly Tally's pending, whichever subset of them is asked for here.
+    names = {name for _, _, name, _, _ in rows}
+    siblings = (await session.execute(
+        select(Invoice.id, Invoice.customer_id, Invoice.tally_bill_name, Invoice.amount, Invoice.invoice_date)
+        .where(
+            Invoice.customer_id.in_(customers), Invoice.tally_bill_name.in_(names),
+            Invoice.source == InvoiceSource.TALLY, Invoice.created_at <= run.started_at,
+        )
+    )).all()
+
+    def bill_key(cid, name, inv_date):
+        return (cid, name, inv_date) if (cid, name) in repeats else (cid, name)
+
+    groups: dict[tuple, list] = {}
+    for r in siblings:
+        groups.setdefault(bill_key(r.customer_id, r.tally_bill_name, r.invoice_date), []).append(r)
+    still_open: dict[uuid.UUID, Decimal] = {}
+    for key, members in groups.items():
+        left = max((by_date if len(key) == 3 else by_name).get(key, Decimal("0.00")), Decimal("0.00"))
+        for r in sorted(members, key=lambda r: (r.invoice_date, r.amount, str(r.id)), reverse=True):
+            take = min(left, max(r.amount, Decimal("0.00")))
+            still_open[r.id] = take
+            left -= take
     for inv_id, cid, name, amount, inv_date in rows:
-        pend = by_date.get((cid, name, inv_date), Decimal("0.00")) if (cid, name) in repeats else by_name.get((cid, name), Decimal("0.00"))
-        still_open = max(min(pend, amount), Decimal("0.00"))
-        out[inv_id] = amount - still_open
+        out[inv_id] = amount - still_open.get(inv_id, Decimal("0.00"))
 
 
 async def awaiting_by_invoice(
