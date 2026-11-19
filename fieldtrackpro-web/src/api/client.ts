@@ -2493,6 +2493,11 @@ export class ApiClient {
     return this.request<import('../types').DashboardSummaryResponse>(`/api/v1/dashboard/summary${qs ? `?${qs}` : ''}`);
   }
 
+  /** Read-only History periods (past financial years before the reporting floor) for the dashboard filter. */
+  async getDashboardHistoryPeriods(): Promise<import('../types').DashboardHistoryPeriodsResponse> {
+    return this.request<import('../types').DashboardHistoryPeriodsResponse>('/api/v1/dashboard/history-periods');
+  }
+
   async getEmployeeDayDashboard(): Promise<import('../types').EmployeeDayDashboardResponse> {
     return this.request<import('../types').EmployeeDayDashboardResponse>('/api/v1/dashboard/my-day');
   }

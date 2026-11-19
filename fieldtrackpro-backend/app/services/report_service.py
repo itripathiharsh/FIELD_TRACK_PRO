@@ -1277,7 +1277,7 @@ class ReportService:
 
         # Check finalization status if a calendar month (and not a date range) was selected
         is_fin = False
-        if window.source == "MONTH" and month:
+        if window.source == "MONTH" and month and not month.startswith("FY"):   # a financial year is no monthly period
             y, m = [int(x) for x in month.split("-")]
             period_row = (
                 await session.execute(

@@ -1609,6 +1609,8 @@ export interface DashboardExecutiveKPIs {
 export interface DashboardSummaryResponse {
   period: string;
   is_historical: boolean;
+  /** True for a past financial year (before the reporting floor): read-only History, apart from live data. */
+  is_history?: boolean;
   kpis: DashboardExecutiveKPIs;
   brand_breakdown: BusinessSummaryRow[];
   fos_breakdown: BusinessSummaryRow[];
@@ -1616,6 +1618,28 @@ export interface DashboardSummaryResponse {
   area_breakdown: BusinessSummaryRow[];
   ageing_distribution: Record<string, string>;
   recent_exceptions: FieldException[];
+}
+
+export interface DashboardHistoryMonth {
+  value: string; // "2025-07"
+  label: string; // "July 2025"
+  invoices: number;
+  payments: number;
+}
+
+export interface DashboardHistoryPeriod {
+  value: string; // "FY2025-26"
+  label: string; // "FY 2025-26"
+  start: string;
+  end: string;
+  invoices: number;
+  payments: number;
+  months: DashboardHistoryMonth[];
+}
+
+export interface DashboardHistoryPeriodsResponse {
+  reporting_floor: string;
+  periods: DashboardHistoryPeriod[];
 }
 
 export interface EmployeeDayDashboardResponse {

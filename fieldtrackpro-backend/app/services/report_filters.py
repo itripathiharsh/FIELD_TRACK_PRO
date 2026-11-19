@@ -16,6 +16,7 @@ Shared filter semantics for the Reports / Collections endpoints.
 from __future__ import annotations
 
 import calendar
+import re
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, Optional
@@ -88,10 +89,26 @@ def where_date_range(stmt: Select, column: Any, start: Optional[date], end: Opti
     return stmt
 
 
+def parse_fy(month: Optional[str]) -> Optional[tuple[date, date]]:
+    """'FY2025-26' -> (1 Apr 2025, 31 Mar 2026). Anything else -> None (not a financial-year period)."""
+    m = re.fullmatch(r"FY(\d{4})-(\d{2})", (month or "").strip())
+    if not m:
+        return None
+    y = int(m.group(1))
+    if int(m.group(2)) != (y + 1) % 100:
+        raise BaseAPIException(detail="financial year must be FYyyyy-yy with consecutive years (e.g. FY2025-26)",
+                               status_code=422, error_code="INVALID_MONTH")
+    return date(y, 4, 1), date(y + 1, 3, 31)
+
+
 def parse_month(month: Optional[str]) -> Optional[tuple[date, date]]:
-    """'YYYY-MM' -> (first_day, last_day). Empty/'ALL' -> None. Malformed -> 422."""
+    """'YYYY-MM' -> (first_day, last_day); 'FYyyyy-yy' -> the whole financial year (1 Apr .. 31 Mar).
+    Empty/'ALL' -> None. Malformed -> 422."""
     if not month or month == "ALL":
         return None
+    fy = parse_fy(month)
+    if fy:
+        return fy
     try:
         y_s, m_s = month.split("-")
         y, m = int(y_s), int(m_s)
@@ -100,7 +117,7 @@ def parse_month(month: Optional[str]) -> Optional[tuple[date, date]]:
         return date(y, m, 1), date(y, m, calendar.monthrange(y, m)[1])
     except Exception:
         raise BaseAPIException(
-            detail="month must be in YYYY-MM format",
+            detail="month must be in YYYY-MM format (or FYyyyy-yy for a financial year)",
             status_code=422,
             error_code="INVALID_MONTH",
         )

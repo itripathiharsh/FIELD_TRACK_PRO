@@ -41,6 +41,7 @@ import {
   Visit,
   MonthlyReportingPeriod,
   MonthlyPeriodReviewSummary,
+  DashboardHistoryPeriod,
   Territory,
   Area,
   DashboardSummaryResponse,
@@ -73,6 +74,8 @@ export const DashboardPage: React.FC = () => {
   const [areas, setAreas] = useState<Area[]>([]);
   const [employeeOptions, setEmployeeOptions] = useState<Employee[]>([]);
   const [monthlyPeriods, setMonthlyPeriods] = useState<MonthlyReportingPeriod[]>([]);
+  // Read-only History (past financial years before the reporting floor), kept apart from live periods.
+  const [historyPeriods, setHistoryPeriods] = useState<DashboardHistoryPeriod[]>([]);
   const [masterBrands, setMasterBrands] = useState<Brand[]>([]);
 
   // Core Data States
@@ -100,6 +103,24 @@ export const DashboardPage: React.FC = () => {
 
   // Monthly Period Lifecycle & Review State
   // Authoritative Tally transaction months: only show periods that have real data
+  useEffect(() => {
+    if (!isAdmin) return;
+    apiClient
+      .getDashboardHistoryPeriods()
+      .then((r) => setHistoryPeriods(r?.periods || []))
+      .catch(() => setHistoryPeriods([]));
+  }, [isAdmin]);
+
+  /** Label of the selected History period ("FY 2025-26" or "July 2025 · FY 2025-26"), or null when not History. */
+  const selectedHistoryLabel = useMemo(() => {
+    for (const fy of historyPeriods) {
+      if (fy.value === selectedMonth) return `${fy.label} (full year)`;
+      const m = fy.months.find((x) => x.value === selectedMonth);
+      if (m) return `${m.label} · ${fy.label}`;
+    }
+    return null;
+  }, [historyPeriods, selectedMonth]);
+
   const availablePeriodsWithData = useMemo(() => {
     return monthlyPeriods.filter(
       (p) =>
@@ -663,6 +684,8 @@ export const DashboardPage: React.FC = () => {
                   <span className="font-semibold text-primary">
                     {selectedMonth === 'ALL'
                       ? '🟢 Current Live Data'
+                      : selectedHistoryLabel
+                      ? `📜 History · ${selectedHistoryLabel}`
                       : `🔒 ${availablePeriodsWithData.find((p) => `${p.period_year}-${String(p.period_month).padStart(2, '0')}` === selectedMonth)?.period_name || selectedMonth}`}
                   </span>
                 </span>
@@ -703,6 +726,16 @@ export const DashboardPage: React.FC = () => {
                       </option>
                     );
                   })}
+                  {historyPeriods.map((fy) => (
+                    <optgroup key={fy.value} label={`History (read-only) · ${fy.label}`}>
+                      <option value={fy.value}>{`📜 ${fy.label} — full year (History)`}</option>
+                      {fy.months.map((m) => (
+                        <option key={m.value} value={m.value}>
+                          {`📜 ${m.label} (History)`}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
                 </select>
               </div>
 
@@ -808,6 +841,19 @@ export const DashboardPage: React.FC = () => {
             </div>
           </div>
         </Card>
+      )}
+
+      {isAdmin && (dashboardBI?.is_history || selectedHistoryLabel) && (
+        <div
+          role="status"
+          data-testid="history-banner"
+          className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-xs text-amber-900"
+        >
+          <span className="font-semibold">📜 History (read-only) · {selectedHistoryLabel || dashboardBI?.period}.</span>{' '}
+          Sales, collections and invoices of this past financial year, from Tally. Outstanding and ageing show what is
+          still open today from these invoices. Current Live Data, monthly closing and current outstanding / overdue are
+          not affected. Choose “Current Live Data” to return.
+        </div>
       )}
 
       {/* Primary KPI Cards (Maintained exact compatibility with tests + enhanced BI) */}
