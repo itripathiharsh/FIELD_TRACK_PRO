@@ -16,6 +16,7 @@ import type {
   LedgerQueueItem,
   LedgerRead,
   LinkEventRead,
+  OutletCodeQueueItem,
   OutletMappingQueues,
 } from '../types';
 
@@ -333,49 +334,234 @@ const LinkedTab: React.FC<{ count: number; onChanged: () => void }> = ({ count, 
 };
 
 // ------------------------------------------------------------------ Missing brand / outlet code
-const FillTab: React.FC<{
-  items: LedgerQueueItem[];
-  kind: 'brand' | 'code';
-  onChanged: () => void;
-}> = ({ items, kind, onChanged }) => {
+const PAGE_SIZE = 50;
+
+const matches = (q: string, ...parts: (string | null | undefined)[]) =>
+  !q || parts.some((p) => (p ?? '').toLowerCase().includes(q));
+
+const place = (address?: string | null, area?: string | null, territory?: string | null, pincode?: string | null) =>
+  [address, [area, territory].filter(Boolean).join(', '), pincode].filter((x) => x && String(x).trim()).join(' · ') || '—';
+
+/** Search box + "showing N of M" + page buttons shared by the two fill tabs. */
+const ListControls: React.FC<{
+  label: string;
+  query: string;
+  onQuery: (q: string) => void;
+  shown: number;
+  total: number;
+  page: number;
+  pages: number;
+  onPage: (p: number) => void;
+}> = ({ label, query, onQuery, shown, total, page, pages, onPage }) => (
+  <div className="flex flex-wrap items-center gap-2">
+    <div className="w-72">
+      <Input aria-label={label} placeholder="Search outlet, ledger, group, GST…" value={query} onChange={(e) => onQuery(e.target.value)} />
+    </div>
+    <span className="text-xs text-on-surface-variant" data-testid="fill-count">
+      {shown} of {total}
+    </span>
+    {pages > 1 && (
+      <span className="flex items-center gap-1 text-xs">
+        <Button variant="ghost" disabled={page === 0} onClick={() => onPage(page - 1)}>Previous</Button>
+        <span>Page {page + 1} / {pages}</span>
+        <Button variant="ghost" disabled={page >= pages - 1} onClick={() => onPage(page + 1)}>Next</Button>
+      </span>
+    )}
+  </div>
+);
+
+/** Missing brand: one row per Tally LEDGER (a brand belongs to a ledger), with the outlet it belongs to. */
+const BrandTab: React.FC<{ items: LedgerQueueItem[]; onChanged: () => void }> = ({ items, onChanged }) => {
   const [values, setValues] = useState<Record<string, string>>({});
+  const [saved, setSaved] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+  const [page, setPage] = useState(0);
   if (items.length === 0) return <p className="text-xs text-on-surface-variant">Nothing missing.</p>;
+  const q = query.trim().toLowerCase();
+  const filtered = items.filter((l) =>
+    matches(q, l.outlet_name, l.name, l.parent_group, l.gst_number, l.mobile, l.outlet_address, l.area_name, l.territory_name),
+  );
+  const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const current = Math.min(page, pages - 1);
+  const rows = filtered.slice(current * PAGE_SIZE, current * PAGE_SIZE + PAGE_SIZE);
   return (
-    <div className="space-y-1">
+    <div className="space-y-3">
       {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
       <p className="text-xs text-on-surface-variant">
-        {kind === 'brand'
-          ? 'Tally gives no brand for these ledgers. Set the brand supplied by the client (recorded as a manual override; Tally data is not changed).'
-          : 'These outlets have no outlet/DMS code. Set it only where the client supplied one; codes are never guessed.'}
+        Tally gives no brand for these ledgers. Set the brand supplied by the client (recorded as a manual override; Tally
+        data is not changed). Never guess a brand.
       </p>
-      {items.map((l) => (
-        <div key={l.id} className="flex items-center gap-2 text-xs" data-testid={`fill-${kind}`}>
-          <span className="flex-1 truncate">{l.name}</span>
-          <Input
-            aria-label={`${kind === 'brand' ? 'Brand' : 'Outlet code'} for ${l.name}`}
-            value={values[l.id] ?? ''}
-            onChange={(e) => setValues({ ...values, [l.id]: e.target.value })}
-          />
-          <Button
-            variant="secondary"
-            disabled={!(values[l.id] ?? '').trim()}
-            onClick={async () => {
-              setError(null);
-              try {
-                const v = (values[l.id] ?? '').trim();
-                if (kind === 'brand') await apiClient.setLedgerBrand(l.id, v);
-                else await apiClient.setOutletCode(l.customer_id, v);
-                onChanged();
-              } catch (e) {
-                setError(errMsg(e));
-              }
-            }}
-          >
-            Save
-          </Button>
-        </div>
-      ))}
+      <ListControls label="Search ledgers without a brand" query={query} onQuery={(v) => { setQuery(v); setPage(0); }}
+        shown={filtered.length} total={items.length} page={current} pages={pages} onPage={setPage} />
+      <div className="overflow-x-auto border rounded">
+        <table className="w-full text-xs" data-testid="brand-table">
+          <thead className="bg-surface-container-low text-left">
+            <tr>
+              <th className="px-2 py-1.5">Outlet</th>
+              <th className="px-2 py-1.5">Tally ledger</th>
+              <th className="px-2 py-1.5">Address / location</th>
+              <th className="px-2 py-1.5">Brand status</th>
+              <th className="px-2 py-1.5 w-56">Brand</th>
+              <th className="px-2 py-1.5 w-20" />
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((l) => (
+              <tr key={l.id} className="border-t align-top" data-testid="fill-brand">
+                <td className="px-2 py-1.5">
+                  <div className="font-semibold">{l.outlet_name || l.name}</div>
+                  {l.outlet_code && <div className="text-on-surface-variant">Code {l.outlet_code}</div>}
+                </td>
+                <td className="px-2 py-1.5">
+                  <div>{l.name}</div>
+                  <div className="text-on-surface-variant">
+                    {[l.parent_group, l.gst_number && `GST ${l.gst_number}`, l.mobile].filter(Boolean).join(' · ')}
+                  </div>
+                </td>
+                <td className="px-2 py-1.5">{place(l.outlet_address, l.area_name, l.territory_name, l.pincode)}</td>
+                <td className="px-2 py-1.5">
+                  {saved[l.id] ? (
+                    <span className="text-emerald-700 font-semibold" data-testid="brand-saved">Saved: {saved[l.id]}</span>
+                  ) : (
+                    <span className="text-amber-700">No brand in Tally</span>
+                  )}
+                </td>
+                <td className="px-2 py-1.5">
+                  <Input
+                    aria-label={`Brand for ${l.name}`}
+                    value={values[l.id] ?? ''}
+                    disabled={!!saved[l.id]}
+                    onChange={(e) => setValues({ ...values, [l.id]: e.target.value })}
+                  />
+                </td>
+                <td className="px-2 py-1.5">
+                  <Button
+                    variant="secondary"
+                    disabled={!!saved[l.id] || !(values[l.id] ?? '').trim()}
+                    onClick={async () => {
+                      setError(null);
+                      try {
+                        const v = (values[l.id] ?? '').trim();
+                        await apiClient.setLedgerBrand(l.id, v);
+                        setSaved((prev) => ({ ...prev, [l.id]: v }));
+                        onChanged();
+                      } catch (e) {
+                        setError(errMsg(e));
+                      }
+                    }}
+                  >
+                    Save
+                  </Button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
+/** Missing outlet code: one row per OUTLET (the code is stored on the outlet), with all its Tally ledgers. */
+const CodeTab: React.FC<{ items: OutletCodeQueueItem[]; onChanged: () => void }> = ({ items, onChanged }) => {
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [saved, setSaved] = useState<Record<string, string>>({});
+  const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+  const [page, setPage] = useState(0);
+  if (items.length === 0) return <p className="text-xs text-on-surface-variant">Nothing missing.</p>;
+  const q = query.trim().toLowerCase();
+  const filtered = items.filter((o) =>
+    matches(q, o.outlet_name, o.outlet_address, o.area_name, o.territory_name,
+      ...o.ledgers.flatMap((l) => [l.name, l.parent_group, l.gst_number, l.mobile, l.tally_outlet_code])),
+  );
+  const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const current = Math.min(page, pages - 1);
+  const rows = filtered.slice(current * PAGE_SIZE, current * PAGE_SIZE + PAGE_SIZE);
+  return (
+    <div className="space-y-3">
+      {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
+      <p className="text-xs text-on-surface-variant">
+        These outlets have no outlet/DMS code. Set it only where the client supplied one; codes are never guessed. A code
+        is stored on the outlet, so it covers all of the outlet&apos;s Tally ledgers.
+      </p>
+      <ListControls label="Search outlets without a code" query={query} onQuery={(v) => { setQuery(v); setPage(0); }}
+        shown={filtered.length} total={items.length} page={current} pages={pages} onPage={setPage} />
+      <div className="overflow-x-auto border rounded">
+        <table className="w-full text-xs" data-testid="code-table">
+          <thead className="bg-surface-container-low text-left">
+            <tr>
+              <th className="px-2 py-1.5">Outlet</th>
+              <th className="px-2 py-1.5">Address / location</th>
+              <th className="px-2 py-1.5">Tally ledgers · brand</th>
+              <th className="px-2 py-1.5">Existing code</th>
+              <th className="px-2 py-1.5 w-56">New outlet code</th>
+              <th className="px-2 py-1.5 w-20" />
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((o) => {
+              const tallyCodes = o.ledgers.map((l) => l.tally_outlet_code).filter(Boolean);
+              const pincode = o.ledgers.find((l) => l.pincode)?.pincode;
+              return (
+                <tr key={o.customer_id} className="border-t align-top" data-testid="fill-code">
+                  <td className="px-2 py-1.5 font-semibold">{o.outlet_name}</td>
+                  <td className="px-2 py-1.5">{place(o.outlet_address, o.area_name, o.territory_name, pincode)}</td>
+                  <td className="px-2 py-1.5">
+                    {o.ledgers.map((l) => (
+                      <div key={l.id}>
+                        {l.name} · <span className={l.brand ? '' : 'text-amber-700'}>{l.brand ?? 'No brand'}</span>
+                      </div>
+                    ))}
+                  </td>
+                  <td className="px-2 py-1.5">
+                    {saved[o.customer_id] ? (
+                      <span className="text-emerald-700 font-semibold" data-testid="code-saved">Saved: {saved[o.customer_id]}</span>
+                    ) : (
+                      <>
+                        <span className="text-on-surface-variant">{o.outlet_code ?? 'None'}</span>
+                        {tallyCodes.length > 0 && (
+                          <div className="text-amber-700" title="Code found on a Tally ledger of this outlet but not applied automatically (for example, another outlet already uses it). Check with the client before using it.">
+                            Tally alias: {tallyCodes.join(', ')} (not applied)
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <Input
+                      aria-label={`Outlet code for ${o.outlet_name}`}
+                      value={values[o.customer_id] ?? ''}
+                      disabled={!!saved[o.customer_id]}
+                      onChange={(e) => setValues({ ...values, [o.customer_id]: e.target.value })}
+                    />
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <Button
+                      variant="secondary"
+                      disabled={!!saved[o.customer_id] || !(values[o.customer_id] ?? '').trim()}
+                      onClick={async () => {
+                        setError(null);
+                        try {
+                          const v = (values[o.customer_id] ?? '').trim().toUpperCase();
+                          await apiClient.setOutletCode(o.customer_id, v);
+                          setSaved((prev) => ({ ...prev, [o.customer_id]: v }));
+                          onChanged();
+                        } catch (e) {
+                          setError(errMsg(e));
+                        }
+                      }}
+                    >
+                      Save
+                    </Button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 };
@@ -479,8 +665,8 @@ export const OutletMappingPage: React.FC = () => {
         {tab === 'import' && <ImportTab superAdmin={superAdmin} onChanged={loadQueues} />}
         {tab === 'review' && <ReviewTab items={queues?.new_unreviewed ?? []} onChanged={loadQueues} />}
         {tab === 'linked' && <LinkedTab count={queues?.linked_outlets ?? 0} onChanged={loadQueues} />}
-        {tab === 'brand' && <FillTab kind="brand" items={queues?.missing_brand ?? []} onChanged={loadQueues} />}
-        {tab === 'code' && <FillTab kind="code" items={queues?.missing_code ?? []} onChanged={loadQueues} />}
+        {tab === 'brand' && <BrandTab items={queues?.missing_brand ?? []} onChanged={loadQueues} />}
+        {tab === 'code' && <CodeTab items={queues?.missing_code ?? []} onChanged={loadQueues} />}
         {tab === 'history' && <HistoryTab />}
       </Card>
     </div>

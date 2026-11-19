@@ -406,23 +406,89 @@ async def review(session: AsyncSession, ledger_id: uuid.UUID, decision: str, act
 # ---------------------------------------------------------------------------
 
 async def queues(session: AsyncSession) -> dict:
+    """
+    Work queues of the Outlet Mapping page.
+
+      new_unreviewed  debtor LEDGERS first seen in Tally after go-live, not reviewed yet
+      missing_brand   debtor LEDGERS with no brand from Tally and no manual override (a brand is per ledger)
+      missing_code    OUTLETS (not merged, holding at least one debtor ledger) with no outlet code - the code is
+                      stored on the outlet, so a saved code takes the outlet off this list
+      linked_outlets  number of outlets holding more than one debtor ledger
+
+    Ledger rows carry their outlet's name / address / code / area / territory so the page can show which shop
+    each row is; outlet rows carry their ledgers (name, brand, parent group, the Tally alias code if any).
+    """
+    from app.models.area import Area
+    from app.models.territory import Territory
     from app.schemas.customer import LedgerRead
 
-    def rows(where):
-        return select(TallyDebtorLedger).where(*where).order_by(TallyDebtorLedger.name).limit(2000)
-
     debtor = TallyDebtorLedger.is_debtor.is_not(False)
-    new = (await session.execute(rows([debtor, TallyDebtorLedger.mapping_status == MAPPING_NEW]))).scalars().all()
-    nob = (await session.execute(rows([debtor, func.coalesce(TallyDebtorLedger.brand_override, "") == "",
-                                       func.coalesce(TallyDebtorLedger.brand_tally, "") == ""]))).scalars().all()
-    noc = (await session.execute(rows([debtor, func.coalesce(TallyDebtorLedger.tally_outlet_code, "") == ""]))).scalars().all()
+    outlet_cols = (Customer.name, Customer.address, Customer.outlet_code, Area.name, Territory.name)
+
+    def ledger_rows(where):
+        return (
+            select(TallyDebtorLedger, *outlet_cols)
+            .join(Customer, Customer.id == TallyDebtorLedger.customer_id)
+            .outerjoin(Area, Area.id == Customer.area_id)
+            .outerjoin(Territory, Territory.id == Customer.territory_id)
+            .where(*where)
+            .order_by(Customer.name, TallyDebtorLedger.name)
+            .limit(5000)
+        )
+
+    def ledger_out(rows):
+        return [
+            {
+                **LedgerRead.from_model(l).model_dump(mode="json"),
+                "customer_id": str(l.customer_id),
+                "outlet_name": c_name,
+                "outlet_address": (c_addr or "").strip() or None,
+                "outlet_code": (c_code or "").strip() or None,
+                "area_name": a_name,
+                "territory_name": t_name,
+            }
+            for l, c_name, c_addr, c_code, a_name, t_name in rows
+        ]
+
+    new = (await session.execute(ledger_rows([debtor, TallyDebtorLedger.mapping_status == MAPPING_NEW]))).all()
+    nob = (await session.execute(ledger_rows([debtor, func.coalesce(TallyDebtorLedger.brand_override, "") == "",
+                                              func.coalesce(TallyDebtorLedger.brand_tally, "") == ""]))).all()
+
+    # Outlets without an outlet code (one row per OUTLET - the code is saved on the outlet).
+    has_debtor_ledger = select(TallyDebtorLedger.id).where(TallyDebtorLedger.customer_id == Customer.id, debtor).exists()
+    outlets = (await session.execute(
+        select(Customer.id, *outlet_cols)
+        .outerjoin(Area, Area.id == Customer.area_id)
+        .outerjoin(Territory, Territory.id == Customer.territory_id)
+        .where(Customer.merged_into_customer_id.is_(None), func.coalesce(Customer.outlet_code, "") == "", has_debtor_ledger)
+        .order_by(Customer.name)
+        .limit(5000)
+    )).all()
+    ids = [o[0] for o in outlets]
+    ledgers_by_outlet: dict = {}
+    if ids:
+        for l in (await session.execute(
+            select(TallyDebtorLedger).where(TallyDebtorLedger.customer_id.in_(ids), debtor).order_by(TallyDebtorLedger.name)
+        )).scalars().all():
+            ledgers_by_outlet.setdefault(l.customer_id, []).append({
+                "id": str(l.id), "name": l.name, "brand": l.effective_brand, "brand_source": l.brand_source,
+                "parent_group": l.parent_group, "tally_outlet_code": (l.tally_outlet_code or "").strip() or None,
+                "gst_number": l.gst_number, "mobile": l.mobile, "pincode": l.pincode, "is_primary": bool(l.is_primary),
+            })
+    noc = [
+        {
+            "customer_id": str(cid), "outlet_name": c_name, "outlet_address": (c_addr or "").strip() or None,
+            "outlet_code": (c_code or "").strip() or None, "area_name": a_name, "territory_name": t_name,
+            "ledgers": ledgers_by_outlet.get(cid, []),
+        }
+        for cid, c_name, c_addr, c_code, a_name, t_name in outlets
+    ]
+
     linked = (await session.execute(select(func.count()).select_from(
         select(TallyDebtorLedger.customer_id).where(debtor).group_by(TallyDebtorLedger.customer_id)
         .having(func.count() > 1).subquery()))).scalar() or 0
-
-    def out(ls):
-        return [{**LedgerRead.from_model(l).model_dump(mode="json"), "customer_id": str(l.customer_id)} for l in ls]
-    return {"new_unreviewed": out(new), "missing_brand": out(nob), "missing_code": out(noc), "linked_outlets": linked}
+    return {"new_unreviewed": ledger_out(new), "missing_brand": ledger_out(nob), "missing_code": noc,
+            "linked_outlets": linked}
 
 
 async def event_read(session: AsyncSession, ev: OutletLinkEvent) -> dict:
