@@ -26,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import _script_env
 
-SUPPORTED_REVISIONS = ("g1a2b3c4d5e6", "h1b2c3d4e5f6", "i2c3d4e5f6a7")
+SUPPORTED_REVISIONS = ("g1a2b3c4d5e6", "h1b2c3d4e5f6", "i2c3d4e5f6a7", "j3d4e5f6a7b8")
 
 DEFAULTED_DUE_DATES = """
     SELECT count(*), COALESCE(sum(amount), 0) FROM invoices

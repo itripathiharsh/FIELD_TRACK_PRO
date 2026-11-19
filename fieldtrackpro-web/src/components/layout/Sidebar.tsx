@@ -20,7 +20,7 @@ import {
   Link2,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { isAdmin, resolveRole } from '../../utils/roles';
+import { isAccountant, isAdmin, resolveRole } from '../../utils/roles';
 
 interface SidebarProps {
   isOpen?: boolean;
@@ -48,7 +48,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => 
     { name: 'Customer Requirements',path: '/requirements', icon: ClipboardList, roles: ['ADMIN'] },
     { name: 'Requirement Forms',    path: '/forms',     icon: FileText,        roles: ['ADMIN'] },
     { name: 'Payment Collections',  path: '/payments',  icon: Wallet,          roles: ['ADMIN'] },
-    { name: 'Reports & Collections',path: '/reports',   icon: BarChart3,       roles: ['ADMIN'] },
+    { name: 'Reports & Collections',path: '/reports',   icon: BarChart3,       roles: ['ADMIN', 'ACCOUNTANT'] },
   ];
 
   const visibleNavItems = navItems.filter((item) => {
@@ -82,7 +82,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => 
             <h1 className="font-headline-md text-headline-md text-primary tracking-tight">FieldTrack Pro</h1>
           </div>
           <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">
-            {!userIsAdmin ? 'Employee Portal' : 'Admin Dashboard'}
+            {userIsAdmin ? 'Admin Dashboard' : isAccountant(user) ? 'Accountant (read-only)' : 'Employee Portal'}
           </p>
         </div>
 

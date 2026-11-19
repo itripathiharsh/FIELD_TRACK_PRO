@@ -6,7 +6,7 @@ import type { User, UserRole } from '../types';
  * must never be used for authorization. The backend enforces every rule; the helpers below only
  * decide what the UI shows.
  */
-export const VALID_ROLES: readonly UserRole[] = ['SUPER_ADMIN', 'ADMIN', 'EMPLOYEE'];
+export const VALID_ROLES: readonly UserRole[] = ['SUPER_ADMIN', 'ADMIN', 'EMPLOYEE', 'ACCOUNTANT'];
 
 export function isValidRole(role: unknown): role is UserRole {
   return typeof role === 'string' && (VALID_ROLES as readonly string[]).includes(role);
@@ -25,6 +25,22 @@ export function isAdmin(user: Pick<User, 'role'> | null | undefined): boolean {
   return user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
 }
 
+/**
+ * True only for ACCOUNTANT: web-only, READ-ONLY access to Reports & Collections (financial reports,
+ * collections, exports). Never an administrator and never a field employee.
+ */
+export function isAccountant(user: Pick<User, 'role'> | null | undefined): boolean {
+  return user?.role === 'ACCOUNTANT';
+}
+
+/** Who may open Reports & Collections: administrators and the read-only accountant. */
+export function canViewFinance(user: Pick<User, 'role'> | null | undefined): boolean {
+  return isAdmin(user) || isAccountant(user);
+}
+
+/** The only pages an accountant may open; everything else redirects to Reports & Collections. */
+export const ACCOUNTANT_PATHS: readonly string[] = ['/reports', '/profile'];
+
 /** True only for an exact SUPER_ADMIN: the sole role that may manage roles. */
 export function isSuperAdmin(user: Pick<User, 'role'> | null | undefined): boolean {
   return user?.role === 'SUPER_ADMIN';
@@ -34,6 +50,7 @@ const ROLE_LABELS: Record<UserRole, string> = {
   SUPER_ADMIN: 'Super Admin',
   ADMIN: 'Admin',
   EMPLOYEE: 'Employee',
+  ACCOUNTANT: 'Accountant',
 };
 
 /** Human label for a role value (unknown values are shown as Employee, matching resolveRole). */

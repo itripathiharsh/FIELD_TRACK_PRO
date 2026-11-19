@@ -66,7 +66,7 @@ async def register_employee(
         address=data.address,
     )
     session.add(employee)
-    if data.user.role == Role.ADMIN:
+    if data.user.role in (Role.ADMIN, Role.ACCOUNTANT):   # privileged grants are audited
         await session.flush()
         security_audit_service.record(
             session, "USER_CREATE_PRIVILEGED", "SUCCESS",

@@ -26,4 +26,5 @@ export const ALLOWED_NEXT_ROLES: Record<UserRole, UserRole[]> = {
   EMPLOYEE: ['ADMIN'],
   ADMIN: ['EMPLOYEE', 'SUPER_ADMIN'],
   SUPER_ADMIN: ['ADMIN'],
+  ACCOUNTANT: [], // no role changes into or out of Accountant through the UI
 };

@@ -51,7 +51,12 @@ from app.services.report_exports import (
 )
 from app.services.report_service import report_service
 
-router = APIRouter(tags=["Reports"], dependencies=[Depends(require_role(Role.ADMIN))])
+#: Financial reports are readable by ADMIN / SUPER_ADMIN and the read-only ACCOUNTANT. Every endpoint that is
+#: not a financial read (staff, visits, GPS, productivity, closing / reopening a month) adds ``AdminOnly``.
+FinanceRead = Depends(require_role(Role.ADMIN, Role.ACCOUNTANT))
+AdminOnly = Depends(require_role(Role.ADMIN))
+
+router = APIRouter(tags=["Reports"], dependencies=[FinanceRead])
 
 ExportFormat = Literal["xlsx", "pdf"]
 
@@ -204,7 +209,7 @@ async def export_overview_report(
 # ---------------------------------------------------------------------------
 # 2. EMPLOYEE MASTER REPORT
 # ---------------------------------------------------------------------------
-@router.get("/reports/employees-master", response_model=list[EmployeeMasterReportRow])
+@router.get("/reports/employees-master", dependencies=[AdminOnly], response_model=list[EmployeeMasterReportRow])
 async def get_employees_master_report(
     working_profile: Optional[str] = Query(default=None),
     role: Optional[str] = Query(default=None),
@@ -227,7 +232,7 @@ async def get_employees_master_report(
     )
 
 
-@router.get("/reports/employees-master/export")
+@router.get("/reports/employees-master/export", dependencies=[AdminOnly])
 async def export_employees_master(
     working_profile: Optional[str] = Query(default=None),
     role: Optional[str] = Query(default=None),
@@ -352,7 +357,7 @@ async def export_collections_report(
 # ---------------------------------------------------------------------------
 # 6. OPERATIONAL VISITS DETAILED REPORT
 # ---------------------------------------------------------------------------
-@router.get("/reports/visits-detailed", response_model=list[VisitDetailedReportRow])
+@router.get("/reports/visits-detailed", dependencies=[AdminOnly], response_model=list[VisitDetailedReportRow])
 async def get_visits_detailed_report(
     f: dict = Depends(visits_params),
     skip: Optional[int] = Query(default=None, ge=0),
@@ -364,7 +369,7 @@ async def get_visits_detailed_report(
     return await report_service.get_visits_detailed_report(session=session, skip=skip, limit=limit, **f)
 
 
-@router.get("/reports/visits-detailed/export")
+@router.get("/reports/visits-detailed/export", dependencies=[AdminOnly])
 async def export_visits_detailed(
     f: dict = Depends(visits_params),
     format: ExportFormat = Query(default="xlsx"),
@@ -451,7 +456,7 @@ async def get_monthly_period_review(
     return await period_service.get_monthly_period_review(period_id, session)
 
 
-@router.post("/reports/monthly-periods/{period_id}/finalize", response_model=MonthlyPeriodRead)
+@router.post("/reports/monthly-periods/{period_id}/finalize", dependencies=[AdminOnly], response_model=MonthlyPeriodRead)
 async def finalize_monthly_period(
     period_id: uuid.UUID,
     current_user: CurrentUser = None,
@@ -461,7 +466,7 @@ async def finalize_monthly_period(
     return await period_service.finalize_monthly_period(period_id, current_user.id, session)
 
 
-@router.post("/reports/monthly-periods/{period_id}/reopen", response_model=MonthlyPeriodRead)
+@router.post("/reports/monthly-periods/{period_id}/reopen", dependencies=[AdminOnly], response_model=MonthlyPeriodRead)
 async def reopen_monthly_period(
     period_id: uuid.UUID,
     payload: Optional[ReopenMonthlyPeriodRequest] = None,
@@ -476,7 +481,7 @@ async def reopen_monthly_period(
 # ---------------------------------------------------------------------------
 # 8. FIELD STAFF / GEO / PRESERVED ENDPOINTS
 # ---------------------------------------------------------------------------
-@router.get("/reports/employees", response_model=list[EmployeeVisitReportRow])
+@router.get("/reports/employees", dependencies=[AdminOnly], response_model=list[EmployeeVisitReportRow])
 async def employee_visit_report(
     f: dict = Depends(staff_params),
     current_user: CurrentUser = None,
@@ -487,7 +492,7 @@ async def employee_visit_report(
     return [EmployeeVisitReportRow(**row) for row in data]
 
 
-@router.get("/reports/employees/export")
+@router.get("/reports/employees/export", dependencies=[AdminOnly])
 async def export_employee_visit_report(
     f: dict = Depends(staff_params),
     format: ExportFormat = Query(default="xlsx"),
@@ -501,7 +506,7 @@ async def export_employee_visit_report(
     return await _file_response(format, [table], "Field_Staff", filtered)
 
 
-@router.get("/reports/customers/{customer_id}/history")
+@router.get("/reports/customers/{customer_id}/history", dependencies=[AdminOnly])
 async def customer_visit_history(
     customer_id: uuid.UUID,
     current_user: CurrentUser = None,
@@ -510,7 +515,7 @@ async def customer_visit_history(
     return await report_service.get_customer_visit_history(session, customer_id)
 
 
-@router.get("/reports/productivity", response_model=ProductivityDashboard)
+@router.get("/reports/productivity", dependencies=[AdminOnly], response_model=ProductivityDashboard)
 async def productivity_dashboard(
     current_user: CurrentUser = None,
     session=Depends(get_async_session),
@@ -519,7 +524,7 @@ async def productivity_dashboard(
     return ProductivityDashboard(**data)
 
 
-@router.get("/reports/geo-verification", response_model=list[GeoVerificationReportRow])
+@router.get("/reports/geo-verification", dependencies=[AdminOnly], response_model=list[GeoVerificationReportRow])
 async def geo_verification_report(
     f: dict = Depends(geo_params),
     skip: Optional[int] = Query(default=None, ge=0),
@@ -531,7 +536,7 @@ async def geo_verification_report(
     return [GeoVerificationReportRow(**row) for row in data]
 
 
-@router.get("/reports/geo-verification/export")
+@router.get("/reports/geo-verification/export", dependencies=[AdminOnly])
 async def export_geo_verification(
     f: dict = Depends(geo_params),
     format: ExportFormat = Query(default="xlsx"),

@@ -33,13 +33,46 @@ _PASSWORD_CHANGE_EXEMPT: set[tuple[str, str]] = {
 }
 
 
-def _is_password_change_exempt(request: Request) -> bool:
+# Self-service endpoints an ACCOUNTANT may call without an explicit role grant (own session, own
+# password, own profile, own notifications). Every other endpoint must admit ACCOUNTANT by name
+# through require_role(...); see _enforce_accountant_scope.
+_ACCOUNTANT_SELF_SERVICE: set[tuple[str, str]] = _PASSWORD_CHANGE_EXEMPT | {
+    ("GET", "/employees/me"),
+    ("GET", "/notifications/me"),
+    ("GET", "/notifications/unread-count"),
+    ("PATCH", "/notifications/read-all"),
+}
+
+#: request.state flag set by a require_role(...) check that lists ACCOUNTANT, BEFORE the user resolves.
+_ACCOUNTANT_GRANT_FLAG = "accountant_role_granted"
+
+
+def _api_path(request: Request) -> str:
     path = request.url.path
     prefix = settings.api_v1_prefix.rstrip("/")
     if prefix and path.startswith(prefix):
         path = path[len(prefix):]
-    path = path.rstrip("/") or "/"
-    return (request.method.upper(), path) in _PASSWORD_CHANGE_EXEMPT
+    return path.rstrip("/") or "/"
+
+
+def _is_password_change_exempt(request: Request) -> bool:
+    return (request.method.upper(), _api_path(request)) in _PASSWORD_CHANGE_EXEMPT
+
+
+def _enforce_accountant_scope(user: User, request: Request) -> None:
+    """
+    ACCOUNTANT is read-only finance access and must never fall into code that treats "not an EMPLOYEE"
+    as "an administrator". It therefore fails CLOSED: an accountant passes authentication only on an
+    endpoint whose role check names ACCOUNTANT explicitly, or on the short self-service list above.
+    Endpoints that merely require "any signed-in user" answer 403 to an accountant.
+    """
+    if user.role != Role.ACCOUNTANT:
+        return
+    if getattr(request.state, _ACCOUNTANT_GRANT_FLAG, False):
+        return
+    if (request.method.upper(), _api_path(request)) in _ACCOUNTANT_SELF_SERVICE:
+        return
+    raise ForbiddenException("Insufficient permissions")
 
 
 def temp_password_expired(user: User) -> bool:
@@ -123,8 +156,9 @@ async def _get_enforced_user(
     user: Annotated[User, Depends(_get_user_from_token)],
     session: Annotated[AsyncSession, Depends(get_async_session)],
 ) -> User:
-    """Authenticated user + forced-password-change gate (applies to every CurrentUser endpoint)."""
+    """Authenticated user + forced-password-change gate + accountant scope (every CurrentUser endpoint)."""
     await _enforce_password_change(user, request, session)
+    _enforce_accountant_scope(user, request)
     return user
 
 
@@ -146,12 +180,20 @@ def require_role(*roles: Role):
     allowed = set(roles)
     if Role.ADMIN in allowed:
         allowed.add(Role.SUPER_ADMIN)
+    grants_accountant = Role.ACCOUNTANT in allowed
 
-    async def _check(current_user: CurrentUser) -> User:
+    async def _grant(request: Request) -> None:
+        # Runs before the user is resolved (declared first): tells _enforce_accountant_scope that this
+        # endpoint names ACCOUNTANT explicitly. Grants nothing by itself - _check below still decides.
+        if grants_accountant:
+            setattr(request.state, _ACCOUNTANT_GRANT_FLAG, True)
+
+    async def _check(_granted: None = Depends(_grant), current_user: User = Depends(_get_enforced_user)) -> User:
         if current_user.role not in allowed:
             raise ForbiddenException("Insufficient permissions")
         return current_user
 
+    _check.allowed_roles = frozenset(allowed)  # type: ignore[attr-defined]  (introspection / tests)
     return _check
 
 

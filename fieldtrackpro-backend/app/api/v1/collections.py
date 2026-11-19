@@ -26,7 +26,7 @@ from app.services.report_exports import (
     PDF_MIME, XLSX_MIME, content_disposition, report_filename, to_pdf, to_xlsx,
 )
 
-router = APIRouter(prefix="/collections", tags=["collections"], dependencies=[Depends(require_role(Role.ADMIN))])
+router = APIRouter(prefix="/collections", tags=["collections"], dependencies=[Depends(require_role(Role.ADMIN, Role.ACCOUNTANT))])
 
 _DATE_DOC = "Inclusive IST calendar date (YYYY-MM-DD)"
 

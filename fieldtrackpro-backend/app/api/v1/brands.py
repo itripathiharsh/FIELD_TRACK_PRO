@@ -16,10 +16,12 @@ router = APIRouter(prefix="/brands", tags=["brands"])
 
 DbSession = Annotated[AsyncSession, Depends(get_async_session)]
 AnyAuth = Depends(require_role(Role.ADMIN, Role.EMPLOYEE))
+# Read-only lists for the report filters (GET only).
+ReadLists = Depends(require_role(Role.ADMIN, Role.EMPLOYEE, Role.ACCOUNTANT))
 AdminAuth = Depends(require_role(Role.ADMIN))
 
 
-@router.get("", response_model=list[BrandOut], dependencies=[AnyAuth])
+@router.get("", response_model=list[BrandOut], dependencies=[ReadLists])
 async def list_brands(
     session: DbSession,
     active_only: bool = Query(True, description="Filter only active brands"),

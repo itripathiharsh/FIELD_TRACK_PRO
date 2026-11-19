@@ -13,7 +13,7 @@
  * (FT-038: a frontend-only 'MANAGER' role once existed; selecting it produced a user the API would
  * never accept - do not add roles here that the backend does not have.)
  */
-export type UserRole = 'SUPER_ADMIN' | 'ADMIN' | 'EMPLOYEE';
+export type UserRole = 'SUPER_ADMIN' | 'ADMIN' | 'EMPLOYEE' | 'ACCOUNTANT';
 
 /** Response of `GET /api/v1/auth/me`. */
 export interface User {

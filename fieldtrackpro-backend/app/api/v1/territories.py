@@ -20,6 +20,8 @@ router = APIRouter(prefix="/territories", tags=["territories"])
 DbSession = Annotated[AsyncSession, Depends(get_async_session)]
 AdminOnly = Depends(require_role(Role.ADMIN))
 AnyAuth = Depends(require_role(Role.ADMIN, Role.EMPLOYEE))
+# Read-only lists for the report filters (GET only).
+ReadLists = Depends(require_role(Role.ADMIN, Role.EMPLOYEE, Role.ACCOUNTANT))
 
 
 @router.post("", response_model=TerritoryRead, status_code=201, dependencies=[AdminOnly])
@@ -27,7 +29,7 @@ async def create_territory(data: TerritoryCreate, session: DbSession):
     return await territory_service.create_territory(data, session)
 
 
-@router.get("", response_model=list[TerritoryRead], dependencies=[AnyAuth])
+@router.get("", response_model=list[TerritoryRead], dependencies=[ReadLists])
 async def list_territories(
     session: DbSession,
     status: str | None = Query(default=None, description="Filter by status (ACTIVE / INACTIVE)"),

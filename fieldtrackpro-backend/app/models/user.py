@@ -12,6 +12,10 @@ class Role(str, enum.Enum):
     """
     Authorization roles, least to most privileged: EMPLOYEE < ADMIN < SUPER_ADMIN.
 
+    ACCOUNTANT sits outside that ladder: a web-only, READ-ONLY role for the financial reports and
+    collections (``FINANCE_READ_ROLES``). It is admitted only where an endpoint lists it explicitly,
+    never inherits ADMIN or EMPLOYEE access, and only a Super Admin may create it.
+
     SUPER_ADMIN is a strict superset of ADMIN (every admin-only endpoint also accepts it) plus
     role management. It is never assigned through signup, user creation or import: only the
     bootstrap script and the Super-Admin-only role-change endpoint can grant it.
@@ -20,11 +24,15 @@ class Role(str, enum.Enum):
     SUPER_ADMIN = "SUPER_ADMIN"
     ADMIN = "ADMIN"
     EMPLOYEE = "EMPLOYEE"
+    ACCOUNTANT = "ACCOUNTANT"
 
 
 #: Roles that hold administrative (global-access) privileges. Use this - never `== Role.ADMIN` -
 #: when deciding "is this caller an administrator?".
 ADMIN_ROLES: tuple[Role, ...] = (Role.ADMIN, Role.SUPER_ADMIN)
+
+#: Roles that may READ the financial reports and collections (no writes, no user management).
+FINANCE_READ_ROLES: tuple[Role, ...] = (Role.ADMIN, Role.SUPER_ADMIN, Role.ACCOUNTANT)
 
 
 class User(Base):

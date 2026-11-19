@@ -13,7 +13,7 @@ import {
   X,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { isAdmin as isAdminRole } from '../utils/roles';
+import { isAccountant, isAdmin as isAdminRole } from '../utils/roles';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { apiClient } from '../api/client';
@@ -69,7 +69,7 @@ export const LoginPage: React.FC = () => {
     setIsSubmitting(true);
     try {
       const user = await login(identity.trim(), password);
-      navigate(isAdminRole(user) ? '/' : '/visits', { replace: true });
+      navigate(isAdminRole(user) ? '/' : isAccountant(user) ? '/reports' : '/visits', { replace: true });
     } catch (err: unknown) {
       const lowered = (err instanceof Error ? err.message : '').toLowerCase();
       if (
