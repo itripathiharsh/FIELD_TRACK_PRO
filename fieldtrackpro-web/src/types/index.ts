@@ -1953,8 +1953,39 @@ export interface LedgerRead {
 }
 
 /** Queue entries carry the outlet the ledger currently belongs to. */
+/** A Tally ledger in an Outlet Mapping queue, with the outlet (physical shop) it currently belongs to. */
 export interface LedgerQueueItem extends LedgerRead {
   customer_id: string;
+  outlet_name?: string | null;
+  outlet_address?: string | null;
+  outlet_code?: string | null;
+  area_name?: string | null;
+  territory_name?: string | null;
+}
+
+/** One ledger of an outlet in the Missing outlet code queue. */
+export interface OutletQueueLedger {
+  id: string;
+  name: string;
+  brand: string | null;
+  brand_source: string;
+  parent_group: string | null;
+  tally_outlet_code: string | null;
+  gst_number: string | null;
+  mobile: string | null;
+  pincode: string | null;
+  is_primary: boolean;
+}
+
+/** An OUTLET without an outlet code (the code is stored on the outlet, not on a ledger). */
+export interface OutletCodeQueueItem {
+  customer_id: string;
+  outlet_name: string;
+  outlet_address: string | null;
+  outlet_code: string | null;
+  area_name: string | null;
+  territory_name: string | null;
+  ledgers: OutletQueueLedger[];
 }
 
 /** Per-ledger position inside an outlet's account (receivable sign). */
@@ -2017,7 +2048,7 @@ export interface LinkEventRead {
 export interface OutletMappingQueues {
   new_unreviewed: LedgerQueueItem[];
   missing_brand: LedgerQueueItem[];
-  missing_code: LedgerQueueItem[];
+  missing_code: OutletCodeQueueItem[];
   linked_outlets: number;
 }
 
