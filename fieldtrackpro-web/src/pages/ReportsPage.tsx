@@ -50,6 +50,7 @@ import {
   OutstandingAgeingReportRow,
   VisitDetailedReportRow,
   MonthlyReportingPeriod,
+  DashboardHistoryPeriod,
   MonthlyPeriodReviewSummary,
   Territory,
   Area,
@@ -129,6 +130,8 @@ export const ReportsPage: React.FC = () => {
   const [employeeOptions, setEmployeeOptions] = useState<Employee[]>([]);
   const [monthlyPeriods, setMonthlyPeriods] = useState<MonthlyReportingPeriod[]>([]);
   const [masterBrands, setMasterBrands] = useState<Brand[]>([]);
+  // Past financial years before the reporting floor (read-only History), same list as the Dashboard
+  const [historyPeriods, setHistoryPeriods] = useState<DashboardHistoryPeriod[]>([]);
 
   // Authoritative Tally transaction months: only show periods that have real data
   const availablePeriodsWithData = useMemo(() => {
@@ -182,7 +185,21 @@ export const ReportsPage: React.FC = () => {
       }
     };
     loadMasters();
+    Promise.resolve()
+      .then(() => apiClient.getDashboardHistoryPeriods())
+      .then((r) => setHistoryPeriods(r?.periods || []))
+      .catch(() => setHistoryPeriods([]));
   }, []);
+
+  /** Label of the selected History period ("FY 2025-26 (full year)" or "July 2025 · FY 2025-26"), or null. */
+  const selectedHistoryLabel = useMemo(() => {
+    for (const fy of historyPeriods) {
+      if (fy.value === selectedMonth) return `${fy.label} (full year)`;
+      const m = fy.months.find((x) => x.value === selectedMonth);
+      if (m) return `${m.label} · ${fy.label}`;
+    }
+    return null;
+  }, [historyPeriods, selectedMonth]);
 
   // Filtered areas cascading with selected Zone
   const availableAreas = useMemo(() => {
@@ -497,6 +514,16 @@ export const ReportsPage: React.FC = () => {
                       </option>
                     );
                   })}
+                  {historyPeriods.map((fy) => (
+                    <optgroup key={fy.value} label={`History (read-only) · ${fy.label}`}>
+                      <option value={fy.value}>{`📜 ${fy.label} — full year (History)`}</option>
+                      {fy.months.map((m) => (
+                        <option key={m.value} value={m.value}>
+                          {`📜 ${m.label} (History)`}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
                 </select>
               </div>
 
@@ -724,6 +751,21 @@ export const ReportsPage: React.FC = () => {
         </Card>
       ) : (
         <AppliedFiltersStrip items={[]} notes={semanticsNotes} />
+      )}
+
+      {selectedHistoryLabel && request.params.month && (
+        <div
+          role="status"
+          data-testid="reports-history-banner"
+          className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-xs text-amber-900"
+        >
+          <span className="font-semibold">📜 History (read-only) · {selectedHistoryLabel}.</span>{' '}
+          {tabId === 'financial_bi'
+            ? 'Sales, collections and invoices of this past financial year, from Tally. Outstanding and ageing show what is still open today from these invoices.'
+            : 'This tab is built from outlet snapshots, and none exist for past years, so its figures stay empty. The past-year sales and collections are on the Financial & BI tab.'}{' '}
+          Current Live Data, monthly closing and current outstanding / overdue are not affected. Choose “All Available
+          Months” to return.
+        </div>
       )}
 
       {/* Navigation Tabs */}
