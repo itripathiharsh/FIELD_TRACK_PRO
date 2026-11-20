@@ -22,9 +22,10 @@ fun buildConfigString(value: String): String =
     "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
 // Single source of truth for the app version (Play: versionCode must strictly increase per upload).
+// 5 / 1.2.0: points at the OVH VPS backend (51-79-158-138.sslip.io); published from the web landing page.
 // 4 / 1.1.0: offline payments, outlet-proof capture/queue, queue schema + session/auth hardening.
-val appVersionCode = 4
-val appVersionName = "1.1.0"
+val appVersionCode = 5
+val appVersionName = "1.2.0"
 
 val releaseStoreFile = configValue("RELEASE_STORE_FILE")
 val releaseStorePassword = configValue("RELEASE_STORE_PASSWORD")
@@ -92,7 +93,7 @@ android {
             isDebuggable = false
             isMinifyEnabled = true
             isShrinkResources = true
-            val prodBaseUrl = "https://fieldtrackpro-backend-s7hs.onrender.com/"
+            val prodBaseUrl = "https://51-79-158-138.sslip.io/"
             buildConfigField("String", "BASE_URL", "\"$prodBaseUrl\"")
             // Required for release; the build fails (see taskGraph check below) if these are missing.
             buildConfigField("String", "MAPLIBRE_TILE_URL", buildConfigString(maplibreTileUrlValue ?: ""))

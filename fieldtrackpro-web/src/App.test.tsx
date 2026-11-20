@@ -43,15 +43,16 @@ describe('Routing - unauthenticated', () => {
     );
   });
 
-  it('does not render the application shell', async () => {
+  it('shows the public landing page at / instead of the application shell', async () => {
     mockApi({ '/health': { status: 'UP' } });
 
     renderApp('/');
 
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: /sign in to command center/i })).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByTestId('landing-use-web')).toBeInTheDocument());
+    expect(screen.getByTestId('landing-use-web')).toHaveAttribute('href', '/login');
     expect(screen.queryByText('Media Vault')).not.toBeInTheDocument();
+    expect(screen.queryByText('Admin Dashboard')).not.toBeInTheDocument();
+    expect(screen.queryByText('Employee Portal')).not.toBeInTheDocument();
   });
 
   it('shows a loading screen while a saved session is being restored', async () => {
