@@ -31,6 +31,7 @@ from decimal import Decimal
 from typing import Iterable, Optional
 
 from sqlalchemy import and_, delete, func, or_, select, text, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.customer import Customer
@@ -46,6 +47,7 @@ from app.models.payment import (
 from app.models.payment_invoice_allocation import PaymentInvoiceAllocation
 from app.models.sync_agent import SyncAgent
 from app.models.tally_debtor_ledger import MAPPING_AUTO, MAPPING_NEW, TallyDebtorLedger
+from app.models.tally_voucher_index import STATE_ACTIVE, STATE_DELETED, TallyVoucherIndex
 from app.models.tally_ledger import (
     ADJUSTMENT_ACTIVE,
     ADJUSTMENT_RETIRED,
@@ -379,11 +381,13 @@ async def retire_voucher_rows(
 ) -> int:
     """Retire every live row of voucher `guid` whose key is not kept for its kind."""
     n = 0
+    retired_invoices = []
     for inv in (await session.execute(
         select(Invoice).where(_voucher_rows_clause(Invoice, guid), Invoice.source == InvoiceSource.TALLY)
     )).scalars():
         if inv.source_reference not in keep.get(KIND_INVOICE, set()):
             n += await _retire_invoice(inv, reason, now)
+            retired_invoices.append(inv.id)
     for p in (await session.execute(
         select(Payment).where(_voucher_rows_clause(Payment, guid), Payment.source == PaymentSource.TALLY)
     )).scalars():
@@ -396,7 +400,31 @@ async def retire_voucher_rows(
     )).scalars():
         if a.source_reference not in keep.get(KIND_ADJUSTMENT, set()):
             n += _retire_adjustment(a, reason, now)
+    await relink_receipts_of_invoices(session, retired_invoices)
     return n
+
+
+async def relink_receipts_of_invoices(session: AsyncSession, invoice_ids) -> int:
+    """Release 3.0: invoices were retired (cancelled / deleted / re-classified in Tally). Every Tally receipt linked to
+    one of them is linked again from its stored allocations: the bill now resolves to the invoice Tally still holds
+    under that name (bill numbers restart each FY), or stays unlinked. Before 3.0 such a receipt kept pointing at the
+    retired invoice."""
+    ids = list({i for i in invoice_ids if i})
+    if not ids:
+        return 0
+    await session.flush()
+    pays = (await session.execute(
+        select(Payment).where(Payment.source == PaymentSource.TALLY,
+                              Payment.id.in_(select(PaymentInvoiceAllocation.payment_id)
+                                             .where(PaymentInvoiceAllocation.invoice_id.in_(ids))))
+    )).scalars().all()
+    st = _Stats()
+    for pay in pays:
+        await _apply_receipt_bills(session, pay, pay.customer_id, _stored_bills(pay.tally_bill_allocations), st,
+                                   pay.tally_debtor_ledger_id)
+    if pays:
+        await session.flush()
+    return len(pays)
 
 
 async def _brand(session: AsyncSession, raw: Optional[str]) -> tuple[Optional[str], Optional[uuid.UUID]]:
@@ -674,7 +702,22 @@ async def _stamp_alter_id(session, guid: str, alter_id: Optional[int]) -> None:
         await session.execute(update(model).where(_voucher_rows_clause(model, guid)).values(tally_alter_id=alter_id))
 
 
-async def _sync_one_voucher(session, v: VoucherItem, resolver: CustomerResolver, uid, now, st: _Stats) -> None:
+async def _index_voucher(session, v: VoucherItem, company_guid: Optional[str]) -> None:
+    """Release 3.0: record that FieldTrack has processed this version of the voucher (same savepoint as its rows)."""
+    stmt = pg_insert(TallyVoucherIndex).values(guid=v.guid, alter_id=int(v.alter_id or 0), voucher_date=v.date,
+                                               state=STATE_ACTIVE, company_guid=company_guid)
+    stmt = stmt.on_conflict_do_update(index_elements=["guid"], set_={
+        "alter_id": func.greatest(TallyVoucherIndex.alter_id, stmt.excluded.alter_id),
+        "voucher_date": stmt.excluded.voucher_date,
+        "state": STATE_ACTIVE,
+        "company_guid": func.coalesce(stmt.excluded.company_guid, TallyVoucherIndex.company_guid),
+        "updated_at": func.now(),
+    })
+    await session.execute(stmt)
+
+
+async def _sync_one_voucher(session, v: VoucherItem, resolver: CustomerResolver, uid, now, st: _Stats,
+                            company_guid: Optional[str] = None) -> None:
     stored = await _stored_alter_id(session, v.guid)
     if v.alter_id is not None and stored is not None and v.alter_id < stored:
         st.excluded["STALE_VERSION"] = st.excluded.get("STALE_VERSION", 0) + 1
@@ -684,6 +727,7 @@ async def _sync_one_voucher(session, v: VoucherItem, resolver: CustomerResolver,
         st.excluded[reason] = st.excluded.get(reason, 0) + 1
         st.retired += await retire_voucher_rows(session, v.guid, {}, reason, now)
         await _stamp_alter_id(session, v.guid, v.alter_id)
+        await _index_voucher(session, v, company_guid)
         return
     plans = plan_voucher(v)
     keep: dict[str, set[str]] = {KIND_INVOICE: set(), KIND_PAYMENT: set(), KIND_ADJUSTMENT: set()}
@@ -710,6 +754,7 @@ async def _sync_one_voucher(session, v: VoucherItem, resolver: CustomerResolver,
         session, v.guid, keep, R_LINE_REMOVED if not plans else R_RECLASSIFIED, now
     )
     await _stamp_alter_id(session, v.guid, v.alter_id)
+    await _index_voucher(session, v, company_guid)
 
 
 async def sync_vouchers(agent: SyncAgent, batch: VoucherSyncBatch, session: AsyncSession) -> V2SyncResult:
@@ -721,7 +766,7 @@ async def sync_vouchers(agent: SyncAgent, batch: VoucherSyncBatch, session: Asyn
     for v in batch.vouchers:
         try:
             async with session.begin_nested():
-                await _sync_one_voucher(session, v, resolver, uid, now, st)
+                await _sync_one_voucher(session, v, resolver, uid, now, st, batch.company_guid)
         except Exception as ex:  # one bad voucher fails alone
             resolver.cache.clear()
             st.failed += 1
@@ -1150,7 +1195,8 @@ async def _finish_manifest(session, run: TallySnapshotRun, st: _Stats) -> dict:
                          tally_retired_reason = '{R_DELETED}'
                          WHERE i.source = 'TALLY' AND i.invoice_date BETWEEN :f AND :t
                            AND i.source_reference IS NOT NULL
-                           AND {absent.format(g=_GUID_EXPR.format(t='i'))}"""),
+                           AND {absent.format(g=_GUID_EXPR.format(t='i'))}
+                         RETURNING i.id"""),
         ("payments", f"""UPDATE payments p SET source = 'TALLY_RETIRED', tally_retired_at = :now,
                          tally_retired_reason = '{R_DELETED}'
                          WHERE p.source = 'TALLY' AND p.payment_date BETWEEN :f AND :t
@@ -1161,10 +1207,62 @@ async def _finish_manifest(session, run: TallySnapshotRun, st: _Stats) -> dict:
                             WHERE a.state = 'ACTIVE' AND a.voucher_date BETWEEN :f AND :t
                               AND {absent.format(g='a.tally_voucher_guid')}"""),
     ):
-        counts[name] = (await session.execute(text(sql), {**params, "now": now})).rowcount or 0
+        res = await session.execute(text(sql), {**params, "now": now})
+        if name == "invoices":
+            retired_invoice_ids = [r[0] for r in res.fetchall()]
+            counts[name] = len(retired_invoice_ids)
+        else:
+            counts[name] = res.rowcount or 0
     st.retired = sum(counts.values())
+    await relink_receipts_of_invoices(session, retired_invoice_ids)
+    # Release 3.0: the voucher index follows the same accepted manifest.
+    index_deleted = (await session.execute(text(
+        f"""UPDATE tally_voucher_index x SET state = '{STATE_DELETED}', updated_at = :now
+            WHERE x.state = '{STATE_ACTIVE}' AND x.voucher_date BETWEEN :f AND :t AND {absent.format(g='x.guid')}"""),
+        {**params, "now": now})).rowcount or 0
     run.status = "COMPLETE"
     run.completed_at = now
-    run.details = {"vouchers_listed": staged, "held_in_window": held, "retired": counts}
+    run.details = {"vouchers_listed": staged, "held_in_window": held, "retired": counts, "index_deleted": index_deleted}
     await session.execute(delete(TallyManifestGuid).where(TallyManifestGuid.snapshot_id == run.id))
     return run.details
+
+
+# ---------------------------------------------------------------------------
+# Reconciliation (release 3.0)
+# ---------------------------------------------------------------------------
+
+class ReconcileCompanyMismatch(Exception):
+    pass
+
+
+async def reconcile(agent: SyncAgent, batch, session: AsyncSession) -> dict:
+    """Compare EVERY voucher header Tally holds in a date window with what FieldTrack has processed. Read-only:
+    nothing is written here. The agent re-sends the missing / stale vouchers (idempotent upserts) and retires the
+    extra ones through an accepted manifest (with its completeness floor).
+
+      missing  listed by Tally, never processed by FieldTrack (or marked DELETED: re-created / restored in Tally)
+      stale    listed with a higher AlterID than the version FieldTrack processed
+      extra    processed by FieldTrack, dated in the window, ACTIVE, but no longer listed by Tally
+    """
+    if agent.tally_company_guid and batch.company_guid and agent.tally_company_guid != batch.company_guid:
+        raise ReconcileCompanyMismatch(
+            f"reconcile for company {batch.company_guid} refused: this agent is bound to {agent.tally_company_guid}")
+    listed = {}
+    for e in batch.entries:
+        listed[e.guid] = max(int(e.alter_id or 0), listed.get(e.guid, 0))
+    held: dict = {}
+    keys = list(listed)
+    for i in range(0, len(keys), 5000):
+        for g, a, state in (await session.execute(
+                select(TallyVoucherIndex.guid, TallyVoucherIndex.alter_id, TallyVoucherIndex.state)
+                .where(TallyVoucherIndex.guid.in_(keys[i:i + 5000])))).all():
+            held[g] = (int(a or 0), state)
+    missing = sorted(g for g in listed if g not in held or held[g][1] != STATE_ACTIVE)
+    stale = sorted(g for g, a in listed.items() if g in held and held[g][1] == STATE_ACTIVE and held[g][0] < a)
+    in_window = [g for (g,) in (await session.execute(
+        select(TallyVoucherIndex.guid).where(TallyVoucherIndex.state == STATE_ACTIVE,
+                                             TallyVoucherIndex.voucher_date >= batch.window_from,
+                                             TallyVoucherIndex.voucher_date <= batch.window_to))).all()]
+    extra = sorted(g for g in in_window if g not in listed)
+    return {"batch_id": batch.batch_id, "window_from": batch.window_from, "window_to": batch.window_to,
+            "listed": len(listed), "held_in_window": len(in_window), "missing": missing, "stale": stale, "extra": extra}
