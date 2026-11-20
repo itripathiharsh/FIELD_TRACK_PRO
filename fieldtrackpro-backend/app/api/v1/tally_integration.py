@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -47,6 +47,8 @@ from app.schemas.tally_sync_v2 import (
     BillsSyncBatch,
     LedgerSyncBatch,
     ManifestSyncBatch,
+    ReconcileBatch,
+    ReconcileResult,
     V2SyncResult,
     VoucherSyncBatch,
 )
@@ -239,6 +241,16 @@ async def sync_vouchers_v2(batch: VoucherSyncBatch, agent: AuthenticatedAgent, s
 async def sync_bills_v2(batch: BillsSyncBatch, agent: AuthenticatedAgent, session: DbSession):
     """Tally's Bills Receivable report as on a date (chunked snapshot)."""
     return await tally_v2_sync.sync_bills(agent, batch, session)
+
+
+@router.post("/sync/reconcile", response_model=ReconcileResult)
+async def sync_reconcile_v3(batch: ReconcileBatch, agent: AuthenticatedAgent, session: DbSession):
+    """Release 3.0: Tally's voucher headers (GUID, AlterID) for a date window -> what FieldTrack is missing, holds in
+    an older version, or holds although Tally no longer lists it. Read-only."""
+    try:
+        return await tally_v2_sync.reconcile(agent, batch, session)
+    except tally_v2_sync.ReconcileCompanyMismatch as ex:
+        raise HTTPException(status_code=409, detail=str(ex))
 
 
 @router.post("/sync/manifest", response_model=V2SyncResult)

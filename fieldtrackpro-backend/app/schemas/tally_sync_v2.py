@@ -140,6 +140,30 @@ class BillsSyncBatch(_Batch):
 # Voucher GUID manifest
 # ---------------------------------------------------------------------------
 
+class ReconcileEntry(BaseModel):
+    guid: str = Field(..., min_length=1, max_length=100)
+    alter_id: int = 0
+
+
+class ReconcileBatch(_Batch):
+    """Release 3.0: EVERY voucher header (GUID, AlterID) Tally holds dated window_from..window_to. FieldTrack answers
+    what it is missing, holds in an older version, or holds although Tally no longer lists it."""
+    window_from: date
+    window_to: date
+    entries: list[ReconcileEntry] = Field(default_factory=list, max_length=50000)
+
+
+class ReconcileResult(BaseModel):
+    batch_id: str
+    window_from: date
+    window_to: date
+    listed: int
+    held_in_window: int
+    missing: list[str] = Field(default_factory=list)
+    stale: list[str] = Field(default_factory=list)
+    extra: list[str] = Field(default_factory=list)
+
+
 class ManifestSyncBatch(_Batch):
     snapshot_id: str
     window_from: date
