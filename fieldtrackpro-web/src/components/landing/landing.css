@@ -1,0 +1,1515 @@
+/* FieldTrack Pro public landing page. Everything is scoped under .ftl. */
+
+.ftl {
+  --navy: #07182a;
+  --navy-2: #0b2440;
+  --navy-3: #10305a;
+  --ink: #eaf1fb;
+  --muted: #9db0c9;
+  --line: rgba(157, 176, 201, 0.16);
+  --orange: #ffa31e;
+  --orange-2: #ffc266;
+  --cyan: #4cc9f0;
+  --green: #34d399;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  position: relative;
+  min-height: 100vh;
+  width: 100%;
+  color: var(--ink);
+  background: var(--navy);
+  font-family: 'Plus Jakarta Sans', Inter, system-ui, sans-serif;
+  overflow-x: clip;
+  -webkit-font-smoothing: antialiased;
+}
+.ftl *,
+.ftl *::before,
+.ftl *::after {
+  box-sizing: border-box;
+}
+.ftl a {
+  color: inherit;
+  text-decoration: none;
+}
+.ftl h1,
+.ftl h2,
+.ftl h3 {
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+.ftl p {
+  margin: 0;
+}
+.ftl :focus-visible {
+  outline: 2px solid var(--orange);
+  outline-offset: 3px;
+  border-radius: 8px;
+}
+
+.ftl-wrap {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+@media (min-width: 640px) {
+  .ftl-wrap {
+    padding: 0 28px;
+  }
+}
+
+.ftl-skip {
+  position: absolute;
+  left: 16px;
+  top: -60px;
+  z-index: 100;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--orange);
+  color: var(--navy) !important;
+  font-weight: 700;
+}
+.ftl-skip:focus {
+  top: 12px;
+}
+
+/* ---------- Nav ---------- */
+.ftl-nav {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 50;
+  transition: background 0.3s, border-color 0.3s, backdrop-filter 0.3s;
+  border-bottom: 1px solid transparent;
+}
+.ftl-nav.is-scrolled {
+  background: rgba(7, 24, 42, 0.72);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  border-bottom-color: var(--line);
+}
+.ftl-nav-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  height: 64px;
+}
+.ftl-nav-links {
+  display: none;
+  gap: 28px;
+  font-size: 14px;
+  color: var(--muted);
+}
+.ftl-nav-links a:hover {
+  color: var(--ink);
+}
+@media (min-width: 860px) {
+  .ftl-nav-links {
+    display: flex;
+  }
+}
+
+.ftl-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 800;
+  font-size: 17px;
+  letter-spacing: -0.01em;
+}
+.ftl-brand em {
+  font-style: normal;
+  color: var(--orange);
+}
+.ftl-brand-mark {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--orange), #ff7a1a);
+  color: var(--navy);
+  box-shadow: 0 6px 18px rgba(255, 163, 30, 0.35);
+}
+.ftl-brand-mark svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* ---------- Buttons ---------- */
+.ftl-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 12px 22px;
+  border-radius: 14px;
+  font-weight: 700;
+  font-size: 15px;
+  line-height: 1.15;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.04);
+  transition: transform 0.25s var(--ease), box-shadow 0.25s var(--ease), background 0.25s, border-color 0.25s;
+  will-change: transform;
+}
+.ftl-btn svg {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+.ftl-btn small {
+  display: block;
+  margin-top: 2px;
+  font-size: 11.5px;
+  font-weight: 500;
+  opacity: 0.75;
+}
+.ftl-btn span {
+  text-align: left;
+}
+.ftl-btn:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 163, 30, 0.5);
+  background: rgba(255, 255, 255, 0.07);
+}
+.ftl-btn:active {
+  transform: translateY(0) scale(0.98);
+}
+.ftl-btn--primary {
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--orange), #ff8a1f);
+  color: var(--navy) !important;
+  box-shadow: 0 10px 30px -8px rgba(255, 163, 30, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+.ftl-btn--primary:hover {
+  background: linear-gradient(135deg, var(--orange-2), var(--orange));
+  box-shadow: 0 16px 40px -10px rgba(255, 163, 30, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+.ftl-btn--small {
+  min-height: 40px;
+  padding: 8px 16px;
+  border-radius: 11px;
+  font-size: 14px;
+}
+.ftl-btn-arrow {
+  transition: transform 0.25s var(--ease);
+}
+.ftl-btn:hover .ftl-btn-arrow {
+  transform: translateX(4px);
+}
+
+/* ---------- Hero ---------- */
+.ftl-hero {
+  position: relative;
+  padding: 104px 0 56px;
+  min-height: 100svh;
+  display: flex;
+  align-items: center;
+  isolation: isolate;
+  overflow: hidden;
+}
+.ftl-hero-grid {
+  position: relative;
+  display: grid;
+  gap: 40px;
+  align-items: center;
+}
+@media (min-width: 1024px) {
+  .ftl-hero {
+    padding: 96px 0 64px;
+  }
+  .ftl-hero-grid {
+    grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.15fr);
+    gap: 24px;
+  }
+}
+.ftl-hero-copy {
+  position: relative;
+  z-index: 2;
+  max-width: 600px;
+}
+@media (min-width: 1024px) {
+  .ftl-hero h1 {
+    font-size: clamp(42px, 4.7vw, 64px);
+  }
+}
+.ftl-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--orange);
+}
+.ftl-live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.6);
+  animation: ftl-ping 2s infinite;
+}
+.ftl-hero h1 {
+  margin-top: 18px;
+  font-size: clamp(36px, 7.4vw, 64px);
+  line-height: 1.04;
+  font-weight: 800;
+}
+.ftl-grad {
+  background: linear-gradient(100deg, var(--orange) 0%, #ffd08a 45%, var(--cyan) 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: ftl-shine 8s ease-in-out infinite alternate;
+}
+.ftl-lead {
+  margin-top: 20px;
+  font-size: clamp(16px, 2.2vw, 18.5px);
+  line-height: 1.6;
+  color: var(--muted);
+  max-width: 540px;
+}
+.ftl-ctas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 32px;
+}
+@media (max-width: 479px) {
+  .ftl-ctas .ftl-btn {
+    flex: 1 1 100%;
+  }
+}
+.ftl-hint {
+  margin-top: 16px;
+  font-size: 13px;
+  color: var(--muted);
+  opacity: 0.85;
+}
+
+/* Entrance animation for hero copy */
+.ftl-in {
+  animation: ftl-rise 0.9s var(--ease) both;
+  animation-delay: var(--d, 0ms);
+}
+
+/* Background: perspective floor grid + glowing orbs */
+.ftl-floor-grid {
+  position: absolute;
+  left: -50%;
+  right: -50%;
+  bottom: -30%;
+  height: 80%;
+  z-index: -1;
+  background-image: linear-gradient(rgba(76, 201, 240, 0.14) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(76, 201, 240, 0.14) 1px, transparent 1px);
+  background-size: 56px 56px;
+  transform: perspective(600px) rotateX(62deg);
+  transform-origin: center top;
+  mask-image: linear-gradient(to bottom, transparent, #000 30%, #000 60%, transparent);
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 30%, #000 60%, transparent);
+  animation: ftl-grid-move 6s linear infinite;
+}
+.ftl-orb {
+  position: absolute;
+  z-index: -2;
+  border-radius: 50%;
+  filter: blur(70px);
+  opacity: 0.55;
+  animation: ftl-float 14s ease-in-out infinite alternate;
+}
+.ftl-orb--a {
+  width: 520px;
+  height: 520px;
+  right: -140px;
+  top: -160px;
+  background: radial-gradient(circle, rgba(255, 163, 30, 0.55), transparent 65%);
+}
+.ftl-orb--b {
+  width: 460px;
+  height: 460px;
+  left: -180px;
+  top: 30%;
+  background: radial-gradient(circle, rgba(76, 201, 240, 0.4), transparent 65%);
+  animation-delay: -6s;
+}
+
+/* ---------- 3D device scene ---------- */
+.ftl-hero-visual {
+  position: relative;
+  min-width: 0;
+}
+.ftl-scene {
+  --s: 0.52;
+  --rx: 0;
+  --ry: 0;
+  --sp: 0;
+  position: relative;
+  height: calc(470px * var(--s));
+  perspective: 1400px;
+  perspective-origin: 50% 40%;
+}
+@media (min-width: 420px) {
+  .ftl-scene {
+    --s: 0.64;
+  }
+}
+@media (min-width: 640px) {
+  .ftl-scene {
+    --s: 0.86;
+  }
+}
+@media (min-width: 1024px) {
+  .ftl-scene {
+    --s: 0.72;
+  }
+}
+@media (min-width: 1200px) {
+  .ftl-scene {
+    --s: 0.86;
+  }
+}
+@media (min-width: 1360px) {
+  .ftl-scene {
+    --s: 0.98;
+  }
+}
+.ftl-scene--placeholder::after {
+  content: '';
+  position: absolute;
+  inset: 15% 10%;
+  border-radius: 24px;
+  background: radial-gradient(closest-side, rgba(76, 201, 240, 0.15), transparent);
+}
+.ftl-stage {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 640px;
+  height: 470px;
+  transform-style: preserve-3d;
+  transform: translate(-50%, -50%) scale(var(--s))
+    rotateX(calc(14deg - var(--sp) * 10deg - var(--rx) * 7deg))
+    rotateY(calc(-20deg + var(--sp) * 14deg + var(--ry) * 12deg));
+  animation: ftl-stage-in 1.4s var(--ease) backwards 0.15s;
+}
+.ftl-desktop {
+  position: absolute;
+  left: 20px;
+  top: 6px;
+  width: 560px;
+  transform-style: preserve-3d;
+  transform: translateZ(0);
+}
+.ftl-desktop-bezel {
+  position: relative;
+  height: 350px;
+  padding: 10px;
+  border-radius: 18px;
+  background: linear-gradient(160deg, #1c2a3f, #0a1322);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 40px 80px -20px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+.ftl-desktop-neck {
+  width: 90px;
+  height: 46px;
+  margin: 0 auto;
+  background: linear-gradient(#1a2638, #0d1726);
+  clip-path: polygon(18% 0, 82% 0, 100% 100%, 0 100%);
+}
+.ftl-desktop-base {
+  width: 200px;
+  height: 12px;
+  margin: 0 auto;
+  border-radius: 6px 6px 10px 10px;
+  background: linear-gradient(#22324a, #0c1524);
+  box-shadow: 0 18px 30px -8px rgba(0, 0, 0, 0.8);
+}
+.ftl-phone {
+  position: absolute;
+  right: 4px;
+  top: 96px;
+  width: 172px;
+  transform-style: preserve-3d;
+  transform: translateZ(120px) rotateY(-6deg);
+  animation: ftl-bob 6s ease-in-out infinite;
+}
+.ftl-phone-body {
+  position: relative;
+  height: 350px;
+  padding: 7px;
+  border-radius: 30px;
+  background: linear-gradient(150deg, #263650, #0a1220);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 40px 70px -18px rgba(0, 0, 0, 0.8), inset 0 0 0 2px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+.ftl-glare {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    calc(115deg + var(--ry, 0) * 20deg),
+    rgba(255, 255, 255, 0.12) 0%,
+    rgba(255, 255, 255, 0) 38%,
+    rgba(255, 255, 255, 0) 70%,
+    rgba(255, 255, 255, 0.05) 100%
+  );
+}
+.ftl-floor {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: calc(560px * var(--s));
+  height: calc(60px * var(--s));
+  transform: translateX(-50%);
+  background: radial-gradient(closest-side, rgba(0, 0, 0, 0.55), transparent);
+  filter: blur(6px);
+}
+
+/* Floating chips */
+.ftl-chip {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: rgba(13, 32, 58, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 20px 40px -14px rgba(0, 0, 0, 0.7);
+  white-space: nowrap;
+  font-size: 12.5px;
+}
+.ftl-chip b {
+  display: block;
+  font-weight: 700;
+}
+.ftl-chip span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+}
+.ftl-chip svg {
+  width: 22px;
+  height: 22px;
+  padding: 4px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+.ftl-chip--1 {
+  left: -18px;
+  top: 40px;
+  transform: translateZ(170px);
+  animation: ftl-bob 7s ease-in-out infinite -1s;
+}
+.ftl-chip--1 svg {
+  color: var(--green);
+  background: rgba(52, 211, 153, 0.15);
+}
+.ftl-chip--2 {
+  left: 30px;
+  bottom: 70px;
+  transform: translateZ(200px);
+  animation: ftl-bob 8s ease-in-out infinite -3s;
+}
+.ftl-chip--2 svg {
+  color: var(--orange);
+  background: rgba(255, 163, 30, 0.15);
+}
+.ftl-chip--3 {
+  right: 120px;
+  top: -8px;
+  transform: translateZ(150px);
+  animation: ftl-bob 9s ease-in-out infinite -5s;
+}
+.ftl-chip--3 svg {
+  color: var(--cyan);
+  background: rgba(76, 201, 240, 0.15);
+}
+
+@media (max-width: 639px) {
+  .ftl-scene {
+    margin-top: 12px;
+  }
+  .ftl-chip--1 {
+    left: 40px;
+    top: 20px;
+  }
+  .ftl-chip--2 {
+    left: 70px;
+    bottom: 40px;
+  }
+}
+
+/* ---------- Desktop mockup UI ---------- */
+.ftl-desk-ui {
+  display: flex;
+  height: 100%;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #f4f6fb;
+  color: #0d1b36;
+  font-size: 10px;
+}
+.ftl-desk-side {
+  width: 112px;
+  padding: 10px 8px;
+  background: #0b1d36;
+  color: #b8c6dc;
+  flex-shrink: 0;
+}
+.ftl-desk-logo {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 4px 12px;
+  color: #fff;
+  font-weight: 800;
+  font-size: 11px;
+}
+.ftl-logo-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--orange);
+}
+.ftl-desk-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  border-radius: 6px;
+  margin-bottom: 2px;
+}
+.ftl-desk-nav svg {
+  width: 11px;
+  height: 11px;
+}
+.ftl-desk-nav.is-active {
+  background: rgba(255, 163, 30, 0.16);
+  color: #ffb84d;
+  font-weight: 700;
+}
+.ftl-desk-main {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ftl-desk-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.ftl-desk-kicker {
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #75777e;
+  font-weight: 700;
+}
+.ftl-desk-title {
+  font-weight: 800;
+  font-size: 13px;
+}
+.ftl-desk-sync {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 99px;
+  background: #e2f7ee;
+  color: #0f7a52;
+  font-weight: 700;
+  font-size: 8.5px;
+}
+.ftl-desk-sync svg {
+  width: 9px;
+  height: 9px;
+  animation: ftl-spin 4s linear infinite;
+}
+.ftl-desk-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+.ftl-kpi {
+  padding: 7px 8px;
+  border-radius: 8px;
+  background: #fff;
+  border: 1px solid #e4e7ee;
+}
+.ftl-kpi-label {
+  font-size: 7.5px;
+  color: #75777e;
+  font-weight: 600;
+}
+.ftl-kpi-value {
+  margin-top: 2px;
+  font-size: 15px;
+  font-weight: 800;
+}
+.ftl-kpi-delta {
+  font-size: 7.5px;
+  color: #0f7a52;
+  font-weight: 700;
+}
+.ftl-desk-panels {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1.5fr 1fr;
+  gap: 6px;
+  min-height: 0;
+}
+.ftl-panel {
+  display: flex;
+  flex-direction: column;
+  padding: 7px;
+  border-radius: 8px;
+  background: #fff;
+  border: 1px solid #e4e7ee;
+  min-height: 0;
+}
+.ftl-panel-title {
+  font-weight: 700;
+  font-size: 9px;
+  margin-bottom: 5px;
+}
+.ftl-map {
+  position: relative;
+  flex: 1;
+  border-radius: 6px;
+  background: #0d2240;
+  overflow: hidden;
+  min-height: 0;
+}
+.ftl-map svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.ftl-route {
+  animation: ftl-dash 1.6s linear infinite;
+}
+.ftl-pin {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  display: grid;
+  place-items: center;
+}
+.ftl-pin svg {
+  width: 14px;
+  height: 14px;
+}
+.ftl-pin--ok svg {
+  color: var(--green);
+  fill: rgba(52, 211, 153, 0.25);
+}
+.ftl-pin--next svg {
+  color: #9db0c9;
+}
+.ftl-pin--live svg {
+  color: var(--orange);
+  fill: rgba(255, 163, 30, 0.35);
+}
+.ftl-pin--live::after {
+  content: '';
+  position: absolute;
+  bottom: -3px;
+  width: 10px;
+  height: 4px;
+  border-radius: 50%;
+  background: rgba(255, 163, 30, 0.6);
+  animation: ftl-ping 1.8s infinite;
+}
+.ftl-bars {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  gap: 5px;
+  padding-top: 4px;
+}
+.ftl-bars span {
+  flex: 1;
+  height: var(--h);
+  border-radius: 4px 4px 2px 2px;
+  background: linear-gradient(180deg, var(--orange), #ffd08a);
+  transform-origin: bottom;
+  animation: ftl-grow 1.2s var(--ease) both;
+  animation-delay: calc(0.6s + var(--i) * 80ms);
+}
+
+/* ---------- Phone mockup UI ---------- */
+.ftl-ph-ui {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  border-radius: 24px;
+  overflow: hidden;
+  background: linear-gradient(180deg, #0f2747 0%, #0a1b33 100%);
+  color: #eaf1fb;
+  font-size: 10px;
+}
+.ftl-ph-status {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 7px 14px 4px;
+  font-size: 8.5px;
+  font-weight: 700;
+  color: #c9d6e8;
+}
+.ftl-ph-notch {
+  width: 46px;
+  height: 12px;
+  border-radius: 10px;
+  background: #050c17;
+}
+.ftl-ph-body {
+  flex: 1;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  animation: ftl-fade 0.45s var(--ease) both;
+}
+.ftl-ph-kicker {
+  font-size: 7.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--orange);
+  font-weight: 800;
+}
+.ftl-ph-title {
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+.ftl-ph-progress {
+  height: 4px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+  margin-bottom: 2px;
+}
+.ftl-ph-progress span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--orange), var(--orange-2));
+  border-radius: 4px;
+}
+.ftl-ph-visit {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 7px 8px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+.ftl-ph-visit-name {
+  font-weight: 700;
+  font-size: 8.8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100px;
+}
+.ftl-ph-visit-time {
+  font-size: 7.5px;
+  color: var(--muted);
+}
+.ftl-ph-pill {
+  padding: 2px 6px;
+  border-radius: 99px;
+  font-size: 7px;
+  font-weight: 800;
+  background: rgba(157, 176, 201, 0.15);
+  color: #c9d6e8;
+}
+.ftl-ph-visit.is-done .ftl-ph-pill {
+  background: rgba(52, 211, 153, 0.18);
+  color: var(--green);
+}
+.ftl-ph-visit.is-now {
+  border-color: rgba(255, 163, 30, 0.5);
+  background: rgba(255, 163, 30, 0.08);
+}
+.ftl-ph-visit.is-now .ftl-ph-pill {
+  background: var(--orange);
+  color: var(--navy);
+}
+.ftl-ph-cta {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 8px;
+  border: 0;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--orange), #ff8a1f);
+  color: var(--navy);
+  font: inherit;
+  font-weight: 800;
+  font-size: 9.5px;
+  pointer-events: none;
+}
+.ftl-ph-cta svg {
+  width: 11px;
+  height: 11px;
+}
+.ftl-ph-nav {
+  display: flex;
+  justify-content: space-around;
+  padding: 7px 0 9px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  color: #6f86a6;
+}
+.ftl-ph-nav svg {
+  width: 13px;
+  height: 13px;
+}
+.ftl-ph-nav .is-active {
+  color: var(--orange);
+}
+.ftl-ph-radar {
+  position: relative;
+  display: grid;
+  place-items: center;
+  height: 120px;
+  margin: 6px 0;
+  border-radius: 14px;
+  background: radial-gradient(circle at center, rgba(76, 201, 240, 0.18), transparent 70%), #0d2240;
+}
+.ftl-ph-radar svg {
+  position: relative;
+  width: 26px;
+  height: 26px;
+  color: var(--orange);
+  fill: rgba(255, 163, 30, 0.3);
+}
+.ftl-ph-ring {
+  position: absolute;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2px solid rgba(52, 211, 153, 0.7);
+  animation: ftl-radar 2.4s var(--ease) infinite;
+}
+.ftl-ph-ring--2 {
+  animation-delay: 1.2s;
+}
+.ftl-ph-ok {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 8px;
+  border-radius: 10px;
+  background: rgba(52, 211, 153, 0.14);
+  color: var(--green);
+  font-weight: 800;
+  font-size: 9px;
+}
+.ftl-ph-ok svg {
+  width: 12px;
+  height: 12px;
+}
+.ftl-ph-meta {
+  font-size: 8px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+.ftl-ph-photo {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 64px;
+  padding: 0 10px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(76, 201, 240, 0.18), rgba(255, 163, 30, 0.12));
+  border: 1px dashed rgba(255, 255, 255, 0.2);
+  font-weight: 700;
+  font-size: 9px;
+}
+.ftl-ph-photo svg {
+  width: 16px;
+  height: 16px;
+  color: var(--cyan);
+}
+.ftl-ph-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 7px 8px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 9px;
+}
+.ftl-ph-row span {
+  color: var(--muted);
+}
+.ftl-ok-text {
+  color: var(--green);
+}
+.ftl-ph-synced {
+  display: grid;
+  place-items: center;
+  height: 90px;
+}
+.ftl-ph-synced svg {
+  width: 40px;
+  height: 40px;
+  padding: 9px;
+  border-radius: 50%;
+  color: var(--green);
+  background: rgba(52, 211, 153, 0.14);
+  animation: ftl-spin 3s linear infinite;
+}
+
+/* ---------- Marquee ---------- */
+.ftl-marquee {
+  position: relative;
+  overflow: hidden;
+  padding: 18px 0;
+  border-block: 1px solid var(--line);
+  background: rgba(11, 36, 64, 0.5);
+  mask-image: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent);
+}
+.ftl-marquee-track {
+  display: flex;
+  gap: 40px;
+  width: max-content;
+  animation: ftl-marquee 38s linear infinite;
+}
+.ftl-marquee-track span {
+  display: inline-flex;
+  align-items: center;
+  gap: 40px;
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.ftl-marquee-track span::after {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--orange);
+}
+.ftl-marquee:hover .ftl-marquee-track {
+  animation-play-state: paused;
+}
+
+/* ---------- Sections ---------- */
+.ftl-section {
+  position: relative;
+  padding: 88px 0;
+}
+@media (min-width: 1024px) {
+  .ftl-section {
+    padding: 120px 0;
+  }
+}
+.ftl-head {
+  max-width: 720px;
+  margin: 0 auto 48px;
+  text-align: center;
+}
+.ftl-head--left {
+  margin: 0 0 32px;
+  text-align: left;
+}
+.ftl-head h2 {
+  margin-top: 12px;
+  font-size: clamp(28px, 4.6vw, 44px);
+  line-height: 1.1;
+  font-weight: 800;
+}
+.ftl-sub {
+  margin-top: 16px;
+  color: var(--muted);
+  font-size: 16.5px;
+  line-height: 1.6;
+}
+
+/* Reveal on scroll */
+.ftl [data-reveal] {
+  opacity: 0;
+  transform: translateY(28px);
+  transition: opacity 0.8s var(--ease), transform 0.8s var(--ease);
+  transition-delay: var(--d, 0ms);
+}
+.ftl [data-reveal].is-in {
+  opacity: 1;
+  transform: none;
+}
+
+/* Feature cards */
+.ftl-cards {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: 1fr;
+}
+@media (min-width: 600px) {
+  .ftl-cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (min-width: 1024px) {
+  .ftl-cards {
+    grid-template-columns: repeat(4, 1fr);
+    perspective: 1000px;
+  }
+}
+.ftl-card {
+  --tx: 0deg;
+  --ty: 0deg;
+  --mx: 50%;
+  --my: 0%;
+  position: relative;
+  padding: 24px;
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(16, 48, 90, 0.55), rgba(11, 36, 64, 0.35));
+  border: 1px solid var(--line);
+  overflow: hidden;
+  transform-style: preserve-3d;
+}
+.ftl .ftl-card.is-in {
+  transform: rotateX(var(--tx)) rotateY(var(--ty));
+  transition: opacity 0.8s var(--ease), transform 0.35s var(--ease), border-color 0.3s;
+  transition-delay: var(--d, 0ms), 0ms, 0ms;
+}
+.ftl-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(320px circle at var(--mx) var(--my), rgba(255, 163, 30, 0.14), transparent 45%);
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+.ftl-card:hover {
+  border-color: rgba(255, 163, 30, 0.35);
+}
+.ftl-card:hover::before {
+  opacity: 1;
+}
+.ftl-card-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 13px;
+  background: rgba(255, 163, 30, 0.12);
+  color: var(--orange);
+  transform: translateZ(30px);
+}
+.ftl-card-icon svg {
+  width: 22px;
+  height: 22px;
+}
+.ftl-card h3 {
+  position: relative;
+  margin-top: 18px;
+  font-size: 17px;
+  font-weight: 700;
+  transform: translateZ(20px);
+}
+.ftl-card p {
+  position: relative;
+  margin-top: 8px;
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+/* ---------- Scroll story ---------- */
+.ftl-story {
+  --progress: 0;
+  position: relative;
+  padding: 72px 0;
+  background: linear-gradient(180deg, transparent, rgba(11, 36, 64, 0.6) 20%, rgba(11, 36, 64, 0.6) 80%, transparent);
+}
+.ftl-story-grid {
+  display: grid;
+  gap: 40px;
+  align-items: center;
+}
+.ftl-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+.ftl-steps li {
+  display: flex;
+  gap: 16px;
+  padding: 18px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(16, 48, 90, 0.3);
+  transition: background 0.4s, border-color 0.4s, transform 0.4s var(--ease), opacity 0.4s;
+}
+.ftl-steps h3 {
+  font-size: 17px;
+  font-weight: 700;
+}
+.ftl-steps p {
+  margin-top: 6px;
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+.ftl-step-num {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  font-weight: 800;
+  background: rgba(157, 176, 201, 0.14);
+  transition: background 0.4s, color 0.4s;
+}
+.ftl-story-bar {
+  display: none;
+}
+.ftl-story-phone {
+  display: none;
+}
+@media (min-width: 1024px) {
+  /* Pinned story: the section is tall, the content sticks and the steps advance with scroll. */
+  .ftl-story {
+    height: 340vh;
+    padding: 0;
+  }
+  .ftl-story-sticky {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    display: flex;
+    align-items: center;
+  }
+  .ftl-story-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 64px;
+  }
+  .ftl-steps li {
+    opacity: 0.45;
+  }
+  .ftl-steps li.is-done {
+    opacity: 0.7;
+  }
+  .ftl-steps li.is-active {
+    opacity: 1;
+    transform: translateX(8px);
+    border-color: rgba(255, 163, 30, 0.45);
+    background: rgba(255, 163, 30, 0.07);
+  }
+  .ftl-steps li.is-active .ftl-step-num,
+  .ftl-steps li.is-done .ftl-step-num {
+    background: var(--orange);
+    color: var(--navy);
+  }
+  .ftl-story-bar {
+    display: block;
+    height: 4px;
+    margin-top: 24px;
+    border-radius: 4px;
+    background: rgba(157, 176, 201, 0.14);
+    overflow: hidden;
+  }
+  .ftl-story-bar span {
+    display: block;
+    height: 100%;
+    width: 100%;
+    background: linear-gradient(90deg, var(--orange), var(--cyan));
+    transform-origin: left;
+    transform: scaleX(var(--progress));
+  }
+  .ftl-story-phone {
+    display: grid;
+    place-items: center;
+    perspective: 1200px;
+  }
+  .ftl-phone--flat {
+    position: relative;
+    right: auto;
+    top: auto;
+    width: 250px;
+    transform: rotateY(calc(-14deg + var(--progress) * 28deg)) rotateX(6deg);
+    animation: none;
+  }
+  .ftl-phone--flat .ftl-phone-body {
+    height: 508px;
+    border-radius: 40px;
+    padding: 9px;
+  }
+  /* Same 158x334 phone UI as the hero, scaled up to fill the larger frame. */
+  .ftl-phone--flat .ftl-ph-ui {
+    width: 158px;
+    height: 334px;
+    border-radius: 22px;
+    transform: scale(1.4684);
+    transform-origin: 0 0;
+  }
+}
+
+/* ---------- Get the app ---------- */
+.ftl-get {
+  display: grid;
+  gap: 20px;
+}
+@media (min-width: 860px) {
+  .ftl-get {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+.ftl-get-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 28px;
+  border-radius: 24px;
+  border: 1px solid var(--line);
+  background: linear-gradient(160deg, rgba(16, 48, 90, 0.6), rgba(7, 24, 42, 0.6));
+  overflow: hidden;
+}
+.ftl-get-card::after {
+  content: '';
+  position: absolute;
+  width: 260px;
+  height: 260px;
+  right: -90px;
+  top: -90px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 163, 30, 0.18), transparent 70%);
+  pointer-events: none;
+}
+.ftl-get-card h3 {
+  font-size: 24px;
+  font-weight: 800;
+}
+.ftl-get-card p {
+  color: var(--muted);
+  line-height: 1.6;
+  font-size: 15px;
+}
+.ftl-get-card .ftl-btn {
+  margin-top: 6px;
+}
+.ftl-get-icon {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  background: rgba(76, 201, 240, 0.14);
+  color: var(--cyan);
+}
+.ftl-get-icon--alt {
+  background: rgba(52, 211, 153, 0.14);
+  color: var(--green);
+}
+.ftl-get-icon svg {
+  width: 26px;
+  height: 26px;
+}
+.ftl-apk-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  margin: 4px 0 0;
+  font-size: 13px;
+  width: 100%;
+}
+.ftl-apk-meta dt {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-weight: 700;
+}
+.ftl-apk-meta dd {
+  margin: 2px 0 0;
+  font-weight: 700;
+}
+.ftl-apk-sha {
+  flex-basis: 100%;
+  min-width: 0;
+}
+.ftl-apk-sha code {
+  display: block;
+  font-size: 11px;
+  font-weight: 500;
+  color: #c9d6e8;
+  word-break: break-all;
+}
+.ftl-fine {
+  font-size: 12.5px !important;
+}
+
+/* ---------- Footer ---------- */
+.ftl-footer {
+  padding: 32px 0 40px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 13.5px;
+}
+.ftl-footer-inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.ftl-footer a:hover {
+  color: var(--ink);
+}
+
+/* ---------- Keyframes ---------- */
+@keyframes ftl-rise {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes ftl-fade {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes ftl-stage-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -42%) scale(calc(var(--s) * 0.92)) rotateX(30deg) rotateY(-40deg);
+  }
+}
+@keyframes ftl-bob {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  50% {
+    translate: 0 -10px;
+  }
+}
+@keyframes ftl-float {
+  to {
+    transform: translate(60px, 40px) scale(1.1);
+  }
+}
+@keyframes ftl-grid-move {
+  to {
+    background-position: 0 56px;
+  }
+}
+@keyframes ftl-shine {
+  to {
+    background-position: 100% 0;
+  }
+}
+@keyframes ftl-ping {
+  0% {
+    box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.6);
+    opacity: 1;
+  }
+  80%,
+  100% {
+    box-shadow: 0 0 0 10px rgba(52, 211, 153, 0);
+  }
+}
+@keyframes ftl-dash {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+@keyframes ftl-grow {
+  from {
+    transform: scaleY(0);
+  }
+}
+@keyframes ftl-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes ftl-radar {
+  from {
+    transform: scale(0.6);
+    opacity: 1;
+  }
+  to {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+@keyframes ftl-marquee {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+/* ---------- Reduced motion: static, fully visible, no continuous animation ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .ftl *,
+  .ftl *::before,
+  .ftl *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+  .ftl [data-reveal] {
+    opacity: 1;
+    transform: none;
+  }
+  .ftl-marquee-track {
+    flex-wrap: wrap;
+    justify-content: center;
+    width: auto;
+    row-gap: 10px;
+  }
+  .ftl-marquee-track span[aria-hidden='true'] {
+    display: none;
+  }
+}
+.ftl.ftl--still .ftl-card.is-in {
+  transform: none;
+}
+
+html:has(.ftl) {
+  scroll-behavior: smooth;
+}
+@media (prefers-reduced-motion: reduce) {
+  html:has(.ftl) {
+    scroll-behavior: auto;
+  }
+}
