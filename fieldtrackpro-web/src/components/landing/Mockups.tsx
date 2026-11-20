@@ -1,239 +1,171 @@
 import React from 'react';
 import {
   BarChart3,
+  Bell,
   CalendarDays,
-  Camera,
-  CheckCircle2,
+  ClipboardCheck,
   ClipboardList,
-  Home,
+  FileText,
   IndianRupee,
   LayoutDashboard,
+  ListChecks,
+  Lock,
   Map as MapIcon,
   MapPin,
-  Navigation,
-  RefreshCw,
+  Settings,
+  ShieldCheck,
+  Store,
+  UserCog,
   Users,
 } from 'lucide-react';
 
 /*
- * Illustrative, hand-built mockups of the FieldTrack Pro admin dashboard and the
- * Android app. Every name and figure here is sample copy for the marketing page,
- * not data from the system.
+ * Illustrative mockup of the FieldTrack Pro admin dashboard for the public landing page.
+ * Every company name, count and amount below is DEMO copy, not data from the system.
  */
 
-const NAV = [
-  { icon: LayoutDashboard, label: 'Dashboard', active: true },
+const NAV: { icon: React.ElementType; label: string }[] = [
+  { icon: LayoutDashboard, label: 'Dashboard' },
+  { icon: CalendarDays, label: 'Visit Planning' },
   { icon: Users, label: 'Employees' },
-  { icon: MapIcon, label: 'Live map' },
-  { icon: CalendarDays, label: 'Visit plan' },
-  { icon: IndianRupee, label: 'Collections' },
-  { icon: BarChart3, label: 'Reports' },
+  { icon: ListChecks, label: 'Employee Daily Logs' },
+  { icon: MapIcon, label: 'Territories' },
+  { icon: Store, label: 'Customers' },
+  { icon: ClipboardCheck, label: 'Outlet Verification' },
+  { icon: MapPin, label: 'Outlet Mapping' },
+  { icon: CalendarDays, label: 'Visits' },
+  { icon: UserCog, label: 'Ad-hoc Review' },
+  { icon: MapIcon, label: 'Map' },
+  { icon: ClipboardList, label: 'Customer Requirements' },
+  { icon: FileText, label: 'Requirement Forms' },
+  { icon: IndianRupee, label: 'Payment Collections' },
+  { icon: BarChart3, label: 'Reports & Collections' },
 ];
 
-const KPIS = [
-  { label: 'Visits today', value: '128', delta: '+12%' },
-  { label: 'GPS verified', value: '97%', delta: '+3%' },
-  { label: 'Collected', value: '₹4.8L', delta: '+18%' },
-  { label: 'Open requests', value: '23', delta: '−5' },
+const FILTERS = [
+  ['Period / Month', 'Current Live Data'],
+  ['Brand', 'All Brands'],
+  ['Zone (Territory)', 'All Zones'],
+  ['Area', 'All Areas'],
+  ['FOS / Field Officer', 'All Field Officers'],
+  ['Overdue Ageing', 'All Ageing Buckets'],
 ];
 
-const BARS = [42, 64, 51, 78, 69, 88, 74];
+const KPI_ROW_1 = [
+  { label: 'Field Representatives', value: '24', note: 'Demo employee profiles', icon: Users },
+  { label: 'Customer Accounts', value: '1,250', note: 'Demo geofence zones', icon: Store },
+  { label: 'Visits', value: '86', note: '72 completed, 14 active', icon: CalendarDays },
+  { label: 'Geo Compliance', value: '96%', note: 'Check-ins inside geofence', icon: MapPin },
+];
 
-/** Mini map: stylised roads, an animated route and pulsing visit pins. */
-export const MiniMap: React.FC<{ className?: string }> = ({ className = '' }) => (
-  <div className={`ftl-map ${className}`}>
-    <svg viewBox="0 0 300 170" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
-      <defs>
-        <pattern id="ftl-grid" width="20" height="20" patternUnits="userSpaceOnUse">
-          <path d="M20 0H0V20" fill="none" stroke="rgba(148,175,210,.10)" strokeWidth="1" />
-        </pattern>
-      </defs>
-      <rect width="300" height="170" fill="url(#ftl-grid)" />
-      <path d="M0 120 C60 110 90 60 150 70 S250 30 300 40" stroke="rgba(148,175,210,.28)" strokeWidth="7" fill="none" />
-      <path d="M40 0 C60 60 50 120 80 170" stroke="rgba(148,175,210,.2)" strokeWidth="5" fill="none" />
-      <path d="M210 0 C200 60 230 110 220 170" stroke="rgba(148,175,210,.2)" strokeWidth="5" fill="none" />
-      <path
-        className="ftl-route"
-        d="M48 132 C80 118 98 82 140 76 S205 64 228 48 S262 36 272 30"
-        stroke="#ffa31e"
-        strokeWidth="2.5"
-        strokeDasharray="6 6"
-        fill="none"
-      />
-    </svg>
-    {[
-      { x: 16, y: 77, c: 'ok' },
-      { x: 46, y: 45, c: 'ok' },
-      { x: 76, y: 28, c: 'live' },
-      { x: 90, y: 18, c: 'next' },
-    ].map((p, i) => (
-      <span key={i} className={`ftl-pin ftl-pin--${p.c}`} style={{ left: `${p.x}%`, top: `${p.y}%` }}>
-        <MapPin aria-hidden="true" />
-      </span>
-    ))}
-  </div>
-);
+const KPI_ROW_2 = [
+  { label: 'Total Sales', value: '₹12,34,567.00', note: 'Demo consolidated billing', tone: 'dark' },
+  { label: 'Total Collection', value: '₹9,87,654.00', note: 'Demo realised payments', tone: 'dark' },
+  { label: 'Market Outstanding', value: '₹2,46,913.00', note: 'Demo uncollected balance', tone: 'amber' },
+  { label: 'Critical (>90d overdue)', value: '₹45,678.00', note: 'Demo delinquent balance', tone: 'red' },
+];
 
-export const DesktopScreen: React.FC = () => (
-  <div className="ftl-desk-ui">
-    <aside className="ftl-desk-side">
-      <div className="ftl-desk-logo">
-        <span className="ftl-logo-dot" /> FieldTrack
+export const DashboardScreen: React.FC = () => (
+  <div className="ftl-db">
+    <aside className="ftl-db-side">
+      <div className="ftl-db-brand">
+        <span className="ftl-db-brand-mark">
+          <ShieldCheck aria-hidden="true" />
+        </span>
+        <div>
+          <b>FieldTrack Pro</b>
+          <small>Admin Dashboard</small>
+        </div>
       </div>
-      {NAV.map(({ icon: Icon, label, active }) => (
-        <div key={label} className={`ftl-desk-nav${active ? ' is-active' : ''}`}>
+      {NAV.map(({ icon: Icon, label }, i) => (
+        <div key={label} className={`ftl-db-nav${i === 0 ? ' is-active' : ''}`}>
           <Icon aria-hidden="true" />
           <span>{label}</span>
         </div>
       ))}
-    </aside>
-    <div className="ftl-desk-main">
-      <div className="ftl-desk-top">
-        <div>
-          <div className="ftl-desk-kicker">Admin dashboard</div>
-          <div className="ftl-desk-title">Field operations · Today</div>
-        </div>
-        <div className="ftl-desk-sync">
-          <RefreshCw aria-hidden="true" /> Tally synced
-        </div>
+      <div className="ftl-db-nav ftl-db-nav--end">
+        <Settings aria-hidden="true" />
+        <span>Settings</span>
       </div>
-      <div className="ftl-desk-kpis">
-        {KPIS.map((k) => (
-          <div key={k.label} className="ftl-kpi">
-            <div className="ftl-kpi-label">{k.label}</div>
-            <div className="ftl-kpi-value">{k.value}</div>
-            <div className="ftl-kpi-delta">{k.delta}</div>
+    </aside>
+    <div className="ftl-db-main">
+      <div className="ftl-db-top">
+        <span className="ftl-db-online">
+          <i /> API Online
+        </span>
+        <Bell aria-hidden="true" />
+        <span className="ftl-db-role">Super Admin</span>
+      </div>
+      <h4 className="ftl-db-title">Executive Dashboard &amp; BI</h4>
+      <p className="ftl-db-sub">Unified business intelligence, multi-brand analytics and the live field operations command center.</p>
+
+      <div className="ftl-db-banner">
+        <span className="ftl-db-banner-ico">
+          <CalendarDays aria-hidden="true" />
+        </span>
+        <div>
+          <b>
+            Monthly Close Required <em>Action item</em>
+          </b>
+          <span>The previous month is ready for review and closing.</span>
+        </div>
+        <span className="ftl-db-btn ftl-db-btn--ghost">Review month</span>
+        <span className="ftl-db-btn">
+          <Lock aria-hidden="true" /> Close &amp; lock
+        </span>
+      </div>
+
+      <div className="ftl-db-banner ftl-db-banner--soft">
+        <span className="ftl-db-banner-ico">
+          <ShieldCheck aria-hidden="true" />
+        </span>
+        <div>
+          <b>
+            Financial Source of Truth: Tally Prime <em className="is-ok">Agent standby</em>
+          </b>
+          <span>Company: Demo Distributors Pvt Ltd · Last sync: a few minutes ago</span>
+        </div>
+        <span className="ftl-db-btn ftl-db-btn--ghost">Sync health</span>
+      </div>
+
+      <div className="ftl-db-filter-head">Dashboard BI filter engine</div>
+      <div className="ftl-db-filters">
+        {FILTERS.map(([k, v]) => (
+          <div key={k}>
+            <small>{k}</small>
+            <span>{v} ▾</span>
           </div>
         ))}
       </div>
-      <div className="ftl-desk-panels">
-        <div className="ftl-panel">
-          <div className="ftl-panel-title">Live field map</div>
-          <MiniMap />
-        </div>
-        <div className="ftl-panel">
-          <div className="ftl-panel-title">Collections · 7 days</div>
-          <div className="ftl-bars">
-            {BARS.map((h, i) => (
-              <span key={i} style={{ '--h': `${h}%`, '--i': i } as React.CSSProperties} />
-            ))}
+
+      <div className="ftl-db-kpis">
+        {KPI_ROW_1.map(({ label, value, note, icon: Icon }) => (
+          <div key={label} className="ftl-db-kpi">
+            <div className="ftl-db-kpi-head">
+              <small>{label}</small>
+              <span className="ftl-db-kpi-ico">
+                <Icon aria-hidden="true" />
+              </span>
+            </div>
+            <b>{value}</b>
+            <span>{note}</span>
           </div>
-        </div>
+        ))}
+      </div>
+      <div className="ftl-db-kpis">
+        {KPI_ROW_2.map(({ label, value, note, tone }) => (
+          <div key={label} className="ftl-db-kpi">
+            <div className="ftl-db-kpi-head">
+              <small>{label}</small>
+              <span className={`ftl-db-kpi-ico is-${tone}`}>
+                <IndianRupee aria-hidden="true" />
+              </span>
+            </div>
+            <b>{value}</b>
+            <span>{note}</span>
+          </div>
+        ))}
       </div>
     </div>
   </div>
 );
-
-type PhoneView = 'route' | 'checkin' | 'capture' | 'sync';
-
-const VISITS = [
-  { name: 'Outlet 0214 · Market Rd', time: '09:30', status: 'Done' },
-  { name: 'Outlet 0388 · Station Sq', time: '11:00', status: 'Now' },
-  { name: 'Outlet 0521 · Ring Rd', time: '12:45', status: 'Next' },
-  { name: 'Outlet 0607 · Bazaar', time: '14:15', status: 'Next' },
-];
-
-const StatusBar: React.FC = () => (
-  <div className="ftl-ph-status">
-    <span>9:41</span>
-    <span className="ftl-ph-notch" />
-    <span>5G ▮▮▮</span>
-  </div>
-);
-
-const BottomNav: React.FC = () => (
-  <div className="ftl-ph-nav">
-    <Home aria-hidden="true" />
-    <CalendarDays aria-hidden="true" className="is-active" />
-    <MapIcon aria-hidden="true" />
-    <ClipboardList aria-hidden="true" />
-  </div>
-);
-
-/** Android app screens. `view` selects which one is shown (used by the scroll story). */
-export const PhoneScreen: React.FC<{ view?: PhoneView }> = ({ view = 'route' }) => (
-  <div className="ftl-ph-ui">
-    <StatusBar />
-    {view === 'route' && (
-      <div className="ftl-ph-body" key="route">
-        <div className="ftl-ph-kicker">Today’s route</div>
-        <div className="ftl-ph-title">4 visits planned</div>
-        <div className="ftl-ph-progress">
-          <span style={{ width: '38%' }} />
-        </div>
-        {VISITS.map((v) => (
-          <div key={v.name} className={`ftl-ph-visit is-${v.status.toLowerCase()}`}>
-            <div>
-              <div className="ftl-ph-visit-name">{v.name}</div>
-              <div className="ftl-ph-visit-time">{v.time}</div>
-            </div>
-            <span className="ftl-ph-pill">{v.status}</span>
-          </div>
-        ))}
-        <button type="button" tabIndex={-1} className="ftl-ph-cta">
-          <Navigation aria-hidden="true" /> Check in here
-        </button>
-      </div>
-    )}
-    {view === 'checkin' && (
-      <div className="ftl-ph-body" key="checkin">
-        <div className="ftl-ph-kicker">Check-in</div>
-        <div className="ftl-ph-title">Outlet 0388</div>
-        <div className="ftl-ph-radar">
-          <span className="ftl-ph-ring" />
-          <span className="ftl-ph-ring ftl-ph-ring--2" />
-          <MapPin aria-hidden="true" />
-        </div>
-        <div className="ftl-ph-ok">
-          <CheckCircle2 aria-hidden="true" /> Inside geofence · 12 m
-        </div>
-        <div className="ftl-ph-meta">GPS accuracy ±4 m · 11:02</div>
-      </div>
-    )}
-    {view === 'capture' && (
-      <div className="ftl-ph-body" key="capture">
-        <div className="ftl-ph-kicker">Visit · Outlet 0388</div>
-        <div className="ftl-ph-title">Order & payment</div>
-        <div className="ftl-ph-photo">
-          <Camera aria-hidden="true" /> Shelf photo attached
-        </div>
-        <div className="ftl-ph-row">
-          <span>Order items</span>
-          <b>14</b>
-        </div>
-        <div className="ftl-ph-row">
-          <span>Payment · UPI</span>
-          <b>₹ 48,200</b>
-        </div>
-        <div className="ftl-ph-row">
-          <span>Requirement</span>
-          <b>2 new SKUs</b>
-        </div>
-        <button type="button" tabIndex={-1} className="ftl-ph-cta">
-          Submit visit
-        </button>
-      </div>
-    )}
-    {view === 'sync' && (
-      <div className="ftl-ph-body" key="sync">
-        <div className="ftl-ph-kicker">Sync</div>
-        <div className="ftl-ph-title">All caught up</div>
-        <div className="ftl-ph-synced">
-          <RefreshCw aria-hidden="true" />
-        </div>
-        <div className="ftl-ph-row">
-          <span>Visits uploaded</span>
-          <b>4 / 4</b>
-        </div>
-        <div className="ftl-ph-row">
-          <span>Receipt sent to Tally</span>
-          <b className="ftl-ok-text">Matched</b>
-        </div>
-        <div className="ftl-ph-meta">Worked offline? The queue syncs when you’re back online.</div>
-      </div>
-    )}
-    <BottomNav />
-  </div>
-);
-
-export type { PhoneView };

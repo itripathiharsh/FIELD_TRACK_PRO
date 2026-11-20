@@ -1,12 +1,27 @@
 import React, { useEffect, useRef } from 'react';
-import { CheckCircle2, IndianRupee, RefreshCw } from 'lucide-react';
-import { DesktopScreen, PhoneScreen } from './Mockups';
+import { BarChart3, ClipboardList, MapPin, Users } from 'lucide-react';
+import { DashboardScreen } from './Mockups';
+
+/** Pie chart with real depth: the same conic-gradient disc stacked in Z. */
+const Pie3D: React.FC = () => (
+  <div className="ftl-pie" aria-hidden="true">
+    {Array.from({ length: 12 }, (_, i) => (
+      <span key={i} className={i === 11 ? 'is-top' : ''} style={{ '--z': `${i * 2}px` } as React.CSSProperties} />
+    ))}
+    {Array.from({ length: 12 }, (_, i) => (
+      <span
+        key={`s${i}`}
+        className={`ftl-pie-slice${i === 11 ? ' is-top' : ''}`}
+        style={{ '--z': `${i * 2 + 10}px` } as React.CSSProperties}
+      />
+    ))}
+  </div>
+);
 
 /**
- * Hero 3D scene: a desktop monitor and a phone built with CSS 3D transforms.
- * The stage follows the pointer and flattens as the page scrolls. Motion is written
- * to CSS variables in a rAF loop, never through React state. With reduced motion the
- * scene renders at a fixed angle and no listeners are attached.
+ * Hero 3D scene: a laptop showing the admin dashboard on a glowing pedestal, with glossy
+ * floating tiles and a 3D pie chart. Pointer and scroll parallax are written to CSS
+ * variables in a rAF loop. With reduced motion nothing moves and no listeners attach.
  */
 const DeviceScene: React.FC<{ reduced: boolean }> = ({ reduced }) => {
   const sceneRef = useRef<HTMLDivElement>(null);
@@ -22,13 +37,12 @@ const DeviceScene: React.FC<{ reduced: boolean }> = ({ reduced }) => {
     const finePointer = window.matchMedia?.('(pointer: fine)').matches ?? true;
 
     const tick = () => {
-      // Ease toward the pointer target for a smooth, weighty feel.
-      cx += (tx - cx) * 0.08;
-      cy += (ty - cy) * 0.08;
-      const scrollP = Math.min(1, window.scrollY / Math.max(1, window.innerHeight));
+      cx += (tx - cx) * 0.07;
+      cy += (ty - cy) * 0.07;
+      const sp = Math.min(1, window.scrollY / Math.max(1, window.innerHeight));
       el.style.setProperty('--rx', cy.toFixed(3));
       el.style.setProperty('--ry', cx.toFixed(3));
-      el.style.setProperty('--sp', scrollP.toFixed(3));
+      el.style.setProperty('--sp', sp.toFixed(3));
       frame = Math.abs(tx - cx) > 0.001 || Math.abs(ty - cy) > 0.001 ? requestAnimationFrame(tick) : 0;
     };
     const kick = () => {
@@ -58,52 +72,40 @@ const DeviceScene: React.FC<{ reduced: boolean }> = ({ reduced }) => {
   }, [reduced]);
 
   return (
-    <div
-      ref={sceneRef}
-      className="ftl-scene"
-      role="img"
-      aria-label="FieldTrack Pro on a desktop dashboard and on an Android phone"
-    >
+    <div ref={sceneRef} className="ftl-scene" role="img" aria-label="FieldTrack Pro admin dashboard on a laptop">
       <div className="ftl-stage">
-        <div className="ftl-desktop">
-          <div className="ftl-desktop-bezel">
-            <DesktopScreen />
-            <span className="ftl-glare" />
-          </div>
-          <div className="ftl-desktop-neck" />
-          <div className="ftl-desktop-base" />
+        <div className="ftl-pedestal" aria-hidden="true">
+          <span className="ftl-pedestal-top" />
+          <span className="ftl-pedestal-rim" />
         </div>
 
-        <div className="ftl-phone">
-          <div className="ftl-phone-body">
-            <PhoneScreen />
-            <span className="ftl-glare" />
+        <div className="ftl-laptop">
+          <div className="ftl-lid">
+            <div className="ftl-lid-bezel">
+              <DashboardScreen />
+              <span className="ftl-glare" />
+            </div>
+          </div>
+          <div className="ftl-deck" aria-hidden="true">
+            <span className="ftl-keys" />
+            <span className="ftl-pad" />
           </div>
         </div>
 
-        <div className="ftl-chip ftl-chip--1">
-          <CheckCircle2 aria-hidden="true" />
-          <div>
-            <b>Check-in verified</b>
-            <span>Inside geofence · 12 m</span>
-          </div>
+        <div className="ftl-tile ftl-tile--team" aria-hidden="true">
+          <Users />
         </div>
-        <div className="ftl-chip ftl-chip--2">
-          <IndianRupee aria-hidden="true" />
-          <div>
-            <b>₹ 48,200 collected</b>
-            <span>UPI · receipt attached</span>
-          </div>
+        <div className="ftl-tile ftl-tile--chart" aria-hidden="true">
+          <BarChart3 />
         </div>
-        <div className="ftl-chip ftl-chip--3">
-          <RefreshCw aria-hidden="true" />
-          <div>
-            <b>Synced to Tally</b>
-            <span>Voucher matched</span>
-          </div>
+        <div className="ftl-tile ftl-tile--pin" aria-hidden="true">
+          <MapPin />
         </div>
+        <div className="ftl-tile ftl-tile--clip" aria-hidden="true">
+          <ClipboardList />
+        </div>
+        <Pie3D />
       </div>
-      <div className="ftl-floor" aria-hidden="true" />
     </div>
   );
 };

@@ -51,7 +51,6 @@ describe('Routing - unauthenticated', () => {
     await waitFor(() => expect(screen.getByTestId('landing-use-web')).toBeInTheDocument());
     expect(screen.getByTestId('landing-use-web')).toHaveAttribute('href', '/login');
     expect(screen.queryByText('Media Vault')).not.toBeInTheDocument();
-    expect(screen.queryByText('Admin Dashboard')).not.toBeInTheDocument();
     expect(screen.queryByText('Employee Portal')).not.toBeInTheDocument();
   });
 
