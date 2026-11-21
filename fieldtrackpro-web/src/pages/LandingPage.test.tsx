@@ -57,4 +57,22 @@ describe('LandingPage', () => {
     await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
     expect(screen.queryByText(/SHA-256/i)).not.toBeInTheDocument();
   });
+
+  it('shows the static map poster and no WebGL canvas when WebGL is unavailable', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('', { status: 404 }));
+    const { container } = renderLanding();
+    expect(container.querySelector('.ftl-poster')).not.toBeNull();
+    await new Promise((r) => setTimeout(r, 400));
+    expect(container.querySelector('canvas')).toBeNull();
+    expect(container.querySelector('.ftl-hero')?.classList.contains('is-3d')).toBe(false);
+  });
+
+  it('renders the static (reduced-motion) experience with ?motion=off', () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('', { status: 404 }));
+    window.history.pushState({}, '', '/?motion=off');
+    const { container } = renderLanding();
+    expect(container.querySelector('.ftl')?.classList.contains('ftl--still')).toBe(true);
+    expect(container.querySelector('.ftl-hero')?.classList.contains('is-static')).toBe(true);
+    window.history.pushState({}, '', '/');
+  });
 });

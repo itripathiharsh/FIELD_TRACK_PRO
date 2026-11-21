@@ -169,3 +169,51 @@ export const DashboardScreen: React.FC = () => (
     </div>
   </div>
 );
+
+const PHONE_VISITS = [
+  { name: 'Outlet 0214 · Market Rd', time: '09:30', state: 'done' },
+  { name: 'Outlet 0388 · Station Sq', time: '11:00', state: 'now' },
+  { name: 'Outlet 0521 · Ring Rd', time: '12:45', state: 'next' },
+  { name: 'Outlet 0607 · Old Bazaar', time: '14:15', state: 'next' },
+];
+
+/** Android app home screen (demo data), sized 300 x 620 CSS px. */
+export const PhoneScreen: React.FC = () => (
+  <div className="ftl-ph">
+    <div className="ftl-ph-status">
+      <span>9:41</span>
+      <i className="ftl-ph-notch" />
+      <span>5G</span>
+    </div>
+    <div className="ftl-ph-head">
+      <small>Today · Rep 07</small>
+      <b>4 visits planned</b>
+      <div className="ftl-ph-bar">
+        <span style={{ width: '38%' }} />
+      </div>
+    </div>
+    <div className="ftl-ph-map">
+      <svg viewBox="0 0 280 120" aria-hidden="true">
+        <path d="M0 40H280M0 84H280M60 0V120M150 0V120M228 0V120" stroke="rgba(255,255,255,.08)" strokeWidth="6" />
+        <path d="M20 100 L60 100 L60 40 L150 40 L150 84 L228 84 L228 14" fill="none" stroke="#ff9f2e" strokeWidth="3" strokeLinejoin="round" />
+        <circle cx="150" cy="62" r="6" fill="#ff9f2e" />
+        <circle cx="150" cy="62" r="14" fill="none" stroke="#ff9f2e" strokeOpacity=".4" strokeWidth="2" />
+      </svg>
+    </div>
+    <div className="ftl-ph-list">
+      {PHONE_VISITS.map((v) => (
+        <div key={v.name} className={`ftl-ph-row is-${v.state}`}>
+          <i />
+          <div>
+            <b>{v.name}</b>
+            <small>{v.time}</small>
+          </div>
+          <span>{v.state === 'done' ? 'Done' : v.state === 'now' ? 'Now' : 'Next'}</span>
+        </div>
+      ))}
+    </div>
+    <div className="ftl-ph-cta">
+      <MapPin aria-hidden="true" /> Check in · inside geofence 12 m
+    </div>
+  </div>
+);
