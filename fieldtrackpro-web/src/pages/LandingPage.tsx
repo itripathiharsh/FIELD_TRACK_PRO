@@ -1,37 +1,11 @@
-import React, { Suspense, lazy, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import {
-  ArrowRight,
-  BarChart3,
-  Building2,
-  CalendarDays,
-  Check,
-  ChevronDown,
-  ClipboardList,
-  Download,
-  Fingerprint,
-  IndianRupee,
-  KeyRound,
-  Layers,
-  Lock,
-  MapPin,
-  Menu,
-  Monitor,
-  RefreshCw,
-  ScrollText,
-  ShieldCheck,
-  Smartphone,
-  Users,
-  WifiOff,
-  X,
-  Zap,
-} from 'lucide-react';
+import { ArrowRight, Download, Menu, Plus, X } from 'lucide-react';
 import { APK_DOWNLOAD_FILENAME, APK_DOWNLOAD_URL, APK_META_PATH, formatApkMeta } from '../config/apk';
-import { usePrefersReducedMotion, useReveal } from '../components/landing/motion';
+import { Hero } from '../components/landing/Hero';
+import { Bento } from '../components/landing/Bento';
+import { usePrefersReducedMotion, useReveal, useScrollProgress, useSmoothScroll } from '../components/landing/motion';
 import '../components/landing/landing.css';
-
-// The 3D hero scene is its own chunk; the hero copy and CTAs paint first.
-const DeviceScene = lazy(() => import('../components/landing/DeviceScene'));
 
 interface ApkMetaFull {
   versionName?: string;
@@ -40,77 +14,50 @@ interface ApkMetaFull {
   sha256?: string;
 }
 
-const NAV_LINKS = [
-  { id: 'home', label: 'Home' },
-  { id: 'features', label: 'Features' },
-  { id: 'solutions', label: 'Solutions' },
-  { id: 'how', label: 'How It Works' },
-  { id: 'security', label: 'Security' },
-  { id: 'faq', label: 'FAQ' },
-];
+const FONT_HREF =
+  'https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap';
 
-const STRIP = [
-  { icon: Zap, title: 'Field Team Management', body: 'Plan, assign and track field activities.' },
-  { icon: Layers, title: 'Outlet & Territory Control', body: 'Manage outlets, zones and coverage.' },
-  { icon: BarChart3, title: 'Collections & Outstanding', body: 'Track payments and overdue in real time.' },
-  { icon: ShieldCheck, title: 'Tally Integration', body: 'Sync financial data with Tally Prime.' },
-];
-
-const FEATURES = [
-  { icon: MapPin, title: 'GPS-verified visits', body: 'Check-ins are accepted only inside the outlet’s geofence, with accuracy and time stamped on every visit.' },
-  { icon: CalendarDays, title: 'Monthly visit planning', body: 'Plan routes per territory and rep, then track planned versus actual visits day by day.' },
-  { icon: IndianRupee, title: 'Collections & payments', body: 'Capture cash, cheque and UPI payments with proof photos, reviewed by admins before they post.' },
-  { icon: RefreshCw, title: 'Tally reconciliation', body: 'Invoices, vouchers and receipts stay in step with Tally Prime, with ageing built from the ledger.' },
-  { icon: WifiOff, title: 'Works offline', body: 'Reps keep working without signal; visits, photos and payments queue and sync when they reconnect.' },
-  { icon: ClipboardList, title: 'Forms & requirements', body: 'Custom forms and customer requirements captured on the visit and routed to the back office.' },
-  { icon: BarChart3, title: 'Executive BI dashboard', body: 'Filter by brand, zone, area, field officer and overdue ageing to see the whole business at once.' },
-  { icon: Users, title: 'Team & daily logs', body: 'Employee profiles, daily activity logs and ad-hoc visit review for every field officer.' },
-];
-
-const SOLUTIONS = [
-  {
-    icon: Building2,
-    title: 'Owners & admins',
-    body: 'One command center for every brand, zone and rep.',
-    points: ['Multi-brand BI with drill-down filters', 'Territory, area and outlet master data', 'Monthly close and lock workflow'],
-  },
-  {
-    icon: IndianRupee,
-    title: 'Accountants',
-    body: 'Collections and outstanding you can trust.',
-    points: ['Read-only access to every financial report', 'Payment proof review before posting', 'Ageing buckets reconciled with Tally Prime'],
-  },
-  {
-    icon: Smartphone,
-    title: 'Field reps',
-    body: 'A focused Android app for the day on the road.',
-    points: ['Today’s route from the visit plan', 'Geofenced check-in, orders and payments', 'Offline queue that syncs automatically'],
-  },
+const NAV = [
+  { href: '#product', label: 'Product' },
+  { href: '#how', label: 'How it works' },
+  { href: '#security', label: 'Security' },
+  { href: '#faq', label: 'FAQ' },
 ];
 
 const STEPS = [
-  { title: 'Plan', body: 'Admins build the monthly visit plan by territory, outlet and field officer.' },
-  { title: 'Visit & verify', body: 'Reps check in on site; the app confirms they are inside the outlet’s geofence.' },
-  { title: 'Capture', body: 'Orders, payments with proof, photos and customer requirements in one flow.' },
-  { title: 'Sync & reconcile', body: 'Data lands on the dashboard in real time and is matched against Tally Prime.' },
+  {
+    k: 'Plan',
+    title: 'Plan the month by territory.',
+    body: 'Admins assign outlets to field officers and build the monthly visit plan. Each rep wakes up to today’s route on their phone.',
+  },
+  {
+    k: 'Verify',
+    title: 'Verify every visit on site.',
+    body: 'The app only opens a visit inside the outlet’s geofence, then captures orders, payments with proof, photos and requirements.',
+  },
+  {
+    k: 'Reconcile',
+    title: 'Reconcile against Tally Prime.',
+    body: 'Collections land on the dashboard in real time and are matched to vouchers in Tally, so outstanding and ageing stay true.',
+  },
 ];
 
 const SECURITY = [
-  { icon: Fingerprint, title: 'Role-based access', body: 'Super admin, admin and employee roles; employees only ever see their own customers and visits.' },
-  { icon: KeyRound, title: 'Re-authentication for role changes', body: 'Promoting or demoting a user requires the super admin to confirm their password again.' },
-  { icon: MapPin, title: 'Verified location', body: 'Visits are geofenced and time-stamped, so every check-in is backed by GPS evidence.' },
-  { icon: Lock, title: 'Encrypted in transit and on device', body: 'HTTPS end to end, and the Android app keeps credentials in the device’s secure keystore.' },
-  { icon: ScrollText, title: 'Approval trail', body: 'Payments, ad-hoc visits and outlet changes go through review, with who approved what and when.' },
-  { icon: ShieldCheck, title: 'Read-only Tally link', body: 'The Tally agent reads financial data for reconciliation; field users never touch the ledger.' },
+  ['Roles', 'Super admin, admin and employee. Employees only ever see their own profile, customers, visits and submissions.'],
+  ['Role changes', 'Promoting or demoting a user requires the super admin to re-authenticate.'],
+  ['Location', 'Visits are geofenced and time-stamped; every check-in carries GPS accuracy evidence.'],
+  ['Transport', 'HTTPS end to end. The Android app keeps credentials in the device keystore.'],
+  ['Approvals', 'Payments, ad-hoc visits and outlet changes are reviewed, with who approved what and when.'],
+  ['Ledger', 'The Tally agent reads financial data for reconciliation; field users never write to the ledger.'],
 ];
 
 const FAQS = [
-  { q: 'Who is FieldTrack Pro for?', a: 'Distribution and FMCG businesses that run field sales teams across many outlets and brands, and need visits, collections and accounts to line up.' },
-  { q: 'Does it work without mobile signal?', a: 'Yes. The Android app queues visits, photos and payments offline and syncs them automatically once the device is back online.' },
-  { q: 'How does the Tally integration work?', a: 'A small agent on your Tally server shares invoices, vouchers and receipts with FieldTrack Pro so collections and outstanding balances are reconciled against Tally Prime.' },
-  { q: 'How do I install the Android app?', a: 'Tap “Download app” on your Android phone (Android 8.0 or later), open the downloaded file and allow your browser to install apps when Android asks. Then sign in with the account your admin created.' },
-  { q: 'What can each role see?', a: 'Admins see every employee, territory, outlet and report. Accountants get read-only financial reports. Employees see only their own profile, assigned customers, visits and submissions.' },
-  { q: 'Can I use it from a computer?', a: 'Yes. Admins and accountants use the web dashboard in any modern browser: choose “Use on web” and sign in.' },
+  ['Who is FieldTrack Pro for?', 'Distribution and FMCG businesses running field sales teams across many outlets and brands, who need visits, collections and accounts to agree.'],
+  ['Does it work without mobile signal?', 'Yes. The Android app queues visits, photos and payments offline and syncs them automatically when the phone is back online.'],
+  ['How does the Tally integration work?', 'A small agent on your Tally server shares invoices, vouchers and receipts, so collections and outstanding balances reconcile against Tally Prime.'],
+  ['How do I install the Android app?', 'On an Android phone (8.0 or later), tap “Download app”, open the file and allow your browser to install apps when Android asks. Sign in with the account your admin created.'],
+  ['What can each role see?', 'Admins see every employee, territory, outlet and report; accountants get read-only financial reports; employees see only their own work.'],
+  ['Can I use it from a computer?', 'Yes. Admins and accountants use the web dashboard in any modern browser: choose “Use on web” and sign in.'],
 ];
 
 function formatSize(bytes?: number): string | null {
@@ -134,72 +81,145 @@ function useApkMeta(): ApkMetaFull | null {
   return meta;
 }
 
-/** Tracks which section is in view so the nav can underline it. */
-function useActiveSection(ids: string[]): string {
-  const [active, setActive] = useState(ids[0]);
+/** Load the landing page's typefaces only on this page. */
+function usePageFonts() {
   useEffect(() => {
-    if (typeof IntersectionObserver === 'undefined') return;
-    const io = new IntersectionObserver(
-      (entries) => {
-        const visible = entries.filter((e) => e.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio);
-        if (visible[0]) setActive(visible[0].target.id);
-      },
-      { rootMargin: '-40% 0px -55% 0px', threshold: [0, 0.25, 0.5] },
-    );
-    ids.forEach((id) => {
-      const el = document.getElementById(id);
-      if (el) io.observe(el);
-    });
-    return () => io.disconnect();
-  }, [ids]);
-  return active;
+    if (document.querySelector(`link[data-ftl-fonts]`)) return;
+    const l = document.createElement('link');
+    l.rel = 'stylesheet';
+    l.href = FONT_HREF;
+    l.dataset.ftlFonts = '1';
+    document.head.appendChild(l);
+  }, []);
 }
 
-const Logo: React.FC = () => (
-  <span className="ftl-brand">
-    <span className="ftl-brand-mark" aria-hidden="true">
-      <ShieldCheck />
-    </span>
+const Wordmark: React.FC = () => (
+  <span className="ftl-wordmark">
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 2.5 20 6v6c0 4.6-3.3 8.4-8 9.5-4.7-1.1-8-4.9-8-9.5V6l8-3.5Z" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="12" cy="11" r="2.6" fill="#ff9f2e" />
+    </svg>
     FieldTrack Pro
   </span>
 );
 
-const DownloadButton: React.FC<{ meta: ApkMetaFull | null; id?: string; variant?: 'outline' | 'primary' }> = ({
-  meta,
-  id,
-  variant = 'outline',
-}) => (
-  <a
-    id={id}
-    href={APK_DOWNLOAD_URL}
-    download={APK_DOWNLOAD_FILENAME}
-    className={`ftl-btn ftl-btn--${variant} ftl-btn--lg`}
-    data-testid="landing-download-apk"
-  >
-    <Download aria-hidden="true" />
-    <span>
-      Download app
-      <small>Android{formatApkMeta(meta) ? ` · ${formatApkMeta(meta)}` : ''}</small>
-    </span>
-  </a>
+/* ---------- Pinned "How it works" ---------- */
+
+const StepVisual: React.FC<{ step: number }> = ({ step }) => (
+  <div className="ftl-step-visual" data-step={step}>
+    <div className={`ftl-sv ftl-sv--plan${step === 0 ? ' is-on' : ''}`} aria-hidden="true">
+      <div className="ftl-sv-head ftl-mono">
+        <span>Visit plan · Demo month</span>
+        <span>Zone North</span>
+      </div>
+      <div className="ftl-cal">
+        {Array.from({ length: 35 }, (_, i) => (
+          <span key={i} className={[3, 4, 8, 10, 11, 15, 17, 18, 22, 24, 25, 29].includes(i) ? 'has' : ''} style={{ '--i': i } as React.CSSProperties}>
+            {i + 1 <= 31 ? i + 1 : ''}
+          </span>
+        ))}
+      </div>
+    </div>
+    <div className={`ftl-sv ftl-sv--verify${step === 1 ? ' is-on' : ''}`} aria-hidden="true">
+      <div className="ftl-sv-head ftl-mono">
+        <span>Outlet 0388</span>
+        <span className="ok">Inside fence · 12 m</span>
+      </div>
+      <div className="ftl-sv-radar">
+        <i />
+        <i />
+        <b />
+      </div>
+      <div className="ftl-sv-rows">
+        <div>
+          <span>Order items</span>
+          <b>14</b>
+        </div>
+        <div>
+          <span>Payment · UPI</span>
+          <b>₹4,200</b>
+        </div>
+        <div>
+          <span>Shelf photo</span>
+          <b>Attached</b>
+        </div>
+      </div>
+    </div>
+    <div className={`ftl-sv ftl-sv--rec${step === 2 ? ' is-on' : ''}`} aria-hidden="true">
+      <div className="ftl-sv-head ftl-mono">
+        <span>Field</span>
+        <span>Tally Prime</span>
+      </div>
+      {[
+        ['UPI ₹4,200', 'RCPT-0416'],
+        ['Cash ₹1,850', 'RCPT-0417'],
+        ['Cheque ₹22,000', 'CHQ-0088'],
+        ['UPI ₹9,600', 'RCPT-0418'],
+      ].map(([a, b], i) => (
+        <div key={a} className="ftl-rec-row" style={{ '--i': i } as React.CSSProperties}>
+          <span>{a}</span>
+          <i />
+          <span>{b}</span>
+        </div>
+      ))}
+    </div>
+  </div>
 );
 
-const SECTION_IDS = NAV_LINKS.map((l) => l.id);
+const HowItWorks: React.FC = () => {
+  const ref = useRef<HTMLElement>(null);
+  const [step, setStep] = useState(0);
+  useScrollProgress(ref, STEPS.length, useCallback((i: number) => setStep(i), []));
+  return (
+    <section id="how" ref={ref} className="ftl-how" aria-labelledby="ftl-how-title">
+      <div className="ftl-how-pin">
+        <div className="ftl-wrap ftl-how-grid">
+          <div className="ftl-how-copy">
+            <span className="ftl-mono ftl-kicker">How it works</span>
+            <h2 id="ftl-how-title" className="ftl-h2">
+              Three steps from
+              <br />
+              outlet to ledger.
+            </h2>
+            <ol className="ftl-how-steps">
+              {STEPS.map((s, i) => (
+                <li key={s.k} className={i === step ? 'is-active' : i < step ? 'is-done' : ''}>
+                  <span className="ftl-mono">0{i + 1}</span>
+                  <div>
+                    <h3>{s.title}</h3>
+                    <p>{s.body}</p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+            <div className="ftl-how-bar" aria-hidden="true">
+              <span />
+            </div>
+          </div>
+          <StepVisual step={step} />
+        </div>
+      </div>
+    </section>
+  );
+};
+
+/* ---------- Page ---------- */
 
 export const LandingPage: React.FC = () => {
   const reduced = usePrefersReducedMotion();
   const rootRef = useRef<HTMLDivElement>(null);
   const meta = useApkMeta();
-  const active = useActiveSection(SECTION_IDS);
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
+  usePageFonts();
   useReveal(rootRef, reduced);
+  useSmoothScroll(!reduced);
 
   useEffect(() => {
     const prevTitle = document.title;
-    document.title = 'FieldTrack Pro — Unified field operations for multi-brand businesses';
-    const onScroll = () => setScrolled(window.scrollY > 12);
+    document.title = 'FieldTrack Pro — Field operations, live';
+    const onScroll = () => setScrolled(window.scrollY > 8);
     onScroll();
     window.addEventListener('scroll', onScroll, { passive: true });
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setMenuOpen(false);
@@ -211,58 +231,60 @@ export const LandingPage: React.FC = () => {
     };
   }, []);
 
-  const closeMenu = () => setMenuOpen(false);
+  const close = () => setMenuOpen(false);
+  const apk = formatApkMeta(meta);
 
   return (
     <div ref={rootRef} className={`ftl${reduced ? ' ftl--still' : ''}`}>
+      <div className="ftl-grain" aria-hidden="true" />
       <a href="#main" className="ftl-skip">
         Skip to content
       </a>
 
-      <header className={`ftl-nav${scrolled || menuOpen ? ' is-scrolled' : ''}`}>
-        <div className="ftl-wrap ftl-nav-inner">
-          <a href="#home" aria-label="FieldTrack Pro home" onClick={closeMenu}>
-            <Logo />
+      <header className={`ftl-nav${scrolled || menuOpen ? ' is-solid' : ''}`}>
+        <div className="ftl-wrap ftl-nav-row">
+          <a href="#top" aria-label="FieldTrack Pro home" onClick={close}>
+            <Wordmark />
           </a>
           <nav aria-label="Sections" className="ftl-nav-links">
-            {NAV_LINKS.map((l) => (
-              <a key={l.id} href={`#${l.id}`} className={active === l.id ? 'is-active' : ''} aria-current={active === l.id ? 'true' : undefined}>
-                {l.label}
+            {NAV.map((n) => (
+              <a key={n.href} href={n.href}>
+                {n.label}
               </a>
             ))}
           </nav>
-          <div className="ftl-nav-actions">
-            <Link to="/login" className="ftl-btn ftl-btn--outline ftl-btn--nav">
-              Login
+          <div className="ftl-nav-cta">
+            <Link to="/login" className="ftl-navlink">
+              Log in
             </Link>
-            <a href="#get" className="ftl-btn ftl-btn--primary ftl-btn--nav">
-              Get Started <ArrowRight aria-hidden="true" />
+            <a href="#get" className="ftl-btn ftl-btn--solid ftl-btn--sm">
+              Get the app
             </a>
           </div>
           <button
             type="button"
-            className="ftl-menu-btn"
+            className="ftl-burger"
             aria-label={menuOpen ? 'Close menu' : 'Open menu'}
             aria-expanded={menuOpen}
-            aria-controls="ftl-mobile-menu"
+            aria-controls="ftl-menu"
             onClick={() => setMenuOpen((o) => !o)}
           >
             {menuOpen ? <X aria-hidden="true" /> : <Menu aria-hidden="true" />}
           </button>
         </div>
-        <div id="ftl-mobile-menu" className={`ftl-mobile-menu${menuOpen ? ' is-open' : ''}`} hidden={!menuOpen}>
+        <div id="ftl-menu" className="ftl-menu" hidden={!menuOpen}>
           <div className="ftl-wrap">
-            {NAV_LINKS.map((l) => (
-              <a key={l.id} href={`#${l.id}`} onClick={closeMenu} className={active === l.id ? 'is-active' : ''}>
-                {l.label}
+            {NAV.map((n) => (
+              <a key={n.href} href={n.href} onClick={close}>
+                {n.label}
               </a>
             ))}
-            <div className="ftl-mobile-actions">
-              <Link to="/login" className="ftl-btn ftl-btn--outline" onClick={closeMenu}>
-                Login
+            <div className="ftl-menu-cta">
+              <Link to="/login" className="ftl-btn ftl-btn--line" onClick={close}>
+                Log in
               </Link>
-              <a href="#get" className="ftl-btn ftl-btn--primary" onClick={closeMenu}>
-                Get Started <ArrowRight aria-hidden="true" />
+              <a href="#get" className="ftl-btn ftl-btn--solid" onClick={close}>
+                Get the app
               </a>
             </div>
           </div>
@@ -270,228 +292,91 @@ export const LandingPage: React.FC = () => {
       </header>
 
       <main id="main">
-        {/* ---------- Hero ---------- */}
-        <section id="home" className="ftl-hero" aria-labelledby="ftl-hero-title">
-          <div className="ftl-glow-curve" aria-hidden="true" />
-          <div className="ftl-wrap ftl-hero-grid">
-            <div className="ftl-hero-copy">
-              <p className="ftl-pill ftl-in" style={{ '--d': '0ms' } as React.CSSProperties}>
-                <span className="ftl-pill-dot" /> Field Operations Intelligence
-              </p>
-              <h1 id="ftl-hero-title" className="ftl-in" style={{ '--d': '80ms' } as React.CSSProperties}>
-                <span className="ftl-h1-line">Unified Field Operations</span> for{' '}
-                <span className="ftl-accent">Multi-Brand Businesses</span>
-              </h1>
-              <p className="ftl-lead ftl-in" style={{ '--d': '160ms' } as React.CSSProperties}>
-                A powerful platform to manage field teams, outlets, collections, visits and business operations — all in
-                one place.
-              </p>
-              <div className="ftl-ctas ftl-in" style={{ '--d': '240ms' } as React.CSSProperties}>
-                <div className="ftl-cta">
-                  <Link to="/login" className="ftl-btn ftl-btn--primary ftl-btn--lg" data-testid="landing-use-web">
-                    <Monitor aria-hidden="true" />
-                    <span>Use on web</span>
-                    <ArrowRight aria-hidden="true" className="ftl-btn-arrow" />
-                  </Link>
-                  <small>Web for admins and accountants</small>
-                </div>
-                <div className="ftl-cta">
-                  <DownloadButton meta={meta} />
-                  <small>Android app for field reps</small>
-                </div>
-              </div>
-              <ul className="ftl-checks ftl-in" style={{ '--d': '320ms' } as React.CSSProperties}>
-                {['Real-time Sync', 'Multi-Brand Support', 'Secure & Reliable'].map((c) => (
-                  <li key={c}>
-                    <Check aria-hidden="true" /> {c}
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div className="ftl-hero-visual">
-              <Suspense fallback={<div className="ftl-scene ftl-scene--placeholder" aria-hidden="true" />}>
-                <DeviceScene reduced={reduced} />
-              </Suspense>
-            </div>
-          </div>
+        <Hero reduced={reduced} meta={meta} />
 
+        <section id="product" className="ftl-sec" aria-labelledby="ftl-product-title">
           <div className="ftl-wrap">
-            <ul className="ftl-strip">
-              {STRIP.map(({ icon: Icon, title, body }, i) => (
-                <li key={title} data-reveal style={{ '--d': `${i * 70}ms` } as React.CSSProperties}>
-                  <span className="ftl-icon-tile">
-                    <Icon aria-hidden="true" />
-                  </span>
-                  <div>
-                    <h3>{title}</h3>
-                    <p>{body}</p>
-                  </div>
-                </li>
-              ))}
-            </ul>
+            <div className="ftl-sec-head" data-reveal>
+              <span className="ftl-mono ftl-kicker">Product</span>
+              <h2 id="ftl-product-title" className="ftl-h2">
+                One system from the shop floor
+                <br />
+                <span className="ftl-dim">to the ledger.</span>
+              </h2>
+            </div>
+            <Bento reduced={reduced} />
           </div>
         </section>
 
-        {/* ---------- Features ---------- */}
-        <section id="features" className="ftl-section" aria-labelledby="ftl-features-title">
-          <div className="ftl-wrap">
-            <div className="ftl-head" data-reveal>
-              <p className="ftl-kicker">Features</p>
-              <h2 id="ftl-features-title">
-                Everything your field operation runs on, <span className="ftl-accent">in one place</span>
-              </h2>
-              <p className="ftl-sub">From the first outlet visit of the day to the last receipt in Tally.</p>
-            </div>
-            <div className="ftl-cards">
-              {FEATURES.map(({ icon: Icon, title, body }, i) => (
-                <article key={title} className="ftl-card" data-reveal style={{ '--d': `${(i % 4) * 70}ms` } as React.CSSProperties}>
-                  <span className="ftl-icon-tile">
-                    <Icon aria-hidden="true" />
-                  </span>
-                  <h3>{title}</h3>
-                  <p>{body}</p>
-                </article>
-              ))}
-            </div>
-          </div>
-        </section>
+        <HowItWorks />
 
-        {/* ---------- Solutions ---------- */}
-        <section id="solutions" className="ftl-section ftl-section--alt" aria-labelledby="ftl-solutions-title">
-          <div className="ftl-wrap">
-            <div className="ftl-head" data-reveal>
-              <p className="ftl-kicker">Solutions</p>
-              <h2 id="ftl-solutions-title">
-                Built for every seat in a <span className="ftl-accent">multi-brand business</span>
+        <section id="security" className="ftl-sec" aria-labelledby="ftl-security-title">
+          <div className="ftl-wrap ftl-split">
+            <div className="ftl-sec-head ftl-sec-head--side" data-reveal>
+              <span className="ftl-mono ftl-kicker">Security</span>
+              <h2 id="ftl-security-title" className="ftl-h2">
+                Built for data
+                <br />
+                <span className="ftl-dim">you’re accountable for.</span>
               </h2>
             </div>
-            <div className="ftl-solutions">
-              {SOLUTIONS.map(({ icon: Icon, title, body, points }, i) => (
-                <article key={title} className="ftl-card ftl-card--tall" data-reveal style={{ '--d': `${i * 80}ms` } as React.CSSProperties}>
-                  <span className="ftl-icon-tile ftl-icon-tile--lg">
-                    <Icon aria-hidden="true" />
-                  </span>
-                  <h3>{title}</h3>
-                  <p>{body}</p>
-                  <ul>
-                    {points.map((p) => (
-                      <li key={p}>
-                        <Check aria-hidden="true" /> {p}
-                      </li>
-                    ))}
-                  </ul>
-                </article>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* ---------- How it works ---------- */}
-        <section id="how" className="ftl-section" aria-labelledby="ftl-how-title">
-          <div className="ftl-wrap">
-            <div className="ftl-head" data-reveal>
-              <p className="ftl-kicker">How It Works</p>
-              <h2 id="ftl-how-title">
-                From plan to ledger in <span className="ftl-accent">four steps</span>
-              </h2>
-            </div>
-            <ol className="ftl-steps">
-              {STEPS.map((s, i) => (
-                <li key={s.title} data-reveal style={{ '--d': `${i * 90}ms` } as React.CSSProperties}>
-                  <span className="ftl-step-num">{String(i + 1).padStart(2, '0')}</span>
-                  <h3>{s.title}</h3>
-                  <p>{s.body}</p>
-                </li>
-              ))}
-            </ol>
-          </div>
-        </section>
-
-        {/* ---------- Security ---------- */}
-        <section id="security" className="ftl-section ftl-section--alt" aria-labelledby="ftl-security-title">
-          <div className="ftl-wrap ftl-security">
-            <div className="ftl-head ftl-head--left" data-reveal>
-              <p className="ftl-kicker">Security</p>
-              <h2 id="ftl-security-title">
-                Secure by design, <span className="ftl-accent">reliable by default</span>
-              </h2>
-              <p className="ftl-sub">
-                Field data, collections and financial records are protected by strict roles, verified locations and
-                encrypted connections.
-              </p>
-              <span className="ftl-shield" aria-hidden="true">
-                <ShieldCheck />
-              </span>
-            </div>
-            <div className="ftl-sec-grid">
-              {SECURITY.map(({ icon: Icon, title, body }, i) => (
-                <div key={title} className="ftl-sec-item" data-reveal style={{ '--d': `${(i % 2) * 80}ms` } as React.CSSProperties}>
-                  <span className="ftl-icon-tile ftl-icon-tile--sm">
-                    <Icon aria-hidden="true" />
-                  </span>
-                  <div>
-                    <h3>{title}</h3>
-                    <p>{body}</p>
-                  </div>
+            <dl className="ftl-spec" data-reveal>
+              {SECURITY.map(([k, v]) => (
+                <div key={k}>
+                  <dt className="ftl-mono">{k}</dt>
+                  <dd>{v}</dd>
                 </div>
               ))}
-            </div>
+            </dl>
           </div>
         </section>
 
-        {/* ---------- FAQ ---------- */}
-        <section id="faq" className="ftl-section" aria-labelledby="ftl-faq-title">
-          <div className="ftl-wrap ftl-faq-wrap">
-            <div className="ftl-head" data-reveal>
-              <p className="ftl-kicker">FAQ</p>
-              <h2 id="ftl-faq-title">Frequently asked questions</h2>
+        <section id="faq" className="ftl-sec" aria-labelledby="ftl-faq-title">
+          <div className="ftl-wrap ftl-split">
+            <div className="ftl-sec-head ftl-sec-head--side" data-reveal>
+              <span className="ftl-mono ftl-kicker">FAQ</span>
+              <h2 id="ftl-faq-title" className="ftl-h2">Questions, answered.</h2>
             </div>
             <div className="ftl-faq">
-              {FAQS.map((f) => (
-                <details key={f.q} data-reveal>
+              {FAQS.map(([q, a]) => (
+                <details key={q}>
                   <summary>
-                    {f.q}
-                    <ChevronDown aria-hidden="true" />
+                    {q}
+                    <Plus aria-hidden="true" />
                   </summary>
-                  <p>{f.a}</p>
+                  <p>{a}</p>
                 </details>
               ))}
             </div>
           </div>
         </section>
 
-        {/* ---------- Get started ---------- */}
-        <section id="get" className="ftl-section ftl-section--alt" aria-labelledby="ftl-get-title">
+        <section id="get" className="ftl-final" aria-labelledby="ftl-get-title">
           <div className="ftl-wrap">
-            <div className="ftl-head" data-reveal>
-              <p className="ftl-kicker">Get Started</p>
-              <h2 id="ftl-get-title">
-                Pick your <span className="ftl-accent">screen</span>
-              </h2>
-            </div>
-            <div className="ftl-get">
-              <div className="ftl-get-card" data-reveal>
-                <span className="ftl-icon-tile ftl-icon-tile--lg">
-                  <Monitor aria-hidden="true" />
-                </span>
-                <h3>Use on web</h3>
-                <p>
-                  The admin dashboard for owners, managers and accountants: territories, employees, visit plans,
-                  collections and reports. Works in any modern browser.
-                </p>
-                <Link to="/login" className="ftl-btn ftl-btn--primary ftl-btn--lg">
-                  <span>Sign in on the web</span>
-                  <ArrowRight aria-hidden="true" className="ftl-btn-arrow" />
+            <h2 id="ftl-get-title" className="ftl-final-title" data-reveal>
+              Put your field
+              <br />
+              on the map.
+            </h2>
+            <div className="ftl-final-grid" data-reveal>
+              <div className="ftl-final-card">
+                <span className="ftl-mono">Web · admins & accountants</span>
+                <p>Territories, employees, visit plans, collections and reports in any modern browser.</p>
+                <Link to="/login" className="ftl-btn ftl-btn--solid">
+                  Use on web <ArrowRight aria-hidden="true" />
                 </Link>
               </div>
-              <div className="ftl-get-card" data-reveal style={{ '--d': '90ms' } as React.CSSProperties}>
-                <span className="ftl-icon-tile ftl-icon-tile--lg">
-                  <Smartphone aria-hidden="true" />
-                </span>
-                <h3>Android app</h3>
-                <p>For field reps: today’s route, geofenced check-ins, orders, payments and photos, even offline. Android 8.0 or later.</p>
-                <DownloadButton meta={meta} id="download" variant="primary" />
-                <dl className="ftl-apk-meta">
+              <div className="ftl-final-card">
+                <span className="ftl-mono">Android · field reps</span>
+                <p>Today’s route, geofenced check-ins, orders, payments and photos, even offline. Android 8.0+.</p>
+                <a id="download" href={APK_DOWNLOAD_URL} download={APK_DOWNLOAD_FILENAME} className="ftl-btn ftl-btn--line" data-testid="landing-download-apk">
+                  <Download aria-hidden="true" />
+                  <span>
+                    Download app
+                    <small>Android{apk ? ` · ${apk}` : ''}</small>
+                  </span>
+                </a>
+                <dl className="ftl-apk">
                   {meta?.versionName && (
                     <div>
                       <dt>Version</dt>
@@ -516,42 +401,25 @@ export const LandingPage: React.FC = () => {
                     </div>
                   )}
                 </dl>
-                <p className="ftl-fine">
-                  Installed directly, not from Google Play: when Android asks, allow your browser to install apps from this source.
-                </p>
+                <p className="ftl-fine">Installed directly, not from Google Play: allow your browser to install apps when Android asks.</p>
               </div>
             </div>
           </div>
         </section>
       </main>
 
-      <footer className="ftl-footer">
-        <div className="ftl-wrap ftl-footer-grid">
-          <div>
-            <Logo />
-            <p>Unified field operations for multi-brand businesses.</p>
-          </div>
+      <footer className="ftl-foot">
+        <div className="ftl-wrap ftl-foot-row">
+          <Wordmark />
           <nav aria-label="Footer">
-            <h4>Product</h4>
-            <a href="#features">Features</a>
-            <a href="#solutions">Solutions</a>
-            <a href="#how">How It Works</a>
+            {NAV.map((n) => (
+              <a key={n.href} href={n.href}>
+                {n.label}
+              </a>
+            ))}
+            <Link to="/login">Log in</Link>
           </nav>
-          <nav aria-label="Trust">
-            <h4>Trust</h4>
-            <a href="#security">Security</a>
-            <a href="#faq">FAQ</a>
-          </nav>
-          <nav aria-label="Get the app">
-            <h4>Get started</h4>
-            <Link to="/login">Use on web</Link>
-            <a href={APK_DOWNLOAD_URL} download={APK_DOWNLOAD_FILENAME}>
-              Download Android app
-            </a>
-          </nav>
-        </div>
-        <div className="ftl-wrap ftl-footer-base">
-          <span>© {new Date().getFullYear()} FieldTrack Pro. All rights reserved.</span>
+          <span className="ftl-mono">© {new Date().getFullYear()} FieldTrack Pro</span>
         </div>
       </footer>
     </div>
