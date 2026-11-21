@@ -8,13 +8,13 @@ const ROUTE_D = 'M24 196 H96 V128 H196 V64 H300 V140 H372';
 
 const RouteCell: React.FC<{ live: boolean }> = ({ live }) => (
   <div className="ftl-bento-viz ftl-route">
-    <svg viewBox="0 0 400 230" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+    <svg viewBox="0 0 400 230" overflow="visible" aria-hidden="true">
       <defs>
         <pattern id="ftl-streets" width="52" height="52" patternUnits="userSpaceOnUse">
           <path d="M52 0H0V52" fill="none" stroke="rgba(255,255,255,.06)" strokeWidth="10" />
         </pattern>
       </defs>
-      <rect width="400" height="230" fill="url(#ftl-streets)" />
+      <rect x="-416" y="-416" width="1248" height="1092" fill="url(#ftl-streets)" />
       <path d={ROUTE_D} fill="none" stroke="rgba(255,255,255,.14)" strokeWidth="4" strokeLinejoin="round" />
       <path
         d={ROUTE_D}
