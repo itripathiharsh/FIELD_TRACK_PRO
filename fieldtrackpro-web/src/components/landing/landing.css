@@ -338,6 +338,16 @@
 .ftl-hero.is-3d .ftl-canvas {
   opacity: 1;
 }
+/* Desktop: the WebGL scene lives in the right part of the hero only, so the product
+   screens can never pass behind the headline. The left edge fades into the background. */
+@media (min-width: 900px) {
+  .ftl-canvas {
+    left: 45% !important;
+    width: auto !important;
+    mask-image: linear-gradient(90deg, transparent 0, #000 16%);
+    -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 16%);
+  }
+}
 .ftl-hero.is-3d .ftl-poster-wrap {
   opacity: 0;
 }
@@ -414,7 +424,7 @@
 }
 .ftl-display {
   margin-top: 20px !important;
-  font-size: clamp(44px, 7.4vw, 108px);
+  font-size: clamp(44px, min(7vw, 11vh), 104px);
   line-height: 0.95;
   font-weight: 600;
   letter-spacing: -0.048em;
