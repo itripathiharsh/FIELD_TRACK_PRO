@@ -195,15 +195,17 @@
 .ftl-wordmark {
   display: inline-flex;
   align-items: center;
-  gap: 9px;
-  font-weight: 600;
-  font-size: 16px;
+  gap: 10px;
+  font-weight: 700;
+  font-size: 17px;
   letter-spacing: -0.02em;
   white-space: nowrap;
 }
 .ftl-wordmark svg {
-  width: 22px;
-  height: 22px;
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1);
 }
 .ftl-nav-links {
   display: none;
@@ -1580,9 +1582,32 @@
 .ftl-foot nav a:hover {
   color: var(--ink);
 }
-.ftl-foot .ftl-mono {
+.ftl-foot-row > a {
+  font-size: 14px;
+}
+.ftl-foot-row > a:hover {
+  color: var(--ink);
+}
+.ftl-foot-credit {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 20px;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
   color: var(--dim);
-  font-size: 11px;
+}
+.ftl-foot-credit a {
+  color: var(--muted);
+  text-decoration: underline;
+  text-decoration-color: var(--line-2);
+  text-underline-offset: 3px;
+}
+.ftl-foot-credit a:hover {
+  color: var(--ink);
+  text-decoration-color: var(--accent);
 }
 
 /* ---------- Keyframes ---------- */

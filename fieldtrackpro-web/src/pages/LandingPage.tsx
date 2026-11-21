@@ -93,11 +93,15 @@ function usePageFonts() {
   }, []);
 }
 
+const AUTHOR_URL = 'https://github.com/itripathiharsh';
+
+/** The FieldTrack Pro logo (same artwork as public/favicon.svg). */
 const Wordmark: React.FC = () => (
   <span className="ftl-wordmark">
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M12 2.5 20 6v6c0 4.6-3.3 8.4-8 9.5-4.7-1.1-8-4.9-8-9.5V6l8-3.5Z" fill="none" stroke="currentColor" strokeWidth="1.8" />
-      <circle cx="12" cy="11" r="2.6" fill="#ff9f2e" />
+    <svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
+      <rect width="32" height="32" rx="7" fill="#14213d" />
+      <path d="M16 5L6.5 9V16C6.5 21 10.8 25.5 16 27C21.2 25.5 25.5 21 25.5 16V9Z" stroke="#ffa515" strokeWidth="1.8" strokeLinejoin="round" />
+      <path d="M11 16.5L14.5 20L21 13" stroke="#ffa515" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
     FieldTrack Pro
   </span>
@@ -419,7 +423,18 @@ export const LandingPage: React.FC = () => {
             ))}
             <Link to="/login">Log in</Link>
           </nav>
-          <span className="ftl-mono">© {new Date().getFullYear()} FieldTrack Pro</span>
+          <a href={AUTHOR_URL} target="_blank" rel="noopener noreferrer">
+            Contact
+          </a>
+        </div>
+        <div className="ftl-wrap ftl-foot-credit">
+          <span>© {new Date().getFullYear()} FieldTrack Pro</span>
+          <span>
+            Made by{' '}
+            <a href={AUTHOR_URL} target="_blank" rel="noopener noreferrer">
+              Harsh Vardhan Tripathi
+            </a>
+          </span>
         </div>
       </footer>
     </div>
