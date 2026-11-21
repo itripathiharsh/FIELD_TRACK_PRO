@@ -49,8 +49,12 @@ export const MapPoster: React.FC = () => {
   );
 };
 
-const LINE_1 = ['Every', 'visit', 'verified.'];
-const LINE_2 = ['Every', 'rupee', 'reconciled.'];
+const LINES: { words: string[]; dim?: boolean }[] = [
+  { words: ['Every', 'visit'] },
+  { words: ['verified.'] },
+  { words: ['Every', 'rupee'], dim: true },
+  { words: ['reconciled.'], dim: true },
+];
 
 const Kinetic: React.FC<{ words: string[]; start: number; className?: string }> = ({ words, start, className }) => (
   <span className={`ftl-line ${className ?? ''}`}>
@@ -137,8 +141,14 @@ export const Hero: React.FC<{ reduced: boolean; meta: ApkMeta | null }> = ({ red
               <span className="ftl-live" /> Field operations, live
             </p>
             <h1 id="ftl-hero-title" className="ftl-display">
-              <Kinetic words={LINE_1} start={0} />
-              <Kinetic words={LINE_2} start={3} className="ftl-line--dim" />
+              {LINES.map((l, i) => (
+                <Kinetic
+                  key={i}
+                  words={l.words}
+                  start={LINES.slice(0, i).reduce((n, x) => n + x.words.length, 0)}
+                  className={l.dim ? 'ftl-line--dim' : undefined}
+                />
+              ))}
             </h1>
             <p className="ftl-hero-lead">
               FieldTrack Pro puts your reps, outlets and collections on one live map: GPS-verified check-ins on Android,

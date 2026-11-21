@@ -187,16 +187,16 @@ const Screens: React.FC<{ progress: MutableRefObject<number>; mobile: boolean; r
     const sep = ease(clamp01((p - 0.15) / 0.7));
     const bob = reduced ? 0 : Math.sin(clock.getElapsedTime() * 0.8) * 0.08;
     if (dash.current) {
-      dash.current.position.set(THREE.MathUtils.lerp(4.6, 0.2, sep), THREE.MathUtils.lerp(2.5, 1.7, sep) + bob, THREE.MathUtils.lerp(-1.2, -2.6, sep));
-      dash.current.rotation.set(THREE.MathUtils.lerp(-0.42, -0.5, sep), THREE.MathUtils.lerp(-0.32, -0.2, sep), 0);
+      dash.current.position.set(THREE.MathUtils.lerp(-0.6, -1.6, sep), THREE.MathUtils.lerp(2.5, 1.7, sep) + bob, THREE.MathUtils.lerp(-1.2, -2.6, sep));
+      dash.current.rotation.set(THREE.MathUtils.lerp(-0.42, -0.5, sep), THREE.MathUtils.lerp(-0.12, 0.05, sep), 0);
     }
     if (phone.current) {
       phone.current.position.set(
-        mobile ? THREE.MathUtils.lerp(0.8, 1.6, sep) : THREE.MathUtils.lerp(7.4, 5.2, sep),
+        mobile ? THREE.MathUtils.lerp(0.8, 1.6, sep) : THREE.MathUtils.lerp(2.4, 3.2, sep),
         (mobile ? THREE.MathUtils.lerp(2.6, 2.3, sep) : THREE.MathUtils.lerp(2.3, 1.6, sep)) - bob,
         mobile ? THREE.MathUtils.lerp(-3.4, -2.4, sep) : THREE.MathUtils.lerp(0.2, 1.4, sep),
       );
-      phone.current.rotation.set(THREE.MathUtils.lerp(-0.4, -0.3, sep), THREE.MathUtils.lerp(-0.36, -0.5, sep), 0);
+      phone.current.rotation.set(THREE.MathUtils.lerp(-0.4, -0.3, sep), THREE.MathUtils.lerp(-0.28, -0.42, sep), 0);
     }
   });
 
@@ -229,7 +229,7 @@ const CameraRig: React.FC<{ progress: MutableRefObject<number>; reduced: boolean
   const smooth = useRef(0);
   const look = useMemo(() => new THREE.Vector3(), []);
   const from = useMemo(() => (mobile ? new THREE.Vector3(0, 17, 15) : new THREE.Vector3(0, 13.5, 15.5)), [mobile]);
-  const to = useMemo(() => (mobile ? new THREE.Vector3(3, 9, 11) : new THREE.Vector3(4.2, 8.4, 12.5)), [mobile]);
+  const to = useMemo(() => (mobile ? new THREE.Vector3(3, 9, 11) : new THREE.Vector3(2.4, 8.4, 12.5)), [mobile]);
 
   useFrame((_, dt) => {
     const target = reduced ? 0.35 : progress.current;
@@ -240,7 +240,7 @@ const CameraRig: React.FC<{ progress: MutableRefObject<number>; reduced: boolean
       camera.position.x += pointer.x * 0.8;
       camera.position.y += pointer.y * 0.4;
     }
-    look.set(THREE.MathUtils.lerp(0, 1.8, p), THREE.MathUtils.lerp(0.4, 0.9, p), THREE.MathUtils.lerp(0, -0.6, p));
+    look.set(THREE.MathUtils.lerp(mobile ? 0 : 0.4, mobile ? 1.8 : 0.6, p), THREE.MathUtils.lerp(0.4, 0.9, p), THREE.MathUtils.lerp(0, -0.6, p));
     camera.lookAt(look);
   });
   return null;
