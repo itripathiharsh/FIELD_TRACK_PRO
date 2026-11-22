@@ -1,3 +1,5 @@
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.io.FileInputStream
 import java.util.Properties
 
@@ -90,6 +92,7 @@ android {
 
         // Web URL where an account (and its data) deletion can be requested without the app (Play requirement).
         buildConfigField("String", "DELETION_URL", buildConfigString(deletionUrlValue ?: ""))
+        buildConfigField("String", "BUILD_STAMP", "\"" + SimpleDateFormat("yyyy-MM-dd HH:mm").format(Date()) + "\"")
         buildConfigField("String", "UPDATE_MANIFEST_URL", buildConfigString(updateManifestUrlValue))
         buildConfigField("String", "UPDATE_ALLOWED_HOSTS", buildConfigString(updateAllowedHostsValue))
     }
