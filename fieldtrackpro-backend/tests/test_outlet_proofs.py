@@ -98,6 +98,8 @@ async def upload(client, headers, jpeg, *, lat=LAT, lon=LON, acc=8.0, captured=N
 async def env(monkeypatch):
     monkeypatch.setattr(settings, "outlet_proof_required_for_new_outlet", True)
     monkeypatch.setattr(settings, "outlet_proof_auto_verify_min_agreeing", 0)
+    # These tests cover the manual-review path; first-location auto-accept has its own test file.
+    monkeypatch.setattr(settings, "outlet_proof_first_location_auto_accept", False)
     tag = uuid.uuid4().hex[:8]
     ids: dict = {"tag": tag}
     async with AsyncSessionLocal() as s:
