@@ -281,7 +281,7 @@ fun RequirementFormScreen(
                             horizontalArrangement = Arrangement.End
                         ) {
                             Text(
-                                text = "Line Amount: ₹${"%,.0f".format(currentLineTotal)}",
+                                text = "Line Amount: ${com.fieldtrackpro.android.utils.MoneyFormat.inr(currentLineTotal)}",
                                 fontFamily = LeagueSpartanFamily,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp,
@@ -380,7 +380,7 @@ fun RequirementFormScreen(
                                 }
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = "${item.requestedQuantity} pcs @ ₹${"%,.0f".format(item.expectedRate)} = ₹${"%,.0f".format(item.requestedQuantity * item.expectedRate)}",
+                                    text = "${item.requestedQuantity} pcs @ ${com.fieldtrackpro.android.utils.MoneyFormat.inr(item.expectedRate)} = ${com.fieldtrackpro.android.utils.MoneyFormat.inr(item.requestedQuantity * item.expectedRate)}",
                                     fontFamily = LibreBaskervilleFamily,
                                     fontSize = 12.sp,
                                     color = TextSecondary
@@ -432,7 +432,7 @@ fun RequirementFormScreen(
                             )
                         }
                         Text(
-                            text = "₹${"%,.0f".format(totalAmount)}",
+                            text = "${com.fieldtrackpro.android.utils.MoneyFormat.inr(totalAmount)}",
                             fontFamily = LeagueSpartanFamily,
                             fontWeight = FontWeight.Bold,
                             fontSize = 20.sp,

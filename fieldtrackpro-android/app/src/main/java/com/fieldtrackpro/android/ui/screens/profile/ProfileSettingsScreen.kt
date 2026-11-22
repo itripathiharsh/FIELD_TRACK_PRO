@@ -33,7 +33,17 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ExitToApp
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
+import androidx.compose.material.icons.filled.Badge
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.PrivacyTip
+import androidx.compose.material.icons.filled.Sync
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -256,193 +266,172 @@ fun ProfileSettingsScreen(
         )
     }
 
-    Scaffold(
-        topBar = {
-            FieldTrackTopAppBar(
-                title = "Profile & Settings",
-                onBackClick = onNavigateBack
-            )
+    val profileRevision by authViewModel.profileRevision.collectAsState()
+    LaunchedEffect(Unit) { authViewModel.refreshProfile() }
+    val profile = remember(profileRevision) {
+        ProfileUi(
+            name = tokenManager.getUserName() ?: "Field representative",
+            role = com.fieldtrackpro.android.utils.Roles.displayRole(tokenManager.getUserRole()),
+            phone = tokenManager.getUserPhone(),
+            email = tokenManager.getUserEmail(),
+            employeeCode = tokenManager.getEmployeeCode(),
+            territory = tokenManager.getTerritoryName(),
+            appVersion = com.fieldtrackpro.android.BuildConfig.VERSION_NAME
+        )
+    }
+
+    ProfileContent(
+        profile = profile,
+        pendingCount = pendingItems().size,
+        onBack = onNavigateBack,
+        onSyncQueue = { onSyncNow { } },
+        onPrivacy = { ExternalLinks.openPrivacyPolicy(context) },
+        onLogout = {
+            when (val decision = LogoutPolicy.decide(pendingItems())) {
+                is LogoutDecision.Proceed -> {
+                    authViewModel.logout()
+                    onLogout()
+                }
+                is LogoutDecision.ConfirmUnsynced -> {
+                    logoutNotice = null
+                    logoutPrompt = decision
+                }
+            }
+        },
+        onRequestDeletion = {
+            authViewModel.resetDeletionState()
+            deletionUnsyncedCount = pendingItems().size
+            showDeletionDialog = true
         }
+    )
+}
+
+data class ProfileUi(
+    val name: String,
+    val role: String,
+    val phone: String?,
+    val email: String?,
+    val employeeCode: String?,
+    val territory: String?,
+    val appVersion: String
+)
+
+/** Stateless profile & settings (design v2); also used by the screenshot test. */
+@Composable
+fun ProfileContent(
+    profile: ProfileUi,
+    pendingCount: Int,
+    onBack: () -> Unit,
+    onSyncQueue: () -> Unit,
+    onPrivacy: () -> Unit,
+    onLogout: () -> Unit,
+    onRequestDeletion: () -> Unit
+) {
+    com.fieldtrackpro.android.ui.theme.SystemBarIcons(darkIcons = true)
+    Scaffold(
+        topBar = { FieldTrackTopAppBar(title = "Profile & settings", onBackClick = onBack) },
+        containerColor = SurfaceSecondary
     ) { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(SurfaceSecondary)
                 .padding(innerPadding)
-                .padding(16.dp)
                 .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Profile Hero Card
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(1.dp, BrandLightGray, RoundedCornerShape(14.dp)),
-                shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(containerColor = BrandWhite),
-                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-            ) {
-                Column(modifier = Modifier.padding(20.dp)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(56.dp)
-                                .clip(CircleShape)
-                                .background(BrandNavy)
-                                .border(2.dp, BrandGold, CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Person,
-                                contentDescription = null,
-                                tint = BrandGold,
-                                modifier = Modifier.size(32.dp)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(16.dp))
-
-                        Column {
-                            Text(
-                                text = tokenManager.getUserName() ?: "Field Representative",
-                                fontFamily = LeagueSpartanFamily,
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = BrandNavy
-                            )
-                            Row(
-                                modifier = Modifier.padding(top = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(4.dp))
-                                        .background(BrandGold.copy(alpha = 0.2f))
-                                        .border(1.dp, BrandGold, RoundedCornerShape(4.dp))
-                                        .padding(horizontal = 8.dp, vertical = 2.dp)
-                                ) {
-                                    val roleText = com.fieldtrackpro.android.utils.Roles.displayRole(tokenManager.getUserRole())
-                                    Text(
-                                        text = roleText,
-                                        fontFamily = LeagueSpartanFamily,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 11.sp,
-                                        letterSpacing = 0.8.sp,
-                                        color = BrandNavy
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(20.dp))
-
-                    Text(
-                        text = "EMPLOYEE SPECIFICATIONS",
-                        fontFamily = LeagueSpartanFamily,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.sp,
-                        color = BrandNavy
-                    )
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    DetailItem(label = "Email Address", value = tokenManager.getUserEmail()?.ifBlank { "N/A" } ?: "N/A")
-                    DetailItem(label = "Phone Number", value = tokenManager.getUserPhone()?.ifBlank { "N/A" } ?: "N/A")
-                    DetailItem(label = "Employee Code", value = tokenManager.getEmployeeCode()?.ifBlank { "N/A" } ?: "N/A")
-                    DetailItem(label = "Assigned Territory", value = tokenManager.getTerritoryName()?.ifBlank { "N/A" } ?: "N/A")
-                    DetailItem(label = "Security Protocol", value = "Keystore-backed Hardware Authentication")
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                val initials = profile.name.split(" ")
+                    .mapNotNull { word -> word.firstOrNull { it.isLetter() } }
+                    .take(2).joinToString("") { it.uppercase() }.ifBlank { "?" }
+                Box(
+                    modifier = Modifier.size(64.dp).clip(CircleShape).background(BrandNavy),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(initials, fontFamily = LeagueSpartanFamily, fontWeight = FontWeight.Bold, fontSize = 24.sp, color = BrandGold)
                 }
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            Button(
-                onClick = {
-                    when (val decision = LogoutPolicy.decide(pendingItems())) {
-                        is LogoutDecision.Proceed -> {
-                            authViewModel.logout()
-                            onLogout()
-                        }
-                        is LogoutDecision.ConfirmUnsynced -> {
-                            logoutNotice = null
-                            logoutPrompt = decision
-                        }
-                    }
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp),
-                shape = RoundedCornerShape(10.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = ErrorRed,
-                    contentColor = BrandWhite
-                )
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.ExitToApp,
-                        contentDescription = null,
-                        tint = BrandWhite,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        "LOGOUT ACTIVE SESSION",
-                        fontFamily = LeagueSpartanFamily,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
-                        letterSpacing = 0.8.sp,
-                        color = BrandWhite
+                Spacer(modifier = Modifier.width(16.dp))
+                Column {
+                    Text(profile.name, fontFamily = LeagueSpartanFamily, fontWeight = FontWeight.Bold, fontSize = 22.sp, color = BrandNavy)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    val chip = listOfNotNull(profile.role, profile.territory?.takeIf { it.isNotBlank() }).joinToString(" · ")
+                    com.fieldtrackpro.android.ui.components.StatusChip(
+                        text = chip,
+                        container = com.fieldtrackpro.android.ui.theme.Navy100,
+                        content = BrandNavy
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-            OutlinedButton(
-                onClick = { ExternalLinks.openPrivacyPolicy(context) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp),
-                shape = RoundedCornerShape(10.dp),
-                border = BorderStroke(1.dp, BrandNavy)
-            ) {
-                Text(
-                    "PRIVACY POLICY",
-                    fontFamily = LeagueSpartanFamily,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
-                    letterSpacing = 0.8.sp,
-                    color = BrandNavy
-                )
+            com.fieldtrackpro.android.ui.components.SectionHeader("Account")
+            com.fieldtrackpro.android.ui.components.ListGroup {
+                ProfileRow(Icons.Default.Phone, "Mobile number", profile.phone)
+                ProfileRow(Icons.Default.Email, "Email", profile.email)
+                ProfileRow(Icons.Default.Badge, "Employee code", profile.employeeCode)
+                ProfileRow(Icons.Default.Place, "Territory", profile.territory, last = true)
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
-
-            OutlinedButton(
-                onClick = {
-                    authViewModel.resetDeletionState()
-                    deletionUnsyncedCount = pendingItems().size
-                    showDeletionDialog = true
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp),
-                shape = RoundedCornerShape(10.dp),
-                border = BorderStroke(1.dp, ErrorRed)
-            ) {
-                Text(
-                    "REQUEST ACCOUNT DELETION",
-                    fontFamily = LeagueSpartanFamily,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
-                    letterSpacing = 0.8.sp,
-                    color = ErrorRed
+            com.fieldtrackpro.android.ui.components.SectionHeader("App")
+            com.fieldtrackpro.android.ui.components.ListGroup {
+                ProfileRow(
+                    Icons.Default.Sync,
+                    "Sync queue",
+                    if (pendingCount == 0) "All synced" else "$pendingCount waiting",
+                    onClick = if (pendingCount > 0) onSyncQueue else null
                 )
+                ProfileRow(Icons.Default.PrivacyTip, "Privacy policy", null, onClick = onPrivacy, showChevron = true)
+                ProfileRow(Icons.Default.Info, "App version", profile.appVersion, last = true)
+            }
+
+            com.fieldtrackpro.android.ui.components.OutlineButton(
+                text = "Log out",
+                onClick = onLogout,
+                color = ErrorRed,
+                icon = Icons.AutoMirrored.Filled.ExitToApp,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                TextButton(onClick = onRequestDeletion) {
+                    Text("Request account deletion", fontSize = 14.sp, color = ErrorRed)
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun ProfileRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    value: String?,
+    last: Boolean = false,
+    onClick: (() -> Unit)? = null,
+    showChevron: Boolean = false
+) {
+    Column {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+                .heightIn(min = 56.dp)
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(icon, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(14.dp))
+            Text(label, fontSize = 15.sp, color = TextPrimary, modifier = Modifier.weight(1f))
+            if (value != null || !showChevron) {
+                Text(
+                    value?.takeIf { it.isNotBlank() } ?: "Not set",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = if (value.isNullOrBlank()) com.fieldtrackpro.android.ui.theme.TextSubtle else BrandNavy
+                )
+            }
+            if (showChevron || onClick != null) {
+                Icon(Icons.Default.ChevronRight, contentDescription = null, tint = com.fieldtrackpro.android.ui.theme.TextSubtle)
+            }
+        }
+        if (!last) androidx.compose.material3.HorizontalDivider(color = BrandLightGray, modifier = Modifier.padding(start = 50.dp))
     }
 }

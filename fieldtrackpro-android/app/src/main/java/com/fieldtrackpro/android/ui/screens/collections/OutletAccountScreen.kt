@@ -57,10 +57,8 @@ import com.fieldtrackpro.android.ui.theme.TextSecondary
 import com.fieldtrackpro.android.ui.viewmodel.AccountState
 import com.fieldtrackpro.android.ui.viewmodel.CollectionViewModel
 
-private fun formatCurrency(value: String): String {
-    val n = value.toDoubleOrNull() ?: 0.0
-    return "₹${"%,.0f".format(n)}"
-}
+private fun formatCurrency(value: String): String =
+    com.fieldtrackpro.android.utils.MoneyFormat.parse(value)?.let { com.fieldtrackpro.android.utils.MoneyFormat.inr(it) } ?: "₹0"
 
 @Composable
 fun OutletAccountScreen(

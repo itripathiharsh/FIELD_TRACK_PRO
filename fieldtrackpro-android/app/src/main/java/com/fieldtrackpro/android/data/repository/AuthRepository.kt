@@ -94,6 +94,36 @@ class AuthRepository(
         }
     }
 
+    /**
+     * Best-effort refresh of the cached profile from GET /auth/me (existing endpoint, unchanged contract). The profile
+     * used to be cached only at sign-in, so a code or territory set later by an admin never reached the app.
+     * Never ends the session: any failure just keeps the cached profile. Only updates the SAME signed-in user.
+     */
+    suspend fun refreshProfile(): Resource<UserDto> {
+        return try {
+            val response = authApi.getCurrentUser()
+            val user = response.body()
+            if (!response.isSuccessful || user == null) return Resource.Error("Profile not refreshed (${response.code()})", response.code())
+            val currentId = tokenManager.getUserId()
+            if (currentId != null && currentId != user.id) return Resource.Error("Profile belongs to a different session")
+            withContext(Dispatchers.IO) {
+                tokenManager.saveUserProfile(
+                    id = user.id,
+                    name = user.displayName,
+                    email = user.email,
+                    role = user.role,
+                    phone = user.mobileNumber,
+                    employeeCode = user.employeeCode,
+                    territoryName = user.territoryName
+                )
+            }
+            Resource.Success(user)
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            Resource.Error("Profile not refreshed: ${e.javaClass.simpleName}")
+        }
+    }
+
     suspend fun logout() {
         val refreshToken = tokenManager.getRefreshToken()
         try {

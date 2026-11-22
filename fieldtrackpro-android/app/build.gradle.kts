@@ -23,8 +23,10 @@ fun buildConfigString(value: String): String =
 
 // Single source of truth for the app version (Play: versionCode must strictly increase per upload).
 // 4 / 1.1.0: offline payments, outlet-proof capture/queue, queue schema + session/auth hardening.
-val appVersionCode = 4
-val appVersionName = "1.1.0"
+// 6 / 1.3.0: premium UI (design system v2, new mark), workday GPS/permission fixes, release URL guard. (5 / 1.2.0 was the
+// landing-page debug build.)
+val appVersionCode = 6
+val appVersionName = "1.3.0"
 
 val releaseStoreFile = configValue("RELEASE_STORE_FILE")
 val releaseStorePassword = configValue("RELEASE_STORE_PASSWORD")
@@ -37,6 +39,11 @@ val releaseSigningComplete = releaseStoreFile != null && file(releaseStoreFile).
 val maplibreTileUrlValue = configValue("MAPLIBRE_TILE_URL")
 val privacyPolicyUrlValue = configValue("PRIVACY_POLICY_URL")
 val deletionUrlValue = configValue("DELETION_URL")
+// Release backend. Production is the OVH host; RELEASE_BASE_URL may override it (env var, local.properties or -P), but
+// the release guard below refuses anything that is not https, is a local/private address, or is the retired Render host.
+val productionBaseUrl = "https://51-79-158-138.sslip.io/"
+val releaseBaseUrlValue: String = (configValue("RELEASE_BASE_URL") ?: productionBaseUrl).let { if (it.endsWith("/")) it else "$it/" }
+val blockedReleaseHosts = listOf("onrender.com", "fieldtrackpro-backend-s7hs", "localhost", "127.0.0.1", "10.0.2.2", "192.168.", "10.0.0.")
 val allowNoFcm = configValue("ALLOW_NO_FCM")?.equals("true", ignoreCase = true) == true
 val hasGoogleServicesJson = file("google-services.json").exists()
 
@@ -92,8 +99,7 @@ android {
             isDebuggable = false
             isMinifyEnabled = true
             isShrinkResources = true
-            val prodBaseUrl = "https://fieldtrackpro-backend-s7hs.onrender.com/"
-            buildConfigField("String", "BASE_URL", "\"$prodBaseUrl\"")
+            buildConfigField("String", "BASE_URL", buildConfigString(releaseBaseUrlValue))
             // Required for release; the build fails (see taskGraph check below) if these are missing.
             buildConfigField("String", "MAPLIBRE_TILE_URL", buildConfigString(maplibreTileUrlValue ?: ""))
             buildConfigField("String", "PRIVACY_POLICY_URL", buildConfigString(privacyPolicyUrlValue ?: ""))
@@ -128,6 +134,12 @@ android {
     }
     testOptions {
         unitTests.isReturnDefaultValues = true
+        // Needed by the Robolectric screenshot test (design review images; skipped unless -PcaptureScreens=true).
+        unitTests.isIncludeAndroidResources = true
+        unitTests.all {
+            it.systemProperty("captureScreens", (project.findProperty("captureScreens") as? String) ?: "false")
+            it.systemProperty("screensDir", rootProject.file("design-review/screens").absolutePath)
+        }
     }
 }
 
@@ -175,6 +187,10 @@ dependencies {
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
+    // Test-only: JVM rendering of Compose screens for design-review screenshots.
+    testImplementation(libs.robolectric)
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.ui.test.junit4)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
@@ -228,6 +244,13 @@ gradle.taskGraph.whenReady {
         }
         if (deletionUrlValue != null && !isHttpsUrl(deletionUrlValue)) {
             problems += "DELETION_URL must be an https:// URL."
+        }
+        if (!releaseBaseUrlValue.startsWith("https://", ignoreCase = true)) {
+            problems += "RELEASE_BASE_URL must be an https:// URL (got a non-https value)."
+        }
+        blockedReleaseHosts.firstOrNull { releaseBaseUrlValue.contains(it, ignoreCase = true) }?.let {
+            problems += "RELEASE_BASE_URL points at a blocked host ('$it'). Release builds must use the production backend " +
+                "($productionBaseUrl); the old Render host and local addresses are refused."
         }
         if (!hasGoogleServicesJson && !allowNoFcm) {
             problems += "app/google-services.json is missing, so push notifications would not work. Download it from " +

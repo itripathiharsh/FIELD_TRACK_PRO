@@ -1,5 +1,7 @@
 package com.fieldtrackpro.android.ui.navigation
 
+import androidx.compose.runtime.LaunchedEffect
+
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.navigation.NavController
@@ -179,15 +181,17 @@ fun NavGraph(
             }
             MonthlyPlanningScreen(
                 viewModel = planningVm,
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.popBackStackSafely() }
             )
         }
 
         composable(Screen.AddCustomer.route) {
             com.fieldtrackpro.android.ui.screens.customers.AddCustomerScreen(
-                onNavigateBack = { navController.popBackStack() },
+                onNavigateBack = { navController.popBackStackSafely() },
                 onCustomerCreated = {
                     visitsViewModel.loadVisits(refresh = true)
+                    visitsViewModel.loadDashboardVisits()
+                    navController.popBackStack()
                 }
             )
         }
@@ -195,7 +199,7 @@ fun NavGraph(
         composable(Screen.TodayVisits.route) {
             TodayVisitsScreen(
                 viewModel = visitsViewModel,
-                onNavigateBack = { navController.popBackStack() },
+                onNavigateBack = { navController.popBackStackSafely() },
                 onNavigateToVisitDetails = { vId -> navController.navigate(Screen.VisitDetails.createRoute(vId)) }
             )
         }
@@ -206,13 +210,13 @@ fun NavGraph(
         ) { backStackEntry ->
             val visitId = backStackEntry.arguments?.getString("visitId") ?: ""
             if (visitId.isBlank()) {
-                navController.popBackStack()
+                LaunchedEffect(Unit) { navController.popBackStack() }
                 return@composable
             }
             VisitDetailsScreen(
                 visitId = visitId,
                 viewModel = visitDetailsViewModel,
-                onNavigateBack = { navController.popBackStack() },
+                onNavigateBack = { navController.popBackStackSafely() },
                 onNavigateToCheckIn = { vId, cId -> navController.navigate(Screen.CheckIn.createRoute(vId, cId)) },
                 onNavigateToCheckOut = { vId, cId -> navController.navigate(Screen.CheckOut.createRoute(vId, cId)) },
                 onNavigateToMedia = { vId -> navController.navigate(Screen.MediaUpload.createRoute(vId)) },
@@ -242,14 +246,14 @@ fun NavGraph(
             val visitId = backStackEntry.arguments?.getString("visitId") ?: ""
             val customerId = backStackEntry.arguments?.getString("customerId") ?: ""
             if (visitId.isBlank() || customerId.isBlank()) {
-                navController.popBackStack()
+                LaunchedEffect(Unit) { navController.popBackStack() }
                 return@composable
             }
             OutletAccountScreen(
                 visitId = visitId,
                 customerId = customerId,
                 viewModel = collectionViewModel,
-                onNavigateBack = { navController.popBackStack() },
+                onNavigateBack = { navController.popBackStackSafely() },
                 onNavigateToCollectPayment = { vId, cId -> navController.navigate(Screen.CollectPayment.createRoute(vId, cId)) }
             )
         }
@@ -264,14 +268,14 @@ fun NavGraph(
             val visitId = backStackEntry.arguments?.getString("visitId") ?: ""
             val customerId = backStackEntry.arguments?.getString("customerId") ?: ""
             if (visitId.isBlank() || customerId.isBlank()) {
-                navController.popBackStack()
+                LaunchedEffect(Unit) { navController.popBackStack() }
                 return@composable
             }
             CollectPaymentScreen(
                 visitId = visitId,
                 customerId = customerId,
                 viewModel = collectionViewModel,
-                onNavigateBack = { navController.popBackStack() },
+                onNavigateBack = { navController.popBackStackSafely() },
                 onSuccess = {
                     collectionViewModel.resetCollectionState()
                     navController.popBackStack()
@@ -289,14 +293,14 @@ fun NavGraph(
             val visitId = backStackEntry.arguments?.getString("visitId") ?: ""
             val formId = backStackEntry.arguments?.getString("formId") ?: ""
             if (visitId.isBlank() || formId.isBlank()) {
-                navController.popBackStack()
+                LaunchedEffect(Unit) { navController.popBackStack() }
                 return@composable
             }
             FormFillScreen(
                 visitId = visitId,
                 formId = formId,
                 viewModel = formFillViewModel,
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.popBackStackSafely() }
             )
         }
 
@@ -310,14 +314,14 @@ fun NavGraph(
             val visitId = backStackEntry.arguments?.getString("visitId") ?: ""
             val customerId = backStackEntry.arguments?.getString("customerId") ?: ""
             if (visitId.isBlank()) {
-                navController.popBackStack()
+                LaunchedEffect(Unit) { navController.popBackStack() }
                 return@composable
             }
             CheckInScreen(
                 visitId = visitId,
                 customerId = customerId,
                 viewModel = checkInViewModel,
-                onNavigateBack = { navController.popBackStack() },
+                onNavigateBack = { navController.popBackStackSafely() },
                 onSuccess = { navController.popBackStack() }
             )
         }
@@ -332,14 +336,14 @@ fun NavGraph(
             val visitId = backStackEntry.arguments?.getString("visitId") ?: ""
             val customerId = backStackEntry.arguments?.getString("customerId") ?: ""
             if (visitId.isBlank()) {
-                navController.popBackStack()
+                LaunchedEffect(Unit) { navController.popBackStack() }
                 return@composable
             }
             CheckOutScreen(
                 visitId = visitId,
                 customerId = customerId,
                 viewModel = checkOutViewModel,
-                onNavigateBack = { navController.popBackStack() },
+                onNavigateBack = { navController.popBackStackSafely() },
                 onSuccess = { navController.popBackStack() }
             )
         }
@@ -350,14 +354,14 @@ fun NavGraph(
         ) { backStackEntry ->
             val visitId = backStackEntry.arguments?.getString("visitId") ?: ""
             if (visitId.isBlank()) {
-                navController.popBackStack()
+                LaunchedEffect(Unit) { navController.popBackStack() }
                 return@composable
             }
             MediaUploadScreen(
                 visitId = visitId,
                 viewModel = mediaViewModel,
                 isOrderMode = false,
-                onNavigateBack = { navController.popBackStack() },
+                onNavigateBack = { navController.popBackStackSafely() },
                 onPreviewMedia = { mediaId, fileName, isPhoto ->
                     navController.navigate(
                         Screen.AttachmentPreview.createRoute(mediaId, fileName, isPhoto)
@@ -372,14 +376,14 @@ fun NavGraph(
         ) { backStackEntry ->
             val visitId = backStackEntry.arguments?.getString("visitId") ?: ""
             if (visitId.isBlank()) {
-                navController.popBackStack()
+                LaunchedEffect(Unit) { navController.popBackStack() }
                 return@composable
             }
             MediaUploadScreen(
                 visitId = visitId,
                 viewModel = mediaViewModel,
                 isOrderMode = true,
-                onNavigateBack = { navController.popBackStack() },
+                onNavigateBack = { navController.popBackStackSafely() },
                 onPreviewMedia = { mediaId, fileName, isPhoto ->
                     navController.navigate(
                         Screen.AttachmentPreview.createRoute(mediaId, fileName, isPhoto)
@@ -394,7 +398,7 @@ fun NavGraph(
                 authViewModel = authViewModel,
                 offlineQueueManager = offlineQueueManager,
                 onSyncNow = { onDone -> visitsViewModel.syncOfflineQueue { onDone() } },
-                onNavigateBack = { navController.popBackStack() },
+                onNavigateBack = { navController.popBackStackSafely() },
                 onLogout = {
                     navController.navigate(Screen.Login.route) {
                         popUpTo(0) { inclusive = true }
@@ -409,14 +413,14 @@ fun NavGraph(
                 offlineQueueManager = offlineQueueManager,
                 visitsViewModel = visitsViewModel,
                 tokenManager = tokenManager,
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.popBackStackSafely() }
             )
         }
 
         composable(Screen.Notifications.route) {
             NotificationsListScreen(
                 viewModel = notificationViewModel,
-                onNavigateBack = { navController.popBackStack() },
+                onNavigateBack = { navController.popBackStackSafely() },
                 onNavigateToVisitDetails = { vId -> navController.navigate(Screen.VisitDetails.createRoute(vId)) }
             )
         }
@@ -427,12 +431,12 @@ fun NavGraph(
         ) { backStackEntry ->
             val customerId = backStackEntry.arguments?.getString("customerId") ?: ""
             if (customerId.isBlank()) {
-                navController.popBackStack()
+                LaunchedEffect(Unit) { navController.popBackStack() }
                 return@composable
             }
             MapScreen(
                 customerId = customerId,
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.popBackStackSafely() }
             )
         }
 
@@ -448,7 +452,7 @@ fun NavGraph(
             val rawFileName = backStackEntry.arguments?.getString("fileName") ?: "attachment"
             val isPhoto = backStackEntry.arguments?.getBoolean("isPhoto") ?: false
             if (mediaId.isBlank()) {
-                navController.popBackStack()
+                LaunchedEffect(Unit) { navController.popBackStack() }
                 return@composable
             }
             val decodedFileName = try {
@@ -460,7 +464,7 @@ fun NavGraph(
                 mediaId = mediaId,
                 fileName = decodedFileName,
                 isPhoto = isPhoto,
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.popBackStackSafely() }
             )
         }
 
@@ -470,16 +474,16 @@ fun NavGraph(
         ) { backStackEntry ->
             val visitId = backStackEntry.arguments?.getString("visitId") ?: ""
             if (visitId.isBlank()) {
-                navController.popBackStack()
+                LaunchedEffect(Unit) { navController.popBackStack() }
                 return@composable
             }
             VisitSummaryScreen(
                 visitId = visitId,
                 viewModel = visitSummaryViewModel,
-                onNavigateBack = { navController.popBackStack() },
+                onNavigateBack = { navController.popBackStackSafely() },
                 onNavigateToCheckIn = { vId, cId -> navController.navigate(Screen.CheckIn.createRoute(vId, cId)) },
                 onNavigateToCheckOut = { vId, cId -> navController.navigate(Screen.CheckOut.createRoute(vId, cId)) },
-                onCancel = { navController.popBackStack() }
+                onCancel = { navController.popBackStackSafely() }
             )
         }
 
@@ -505,13 +509,13 @@ fun NavGraph(
         ) { backStackEntry ->
             val visitId = backStackEntry.arguments?.getString("visitId") ?: ""
             if (visitId.isBlank()) {
-                navController.popBackStack()
+                LaunchedEffect(Unit) { navController.popBackStack() }
                 return@composable
             }
             RequirementFormScreen(
                 visitId = visitId,
                 viewModel = requirementViewModel,
-                onNavigateBack = { navController.popBackStack() },
+                onNavigateBack = { navController.popBackStackSafely() },
                 onSubmitSuccess = {
                     navController.popBackStack()
                 }
@@ -524,13 +528,13 @@ fun NavGraph(
         ) { backStackEntry ->
             val visitId = backStackEntry.arguments?.getString("visitId") ?: ""
             if (visitId.isBlank()) {
-                navController.popBackStack()
+                LaunchedEffect(Unit) { navController.popBackStack() }
                 return@composable
             }
             SignatureScreen(
                 visitId = visitId,
                 viewModel = signatureViewModel,
-                onNavigateBack = { navController.popBackStack() },
+                onNavigateBack = { navController.popBackStackSafely() },
                 onComplete = {
                     navController.popBackStack()
                 }

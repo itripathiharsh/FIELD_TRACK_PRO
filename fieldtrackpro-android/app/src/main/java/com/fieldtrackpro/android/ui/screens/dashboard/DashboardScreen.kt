@@ -1,6 +1,10 @@
 package com.fieldtrackpro.android.ui.screens.dashboard
 
+import android.Manifest
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -12,43 +16,41 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccountBalanceWallet
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.AddBusiness
 import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.EventNote
 import androidx.compose.material.icons.filled.NearMe
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Divider
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -56,49 +58,76 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.fieldtrackpro.android.data.local.TokenManager
-import com.fieldtrackpro.android.data.model.VisitDto
 import com.fieldtrackpro.android.services.LocationCaptureService
-import com.fieldtrackpro.android.ui.components.FieldTrackTopAppBar
-import com.fieldtrackpro.android.ui.components.LoadingScreen
+import com.fieldtrackpro.android.services.LocationPermissionDeniedException
+import com.fieldtrackpro.android.ui.components.ActionTile
+import com.fieldtrackpro.android.ui.components.BrandMark
+import com.fieldtrackpro.android.ui.components.InlineErrorCard
 import com.fieldtrackpro.android.ui.components.OfflineSyncBanner
+import com.fieldtrackpro.android.ui.components.PermissionDisclosureKind
+import com.fieldtrackpro.android.ui.components.PrimaryButton
+import com.fieldtrackpro.android.ui.components.SectionHeader
+import com.fieldtrackpro.android.ui.components.SignalButton
+import com.fieldtrackpro.android.ui.components.SkeletonBlock
+import com.fieldtrackpro.android.ui.components.StatTile
 import com.fieldtrackpro.android.ui.components.StatusBadge
+import com.fieldtrackpro.android.ui.components.StatusChip
+import com.fieldtrackpro.android.ui.components.rememberPermissionDeniedHandler
+import com.fieldtrackpro.android.ui.components.rememberWithDisclosure
 import com.fieldtrackpro.android.ui.screens.visits.AdHocVisitDialog
 import com.fieldtrackpro.android.ui.theme.BrandGold
 import com.fieldtrackpro.android.ui.theme.BrandGoldDark
-import com.fieldtrackpro.android.ui.theme.BrandGoldLight
 import com.fieldtrackpro.android.ui.theme.BrandLightGray
 import com.fieldtrackpro.android.ui.theme.BrandNavy
 import com.fieldtrackpro.android.ui.theme.BrandWhite
-import com.fieldtrackpro.android.ui.theme.ErrorRed
+import com.fieldtrackpro.android.ui.theme.GoldOnNavyText
+import com.fieldtrackpro.android.ui.theme.LabelCaps
 import com.fieldtrackpro.android.ui.theme.LeagueSpartanFamily
-import com.fieldtrackpro.android.ui.theme.LibreBaskervilleFamily
+import com.fieldtrackpro.android.ui.theme.Navy100
+import com.fieldtrackpro.android.ui.theme.Navy50
+import com.fieldtrackpro.android.ui.theme.Navy950
 import com.fieldtrackpro.android.ui.theme.SuccessGreen
+import com.fieldtrackpro.android.ui.theme.SuccessGreenText
 import com.fieldtrackpro.android.ui.theme.SurfaceSecondary
+import com.fieldtrackpro.android.ui.theme.SystemBarIcons
+import com.fieldtrackpro.android.ui.theme.TextOnNavyMuted
 import com.fieldtrackpro.android.ui.theme.TextSecondary
 import com.fieldtrackpro.android.ui.theme.TextSubtle
-import com.fieldtrackpro.android.ui.viewmodel.DashboardState
-import com.fieldtrackpro.android.ui.viewmodel.VisitsState
 import com.fieldtrackpro.android.ui.viewmodel.VisitsViewModel
 import com.fieldtrackpro.android.ui.viewmodel.WorkdayViewModel
-import com.fieldtrackpro.android.utils.DateTimeUtils
+import com.fieldtrackpro.android.utils.LocationSettingsHelper
+import com.fieldtrackpro.android.utils.MoneyFormat
+import com.fieldtrackpro.android.utils.WorkdayLocationPolicy
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
+private enum class WorkdayAction { START, END }
+
+/**
+ * Employee dashboard (design v2).
+ *
+ * Fixes folded in here: Start/End Day go through the location permission + disclosure flow and a GPS validity policy
+ * ([WorkdayLocationPolicy]: never 0,0, never mock, accuracy bounded); workday errors and successes are shown; the
+ * quick actions stay usable while visits load or fail; Today's Beat no longer inherits the visits screen's filters;
+ * the unused /dashboard/summary request and the duplicate /workday/today request are gone; money keeps paise and
+ * uses Indian grouping.
+ */
 @Composable
 fun DashboardScreen(
     visitsViewModel: VisitsViewModel,
@@ -113,1058 +142,464 @@ fun DashboardScreen(
     onNavigateToMonthlyPlanning: () -> Unit = {}
 ) {
     val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
+    val scope = rememberCoroutineScope()
     val locationService = remember { LocationCaptureService(context) }
 
-    val visitsState by visitsViewModel.visitsState.collectAsState()
-    val dashboardState by visitsViewModel.dashboardState.collectAsState()
+    val beatState by visitsViewModel.dashboardVisitsState.collectAsState()
     val pendingOfflineCount by visitsViewModel.pendingOfflineCount.collectAsState()
-    val workdayUiState by workdayViewModel.uiState.collectAsState()
+    val workdayUi by workdayViewModel.uiState.collectAsState()
 
-    var isCapturingLocation by remember { mutableStateOf(false) }
-    var showEndDayConfirmDialog by remember { mutableStateOf(false) }
-    var showAdHocVisitDialog by remember { mutableStateOf(false) }
-    var endDayLocationFix by remember { mutableStateOf<Pair<Double, Double>?>(null) }
-    var endDayAccuracy by remember { mutableStateOf<Double?>(null) }
-    var endDayNotes by remember { mutableStateOf("") }
-
-    val greeting = remember {
-        val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
-        when {
-            hour < 12 -> "Good Morning"
-            hour < 17 -> "Good Afternoon"
-            else -> "Good Evening"
-        }
-    }
-    val currentDateStr = remember {
-        SimpleDateFormat("EEEE, dd MMM", Locale.getDefault()).format(Date())
-    }
+    var isCapturing by remember { mutableStateOf(false) }
+    var pendingAction by rememberSaveable { mutableStateOf<WorkdayAction?>(null) }
+    var showAdHocDialog by rememberSaveable { mutableStateOf(false) }
+    // End Day can only be confirmed with an ACCEPTED fix; there is no (0,0) fallback any more.
+    var endDayFix by remember { mutableStateOf<WorkdayLocationPolicy.Decision.Accept?>(null) }
+    var endDayNotes by rememberSaveable { mutableStateOf("") }
 
     fun refreshAll() {
-        visitsViewModel.loadVisits(refresh = true)
-        visitsViewModel.loadDashboardSummary()
+        visitsViewModel.loadDashboardVisits()
+        visitsViewModel.updateOfflineCount()
         workdayViewModel.loadTodayWorkday()
     }
 
-    LaunchedEffect(Unit) {
-        refreshAll()
+    LaunchedEffect(Unit) { refreshAll() }
+
+    LaunchedEffect(workdayUi.actionSuccessMessage) {
+        workdayUi.actionSuccessMessage?.let {
+            Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
+            workdayViewModel.clearMessages()
+        }
     }
 
-    val workday = workdayUiState.workday?.session
-    val workdaySummary = workdayUiState.workday?.summary
-
-    Scaffold(
-        topBar = {
-            FieldTrackTopAppBar(
-                title = "FieldTrack Pro",
-                actions = {
-                    IconButton(onClick = { refreshAll() }) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = "Refresh",
-                            tint = BrandNavy
+    fun captureAndRun(action: WorkdayAction) {
+        if (isCapturing || workdayUi.isSubmitting) return
+        scope.launch {
+            isCapturing = true
+            workdayViewModel.clearMessages()
+            try {
+                val loc = locationService.getCurrentLocation(15_000)
+                when (val decision = WorkdayLocationPolicy.evaluate(loc.latitude, loc.longitude, loc.accuracy.toDouble(), loc.isMockLocation)) {
+                    is WorkdayLocationPolicy.Decision.Reject -> workdayViewModel.showError(decision.message)
+                    is WorkdayLocationPolicy.Decision.Accept -> when (action) {
+                        WorkdayAction.START -> workdayViewModel.startDay(
+                            latitude = decision.latitude,
+                            longitude = decision.longitude,
+                            accuracyM = decision.accuracyM,
+                            notes = "Mobile check-in",
+                            onSuccess = { refreshAll() }
                         )
-                    }
-                    IconButton(onClick = onNavigateToProfile) {
-                        Icon(
-                            imageVector = Icons.Default.Person,
-                            contentDescription = "Profile",
-                            tint = BrandNavy
-                        )
+                        WorkdayAction.END -> endDayFix = decision
                     }
                 }
-            )
-        }
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(SurfaceSecondary)
-                .padding(innerPadding)
-                .padding(horizontal = 16.dp, vertical = 12.dp)
-                .verticalScroll(rememberScrollState())
-        ) {
-            // ----------------------------------------------------
-            // 1. HEADER CARD: Greeting, Date & Workday Status
-            // ----------------------------------------------------
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(1.dp, BrandLightGray, RoundedCornerShape(16.dp)),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = BrandWhite),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-            ) {
-                Column(modifier = Modifier.padding(18.dp)) {
-                    // Greeting & Date Row
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.Top
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "$greeting,",
-                                fontFamily = LibreBaskervilleFamily,
-                                fontSize = 14.sp,
-                                color = TextSecondary
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = tokenManager.getUserName() ?: "Field Representative",
-                                fontFamily = LeagueSpartanFamily,
-                                fontSize = 22.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = BrandNavy
-                            )
-                        }
-
-                        // Formatted Date Badge
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(SurfaceSecondary)
-                                .border(1.dp, BrandLightGray, RoundedCornerShape(8.dp))
-                                .padding(horizontal = 10.dp, vertical = 6.dp)
-                        ) {
-                            Text(
-                                text = currentDateStr,
-                                fontFamily = LeagueSpartanFamily,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp,
-                                color = BrandNavy
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // Workday Status & Action Section
-                    when (workday?.status) {
-                        "STARTED" -> {
-                            // Active Shift
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(SuccessGreen.copy(alpha = 0.08f))
-                                    .border(1.dp, SuccessGreen.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
-                                    .padding(12.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(10.dp)
-                                            .clip(CircleShape)
-                                            .background(SuccessGreen)
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Column {
-                                        Text(
-                                            text = "Workday Started",
-                                            fontFamily = LeagueSpartanFamily,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 14.sp,
-                                            color = BrandNavy
-                                        )
-                                        Text(
-                                            text = "Clocked in at ${DateTimeUtils.formatDisplayTime(workday.startTime)}",
-                                            fontFamily = LeagueSpartanFamily,
-                                            fontSize = 12.sp,
-                                            color = TextSecondary
-                                        )
-                                    }
-                                }
-
-                                Button(
-                                    onClick = {
-                                        workdayViewModel.loadTodayWorkday()
-                                        coroutineScope.launch {
-                                            isCapturingLocation = true
-                                            try {
-                                                val loc = locationService.getCurrentLocation(8000)
-                                                endDayLocationFix = Pair(loc.latitude, loc.longitude)
-                                                endDayAccuracy = loc.accuracy.toDouble()
-                                                showEndDayConfirmDialog = true
-                                            } catch (e: Exception) {
-                                                Toast.makeText(context, e.message ?: "Location error", Toast.LENGTH_SHORT).show()
-                                                endDayLocationFix = Pair(0.0, 0.0)
-                                                showEndDayConfirmDialog = true
-                                            } finally {
-                                                isCapturingLocation = false
-                                            }
-                                        }
-                                    },
-                                    shape = RoundedCornerShape(8.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = ErrorRed),
-                                    enabled = !isCapturingLocation && !workdayUiState.isSubmitting
-                                ) {
-                                    if (isCapturingLocation) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(14.dp),
-                                            color = BrandWhite,
-                                            strokeWidth = 2.dp
-                                        )
-                                    } else {
-                                        Icon(
-                                            imageVector = Icons.Default.Stop,
-                                            contentDescription = null,
-                                            tint = BrandWhite,
-                                            modifier = Modifier.size(14.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text(
-                                            text = "END DAY",
-                                            fontFamily = LeagueSpartanFamily,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 12.sp,
-                                            letterSpacing = 0.6.sp,
-                                            color = BrandWhite
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        "COMPLETED" -> {
-                            // Completed Shift
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(BrandNavy.copy(alpha = 0.06f))
-                                    .border(1.dp, BrandNavy.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
-                                    .padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.CheckCircle,
-                                    contentDescription = null,
-                                    tint = SuccessGreen,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Column {
-                                    Text(
-                                        text = "Workday Completed",
-                                        fontFamily = LeagueSpartanFamily,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 14.sp,
-                                        color = BrandNavy
-                                    )
-                                    Text(
-                                        text = "${DateTimeUtils.formatDisplayTime(workday.startTime)} — ${DateTimeUtils.formatDisplayTime(workday.endTime)}",
-                                        fontFamily = LeagueSpartanFamily,
-                                        fontSize = 12.sp,
-                                        color = TextSecondary
-                                    )
-                                }
-                            }
-                        }
-
-                        else -> {
-                            // Not Started Shift
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(BrandGold.copy(alpha = 0.1f))
-                                    .border(1.dp, BrandGold.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
-                                    .padding(14.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Column {
-                                        Text(
-                                            text = "Workday not started",
-                                            fontFamily = LeagueSpartanFamily,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 14.sp,
-                                            color = BrandNavy
-                                        )
-                                        Text(
-                                            text = "Clock in with GPS to begin visits",
-                                            fontFamily = LeagueSpartanFamily,
-                                            fontSize = 12.sp,
-                                            color = TextSecondary
-                                        )
-                                    }
-
-                                    Button(
-                                        onClick = {
-                                            coroutineScope.launch {
-                                                isCapturingLocation = true
-                                                try {
-                                                    val loc = locationService.getCurrentLocation(8000)
-                                                    workdayViewModel.startDay(
-                                                        latitude = loc.latitude,
-                                                        longitude = loc.longitude,
-                                                        accuracyM = loc.accuracy.toDouble(),
-                                                        notes = "Mobile check-in",
-                                                        onSuccess = { refreshAll() }
-                                                    )
-                                                } catch (e: Exception) {
-                                                    Toast.makeText(context, e.message ?: "Failed to capture GPS", Toast.LENGTH_SHORT).show()
-                                                } finally {
-                                                    isCapturingLocation = false
-                                                }
-                                            }
-                                        },
-                                        shape = RoundedCornerShape(8.dp),
-                                        colors = ButtonDefaults.buttonColors(containerColor = SuccessGreen),
-                                        enabled = !isCapturingLocation && !workdayUiState.isSubmitting
-                                    ) {
-                                        if (isCapturingLocation || workdayUiState.isSubmitting) {
-                                            CircularProgressIndicator(
-                                                modifier = Modifier.size(14.dp),
-                                                color = BrandWhite,
-                                                strokeWidth = 2.dp
-                                            )
-                                        } else {
-                                            Icon(
-                                                imageVector = Icons.Default.PlayArrow,
-                                                contentDescription = null,
-                                                tint = BrandWhite,
-                                                modifier = Modifier.size(16.dp)
-                                            )
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text(
-                                                text = "START DAY",
-                                                fontFamily = LeagueSpartanFamily,
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 12.sp,
-                                                letterSpacing = 0.8.sp,
-                                                color = BrandWhite
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            // Offline Sync Banner
-            OfflineSyncBanner(
-                pendingCount = pendingOfflineCount,
-                onSyncClick = onNavigateToSync
-            )
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            when (val state = visitsState) {
-                is VisitsState.Loading -> LoadingScreen(message = "Loading daily beat and performance...")
-                is VisitsState.Error -> {
-                    Text(
-                        text = "Notice: ${state.message}",
-                        fontFamily = LeagueSpartanFamily,
-                        color = ErrorRed,
-                        fontSize = 13.sp
-                    )
-                }
-                is VisitsState.Success -> {
-                    val allVisits = state.visits
-                    val plannedVisits = allVisits.filter { !it.isAdHoc }
-                    val adhocVisits = allVisits.filter { it.isAdHoc }
-
-                    val totalVisitsCount = workdaySummary?.totalVisits ?: allVisits.size
-                    val plannedCount = workdaySummary?.plannedVisits ?: plannedVisits.size
-                    val adhocCount = workdaySummary?.adhocVisits ?: adhocVisits.size
-                    val totalCollection = workdaySummary?.collectionsTotalAmount ?: 0.0
-
-                    // ----------------------------------------------------
-                    // 2. TODAY'S PERFORMANCE (4 KPI Cards)
-                    // ----------------------------------------------------
-                    Text(
-                        text = "TODAY'S PERFORMANCE",
-                        fontFamily = LeagueSpartanFamily,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.sp,
-                        color = BrandNavy
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        MetricCard(
-                            title = "TODAY'S VISITS",
-                            value = totalVisitsCount.toString(),
-                            accentColor = BrandNavy,
-                            modifier = Modifier.weight(1f)
-                        )
-                        MetricCard(
-                            title = "PLANNED",
-                            value = plannedCount.toString(),
-                            accentColor = BrandGoldDark,
-                            modifier = Modifier.weight(1f)
-                        )
-                        MetricCard(
-                            title = "AD-HOC",
-                            value = adhocCount.toString(),
-                            accentColor = if (adhocCount > 0) SuccessGreen else TextSecondary,
-                            modifier = Modifier.weight(1f)
-                        )
-                        MetricCard(
-                            title = "COLLECTION",
-                            value = "₹${totalCollection.toInt()}",
-                            accentColor = SuccessGreen,
-                            modifier = Modifier.weight(1.2f)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(18.dp))
-
-                    // ----------------------------------------------------
-                    // 3. QUICK ACTIONS GRID (4 Action Buttons)
-                    // ----------------------------------------------------
-                    Text(
-                        text = "QUICK ACTIONS",
-                        fontFamily = LeagueSpartanFamily,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.sp,
-                        color = BrandNavy
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        QuickActionButton(
-                            title = "Today's Beat",
-                            icon = Icons.Default.CalendarToday,
-                            onClick = onNavigateToVisits,
-                            modifier = Modifier.weight(1f)
-                        )
-                        QuickActionButton(
-                            title = "Off-Beat Visit",
-                            icon = Icons.Default.NearMe,
-                            onClick = { showAdHocVisitDialog = true },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        QuickActionButton(
-                            title = "+ Add Customer",
-                            icon = Icons.Default.AddBusiness,
-                            onClick = onNavigateToAddCustomer,
-                            modifier = Modifier.weight(1f)
-                        )
-                        QuickActionButton(
-                            title = "Collect Payment",
-                            icon = Icons.Default.AccountBalanceWallet,
-                            onClick = onNavigateToVisits,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        QuickActionButton(
-                            title = "My Monthly Plan",
-                            icon = Icons.Default.CalendarMonth,
-                            onClick = onNavigateToMonthlyPlanning,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Spacer(modifier = Modifier.weight(1f))
-                    }
-
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    // Monthly Planning Quick Access Card
-                    Card(
-                        onClick = onNavigateToMonthlyPlanning,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .border(1.dp, BrandGold.copy(alpha = 0.5f), RoundedCornerShape(12.dp)),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = CardDefaults.cardColors(containerColor = BrandGold.copy(alpha = 0.08f))
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(14.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                                Icon(
-                                    imageVector = Icons.Default.CalendarMonth,
-                                    contentDescription = null,
-                                    tint = BrandGoldDark,
-                                    modifier = Modifier.size(24.dp)
-                                )
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Column {
-                                    Text(
-                                        text = "My Monthly Visit Plan",
-                                        fontFamily = LeagueSpartanFamily,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 14.sp,
-                                        color = BrandNavy
-                                    )
-                                    Text(
-                                        text = "Plan beat visits, organize routes & track progress",
-                                        fontFamily = LeagueSpartanFamily,
-                                        fontSize = 11.sp,
-                                        color = TextSecondary
-                                    )
-                                }
-                            }
-                            Text(
-                                text = "Open →",
-                                fontFamily = LeagueSpartanFamily,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp,
-                                color = BrandGoldDark
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(18.dp))
-
-                    // ----------------------------------------------------
-                    // 4. TODAY'S BEAT (Planned Customer Visits Preview)
-                    // ----------------------------------------------------
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "TODAY'S BEAT (${plannedVisits.size} CUSTOMERS)",
-                            fontFamily = LeagueSpartanFamily,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 1.sp,
-                            color = BrandNavy
-                        )
-                        Text(
-                            text = "View All Visits →",
-                            fontFamily = LeagueSpartanFamily,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = BrandGoldDark,
-                            modifier = Modifier.clickable { onNavigateToVisits() }
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    if (plannedVisits.isEmpty()) {
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .border(1.dp, BrandLightGray, RoundedCornerShape(12.dp)),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(containerColor = BrandWhite)
-                        ) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(18.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                Text(
-                                    text = "No planned beat visits for today.",
-                                    fontFamily = LeagueSpartanFamily,
-                                    fontSize = 13.sp,
-                                    color = TextSecondary
-                                )
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Text(
-                                    text = "Use [Off-Beat Visit] to start an ad-hoc visit.",
-                                    fontFamily = LeagueSpartanFamily,
-                                    fontSize = 12.sp,
-                                    color = BrandGoldDark,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.clickable { showAdHocVisitDialog = true }
-                                )
-                            }
-                        }
-                    } else {
-                        plannedVisits.take(5).forEach { visit ->
-                            Card(
-                                onClick = { onNavigateToVisitDetails(visit.id) },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 3.dp)
-                                    .border(1.dp, BrandLightGray, RoundedCornerShape(12.dp)),
-                                shape = RoundedCornerShape(12.dp),
-                                colors = CardDefaults.cardColors(containerColor = BrandWhite),
-                                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .padding(12.dp)
-                                        .fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = visit.customerName ?: "Customer #${visit.customerId.take(8)}",
-                                            fontFamily = LeagueSpartanFamily,
-                                            fontSize = 14.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = BrandNavy
-                                        )
-                                        Spacer(modifier = Modifier.height(2.dp))
-                                        Text(
-                                            text = "Scheduled: ${DateTimeUtils.formatDisplayDateTime(visit.scheduledAt)}",
-                                            fontFamily = LibreBaskervilleFamily,
-                                            fontSize = 12.sp,
-                                            color = TextSecondary
-                                        )
-                                    }
-
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        StatusBadge(status = visit.status)
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Icon(
-                                            imageVector = Icons.Default.ChevronRight,
-                                            contentDescription = null,
-                                            tint = TextSecondary,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(18.dp))
-
-                    // ----------------------------------------------------
-                    // 5. COLLECTION SUMMARY CARD
-                    // ----------------------------------------------------
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .border(1.dp, BrandLightGray, RoundedCornerShape(14.dp)),
-                        shape = RoundedCornerShape(14.dp),
-                        colors = CardDefaults.cardColors(containerColor = BrandWhite),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.AccountBalanceWallet,
-                                        contentDescription = null,
-                                        tint = SuccessGreen,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = "Today's Collection Summary",
-                                        fontFamily = LeagueSpartanFamily,
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = BrandNavy
-                                    )
-                                }
-                                Text(
-                                    text = "₹${totalCollection.toInt()}",
-                                    fontFamily = LeagueSpartanFamily,
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = SuccessGreen
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.height(10.dp))
-
-                            val verifiedAmt = workdaySummary?.collectionsVerifiedAmount ?: 0.0
-                            val pendingAmt = (workdaySummary?.collectionsTotalAmount ?: 0.0) - verifiedAmt
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(SurfaceSecondary)
-                                        .padding(10.dp)
-                                ) {
-                                    Column {
-                                        Text(
-                                            text = "PENDING VERIFICATION",
-                                            fontFamily = LeagueSpartanFamily,
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = TextSecondary
-                                        )
-                                        Text(
-                                            text = "₹${pendingAmt.toInt()}",
-                                            fontFamily = LeagueSpartanFamily,
-                                            fontSize = 14.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (pendingAmt > 0) BrandGoldDark else TextSecondary
-                                        )
-                                    }
-                                }
-
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(SurfaceSecondary)
-                                        .padding(10.dp)
-                                ) {
-                                    Column {
-                                        Text(
-                                            text = "VERIFIED",
-                                            fontFamily = LeagueSpartanFamily,
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = TextSecondary
-                                        )
-                                        Text(
-                                            text = "₹${verifiedAmt.toInt()}",
-                                            fontFamily = LeagueSpartanFamily,
-                                            fontSize = 14.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = SuccessGreen
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+            } catch (e: LocationPermissionDeniedException) {
+                workdayViewModel.showError("Location permission is needed to ${if (action == WorkdayAction.START) "start" else "end"} your day.")
+            } catch (e: Exception) {
+                workdayViewModel.showError(e.message ?: "Couldn't get your location. Try again.")
+            } finally {
+                isCapturing = false
             }
         }
     }
 
-    // ----------------------------------------------------
-    // END DAY CONFIRMATION DIALOG
-    // ----------------------------------------------------
-    if (showEndDayConfirmDialog) {
-        val currentVisits = (visitsState as? VisitsState.Success)?.visits ?: emptyList()
-        val localCompleted = currentVisits.count { it.status.equals("COMPLETED", ignoreCase = true) }
-        val localAdhoc = currentVisits.count { it.visitType.equals("AD_HOC", ignoreCase = true) }
-        val displayCompletedVisits = maxOf(workdaySummary?.completedVisits ?: 0, localCompleted)
-        val displayTotalVisits = maxOf(workdaySummary?.totalVisits ?: 0, currentVisits.size, displayCompletedVisits)
-        val displayAdhocVisits = maxOf(workdaySummary?.adhocVisits ?: 0, localAdhoc)
-        val displayCollections = workdaySummary?.collectionsTotalAmount ?: 0.0
+    val onLocationDenied = rememberPermissionDeniedHandler(PermissionDisclosureKind.LOCATION, Manifest.permission.ACCESS_FINE_LOCATION)
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
+        val action = pendingAction
+        pendingAction = null
+        val granted = grants[Manifest.permission.ACCESS_FINE_LOCATION] == true || grants[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        if (granted && action != null) {
+            captureAndRun(action)
+        } else if (!granted) {
+            workdayViewModel.showError("Location permission is needed to start or end your day. Allow it and try again.")
+            onLocationDenied()
+        }
+    }
+    val requestLocationPermission = rememberWithDisclosure(PermissionDisclosureKind.LOCATION) {
+        permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+    }
 
-        AlertDialog(
-            onDismissRequest = { if (!workdayUiState.isSubmitting) showEndDayConfirmDialog = false },
-            containerColor = BrandWhite,
-            shape = RoundedCornerShape(16.dp),
-            title = {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .background(BrandGoldLight, CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Stop,
-                            contentDescription = null,
-                            tint = BrandNavy,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                    Column {
-                        Text(
-                            text = "End Your Workday?",
-                            fontFamily = LibreBaskervilleFamily,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 18.sp,
-                            color = BrandNavy
-                        )
-                        Text(
-                            text = "Shift wrap-up & activity verification",
-                            fontFamily = LeagueSpartanFamily,
-                            fontSize = 12.sp,
-                            color = TextSubtle
-                        )
-                    }
-                }
-            },
-            text = {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFFF6F8FA)),
-                        shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.dp, BrandLightGray)
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(14.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text("Shift Started:", fontSize = 12.sp, color = TextSubtle, fontFamily = LeagueSpartanFamily)
-                                Text(
-                                    DateTimeUtils.formatDisplayTime(workday?.startTime),
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = BrandNavy,
-                                    fontFamily = LeagueSpartanFamily
-                                )
-                            }
-                            Divider(color = BrandLightGray.copy(alpha = 0.7f), thickness = 0.5.dp)
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text("Visits Completed:", fontSize = 12.sp, color = TextSubtle, fontFamily = LeagueSpartanFamily)
-                                Text(
-                                    "$displayCompletedVisits / $displayTotalVisits",
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = BrandNavy,
-                                    fontFamily = LeagueSpartanFamily
-                                )
-                            }
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text("Ad-hoc Visits:", fontSize = 12.sp, color = TextSubtle, fontFamily = LeagueSpartanFamily)
-                                Text(
-                                    "$displayAdhocVisits",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = BrandNavy,
-                                    fontFamily = LeagueSpartanFamily
-                                )
-                            }
-                            Divider(color = BrandLightGray.copy(alpha = 0.7f), thickness = 0.5.dp)
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text("Collections Total:", fontSize = 12.sp, color = TextSubtle, fontFamily = LeagueSpartanFamily)
-                                Text(
-                                    "₹${displayCollections.toInt()}",
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Black,
-                                    color = SuccessGreen,
-                                    fontFamily = LeagueSpartanFamily
-                                )
-                            }
-                            if (endDayAccuracy != null) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Text("GPS Fix:", fontSize = 12.sp, color = TextSubtle, fontFamily = LeagueSpartanFamily)
-                                    Text(
-                                        "Captured (±${endDayAccuracy?.toInt()}m)",
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = BrandNavy,
-                                        fontFamily = LeagueSpartanFamily
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    OutlinedTextField(
-                        value = endDayNotes,
-                        onValueChange = { endDayNotes = it },
-                        label = { Text("Shift summary notes (optional)", fontSize = 12.sp, color = TextSubtle) },
-                        modifier = Modifier.fillMaxWidth(),
-                        maxLines = 2,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = BrandNavy,
-                            unfocusedBorderColor = BrandLightGray,
-                            focusedLabelColor = BrandNavy,
-                            cursorColor = BrandNavy
-                        ),
-                        shape = RoundedCornerShape(10.dp),
-                        textStyle = androidx.compose.ui.text.TextStyle(
-                            fontSize = 13.sp,
-                            fontFamily = LeagueSpartanFamily,
-                            color = BrandNavy
-                        )
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        val fix = endDayLocationFix ?: Pair(0.0, 0.0)
-                        workdayViewModel.endDay(
-                            latitude = fix.first,
-                            longitude = fix.second,
-                            accuracyM = endDayAccuracy,
-                            notes = endDayNotes.ifBlank { "Completed shift" },
-                            onSuccess = {
-                                showEndDayConfirmDialog = false
-                                refreshAll()
-                            }
-                        )
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = BrandNavy),
-                    shape = RoundedCornerShape(10.dp),
-                    enabled = !workdayUiState.isSubmitting
-                ) {
-                    if (workdayUiState.isSubmitting) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            color = BrandWhite,
-                            strokeWidth = 2.dp
-                        )
-                    } else {
-                        Text(
-                            "Confirm & End Day",
-                            color = BrandWhite,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = LeagueSpartanFamily,
-                            fontSize = 13.sp
-                        )
-                    }
-                }
-            },
-            dismissButton = {
-                OutlinedButton(
-                    onClick = { showEndDayConfirmDialog = false },
-                    shape = RoundedCornerShape(10.dp),
-                    border = BorderStroke(1.dp, BrandLightGray),
-                    enabled = !workdayUiState.isSubmitting
-                ) {
-                    Text(
-                        "Cancel",
-                        color = TextSecondary,
-                        fontFamily = LeagueSpartanFamily,
-                        fontSize = 13.sp
-                    )
-                }
+    fun beginWorkdayAction(action: WorkdayAction) {
+        when {
+            !locationService.isLocationEnabled() -> {
+                workdayViewModel.showError("Location is turned off. Turn it on, then try again.")
+                LocationSettingsHelper.openLocationSettings(context)
             }
+            !locationService.hasLocationPermission() -> {
+                pendingAction = action
+                requestLocationPermission()
+            }
+            else -> captureAndRun(action)
+        }
+    }
+
+    val ui = DashboardUiMapper.build(
+        greeting = DashboardUiMapper.greetingFor(Calendar.getInstance().get(Calendar.HOUR_OF_DAY)),
+        userName = tokenManager.getUserName() ?: "Field representative",
+        dateLabel = SimpleDateFormat("EEE, d MMM", Locale.getDefault()).format(Date()),
+        workday = workdayUi.workday,
+        workdayLoadedOnce = workdayUi.loadedOnce,
+        isWorkdayLoading = workdayUi.isLoading,
+        isCapturingLocation = isCapturing,
+        isSubmitting = workdayUi.isSubmitting,
+        workdayError = workdayUi.errorMessage,
+        visitsState = beatState,
+        pendingOffline = pendingOfflineCount
+    )
+
+    DashboardContent(
+        ui = ui,
+        onRefresh = { refreshAll() },
+        onStartDay = { beginWorkdayAction(WorkdayAction.START) },
+        onEndDay = { beginWorkdayAction(WorkdayAction.END) },
+        onDismissError = { workdayViewModel.clearMessages() },
+        onOpenProfile = onNavigateToProfile,
+        onOpenVisits = onNavigateToVisits,
+        onOpenVisit = onNavigateToVisitDetails,
+        onOffBeat = { showAdHocDialog = true },
+        onAddCustomer = onNavigateToAddCustomer,
+        onMonthlyPlan = onNavigateToMonthlyPlanning,
+        onSync = onNavigateToSync
+    )
+
+    endDayFix?.let { fix ->
+        EndDayDialog(
+            ui = ui,
+            accuracyM = fix.accuracyM,
+            notes = endDayNotes,
+            onNotesChange = { endDayNotes = it.take(500) },
+            isSubmitting = workdayUi.isSubmitting,
+            error = workdayUi.errorMessage,
+            onConfirm = {
+                workdayViewModel.endDay(
+                    latitude = fix.latitude,
+                    longitude = fix.longitude,
+                    accuracyM = fix.accuracyM,
+                    notes = endDayNotes.ifBlank { "Completed shift" },
+                    onSuccess = {
+                        endDayFix = null
+                        endDayNotes = ""
+                        refreshAll()
+                    }
+                )
+            },
+            onDismiss = { if (!workdayUi.isSubmitting) endDayFix = null }
         )
     }
 
-    // ----------------------------------------------------
-    // AD-HOC / OFF-BEAT VISIT DIALOG
-    // ----------------------------------------------------
-    if (showAdHocVisitDialog) {
+    if (showAdHocDialog) {
         AdHocVisitDialog(
             viewModel = visitsViewModel,
-            onDismiss = { showAdHocVisitDialog = false },
+            onDismiss = { showAdHocDialog = false },
             onVisitCreated = { visit ->
-                showAdHocVisitDialog = false
+                showAdHocDialog = false
                 refreshAll()
                 onNavigateToVisitDetails(visit.id)
             },
-            onError = { err ->
-                Toast.makeText(context, err, Toast.LENGTH_LONG).show()
-            }
+            onError = { err -> Toast.makeText(context, err, Toast.LENGTH_LONG).show() }
         )
     }
 }
 
+/** Stateless dashboard. Everything stays reachable whatever the loading/error state of the visit list. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MetricCard(title: String, value: String, accentColor: Color, modifier: Modifier = Modifier) {
-    Card(
-        modifier = modifier.border(1.dp, BrandLightGray, RoundedCornerShape(10.dp)),
-        shape = RoundedCornerShape(10.dp),
-        colors = CardDefaults.cardColors(containerColor = BrandWhite),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+fun DashboardContent(
+    ui: DashboardUi,
+    onRefresh: () -> Unit,
+    onStartDay: () -> Unit,
+    onEndDay: () -> Unit,
+    onDismissError: () -> Unit,
+    onOpenProfile: () -> Unit,
+    onOpenVisits: () -> Unit,
+    onOpenVisit: (String) -> Unit,
+    onOffBeat: () -> Unit,
+    onAddCustomer: () -> Unit,
+    onMonthlyPlan: () -> Unit,
+    onSync: () -> Unit
+) {
+    SystemBarIcons(darkIcons = false)
+    Column(Modifier.fillMaxSize().background(SurfaceSecondary)) {
+        // Fixed navy app bar: the status bar always sits on navy, so light icons are always legible.
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(BrandNavy)
+                .statusBarsPadding()
+                .padding(start = 16.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            BrandMark(height = 26.dp)
+            Spacer(Modifier.width(10.dp))
+            Text("FieldTrack Pro", fontFamily = LeagueSpartanFamily, fontWeight = FontWeight.Bold, fontSize = 19.sp, color = BrandWhite, modifier = Modifier.weight(1f))
+            IconButton(onClick = onRefresh) { Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = BrandWhite) }
+            IconButton(onClick = onOpenProfile) { Icon(Icons.Default.Person, contentDescription = "Profile and settings", tint = BrandWhite) }
+        }
+
+        PullToRefreshBox(
+            isRefreshing = ui.isWorkdayLoading && ui.beat is BeatUi.Loading,
+            onRefresh = onRefresh,
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .navigationBarsPadding()
+                    .padding(bottom = 24.dp)
+            ) {
+                WorkdayHero(ui, onStartDay, onEndDay)
+
+                // KPI grid floats over the hero's lower edge.
+                Column(
+                    Modifier.padding(horizontal = 16.dp).offset(y = (-34).dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        StatTile("Visits done", "${ui.visitsDone} / ${ui.visitsTotal}", Modifier.weight(1f))
+                        StatTile("Ad-hoc visits", ui.adhocVisits.toString(), Modifier.weight(1f))
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        StatTile("Collected", MoneyFormat.inr(ui.collectedToday), Modifier.weight(1f), valueColor = SuccessGreenText)
+                        StatTile(
+                            "Not verified",
+                            MoneyFormat.inr(ui.notVerified),
+                            Modifier.weight(1f),
+                            valueColor = if (ui.notVerified > 0) BrandGoldDark else BrandNavy
+                        )
+                    }
+                }
+
+                Column(
+                    Modifier.padding(horizontal = 16.dp).offset(y = (-18).dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    if (ui.workdayError != null) {
+                        InlineErrorCard(message = ui.workdayError, onRetry = onDismissError, actionLabel = "Dismiss")
+                    }
+                    OfflineSyncBanner(pendingCount = ui.pendingOffline, onSyncClick = onSync)
+
+                    Surface(shape = RoundedCornerShape(16.dp), color = BrandWhite, modifier = Modifier.fillMaxWidth().border(1.dp, BrandLightGray, RoundedCornerShape(16.dp))) {
+                        Row(Modifier.padding(horizontal = 6.dp, vertical = 8.dp)) {
+                            ActionTile("Today's beat", Icons.Default.EventNote, onOpenVisits, Modifier.weight(1f), emphasized = true)
+                            ActionTile("Off-beat visit", Icons.Default.NearMe, onOffBeat, Modifier.weight(1f))
+                            ActionTile("Add customer", Icons.Default.AddBusiness, onAddCustomer, Modifier.weight(1f))
+                            ActionTile("Monthly plan", Icons.Default.CalendarMonth, onMonthlyPlan, Modifier.weight(1f))
+                        }
+                    }
+
+                    BeatSection(ui.beat, onOpenVisits, onOpenVisit, onOffBeat, onRefresh)
+
+                    CollectionCard(ui, onCollect = onOpenVisits)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WorkdayHero(ui: DashboardUi, onStartDay: () -> Unit, onEndDay: () -> Unit) {
+    val busy = ui.isCapturingLocation || ui.isSubmitting
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp))
+            .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(BrandNavy, Navy950)))
+            .padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 54.dp)
     ) {
-        Column(modifier = Modifier.padding(10.dp)) {
-            Text(
-                text = title,
-                fontFamily = LeagueSpartanFamily,
-                fontSize = 9.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 0.5.sp,
-                color = TextSecondary,
-                maxLines = 1
+        Text(ui.greeting, fontSize = 15.sp, color = TextOnNavyMuted)
+        Text(ui.userName, fontFamily = LeagueSpartanFamily, fontWeight = FontWeight.Bold, fontSize = 28.sp, color = BrandWhite, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Spacer(Modifier.height(10.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            val (chipText, dot) = when (ui.workdayStatus) {
+                WorkdayStatus.STARTED -> "On duty" to Color(0xFF34D399)
+                WorkdayStatus.COMPLETED -> "Day completed" to Color(0xFF34D399)
+                WorkdayStatus.NOT_STARTED -> "Not started" to BrandGold
+                WorkdayStatus.UNKNOWN -> "Status unavailable" to TextOnNavyMuted
+            }
+            StatusChip(chipText, container = BrandWhite.copy(alpha = 0.10f), content = BrandWhite, dot = dot)
+            Spacer(Modifier.width(8.dp))
+            StatusChip(ui.dateLabel, container = BrandGold.copy(alpha = 0.16f), content = GoldOnNavyText)
+        }
+        ui.workdayDetail?.let {
+            Spacer(Modifier.height(10.dp))
+            Text(it, fontSize = 14.sp, color = TextOnNavyMuted)
+        }
+        Spacer(Modifier.height(16.dp))
+        when (ui.workdayStatus) {
+            WorkdayStatus.NOT_STARTED, WorkdayStatus.UNKNOWN -> SignalButton(
+                text = if (ui.isCapturingLocation) "Getting GPS…" else "Start day",
+                onClick = onStartDay,
+                loading = busy,
+                icon = Icons.Default.PlayArrow,
+                modifier = Modifier.fillMaxWidth()
             )
-            Spacer(modifier = Modifier.height(2.dp))
+            WorkdayStatus.STARTED -> OutlinedButton(
+                onClick = onEndDay,
+                enabled = !busy,
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.5.dp, BrandWhite.copy(alpha = 0.7f)),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)
+            ) {
+                if (busy) {
+                    CircularProgressIndicator(color = BrandWhite, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
+                } else {
+                    Icon(Icons.Default.Stop, contentDescription = null, tint = BrandWhite, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("End day", fontFamily = LeagueSpartanFamily, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = BrandWhite)
+                }
+            }
+            WorkdayStatus.COMPLETED -> Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF34D399), modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Workday completed. See you tomorrow.", fontSize = 14.sp, color = BrandWhite)
+            }
+        }
+    }
+}
+
+@Composable
+private fun BeatSection(beat: BeatUi, onOpenVisits: () -> Unit, onOpenVisit: (String) -> Unit, onOffBeat: () -> Unit, onRetry: () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        val count = (beat as? BeatUi.Loaded)?.plannedTotal
+        SectionHeader(
+            title = if (count != null) "Today's beat · $count" else "Today's beat",
+            actionLabel = "View all",
+            onAction = onOpenVisits
+        )
+        when (beat) {
+            is BeatUi.Loading -> repeat(3) { SkeletonBlock(height = 64.dp) }
+            is BeatUi.Error -> InlineErrorCard(message = beat.message, onRetry = onRetry)
+            is BeatUi.Loaded -> if (beat.planned.isEmpty()) {
+                Surface(shape = RoundedCornerShape(16.dp), color = BrandWhite, modifier = Modifier.fillMaxWidth().border(1.dp, BrandLightGray, RoundedCornerShape(16.dp))) {
+                    Column(Modifier.padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box(Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(Navy100), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.EventNote, contentDescription = null, tint = BrandNavy)
+                        }
+                        Spacer(Modifier.height(10.dp))
+                        Text("No beat visits today", fontFamily = LeagueSpartanFamily, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = BrandNavy)
+                        Text("Visiting a customer anyway? Start an off-beat visit.", fontSize = 14.sp, color = TextSecondary)
+                        TextButton(onClick = onOffBeat) {
+                            Text("Start an off-beat visit", fontFamily = LeagueSpartanFamily, fontWeight = FontWeight.Bold, color = BrandNavy)
+                            Spacer(Modifier.width(4.dp))
+                            Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = BrandNavy, modifier = Modifier.size(16.dp))
+                        }
+                    }
+                }
+            } else {
+                Surface(shape = RoundedCornerShape(16.dp), color = BrandWhite, modifier = Modifier.fillMaxWidth().border(1.dp, BrandLightGray, RoundedCornerShape(16.dp))) {
+                    Column {
+                        beat.planned.forEachIndexed { i, item ->
+                            if (i > 0) HorizontalDivider(color = BrandLightGray, modifier = Modifier.padding(horizontal = 14.dp))
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onOpenVisit(item.id) }
+                                    .heightIn(min = 60.dp)
+                                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(item.name, fontFamily = LeagueSpartanFamily, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = BrandNavy, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(item.timeLabel, fontSize = 13.sp, color = TextSubtle)
+                                }
+                                StatusBadge(status = item.status)
+                                Icon(Icons.Default.ChevronRight, contentDescription = null, tint = TextSubtle, modifier = Modifier.size(20.dp))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CollectionCard(ui: DashboardUi, onCollect: () -> Unit) {
+    Surface(shape = RoundedCornerShape(16.dp), color = BrandWhite, modifier = Modifier.fillMaxWidth().border(1.dp, BrandLightGray, RoundedCornerShape(16.dp))) {
+        Column(Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("TODAY'S COLLECTIONS", style = LabelCaps, color = TextSecondary, modifier = Modifier.weight(1f))
+                Text(MoneyFormat.inr(ui.collectedToday), fontFamily = LeagueSpartanFamily, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = SuccessGreenText)
+            }
+            Spacer(Modifier.height(12.dp))
+            // Verified share of today's total.
+            val share = if (ui.collectedToday > 0) (ui.verified / ui.collectedToday).toFloat().coerceIn(0f, 1f) else 0f
+            Box(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(Navy50)) {
+                Box(Modifier.fillMaxWidth(share).height(8.dp).clip(RoundedCornerShape(4.dp)).background(SuccessGreen))
+            }
+            Spacer(Modifier.height(10.dp))
+            Row {
+                Column(Modifier.weight(1f)) {
+                    Text("Verified", fontSize = 13.sp, color = TextSubtle)
+                    Text(MoneyFormat.inr(ui.verified), fontFamily = LeagueSpartanFamily, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = BrandNavy)
+                }
+                Column(Modifier.weight(1f)) {
+                    Text("Not verified yet", fontSize = 13.sp, color = TextSubtle)
+                    Text(MoneyFormat.inr(ui.notVerified), fontFamily = LeagueSpartanFamily, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = if (ui.notVerified > 0) BrandGoldDark else BrandNavy)
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            PrimaryButton(text = "Collect payment", onClick = onCollect, modifier = Modifier.fillMaxWidth())
             Text(
-                text = value,
-                fontFamily = LeagueSpartanFamily,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = accentColor,
-                maxLines = 1
+                "Pick the customer's visit to record a payment.",
+                fontSize = 12.sp,
+                color = TextSubtle,
+                modifier = Modifier.padding(top = 6.dp).align(Alignment.CenterHorizontally)
             )
         }
     }
 }
 
 @Composable
-fun QuickActionButton(title: String, icon: ImageVector, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Card(
-        onClick = onClick,
-        modifier = modifier.border(1.dp, BrandLightGray, RoundedCornerShape(12.dp)),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = BrandWhite),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-    ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(34.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(BrandNavy)
-                    .border(1.dp, BrandGold, RoundedCornerShape(8.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = BrandGold,
-                    modifier = Modifier.size(18.dp)
+private fun EndDayDialog(
+    ui: DashboardUi,
+    accuracyM: Double,
+    notes: String,
+    onNotesChange: (String) -> Unit,
+    isSubmitting: Boolean,
+    error: String?,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = BrandWhite,
+        shape = RoundedCornerShape(20.dp),
+        title = { Text("End your workday?", fontFamily = LeagueSpartanFamily, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = BrandNavy) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                SummaryRow("Started", ui.workdayDetail?.removePrefix("Clocked in at ") ?: "—")
+                SummaryRow("Visits done", "${ui.visitsDone} / ${ui.visitsTotal}")
+                SummaryRow("Ad-hoc visits", ui.adhocVisits.toString())
+                SummaryRow("Collected", MoneyFormat.inr(ui.collectedToday))
+                SummaryRow("GPS", "Captured (±${accuracyM.toInt()} m)")
+                OutlinedTextField(
+                    value = notes,
+                    onValueChange = onNotesChange,
+                    label = { Text("Notes (optional)") },
+                    maxLines = 3,
+                    enabled = !isSubmitting,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = BrandGold, unfocusedBorderColor = BrandLightGray, focusedLabelColor = BrandNavy),
+                    modifier = Modifier.fillMaxWidth()
                 )
+                if (error != null) Text(error, fontSize = 13.sp, color = com.fieldtrackpro.android.ui.theme.ErrorRed)
             }
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = title,
-                fontFamily = LeagueSpartanFamily,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold,
-                color = BrandNavy
-            )
+        },
+        confirmButton = {
+            PrimaryButton(text = "End day", onClick = onConfirm, loading = isSubmitting)
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !isSubmitting) {
+                Text("Cancel", fontFamily = LeagueSpartanFamily, fontWeight = FontWeight.Bold, color = BrandNavy)
+            }
         }
+    )
+}
+
+@Composable
+private fun SummaryRow(label: String, value: String) {
+    Row(Modifier.fillMaxWidth()) {
+        Text(label, fontSize = 14.sp, color = TextSubtle, modifier = Modifier.weight(1f))
+        Text(value, fontFamily = LeagueSpartanFamily, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = BrandNavy)
     }
 }

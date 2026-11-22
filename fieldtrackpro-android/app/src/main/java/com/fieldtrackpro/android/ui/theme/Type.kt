@@ -37,6 +37,12 @@ val LibreBaskervilleFamily = FontFamily(
     Font(R.font.libre_baskerville_italic, weight = FontWeight.Normal, style = FontStyle.Italic)
 )
 
+/**
+ * Body copy uses the device's own sans (Roboto on most phones): League Spartan's small x-height is hard to read at
+ * 12-15 sp outdoors. League Spartan stays the brand face for display, titles, labels, buttons and numbers.
+ */
+val BodyFamily: FontFamily = FontFamily.Default
+
 // Brand Typography Specification
 val Typography = Typography(
     displayLarge = TextStyle(
@@ -97,21 +103,21 @@ val Typography = Typography(
         lineHeight = 18.sp
     ),
     bodyLarge = TextStyle(
-        fontFamily = LeagueSpartanFamily,
+        fontFamily = BodyFamily,
         fontWeight = FontWeight.Normal,
         fontSize = 16.sp,
         lineHeight = 24.sp,
         letterSpacing = 0.15.sp
     ),
     bodyMedium = TextStyle(
-        fontFamily = LeagueSpartanFamily,
+        fontFamily = BodyFamily,
         fontWeight = FontWeight.Normal,
         fontSize = 14.sp,
         lineHeight = 20.sp,
         letterSpacing = 0.2.sp
     ),
     bodySmall = TextStyle(
-        fontFamily = LeagueSpartanFamily,
+        fontFamily = BodyFamily,
         fontWeight = FontWeight.Normal,
         fontSize = 12.sp,
         lineHeight = 16.sp,
@@ -163,3 +169,24 @@ val SerifBodySmall = TextStyle(
 )
 
 val SerifBodyStyle = SerifBodyMedium
+
+
+// ---- Design system v2 helpers -------------------------------------------------------------------------------------
+
+/** Uppercase section eyebrow / KPI caption. Minimum 11 sp. */
+val LabelCaps = TextStyle(
+    fontFamily = LeagueSpartanFamily,
+    fontWeight = FontWeight.SemiBold,
+    fontSize = 12.sp,
+    lineHeight = 16.sp,
+    letterSpacing = 0.9.sp
+)
+
+/** Large tabular number for KPIs and amounts. */
+val KpiNumber = TextStyle(
+    fontFamily = LeagueSpartanFamily,
+    fontWeight = FontWeight.Bold,
+    fontSize = 24.sp,
+    lineHeight = 28.sp,
+    fontFeatureSettings = "tnum"
+)

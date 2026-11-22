@@ -4,8 +4,10 @@ import android.app.Activity
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.SideEffect
-import androidx.compose.ui.graphics.toArgb
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Shapes
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
@@ -57,23 +59,46 @@ val FieldTrackColorScheme = lightColorScheme(
     onErrorContainer = ErrorRedText
 )
 
+val FieldTrackShapes = Shapes(
+    extraSmall = RoundedCornerShape(8.dp),
+    small = RoundedCornerShape(10.dp),
+    medium = RoundedCornerShape(12.dp),
+    large = RoundedCornerShape(20.dp),
+    extraLarge = RoundedCornerShape(28.dp)
+)
+
+/**
+ * The window is edge-to-edge (MainActivity.enableEdgeToEdge, and enforced by Android 15 for targetSdk 35), so the
+ * status bar is transparent and only its icon colour can be chosen. Light screens need DARK icons; the old code forced
+ * light icons everywhere, which made them invisible on the white top bars.
+ */
+@Composable
+fun SystemBarIcons(darkIcons: Boolean) {
+    val view = LocalView.current
+    if (view.isInEditMode) return
+    DisposableEffect(darkIcons) {
+        val window = (view.context as? Activity)?.window
+        val controller = window?.let { WindowCompat.getInsetsController(it, view) }
+        val previous = controller?.isAppearanceLightStatusBars
+        controller?.isAppearanceLightStatusBars = darkIcons
+        controller?.isAppearanceLightNavigationBars = darkIcons
+        onDispose {
+            if (previous != null) {
+                controller.isAppearanceLightStatusBars = previous
+                controller.isAppearanceLightNavigationBars = previous
+            }
+        }
+    }
+}
+
 @Composable
 fun FieldTrackProTheme(
     content: @Composable () -> Unit
 ) {
-    val colorScheme = FieldTrackColorScheme
-    val view = LocalView.current
-    if (!view.isInEditMode) {
-        SideEffect {
-            val window = (view.context as Activity).window
-            window.statusBarColor = colorScheme.primary.toArgb()
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = false
-        }
-    }
-
     MaterialTheme(
-        colorScheme = colorScheme,
+        colorScheme = FieldTrackColorScheme,
         typography = Typography,
+        shapes = FieldTrackShapes,
         content = content
     )
 }

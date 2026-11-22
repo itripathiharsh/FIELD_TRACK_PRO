@@ -48,10 +48,12 @@ enum class VisitTab {
  */
 class VisitsViewModel(
     private val tokenManager: TokenManager,
-    private val offlineQueueManager: OfflineQueueManager
+    private val offlineQueueManager: OfflineQueueManager,
+    /** Test seam; production builds the repository from ApiClient. */
+    repositoryOverride: VisitRepository? = null
 ) : ViewModel() {
 
-    private val repository = VisitRepository(
+    private val repository = repositoryOverride ?: VisitRepository(
         visitApi = ApiClient.createVisitApi(tokenManager),
         customerApi = ApiClient.createCustomerApi(tokenManager),
         geoApi = ApiClient.createGeoApi(tokenManager),
@@ -62,6 +64,15 @@ class VisitsViewModel(
 
     private val _visitsState = MutableStateFlow<VisitsState>(VisitsState.Loading)
     val visitsState: StateFlow<VisitsState> = _visitsState.asStateFlow()
+
+    // Dashboard "Today's Beat" is loaded separately and ALWAYS as "today, no status filter, no search": it used to
+    // reuse visitsState and so inherited whatever tab/filter/search the visits screen had left behind.
+    private val _dashboardVisitsState = MutableStateFlow<VisitsState>(VisitsState.Loading)
+    val dashboardVisitsState: StateFlow<VisitsState> = _dashboardVisitsState.asStateFlow()
+    private var dashboardJob: Job? = null
+
+    private val _customerSearchError = MutableStateFlow<String?>(null)
+    val customerSearchError: StateFlow<String?> = _customerSearchError.asStateFlow()
 
     private val _dashboardState = MutableStateFlow<DashboardState>(DashboardState.Loading)
     val dashboardState: StateFlow<DashboardState> = _dashboardState.asStateFlow()
@@ -88,6 +99,10 @@ class VisitsViewModel(
     private val _isCreatingAdHocVisit = MutableStateFlow(false)
     val isCreatingAdHocVisit: StateFlow<Boolean> = _isCreatingAdHocVisit.asStateFlow()
 
+    companion object {
+        const val DASHBOARD_LIMIT = 100
+    }
+
     private var currentSkip = 0
     private val pageSize = 50
     private var hasMorePages = true
@@ -100,6 +115,7 @@ class VisitsViewModel(
 
     fun searchCustomersForAdHoc(query: String) {
         customerSearchJob?.cancel()
+        _customerSearchError.value = null
         if (query.isBlank()) {
             _customerSearchResults.value = emptyList()
             _isSearchingCustomers.value = false
@@ -114,6 +130,7 @@ class VisitsViewModel(
                 }
                 is Resource.Error -> {
                     _customerSearchResults.value = emptyList()
+                    _customerSearchError.value = res.message // shown as an error, not as "no customers found"
                 }
                 else -> {}
             }
@@ -134,8 +151,9 @@ class VisitsViewModel(
         onSuccess: (VisitDto) -> Unit,
         onError: (String) -> Unit
     ) {
+        if (_isCreatingAdHocVisit.value) return // double-tap guard
+        _isCreatingAdHocVisit.value = true
         viewModelScope.launch {
-            _isCreatingAdHocVisit.value = true
             when (val res = repository.createAdHocVisit(
                 customerId = customerId,
                 adhocReason = adhocReason,
@@ -144,6 +162,7 @@ class VisitsViewModel(
                 is Resource.Success -> {
                     _isCreatingAdHocVisit.value = false
                     loadVisits(refresh = true)
+                    loadDashboardVisits()
                     onSuccess(res.data)
                 }
                 is Resource.Error -> {
@@ -160,19 +179,13 @@ class VisitsViewModel(
     fun setTab(tab: VisitTab) {
         searchJob?.cancel()
         _selectedTab.value = tab
-        currentSkip = 0
-        hasMorePages = true
-        accumulatedVisits.clear()
-        loadVisits()
+        loadVisits(refresh = true)
     }
 
     fun setStatusFilter(status: String?) {
         searchJob?.cancel()
         _selectedStatus.value = if (status == "ALL") null else status
-        currentSkip = 0
-        hasMorePages = true
-        accumulatedVisits.clear()
-        loadVisits()
+        loadVisits(refresh = true)
     }
 
     fun setSearchQuery(query: String) {
@@ -180,10 +193,7 @@ class VisitsViewModel(
         searchJob?.cancel()
         searchJob = viewModelScope.launch {
             delay(350)
-            currentSkip = 0
-            hasMorePages = true
-            accumulatedVisits.clear()
-            loadVisits()
+            loadVisits(refresh = true)
         }
     }
 
@@ -249,6 +259,27 @@ class VisitsViewModel(
         }
     }
 
+    /** Today's planned + ad-hoc visits for the dashboard, independent of the visits screen's tab/filter/search. */
+    fun loadDashboardVisits() {
+        dashboardJob?.cancel()
+        dashboardJob = viewModelScope.launch {
+            val previous = _dashboardVisitsState.value
+            if (previous !is VisitsState.Success) _dashboardVisitsState.value = VisitsState.Loading
+            when (val result = repository.getTodayVisits(status = null, search = null, skip = 0, limit = DASHBOARD_LIMIT)) {
+                is Resource.Success -> _dashboardVisitsState.value = VisitsState.Success(
+                    visits = result.data,
+                    isTodayTab = true,
+                    totalCount = result.data.size,
+                    hasMore = false
+                )
+                // Keep showing the last good list on a refresh failure; the screen shows the error separately.
+                is Resource.Error -> _dashboardVisitsState.value =
+                    if (previous is VisitsState.Success) previous else VisitsState.Error(result.message)
+                else -> {}
+            }
+        }
+    }
+
     fun loadNextPage() {
         if (!hasMorePages || isLoadingPage) return
         loadVisits()
@@ -287,7 +318,11 @@ class VisitsViewModel(
         currentSkip = 0
         hasMorePages = true
         accumulatedVisits.clear()
+        isLoadingPage = false
+        dashboardJob?.cancel()
         _visitsState.value = VisitsState.Loading
+        _dashboardVisitsState.value = VisitsState.Loading
+        _customerSearchError.value = null
         _dashboardState.value = DashboardState.Loading
     }
 }

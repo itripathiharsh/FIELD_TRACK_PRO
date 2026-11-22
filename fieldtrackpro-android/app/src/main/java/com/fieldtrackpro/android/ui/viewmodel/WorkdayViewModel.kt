@@ -19,6 +19,8 @@ data class WorkdayUiState(
     val isLoading: Boolean = false,
     val isSubmitting: Boolean = false,
     val workday: EmployeeWorkdayResponseDto? = null,
+    /** True once today's workday has been loaded from the server at least once (null workday then means "not started"). */
+    val loadedOnce: Boolean = false,
     val errorMessage: String? = null,
     val actionSuccessMessage: String? = null
 )
@@ -36,16 +38,14 @@ class WorkdayViewModel(application: Application) : AndroidViewModel(application)
     private val _uiState = MutableStateFlow(WorkdayUiState())
     val uiState: StateFlow<WorkdayUiState> = _uiState.asStateFlow()
 
-    init {
-        loadTodayWorkday()
-    }
+    // No init{} load: the dashboard requests the workday once when it opens (it used to be fetched twice).
 
     fun loadTodayWorkday() {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
             when (val res = workdayRepository.getTodayWorkday()) {
                 is Resource.Success -> {
-                    _uiState.update { it.copy(isLoading = false, workday = res.data, errorMessage = null) }
+                    _uiState.update { it.copy(isLoading = false, workday = res.data, loadedOnce = true, errorMessage = null) }
                 }
                 is Resource.Error -> {
                     _uiState.update { it.copy(isLoading = false, errorMessage = res.message) }
@@ -64,8 +64,9 @@ class WorkdayViewModel(application: Application) : AndroidViewModel(application)
         notes: String? = null,
         onSuccess: (() -> Unit)? = null
     ) {
+        if (_uiState.value.isSubmitting) return // double-tap guard
+        _uiState.update { it.copy(isSubmitting = true, errorMessage = null, actionSuccessMessage = null) }
         viewModelScope.launch {
-            _uiState.update { it.copy(isSubmitting = true, errorMessage = null) }
             when (val res = workdayRepository.startDay(latitude, longitude, accuracyM, notes)) {
                 is Resource.Success -> {
                     _uiState.update {
@@ -95,8 +96,9 @@ class WorkdayViewModel(application: Application) : AndroidViewModel(application)
         notes: String? = null,
         onSuccess: (() -> Unit)? = null
     ) {
+        if (_uiState.value.isSubmitting) return // double-tap guard
+        _uiState.update { it.copy(isSubmitting = true, errorMessage = null, actionSuccessMessage = null) }
         viewModelScope.launch {
-            _uiState.update { it.copy(isSubmitting = true, errorMessage = null) }
             when (val res = workdayRepository.endDay(latitude, longitude, accuracyM, notes)) {
                 is Resource.Success -> {
                     _uiState.update {
@@ -117,6 +119,11 @@ class WorkdayViewModel(application: Application) : AndroidViewModel(application)
                 }
             }
         }
+    }
+
+    /** Shows a message produced outside the view-model (e.g. a rejected GPS fix) in the same place as API errors. */
+    fun showError(message: String) {
+        _uiState.update { it.copy(errorMessage = message, actionSuccessMessage = null) }
     }
 
     fun clearMessages() {

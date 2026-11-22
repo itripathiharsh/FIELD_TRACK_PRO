@@ -1,5 +1,9 @@
 package com.fieldtrackpro.android.ui.components
 
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import com.fieldtrackpro.android.ui.theme.BrandLightGray
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -44,22 +48,7 @@ fun FieldTrackTopAppBar(
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (onBackClick == null) {
-                    // Brand Shield Icon badge (matching web header)
-                    Box(
-                        modifier = Modifier
-                            .size(28.dp)
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(BrandNavy)
-                            .border(1.dp, BrandGold, RoundedCornerShape(6.dp)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Shield,
-                            contentDescription = null,
-                            tint = BrandGold,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
+                    BrandMark(height = 26.dp)
                     Spacer(modifier = Modifier.width(10.dp))
                 }
                 Text(
@@ -88,6 +77,9 @@ fun FieldTrackTopAppBar(
             containerColor = BrandWhite,
             actionIconContentColor = BrandNavy
         ),
-        modifier = Modifier.shadow(1.dp)
+        modifier = Modifier.drawBehind {
+            // Hairline instead of a shadow (design system: border OR shadow, never both).
+            drawLine(BrandLightGray, Offset(0f, size.height), Offset(size.width, size.height), strokeWidth = 1.dp.toPx())
+        }
     )
 }

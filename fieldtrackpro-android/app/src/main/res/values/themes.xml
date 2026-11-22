@@ -1,3 +1,12 @@
 <resources>
-    <style name="Theme.FieldTrackPro" parent="android:Theme.Material.Light.NoActionBar" />
+    <!--
+      The launch window is navy with the mark, exactly like the first Compose frame (SplashScreen.kt), so the hand-off
+      is invisible: one splash, no white flash. MainActivity swaps the window background to the light app background
+      once Compose is attached.
+    -->
+    <style name="Theme.FieldTrackPro" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/ft_navy</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
 </resources>
