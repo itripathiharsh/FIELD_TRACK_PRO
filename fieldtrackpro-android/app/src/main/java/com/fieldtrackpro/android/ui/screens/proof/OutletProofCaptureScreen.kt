@@ -19,6 +19,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.safeDrawing
@@ -426,47 +427,20 @@ fun OutletProofCaptureScreen(
                 }
             )
         } else {
-            AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
-
-            Column(
-                modifier = Modifier.fillMaxWidth()
-                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = { cancel() }) { Text("CANCEL", color = Color.White, fontWeight = FontWeight.Bold) }
-                }
-                Text(
-                    "Show the shop board and front",
-                    color = Color.White,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Color(0x99000000)).padding(10.dp)
-                )
-            }
-
-            Column(
-                // Real system insets (gesture bar OR 3-button bar, any device) plus ordinary design spacing.
-                modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal))
-                    .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 28.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                AccuracyIndicator(band = band, fix = fix, blockedText = (shutterState as? ShutterState.Blocked)?.let { OutletProofRules.blockMessage(it.reason) })
-                if (!locationEnabled) {
-                    Button(
-                        onClick = { LocationSettingsHelper.openLocationSettings(context) },
-                        colors = ButtonDefaults.buttonColors(containerColor = BrandGold)
-                    ) { Text("Turn on location", color = BrandNavy, fontWeight = FontWeight.Bold) }
-                }
-                (cameraError ?: error)?.let {
-                    Text(it, color = Color(0xFFFF8A80), fontSize = 13.sp, textAlign = TextAlign.Center)
-                }
-                Shutter(enabled = shutterReady, busy = phase == CapturePhase.PROCESSING, onClick = { onShutter() })
-            }
+            CaptureLayout(
+                preview = { AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize()) },
+                insets = rememberSystemBarInsets(),
+                onCancel = { cancel() },
+                band = band,
+                fix = fix,
+                blockedText = (shutterState as? ShutterState.Blocked)?.let { OutletProofRules.blockMessage(it.reason) },
+                locationEnabled = locationEnabled,
+                onTurnOnLocation = { LocationSettingsHelper.openLocationSettings(context) },
+                errorText = cameraError ?: error,
+                shutterReady = shutterReady,
+                busy = phase == CapturePhase.PROCESSING,
+                onShutter = { onShutter() }
+            )
         }
     }
 }
@@ -560,7 +534,16 @@ private fun Shutter(enabled: Boolean, busy: Boolean, onClick: () -> Unit) {
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        if (busy) CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 3.dp, color = BrandNavy)
+        if (busy) {
+            CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 3.dp, color = BrandNavy)
+        } else {
+            androidx.compose.material3.Icon(
+                androidx.compose.material.icons.Icons.Default.CameraAlt,
+                contentDescription = "Take photo",
+                tint = if (enabled) BrandNavy else Color(0xCC111827),
+                modifier = Modifier.size(30.dp)
+            )
+        }
     }
 }
 
@@ -598,4 +581,109 @@ private fun ReviewContent(payload: OutletProofPayload, onUse: () -> Unit, onReta
             ) { Text("Continue", color = BrandNavy, fontWeight = FontWeight.Bold) }
         }
     }
+}
+
+/**
+ * The capture screen layout. The preview takes whatever height is LEFT after a control bar that sits fully inside
+ * the safe area, so nothing is drawn over the shutter and nothing hides under the gesture/navigation bar.
+ */
+@Composable
+internal fun CaptureLayout(
+    preview: @Composable () -> Unit,
+    insets: BarInsets,
+    onCancel: () -> Unit,
+    band: AccuracyBand,
+    fix: ProofFix?,
+    blockedText: String?,
+    locationEnabled: Boolean,
+    onTurnOnLocation: () -> Unit,
+    errorText: String?,
+    shutterReady: Boolean,
+    busy: Boolean,
+    onShutter: () -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            preview()
+            Column(
+                modifier = Modifier.fillMaxWidth()
+                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
+                    .padding(top = insets.extraTop)
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = onCancel) { Text("CANCEL", color = Color.White, fontWeight = FontWeight.Bold) }
+                }
+                Text(
+                    "Show the shop board and front",
+                    color = Color.White,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Color(0x99000000)).padding(10.dp)
+                )
+            }
+        }
+
+        Column(
+            // Real system insets (gesture bar OR 3-button bar, any device). If this dialog window does not deliver
+            // them to Compose, the window's own raw insets fill the gap (extraBottom); the spacing below is
+            // ordinary design padding on top of that, not a device-specific number.
+            modifier = Modifier.fillMaxWidth()
+                .background(Color(0xFF0B0B0B))
+                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal))
+                .padding(bottom = insets.extraBottom)
+                .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            AccuracyIndicator(band = band, fix = fix, blockedText = blockedText)
+            if (!locationEnabled) {
+                Button(
+                    onClick = onTurnOnLocation,
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandGold)
+                ) { Text("Turn on location", color = BrandNavy, fontWeight = FontWeight.Bold) }
+            }
+            errorText?.let {
+                Text(it, color = Color(0xFFFF8A80), fontSize = 13.sp, textAlign = TextAlign.Center)
+            }
+            if (com.fieldtrackpro.android.BuildConfig.DEBUG) {
+                Text("QA build ${com.fieldtrackpro.android.BuildConfig.BUILD_STAMP}", color = Color(0x88FFFFFF), fontSize = 10.sp)
+            }
+            Shutter(enabled = shutterReady, busy = busy, onClick = onShutter)
+        }
+    }
+}
+
+/** How much extra space the window's raw system-bar insets need beyond what Compose already applies. */
+internal data class BarInsets(val extraTop: androidx.compose.ui.unit.Dp, val extraBottom: androidx.compose.ui.unit.Dp)
+
+@Composable
+internal fun rememberSystemBarInsets(): BarInsets {
+    val view = androidx.compose.ui.platform.LocalView.current
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    var rawTop by androidx.compose.runtime.remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    var rawBottom by androidx.compose.runtime.remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    androidx.compose.runtime.DisposableEffect(view) {
+        fun read() {
+            val i = androidx.core.view.ViewCompat.getRootWindowInsets(view) ?: return
+            val bars = i.getInsetsIgnoringVisibility(
+                androidx.core.view.WindowInsetsCompat.Type.systemBars() or androidx.core.view.WindowInsetsCompat.Type.displayCutout()
+            )
+            val gestures = i.getInsets(androidx.core.view.WindowInsetsCompat.Type.mandatorySystemGestures())
+            rawTop = bars.top
+            rawBottom = maxOf(bars.bottom, gestures.bottom)
+        }
+        read()
+        val l = android.view.ViewTreeObserver.OnGlobalLayoutListener { read() }
+        view.viewTreeObserver.addOnGlobalLayoutListener(l)
+        onDispose { if (view.viewTreeObserver.isAlive) view.viewTreeObserver.removeOnGlobalLayoutListener(l) }
+    }
+    val appliedTop = WindowInsets.safeDrawing.getTop(density)
+    val appliedBottom = WindowInsets.safeDrawing.getBottom(density)
+    return BarInsets(
+        extraTop = with(density) { maxOf(0, rawTop - appliedTop).toDp() },
+        extraBottom = with(density) { maxOf(0, rawBottom - appliedBottom).toDp() }
+    )
 }
