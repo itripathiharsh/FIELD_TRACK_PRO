@@ -50,8 +50,21 @@ class VisitsViewModel(
     private val tokenManager: TokenManager,
     private val offlineQueueManager: OfflineQueueManager,
     /** Test seam; production builds the repository from ApiClient. */
-    repositoryOverride: VisitRepository? = null
+    repositoryOverride: VisitRepository? = null,
+    customerRepositoryOverride: com.fieldtrackpro.android.data.repository.CustomerRepository? = null
 ) : ViewModel() {
+
+    private val customerRepository by lazy {
+        customerRepositoryOverride ?: com.fieldtrackpro.android.data.repository.CustomerRepository(ApiClient.createCustomerApi(tokenManager))
+    }
+
+    /** Off-Beat picker: same ranked, stale-safe search as Monthly Plan (portfolio + 3+ letter directory search). */
+    val adHocSearch = com.fieldtrackpro.android.search.CustomerSearchController(
+        scope = viewModelScope,
+        currentUserId = { tokenManager.getUserId() },
+        loadPortfolio = { com.fieldtrackpro.android.search.CustomerSources.loadPortfolio(customerRepository) },
+        searchDirectory = { q -> com.fieldtrackpro.android.search.CustomerSources.searchDirectory(customerRepository, q) }
+    )
 
     private val repository = repositoryOverride ?: VisitRepository(
         visitApi = ApiClient.createVisitApi(tokenManager),
@@ -324,5 +337,7 @@ class VisitsViewModel(
         _dashboardVisitsState.value = VisitsState.Loading
         _customerSearchError.value = null
         _dashboardState.value = DashboardState.Loading
+        adHocSearch.clear()
+        com.fieldtrackpro.android.search.CustomerPortfolioCache.clear()
     }
 }

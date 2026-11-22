@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.EventNote
+import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.NearMe
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
@@ -139,7 +140,8 @@ fun DashboardScreen(
     onNavigateToSync: () -> Unit,
     onNavigateToNotifications: () -> Unit,
     onNavigateToAddCustomer: () -> Unit = {},
-    onNavigateToMonthlyPlanning: () -> Unit = {}
+    onNavigateToMonthlyPlanning: () -> Unit = {},
+    onNavigateToPerformance: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -257,7 +259,8 @@ fun DashboardScreen(
         onOffBeat = { showAdHocDialog = true },
         onAddCustomer = onNavigateToAddCustomer,
         onMonthlyPlan = onNavigateToMonthlyPlanning,
-        onSync = onNavigateToSync
+        onSync = onNavigateToSync,
+        onPerformance = onNavigateToPerformance
     )
 
     endDayFix?.let { fix ->
@@ -314,7 +317,8 @@ fun DashboardContent(
     onOffBeat: () -> Unit,
     onAddCustomer: () -> Unit,
     onMonthlyPlan: () -> Unit,
-    onSync: () -> Unit
+    onSync: () -> Unit,
+    onPerformance: () -> Unit = {}
 ) {
     SystemBarIcons(darkIcons = false)
     Column(Modifier.fillMaxSize().background(SurfaceSecondary)) {
@@ -386,11 +390,33 @@ fun DashboardContent(
                         }
                     }
 
+                    PerformanceEntry(onPerformance)
+
                     BeatSection(ui.beat, onOpenVisits, onOpenVisit, onOffBeat, onRefresh)
 
                     CollectionCard(ui, onCollect = onOpenVisits)
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun PerformanceEntry(onClick: () -> Unit) {
+    Surface(shape = RoundedCornerShape(16.dp), color = BrandWhite, modifier = Modifier.fillMaxWidth().border(1.dp, BrandLightGray, RoundedCornerShape(16.dp))) {
+        Row(
+            Modifier.fillMaxWidth().clickable(onClick = onClick).heightIn(min = 64.dp).padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(Navy100), contentAlignment = Alignment.Center) {
+                Icon(Icons.Default.Insights, contentDescription = null, tint = BrandNavy)
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("My performance", fontFamily = LeagueSpartanFamily, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = BrandNavy)
+                Text("Collections, outlet outstanding and visit progress", fontSize = 13.sp, color = TextSecondary)
+            }
+            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = TextSubtle)
         }
     }
 }

@@ -62,4 +62,5 @@ sealed class Screen(val route: String) {
     }
     object AddCustomer : Screen("add_customer")
     object MonthlyPlanning : Screen("monthly_planning")
+    object EmployeeDashboard : Screen("employee_dashboard")
 }
