@@ -38,6 +38,8 @@ import com.fieldtrackpro.android.ui.viewmodel.ProofUi
 fun OutletProofLocationDialog(
     customerId: String,
     customerName: String,
+    /** True when the outlet already has GPS: the suggestion is then a CHANGE that an admin must approve. */
+    hasLocation: Boolean = true,
     onDismiss: () -> Unit
 ) {
     val vm: OutletProofFlowViewModel = viewModel(key = "outlet_proof_$customerId")
@@ -51,7 +53,7 @@ fun OutletProofLocationDialog(
         shape = RoundedCornerShape(16.dp),
         title = {
             Column {
-                Text("Outlet photo + GPS", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = BrandNavy)
+                Text(if (hasLocation) "Suggest a different location" else "Suggest outlet location", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = BrandNavy)
                 Text(customerName, fontSize = 12.sp, color = TextSecondary)
             }
         },
@@ -61,8 +63,15 @@ fun OutletProofLocationDialog(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text(
-                    "Stand at the outlet and take a live photo of the shop board and front. Your GPS position is " +
-                        "recorded at the moment you press the shutter. An admin reviews any location change before it is used.",
+                    if (hasLocation) {
+                        "Stand at the outlet and take a live photo of the shop board and front. Your GPS position is " +
+                            "recorded when you press the shutter. This outlet already has a location, so an admin " +
+                            "reviews the change before it is used. Until then the current location stays."
+                    } else {
+                        "This outlet has no GPS location yet. Stand at the shop and take a live photo of the shop board " +
+                            "and front. Your GPS position is recorded when you press the shutter and, if the photo and " +
+                            "GPS are good, saved as the outlet's location straight away. Checking in is a separate step."
+                    },
                     fontSize = 12.sp, color = TextSecondary
                 )
                 OutletProofCard(

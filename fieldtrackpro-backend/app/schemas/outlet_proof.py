@@ -35,6 +35,7 @@ class OutletProofRead(BaseModel):
     submitted_by: uuid.UUID
     submitted_by_name: str | None = None
     distance_from_verified_m: float | None = None
+    auto_accepted: bool = False
     reviewed_by: uuid.UUID | None = None
     reviewed_at: datetime | None = None
     rejection_reason: str | None = None

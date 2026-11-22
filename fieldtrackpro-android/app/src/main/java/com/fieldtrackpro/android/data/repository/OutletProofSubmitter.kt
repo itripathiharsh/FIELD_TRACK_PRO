@@ -179,6 +179,8 @@ object OutletProofMessages {
         val distance = proof.distanceFromVerifiedM
             ?.let { " (%.0f m from the verified location)".format(Locale.US, it) }.orEmpty()
         return when {
+            proof.autoAccepted || (proof.kind == "INITIAL" && proof.status == "APPROVED" && proof.isPrimary) ->
+                "Outlet location registered. It is saved as this outlet's GPS location. You can now check in when you are at the outlet."
             proof.status == "CONFIRMED" || proof.kind == "CONFIRMATION" ->
                 "Location confirmed. Your photo and GPS match the verified outlet location."
             proof.kind == "CHANGE_REQUEST" ->

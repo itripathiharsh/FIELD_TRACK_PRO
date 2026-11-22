@@ -335,14 +335,45 @@ fun VisitDetailsScreen(
                         com.fieldtrackpro.android.ui.components.OutletPhotoSection(customerId = s.customer.id)
                     }
 
-                    OutlinedButton(
-                        onClick = { showSuggestLocationDialog = true },
-                        modifier = Modifier.fillMaxWidth().height(42.dp),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Icon(Icons.Default.LocationOn, contentDescription = null, modifier = Modifier.size(16.dp), tint = BrandNavy)
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Suggest Correct GPS Location", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = BrandNavy)
+                    val outletHasGps = s.customer?.latitude != null && s.customer.longitude != null
+                    if (!outletHasGps) {
+                        // First-time registration: the employee visits the shop once, takes the live photo + GPS and the
+                        // first valid one is accepted at once. Check-in below stays a separate GPS-only step.
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(BrandGold.copy(alpha = 0.12f))
+                                .border(1.dp, BrandGold, RoundedCornerShape(12.dp))
+                                .padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text("This outlet has no GPS location yet", fontFamily = LeagueSpartanFamily, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = BrandNavy)
+                            Text(
+                                "You need to be at the shop once to register it. Take a live photo of the shop board and front; your GPS is saved with it. No photo is needed for normal check-ins afterwards.",
+                                fontSize = 13.sp, color = TextSecondary
+                            )
+                            Button(
+                                onClick = { showSuggestLocationDialog = true },
+                                modifier = Modifier.fillMaxWidth().height(48.dp),
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = BrandGold, contentColor = BrandNavy)
+                            ) {
+                                Icon(Icons.Default.LocationOn, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Suggest Outlet Location", fontFamily = LeagueSpartanFamily, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            }
+                        }
+                    } else {
+                        OutlinedButton(
+                            onClick = { showSuggestLocationDialog = true },
+                            modifier = Modifier.fillMaxWidth().height(42.dp),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Icon(Icons.Default.LocationOn, contentDescription = null, modifier = Modifier.size(16.dp), tint = BrandNavy)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Suggest a Different Location", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = BrandNavy)
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))
@@ -614,14 +645,15 @@ fun VisitDetailsScreen(
                     }
 
                     if (showSuggestLocationDialog && s.customer != null) {
-                        SuggestLocationDialog(
+                        com.fieldtrackpro.android.ui.screens.customers.OutletProofLocationDialog(
                             customerId = s.customer.id,
                             customerName = s.customer.name,
-                            currentLatitude = s.customer.latitude,
-                            currentLongitude = s.customer.longitude,
-                            onDismiss = { showSuggestLocationDialog = false },
-                            onProposalSubmitted = {
+                            hasLocation = s.customer.latitude != null && s.customer.longitude != null,
+                            onDismiss = {
                                 showSuggestLocationDialog = false
+                                // The first registration is accepted at once: reload so the outlet shows its new GPS
+                                // location and check-in becomes available (nothing is checked in automatically).
+                                viewModel.loadVisitDetails(visitId)
                             }
                         )
                     }

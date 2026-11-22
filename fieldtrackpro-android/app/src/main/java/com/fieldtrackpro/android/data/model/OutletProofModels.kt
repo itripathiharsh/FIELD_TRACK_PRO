@@ -22,7 +22,9 @@ data class OutletProofRead(
     @SerializedName("captured_at") val capturedAt: String? = null,
     @SerializedName("distance_from_verified_m") val distanceFromVerifiedM: Double? = null,
     @SerializedName("image_url") val imageUrl: String? = null,
-    @SerializedName("rejection_reason") val rejectionReason: String? = null
+    @SerializedName("rejection_reason") val rejectionReason: String? = null,
+    /** True when the system accepted this proof as the outlet's FIRST location (no admin review). */
+    @SerializedName("auto_accepted") val autoAccepted: Boolean = false
 )
 
 /** Multipart field names of POST /customers/outlet-proofs (single source of truth, unit-tested). */

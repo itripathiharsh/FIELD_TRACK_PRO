@@ -46,14 +46,33 @@ object ImageDownsampler {
      * an image at all (caller falls back to the original bytes/behaviour).
      */
     fun downsample(context: Context, uri: Uri, maxDimensionPx: Int = MAX_DIMENSION_PX, quality: Int = JPEG_QUALITY): ByteArray? {
+        return try {
+            downsampleInternal(context, uri, maxDimensionPx, quality, extraSampling = 1)
+        } catch (e: OutOfMemoryError) {
+            // A very large sensor on a low-memory phone: retry once at half the resolution instead of failing.
+            try {
+                downsampleInternal(context, uri, maxDimensionPx, quality, extraSampling = 2)
+            } catch (e2: Throwable) {
+                null
+            }
+        } catch (e: Exception) {
+            null // unreadable / missing / not an image
+        }
+    }
+
+    private fun downsampleInternal(context: Context, uri: Uri, maxDimensionPx: Int, quality: Int, extraSampling: Int): ByteArray? {
+        // BUG FIX (camera "photo could not be processed"): with inJustDecodeBounds = true, decodeStream() ALWAYS
+        // returns null (it only fills `bounds`). The old code used that return value as "stream opened" via
+        // `?: return null`, so every photo was reported as undecodable. Whether the stream opened is tracked
+        // explicitly here and the bitmap result of the bounds pass is ignored.
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        context.contentResolver.openInputStream(uri)?.use {
+        val opened = context.contentResolver.openInputStream(uri)?.use {
             BitmapFactory.decodeStream(it, null, bounds)
-        } ?: return null
+            true
+        } ?: false
+        if (!opened || bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
 
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
-
-        val sampleSize = calculateInSampleSize(bounds.outWidth, bounds.outHeight, maxDimensionPx)
+        val sampleSize = calculateInSampleSize(bounds.outWidth, bounds.outHeight, maxDimensionPx) * extraSampling
         val decodeOptions = BitmapFactory.Options().apply { inSampleSize = sampleSize }
         val sampled = context.contentResolver.openInputStream(uri)?.use {
             BitmapFactory.decodeStream(it, null, decodeOptions)
@@ -69,10 +88,7 @@ object ImageDownsampler {
             sampled
         }
 
-        // A downsampled 1600px-long-edge bitmap can still exceed
-        // MAX_DIMENSION_PX on the short edge's opposite case (inSampleSize is
-        // a power of two, so it can overshoot) - clamp with one more scale
-        // pass if needed.
+        // inSampleSize is a power of two and can overshoot, and rotation can swap the edges: clamp once more.
         val longEdge = maxOf(rotated.width, rotated.height)
         val finalBitmap = if (longEdge > maxDimensionPx) {
             val scale = maxDimensionPx.toFloat() / longEdge
@@ -88,8 +104,8 @@ object ImageDownsampler {
 
         return try {
             ByteArrayOutputStream().use { out ->
-                finalBitmap.compress(Bitmap.CompressFormat.JPEG, quality, out)
-                out.toByteArray()
+                if (!finalBitmap.compress(Bitmap.CompressFormat.JPEG, quality, out)) return null
+                out.toByteArray().takeIf { it.isNotEmpty() }
             }
         } finally {
             finalBitmap.recycle()

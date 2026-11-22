@@ -78,6 +78,8 @@ class OutletProof(Base):
         String(20), nullable=False, default=OutletProofStatus.PENDING.value, index=True
     )
     is_primary: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    # True when the system accepted this proof as the outlet's FIRST location (no admin review).
+    auto_accepted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
 
     storage_key: Mapped[str] = mapped_column(Text, nullable=False)
     storage_provider: Mapped[str] = mapped_column(String(20), nullable=False, default="LOCAL")

@@ -79,6 +79,10 @@ class Settings(BaseSettings):
     # INITIAL proofs inside the confirm radius (accuracy <= auto_verify_max_accuracy_m). 0 = off.
     outlet_proof_auto_verify_min_agreeing: int = 0
     outlet_proof_auto_verify_max_accuracy_m: float = 20.0
+    # Business rule: the FIRST valid photo+GPS proof of an outlet that has no location at all is accepted at once
+    # (employees register the initial pins; almost no outlet has GPS yet). Later proofs never are: a different
+    # place is a CHANGE_REQUEST for the admin. Set False to send first proofs to admin review instead.
+    outlet_proof_first_location_auto_accept: bool = True
 
     # CORS
     # Exact-match allow-list only (no wildcard / *.vercel.app regex - any
