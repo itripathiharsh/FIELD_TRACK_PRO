@@ -1,79 +1,73 @@
 package com.fieldtrackpro.android.ui.screens.planning
 
-import android.app.DatePickerDialog
-import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CalendarToday
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.DeleteOutline
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Event
-import androidx.compose.material.icons.filled.LocationOn
-import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.EventBusy
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Store
-import androidx.compose.material.icons.filled.Today
+import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SelectableDates
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -81,984 +75,392 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fieldtrackpro.android.data.model.CustomerDto
 import com.fieldtrackpro.android.data.model.PlannedVisitDto
-import com.fieldtrackpro.android.ui.components.EmptyState
-import com.fieldtrackpro.android.ui.components.ErrorBanner
+import com.fieldtrackpro.android.search.CustomerSearchState
+import com.fieldtrackpro.android.ui.components.CustomerPicker
 import com.fieldtrackpro.android.ui.components.FieldTrackTopAppBar
-import com.fieldtrackpro.android.ui.theme.BrandBlack
+import com.fieldtrackpro.android.ui.components.InlineErrorCard
+import com.fieldtrackpro.android.ui.components.OutlineButton
+import com.fieldtrackpro.android.ui.components.PrimaryButton
+import com.fieldtrackpro.android.ui.components.SectionHeader
+import com.fieldtrackpro.android.ui.components.SkeletonBlock
+import com.fieldtrackpro.android.ui.components.StatusChip
 import com.fieldtrackpro.android.ui.theme.BrandGold
 import com.fieldtrackpro.android.ui.theme.BrandGoldDark
 import com.fieldtrackpro.android.ui.theme.BrandLightGray
 import com.fieldtrackpro.android.ui.theme.BrandNavy
-import com.fieldtrackpro.android.ui.theme.BrandNavyLight
 import com.fieldtrackpro.android.ui.theme.BrandWhite
 import com.fieldtrackpro.android.ui.theme.ErrorRed
 import com.fieldtrackpro.android.ui.theme.ErrorRedBg
-import com.fieldtrackpro.android.ui.theme.ErrorRedText
+import com.fieldtrackpro.android.ui.theme.KpiNumber
+import com.fieldtrackpro.android.ui.theme.LabelCaps
 import com.fieldtrackpro.android.ui.theme.LeagueSpartanFamily
+import com.fieldtrackpro.android.ui.theme.Navy100
+import com.fieldtrackpro.android.ui.theme.Navy50
 import com.fieldtrackpro.android.ui.theme.SuccessGreen
 import com.fieldtrackpro.android.ui.theme.SuccessGreenBg
 import com.fieldtrackpro.android.ui.theme.SuccessGreenText
 import com.fieldtrackpro.android.ui.theme.SurfaceSecondary
+import com.fieldtrackpro.android.ui.theme.SystemBarIcons
+import com.fieldtrackpro.android.ui.theme.TextPrimary
 import com.fieldtrackpro.android.ui.theme.TextSecondary
 import com.fieldtrackpro.android.ui.theme.TextSubtle
 import com.fieldtrackpro.android.ui.theme.WarningGold
+import com.fieldtrackpro.android.ui.theme.WarningGoldBg
+import com.fieldtrackpro.android.ui.viewmodel.MonthlyPlanUiState
 import com.fieldtrackpro.android.ui.viewmodel.MonthlyPlanningViewModel
+import com.fieldtrackpro.android.ui.viewmodel.PlanLoadError
+import com.fieldtrackpro.android.ui.viewmodel.summarize
+import com.fieldtrackpro.android.utils.SessionManager
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
+import java.util.TimeZone
 
-private val MONTH_NAMES = listOf(
-    "January", "February", "March", "April", "May", "June",
-    "July", "August", "September", "October", "November", "December"
-)
+private val MONTHS = listOf("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December")
+
+internal fun formatDateStr(y: Int, m: Int, d: Int) = String.format(Locale.US, "%04d-%02d-%02d", y, m, d)
+
+internal fun formatDisplayDate(iso: String): String = try {
+    val p = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+    SimpleDateFormat("EEE, d MMM yyyy", Locale.getDefault()).format(p.parse(iso)!!)
+} catch (e: Exception) {
+    iso
+}
+
+internal fun todayIso(): String {
+    val c = Calendar.getInstance()
+    return formatDateStr(c.get(Calendar.YEAR), c.get(Calendar.MONTH) + 1, c.get(Calendar.DAY_OF_MONTH))
+}
+
+/** Business rule (backend): employees cannot plan visits in the past. */
+internal fun isPlannableDate(iso: String, today: String = todayIso()): Boolean = iso >= today
 
 @Composable
 fun MonthlyPlanningScreen(
     viewModel: MonthlyPlanningViewModel,
     onNavigateBack: () -> Unit
 ) {
-    val context = LocalContext.current
-    val uiState by viewModel.uiState.collectAsState()
+    val ui by viewModel.uiState.collectAsState()
+    val search by viewModel.customerSearch.state.collectAsState()
+    var showAdd by rememberSaveable { mutableStateOf(false) }
+    var addDate by rememberSaveable { mutableStateOf<String?>(null) }
+    var actionVisit by remember { mutableStateOf<PlannedVisitDto?>(null) }
+    val snackbar = remember { SnackbarHostState() }
 
-    var showAddDialog by remember { mutableStateOf(false) }
-    var initialDateForAdd by remember { mutableStateOf<String?>(null) }
-    var visitToEdit by remember { mutableStateOf<PlannedVisitDto?>(null) }
-    var visitToReschedule by remember { mutableStateOf<PlannedVisitDto?>(null) }
-    var visitToCancel by remember { mutableStateOf<PlannedVisitDto?>(null) }
-
-    val monthName = remember(uiState.month) {
-        if (uiState.month in 1..12) MONTH_NAMES[uiState.month - 1] else "Month ${uiState.month}"
-    }
-
-    LaunchedEffect(uiState.successMessage) {
-        uiState.successMessage?.let {
-            Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
+    LaunchedEffect(Unit) { viewModel.onScreenOpened() }
+    LaunchedEffect(ui.successMessage, ui.errorMessage) {
+        val msg = ui.successMessage ?: ui.errorMessage
+        if (msg != null && !showAdd) {
+            snackbar.showSnackbar(msg)
             viewModel.clearMessages()
         }
     }
 
+    MonthlyPlanContent(
+        ui = ui,
+        snackbar = snackbar,
+        onBack = onNavigateBack,
+        onRefresh = viewModel::refresh,
+        onPrevMonth = viewModel::previousMonth,
+        onNextMonth = viewModel::nextMonth,
+        onToday = {
+            val c = Calendar.getInstance()
+            viewModel.selectMonth(c.get(Calendar.YEAR), c.get(Calendar.MONTH) + 1)
+        },
+        onFilter = viewModel::setFilter,
+        onToggleCalendar = { viewModel.setCalendarView(!ui.calendarView) },
+        onSelectDate = viewModel::selectDate,
+        onRetry = viewModel::loadMonthlyPlan,
+        onSignInAgain = { SessionManager.notifySessionExpired() },
+        onAdd = { date ->
+            addDate = date
+            showAdd = true
+        },
+        onVisitClick = { actionVisit = it }
+    )
+
+    if (showAdd) {
+        AddVisitSheet(
+            year = ui.year,
+            month = ui.month,
+            initialDate = addDate,
+            search = search,
+            isSaving = ui.isSaving,
+            serverError = ui.errorMessage,
+            onQueryChange = viewModel.customerSearch::onQueryChange,
+            onDismiss = {
+                showAdd = false
+                viewModel.clearMessages()
+                viewModel.customerSearch.clear()
+            },
+            onSubmit = { customer, date, priority, notes ->
+                viewModel.createPlannedVisit(customer.id, date, priority, "PLANNED", notes) { ok, _ ->
+                    if (ok) {
+                        showAdd = false
+                        viewModel.customerSearch.clear()
+                    }
+                }
+            }
+        )
+    }
+
+    actionVisit?.let { visit ->
+        VisitActionsSheet(
+            visit = visit,
+            isSaving = ui.isSaving,
+            onDismiss = { actionVisit = null },
+            onReschedule = { date -> viewModel.reschedulePlannedVisit(visit.id, date) { ok, _ -> if (ok) actionVisit = null } },
+            onUpdate = { priority, notes -> viewModel.updatePlannedVisit(visit.id, priority, null, notes) { ok, _ -> if (ok) actionVisit = null } },
+            onCancelVisit = { viewModel.cancelPlannedVisit(visit.id) { ok, _ -> if (ok) actionVisit = null } }
+        )
+    }
+}
+
+/** Stateless Monthly Plan screen (also rendered by the screenshot test). */
+@Composable
+fun MonthlyPlanContent(
+    ui: MonthlyPlanUiState,
+    snackbar: SnackbarHostState = remember { SnackbarHostState() },
+    onBack: () -> Unit = {},
+    onRefresh: () -> Unit = {},
+    onPrevMonth: () -> Unit = {},
+    onNextMonth: () -> Unit = {},
+    onToday: () -> Unit = {},
+    onFilter: (String) -> Unit = {},
+    onToggleCalendar: () -> Unit = {},
+    onSelectDate: (String?) -> Unit = {},
+    onRetry: () -> Unit = {},
+    onSignInAgain: () -> Unit = {},
+    onAdd: (String?) -> Unit = {},
+    onVisitClick: (PlannedVisitDto) -> Unit = {}
+) {
+    SystemBarIcons(darkIcons = true)
     Scaffold(
         topBar = {
-            FieldTrackTopAppBar(
-                title = "My Monthly Plan",
-                onBackClick = onNavigateBack,
-                actions = {
-                    IconButton(onClick = { viewModel.loadMonthlyPlan() }) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = "Refresh",
-                            tint = BrandNavy
-                        )
-                    }
-                }
-            )
+            FieldTrackTopAppBar(title = "Monthly plan", onBackClick = onBack, actions = {
+                IconButton(onClick = onRefresh) { Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = BrandNavy) }
+            })
         },
+        snackbarHost = { SnackbarHost(snackbar) },
         floatingActionButton = {
-            Button(
-                onClick = {
-                    initialDateForAdd = if (uiState.selectedFilter == "CALENDAR") uiState.selectedDate else null
-                    showAddDialog = true
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = BrandNavy),
-                shape = RoundedCornerShape(24.dp),
-                elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp),
-                modifier = Modifier.height(48.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = null,
-                    tint = BrandWhite,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "PLAN VISIT",
-                    fontFamily = LeagueSpartanFamily,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
-                    letterSpacing = 0.5.sp,
-                    color = BrandWhite
+            if (ui.hasLoadedPlan) {
+                ExtendedFloatingActionButton(
+                    onClick = { onAdd(if (ui.calendarView) ui.selectedDate?.takeIf { isPlannableDate(it) } else null) },
+                    containerColor = BrandGold,
+                    contentColor = BrandNavy,
+                    icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                    text = { Text("Add visit", fontFamily = LeagueSpartanFamily, fontWeight = FontWeight.Bold) }
                 )
             }
-        }
+        },
+        containerColor = SurfaceSecondary
     ) { padding ->
         Column(
-            modifier = Modifier
+            Modifier
                 .fillMaxSize()
-                .background(SurfaceSecondary)
                 .padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 96.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Month Navigation Bar
-            MonthNavigationBar(
-                year = uiState.year,
-                monthName = monthName,
-                onPreviousMonth = { viewModel.previousMonth() },
-                onNextMonth = { viewModel.nextMonth() },
-                onJumpToToday = {
-                    val cal = Calendar.getInstance()
-                    viewModel.selectMonth(cal.get(Calendar.YEAR), cal.get(Calendar.MONTH) + 1)
+            MonthSelector(ui.year, ui.month, onPrevMonth, onNextMonth, onToday)
+            when {
+                ui.loadError != null -> LoadErrorState(ui.loadError, ui.loadErrorMessage ?: "", onRetry, onSignInAgain)
+                !ui.hasLoadedPlan -> {
+                    SkeletonBlock(height = 150.dp)
+                    SkeletonBlock(height = 44.dp)
+                    repeat(3) { SkeletonBlock(height = 72.dp) }
                 }
-            )
-
-            if (uiState.errorMessage != null) {
-                ErrorBanner(
-                    message = uiState.errorMessage!!,
-                    modifier = Modifier
-                        .padding(horizontal = 16.dp, vertical = 6.dp)
-                        .clickable { viewModel.clearMessages() }
-                )
-            }
-
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                // 1. Monthly Progress KPI Card
-                item {
-                    MonthlyProgressCard(
-                        analytics = uiState.analytics,
-                        totalVisitsCount = uiState.plan?.plannedVisits?.count { it.status != "CANCELLED" } ?: 0,
-                        activeDaysCount = uiState.plan?.activeDaysCount ?: 0
-                    )
-                }
-
-                // 2. Filter Tabs (All / Pending / Completed / Calendar View)
-                item {
-                    FilterTabsSection(
-                        selectedFilter = uiState.selectedFilter,
-                        totalCount = uiState.plan?.plannedVisits?.count { it.status != "CANCELLED" } ?: 0,
-                        plannedCount = uiState.plan?.plannedVisits?.count { it.status == "PLANNED" } ?: 0,
-                        completedCount = uiState.plan?.plannedVisits?.count { it.status == "COMPLETED" } ?: 0,
-                        onFilterSelected = { viewModel.setFilter(it) }
-                    )
-                }
-
-                // 3. View Content: Calendar View vs List View
-                if (uiState.selectedFilter == "CALENDAR") {
-                    // CALENDAR VIEW: 7-Column Monthly Calendar Grid
-                    item {
-                        val visitsByDate = remember(uiState.plan?.plannedVisits) {
-                            uiState.plan?.plannedVisits
-                                ?.filter { it.status != "CANCELLED" }
-                                ?.groupBy { it.plannedDate }
-                                ?: emptyMap()
-                        }
-
-                        MonthlyCalendarCard(
-                            year = uiState.year,
-                            month = uiState.month,
-                            selectedDate = uiState.selectedDate,
-                            visitsByDate = visitsByDate,
-                            onDateSelected = { dateStr ->
-                                viewModel.selectDate(dateStr)
-                            }
-                        )
-                    }
-
-                    // Selected Day Details Inspector
-                    item {
-                        val visitsByDate = remember(uiState.plan?.plannedVisits) {
-                            uiState.plan?.plannedVisits
-                                ?.filter { it.status != "CANCELLED" }
-                                ?.groupBy { it.plannedDate }
-                                ?: emptyMap()
-                        }
-                        val selectedDateStr = uiState.selectedDate ?: remember(uiState.year, uiState.month) {
-                            val todayCal = Calendar.getInstance()
-                            if (uiState.year == todayCal.get(Calendar.YEAR) && uiState.month == todayCal.get(Calendar.MONTH) + 1) {
-                                formatDateStr(uiState.year, uiState.month, todayCal.get(Calendar.DAY_OF_MONTH))
-                            } else {
-                                formatDateStr(uiState.year, uiState.month, 1)
-                            }
-                        }
-                        val dayVisits = visitsByDate[selectedDateStr] ?: emptyList()
-
-                        SelectedDayInspectorCard(
-                            dateStr = selectedDateStr,
-                            visits = dayVisits,
-                            onAddVisit = {
-                                initialDateForAdd = selectedDateStr
-                                showAddDialog = true
-                            },
-                            onEdit = { visitToEdit = it },
-                            onReschedule = { visitToReschedule = it },
-                            onCancel = { visitToCancel = it }
-                        )
-                    }
-                } else {
-                    // LIST VIEW (ALL, PENDING, COMPLETED)
-                    if (uiState.isLoading && uiState.plan == null) {
-                        item {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(200.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                CircularProgressIndicator(color = BrandNavy)
-                            }
-                        }
-                    } else if (uiState.filteredVisits.isEmpty()) {
-                        item {
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 12.dp)
-                                    .border(1.dp, BrandLightGray, RoundedCornerShape(12.dp)),
-                                shape = RoundedCornerShape(12.dp),
-                                colors = CardDefaults.cardColors(containerColor = BrandWhite)
-                            ) {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(24.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.CalendarToday,
-                                        contentDescription = null,
-                                        tint = TextSubtle,
-                                        modifier = Modifier.size(40.dp)
-                                    )
-                                    Spacer(modifier = Modifier.height(10.dp))
-                                    Text(
-                                        text = if (uiState.selectedFilter == "ALL")
-                                            "No visits planned for $monthName ${uiState.year}"
-                                        else
-                                            "No ${uiState.selectedFilter.lowercase()} visits for $monthName",
-                                        fontFamily = LeagueSpartanFamily,
-                                        fontWeight = FontWeight.SemiBold,
-                                        fontSize = 14.sp,
-                                        color = TextSecondary
-                                    )
-                                    Spacer(modifier = Modifier.height(6.dp))
-                                    Text(
-                                        text = "Tap [+ PLAN VISIT] below to schedule customer beats for this month.",
-                                        fontFamily = LeagueSpartanFamily,
-                                        fontSize = 12.sp,
-                                        color = TextSubtle
-                                    )
-                                }
-                            }
+                else -> {
+                    SummaryCard(ui)
+                    FilterRow(ui.selectedFilter, ui.calendarView, onFilter, onToggleCalendar)
+                    if (ui.calendarView) {
+                        CalendarGrid(ui, onSelectDate)
+                        val day = ui.selectedDate
+                        val dayVisits = ui.filteredVisits.filter { it.plannedDate == day }
+                        if (day != null) {
+                            SectionHeader(
+                                title = formatDisplayDate(day),
+                                actionLabel = if (isPlannableDate(day)) "Add on this day" else null,
+                                onAction = { onAdd(day) }
+                            )
+                            if (dayVisits.isEmpty()) Text("No visits on this day.", fontSize = 14.sp, color = TextSecondary)
+                            else VisitGroup(dayVisits, onVisitClick)
                         }
                     } else {
-                        items(
-                            items = uiState.filteredVisits,
-                            key = { it.id }
-                        ) { visit ->
-                            PlannedVisitItemCard(
-                                visit = visit,
-                                onEdit = { visitToEdit = visit },
-                                onReschedule = { visitToReschedule = visit },
-                                onCancel = { visitToCancel = visit }
-                            )
-                        }
-                    }
-                }
-
-                // Bottom padding for FAB
-                item {
-                    Spacer(modifier = Modifier.height(80.dp))
-                }
-            }
-        }
-    }
-
-    // Add Planned Visit Dialog
-    if (showAddDialog) {
-        AddPlannedVisitDialog(
-            selectedYear = uiState.year,
-            selectedMonth = uiState.month,
-            initialPlannedDate = initialDateForAdd,
-            isSaving = uiState.isSaving,
-            searchResults = uiState.customerSearchResults,
-            isSearching = uiState.isSearchingCustomers,
-            onSearchCustomers = { viewModel.searchCustomers(it) },
-            onDismiss = {
-                showAddDialog = false
-                initialDateForAdd = null
-            },
-            onConfirm = { custId, date, priority, visitType, notes ->
-                viewModel.createPlannedVisit(custId, date, priority, visitType, notes) { success, _ ->
-                    if (success) {
-                        showAddDialog = false
-                        initialDateForAdd = null
-                    }
-                }
-            }
-        )
-    }
-
-    // Edit Planned Visit Dialog
-    visitToEdit?.let { visit ->
-        EditPlannedVisitDialog(
-            visit = visit,
-            isSaving = uiState.isSaving,
-            onDismiss = { visitToEdit = null },
-            onConfirm = { priority, visitType, notes ->
-                viewModel.updatePlannedVisit(visit.id, priority, visitType, notes) { success, _ ->
-                    if (success) visitToEdit = null
-                }
-            }
-        )
-    }
-
-    // Reschedule Planned Visit Dialog
-    visitToReschedule?.let { visit ->
-        ReschedulePlannedVisitDialog(
-            visit = visit,
-            isSaving = uiState.isSaving,
-            onDismiss = { visitToReschedule = null },
-            onConfirm = { newDate ->
-                viewModel.reschedulePlannedVisit(visit.id, newDate) { success, _ ->
-                    if (success) visitToReschedule = null
-                }
-            }
-        )
-    }
-
-    // Cancel Planned Visit Confirmation Dialog
-    visitToCancel?.let { visit ->
-        AlertDialog(
-            onDismissRequest = { visitToCancel = null },
-            title = {
-                Text(
-                    text = "Cancel Planned Visit?",
-                    fontFamily = LeagueSpartanFamily,
-                    fontWeight = FontWeight.Bold,
-                    color = BrandNavy
-                )
-            },
-            text = {
-                Text(
-                    text = "Are you sure you want to cancel the planned visit for ${visit.customerName ?: "Customer"} scheduled on ${formatDisplayDate(visit.plannedDate)}?",
-                    fontFamily = LeagueSpartanFamily,
-                    fontSize = 13.sp,
-                    color = TextSecondary
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        viewModel.cancelPlannedVisit(visit.id) { success, _ ->
-                            if (success) visitToCancel = null
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = ErrorRed),
-                    enabled = !uiState.isSaving
-                ) {
-                    if (uiState.isSaving) {
-                        CircularProgressIndicator(modifier = Modifier.size(14.dp), color = BrandWhite, strokeWidth = 2.dp)
-                    } else {
-                        Text("CANCEL VISIT", fontFamily = LeagueSpartanFamily, fontWeight = FontWeight.Bold)
-                    }
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { visitToCancel = null }) {
-                    Text("KEEP VISIT", fontFamily = LeagueSpartanFamily, fontWeight = FontWeight.Bold, color = TextSubtle)
-                }
-            }
-        )
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Month Navigation Bar
-// ─────────────────────────────────────────────────────────────────────────────
-
-@Composable
-private fun MonthNavigationBar(
-    year: Int,
-    monthName: String,
-    onPreviousMonth: () -> Unit,
-    onNextMonth: () -> Unit,
-    onJumpToToday: () -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(16.dp, 8.dp, 16.dp, 4.dp),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = BrandWhite),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = onPreviousMonth) {
-                Icon(
-                    imageVector = Icons.Default.ChevronLeft,
-                    contentDescription = "Previous Month",
-                    tint = BrandNavy
-                )
-            }
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.clickable { onJumpToToday() }
-            ) {
-                Icon(
-                    imageVector = Icons.Default.CalendarMonth,
-                    contentDescription = null,
-                    tint = BrandGoldDark,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "$monthName $year",
-                    fontFamily = LeagueSpartanFamily,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 17.sp,
-                    color = BrandNavy
-                )
-            }
-
-            IconButton(onClick = onNextMonth) {
-                Icon(
-                    imageVector = Icons.Default.ChevronRight,
-                    contentDescription = "Next Month",
-                    tint = BrandNavy
-                )
-            }
-        }
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Monthly Progress KPI Card
-// ─────────────────────────────────────────────────────────────────────────────
-
-@Composable
-private fun MonthlyProgressCard(
-    analytics: com.fieldtrackpro.android.data.model.EmployeeMonthlyAnalyticsDto?,
-    totalVisitsCount: Int,
-    activeDaysCount: Int
-) {
-    val totalPlanned = analytics?.totalPlanned ?: totalVisitsCount
-    val completed = analytics?.completed ?: 0
-    val pending = (totalPlanned - completed).coerceAtLeast(0)
-    val completionRate = analytics?.completionRate ?: if (totalPlanned > 0) (completed.toDouble() / totalPlanned * 100) else 0.0
-
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(1.dp, BrandLightGray, RoundedCornerShape(12.dp)),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = BrandWhite),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(14.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "MONTHLY PLAN PROGRESS",
-                    fontFamily = LeagueSpartanFamily,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 0.8.sp,
-                    color = BrandNavy
-                )
-
-                if (analytics?.behindSchedule == true) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(WarningGold.copy(alpha = 0.15f))
-                            .padding(horizontal = 8.dp, vertical = 2.dp)
-                    ) {
-                        Text(
-                            text = "BEHIND SCHEDULE",
-                            fontFamily = LeagueSpartanFamily,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 10.sp,
-                            color = WarningGold
-                        )
-                    }
-                } else if (totalPlanned > 0 && completed >= totalPlanned) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(SuccessGreenBg)
-                            .padding(horizontal = 8.dp, vertical = 2.dp)
-                    ) {
-                        Text(
-                            text = "GOAL REACHED",
-                            fontFamily = LeagueSpartanFamily,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 10.sp,
-                            color = SuccessGreenText
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                PlanKpiItem(
-                    label = "PLANNED",
-                    value = totalPlanned.toString(),
-                    color = BrandNavy,
-                    modifier = Modifier.weight(1f)
-                )
-                PlanKpiItem(
-                    label = "COMPLETED",
-                    value = completed.toString(),
-                    color = SuccessGreen,
-                    modifier = Modifier.weight(1f)
-                )
-                PlanKpiItem(
-                    label = "REMAINING",
-                    value = pending.toString(),
-                    color = BrandGoldDark,
-                    modifier = Modifier.weight(1f)
-                )
-                PlanKpiItem(
-                    label = "ACTIVE DAYS",
-                    value = (analytics?.activePlannedDays ?: activeDaysCount).toString(),
-                    color = BrandNavyLight,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Completion Progress Bar
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Completion Coverage",
-                    fontFamily = LeagueSpartanFamily,
-                    fontSize = 12.sp,
-                    color = TextSubtle
-                )
-                Text(
-                    text = "${completionRate.toInt()}%",
-                    fontFamily = LeagueSpartanFamily,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp,
-                    color = if (completionRate >= 80) SuccessGreen else BrandNavy
-                )
-            }
-            Spacer(modifier = Modifier.height(6.dp))
-            LinearProgressIndicator(
-                progress = { (completionRate / 100.0).toFloat().coerceIn(0f, 1f) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(6.dp)
-                    .clip(RoundedCornerShape(3.dp)),
-                color = if (completionRate >= 80) SuccessGreen else BrandGold,
-                trackColor = BrandLightGray
-            )
-        }
-    }
-}
-
-@Composable
-private fun PlanKpiItem(
-    label: String,
-    value: String,
-    color: Color,
-    modifier: Modifier = Modifier
-) {
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(SurfaceSecondary)
-            .padding(vertical = 8.dp, horizontal = 4.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                text = value,
-                fontFamily = LeagueSpartanFamily,
-                fontWeight = FontWeight.Bold,
-                fontSize = 16.sp,
-                color = color
-            )
-            Text(
-                text = label,
-                fontFamily = LeagueSpartanFamily,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 9.sp,
-                letterSpacing = 0.5.sp,
-                color = TextSubtle
-            )
-        }
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Filter Tabs Section
-// ─────────────────────────────────────────────────────────────────────────────
-
-@Composable
-private fun FilterTabsSection(
-    selectedFilter: String,
-    totalCount: Int,
-    plannedCount: Int,
-    completedCount: Int,
-    onFilterSelected: (String) -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        FilterChip(
-            selected = selectedFilter == "ALL",
-            onClick = { onFilterSelected("ALL") },
-            label = {
-                Text(
-                    text = "All ($totalCount)",
-                    fontFamily = LeagueSpartanFamily,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp
-                )
-            },
-            colors = FilterChipDefaults.filterChipColors(
-                selectedContainerColor = BrandNavy,
-                selectedLabelColor = BrandWhite,
-                containerColor = BrandWhite,
-                labelColor = BrandNavy
-            ),
-            border = FilterChipDefaults.filterChipBorder(
-                borderColor = BrandLightGray,
-                selectedBorderColor = BrandNavy,
-                enabled = true,
-                selected = selectedFilter == "ALL"
-            )
-        )
-
-        FilterChip(
-            selected = selectedFilter == "PLANNED",
-            onClick = { onFilterSelected("PLANNED") },
-            label = {
-                Text(
-                    text = "Pending ($plannedCount)",
-                    fontFamily = LeagueSpartanFamily,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp
-                )
-            },
-            colors = FilterChipDefaults.filterChipColors(
-                selectedContainerColor = BrandGoldDark,
-                selectedLabelColor = BrandWhite,
-                containerColor = BrandWhite,
-                labelColor = BrandGoldDark
-            ),
-            border = FilterChipDefaults.filterChipBorder(
-                borderColor = BrandLightGray,
-                selectedBorderColor = BrandGoldDark,
-                enabled = true,
-                selected = selectedFilter == "PLANNED"
-            )
-        )
-
-        FilterChip(
-            selected = selectedFilter == "COMPLETED",
-            onClick = { onFilterSelected("COMPLETED") },
-            label = {
-                Text(
-                    text = "Completed ($completedCount)",
-                    fontFamily = LeagueSpartanFamily,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp
-                )
-            },
-            colors = FilterChipDefaults.filterChipColors(
-                selectedContainerColor = SuccessGreen,
-                selectedLabelColor = BrandWhite,
-                containerColor = BrandWhite,
-                labelColor = SuccessGreen
-            ),
-            border = FilterChipDefaults.filterChipBorder(
-                borderColor = BrandLightGray,
-                selectedBorderColor = SuccessGreen,
-                enabled = true,
-                selected = selectedFilter == "COMPLETED"
-            )
-        )
-
-        FilterChip(
-            selected = selectedFilter == "CALENDAR",
-            onClick = { onFilterSelected("CALENDAR") },
-            leadingIcon = {
-                Icon(
-                    imageVector = Icons.Default.CalendarMonth,
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp),
-                    tint = if (selectedFilter == "CALENDAR") BrandWhite else BrandNavy
-                )
-            },
-            label = {
-                Text(
-                    text = "Calendar View",
-                    fontFamily = LeagueSpartanFamily,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp
-                )
-            },
-            colors = FilterChipDefaults.filterChipColors(
-                selectedContainerColor = BrandNavy,
-                selectedLabelColor = BrandWhite,
-                containerColor = BrandWhite,
-                labelColor = BrandNavy
-            ),
-            border = FilterChipDefaults.filterChipBorder(
-                borderColor = BrandLightGray,
-                selectedBorderColor = BrandNavy,
-                enabled = true,
-                selected = selectedFilter == "CALENDAR"
-            )
-        )
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Monthly Calendar Grid Card (Parity with Admin Monthly Calendar)
-// ─────────────────────────────────────────────────────────────────────────────
-
-@Composable
-private fun MonthlyCalendarCard(
-    year: Int,
-    month: Int,
-    selectedDate: String?,
-    visitsByDate: Map<String, List<PlannedVisitDto>>,
-    onDateSelected: (String) -> Unit
-) {
-    val todayCal = Calendar.getInstance()
-    val todayStr = remember {
-        formatDateStr(
-            todayCal.get(Calendar.YEAR),
-            todayCal.get(Calendar.MONTH) + 1,
-            todayCal.get(Calendar.DAY_OF_MONTH)
-        )
-    }
-
-    val cal = remember(year, month) {
-        Calendar.getInstance().apply {
-            set(Calendar.YEAR, year)
-            set(Calendar.MONTH, month - 1)
-            set(Calendar.DAY_OF_MONTH, 1)
-        }
-    }
-    val daysInMonth = remember(year, month) { cal.getActualMaximum(Calendar.DAY_OF_MONTH) }
-    val firstDayOfWeek = remember(year, month) { cal.get(Calendar.DAY_OF_WEEK) }
-    val leadingEmptyDays = firstDayOfWeek - 1
-
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(1.dp, BrandLightGray, RoundedCornerShape(12.dp)),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = BrandWhite),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(14.dp)
-        ) {
-            // Header
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.CalendarMonth,
-                        contentDescription = null,
-                        tint = BrandNavy,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "Schedule Overview",
-                        fontFamily = LeagueSpartanFamily,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
-                        color = BrandNavy
-                    )
-                }
-                Text(
-                    text = "Tap any day to view beats",
-                    fontFamily = LeagueSpartanFamily,
-                    fontSize = 11.sp,
-                    color = TextSubtle
-                )
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Weekday Column Header (Sun -> Sat)
-            val weekdays = listOf("SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT")
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                weekdays.forEachIndexed { idx, day ->
-                    Text(
-                        text = day,
-                        fontFamily = LeagueSpartanFamily,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 10.sp,
-                        letterSpacing = 0.5.sp,
-                        color = if (idx == 0 || idx == 6) TextSubtle.copy(alpha = 0.7f) else BrandNavy,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Calendar Grid Days
-            val totalCells = leadingEmptyDays + daysInMonth
-            val totalRows = (totalCells + 6) / 7
-
-            for (rowIndex in 0 until totalRows) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    for (colIndex in 0 until 7) {
-                        val cellIndex = rowIndex * 7 + colIndex
-                        if (cellIndex < leadingEmptyDays || cellIndex >= totalCells) {
-                            Spacer(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(50.dp)
-                            )
+                        val visits = ui.filteredVisits.sortedWith(compareBy({ it.plannedDate }, { it.customerName ?: "" }))
+                        if (visits.isEmpty()) {
+                            EmptyPlan(ui, onAdd)
                         } else {
-                            val dayNum = cellIndex - leadingEmptyDays + 1
-                            val dateStr = formatDateStr(year, month, dayNum)
-                            val isToday = (dateStr == todayStr)
-                            val isSelected = (dateStr == selectedDate)
-                            val dayVisits = visitsByDate[dateStr] ?: emptyList()
-                            val visitCount = dayVisits.size
-                            val hasCompleted = dayVisits.any { it.status == "COMPLETED" }
-                            val hasHighPriority = dayVisits.any { it.priority.uppercase() == "HIGH" }
+                            visits.groupBy { it.plannedDate }.forEach { (date, list) ->
+                                SectionHeader(title = "${formatDisplayDate(date)} · ${list.size}")
+                                VisitGroup(list, onVisitClick)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(50.dp)
-                                    .padding(2.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(
-                                        when {
-                                            isSelected -> BrandNavy.copy(alpha = 0.08f)
-                                            isToday -> BrandGold.copy(alpha = 0.12f)
-                                            visitCount > 0 -> SurfaceSecondary
-                                            else -> Color.Transparent
-                                        }
-                                    )
-                                    .border(
-                                        width = if (isSelected) 1.5.dp else if (isToday) 1.dp else 0.5.dp,
-                                        color = when {
-                                            isSelected -> BrandNavy
-                                            isToday -> BrandGoldDark
-                                            visitCount > 0 -> BrandLightGray
-                                            else -> BrandLightGray.copy(alpha = 0.4f)
-                                        },
-                                        shape = RoundedCornerShape(8.dp)
-                                    )
-                                    .clickable { onDateSelected(dateStr) },
-                                contentAlignment = Alignment.Center
-                            ) {
+@Composable
+private fun MonthSelector(year: Int, month: Int, onPrev: () -> Unit, onNext: () -> Unit, onToday: () -> Unit) {
+    val c = Calendar.getInstance()
+    val isCurrent = c.get(Calendar.YEAR) == year && c.get(Calendar.MONTH) + 1 == month
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = onPrev) { Icon(Icons.Default.ChevronLeft, contentDescription = "Previous month", tint = BrandNavy) }
+        Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("${MONTHS[month - 1]} $year", fontFamily = LeagueSpartanFamily, fontWeight = FontWeight.Bold, fontSize = 22.sp, color = BrandNavy)
+            if (!isCurrent) {
+                Text("Back to this month", fontSize = 13.sp, color = BrandGoldDark, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.clickable(role = Role.Button, onClick = onToday).padding(4.dp))
+            }
+        }
+        IconButton(onClick = onNext) { Icon(Icons.Default.ChevronRight, contentDescription = "Next month", tint = BrandNavy) }
+    }
+}
+
+@Composable
+private fun SummaryCard(ui: MonthlyPlanUiState) {
+    val s = summarize(ui.plan!!, ui.analytics)
+    Surface(shape = RoundedCornerShape(18.dp), color = BrandNavy, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Row(verticalAlignment = Alignment.Bottom) {
+                Column(Modifier.weight(1f)) {
+                    Text("COMPLETION", style = LabelCaps, color = Color(0xFFB4BDD0))
+                    Text("${s.completionPercent}%", style = KpiNumber.copy(fontSize = 34.sp), color = BrandWhite)
+                }
+                Text("${s.completed} of ${s.planned} visits done", fontSize = 14.sp, color = Color(0xFFB4BDD0))
+            }
+            LinearProgressIndicator(
+                progress = { if (s.planned == 0) 0f else s.completed.toFloat() / s.planned },
+                color = BrandGold, trackColor = Color.White.copy(alpha = 0.14f),
+                modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp))
+            )
+            Row {
+                SummaryStat("Planned", s.planned, Modifier.weight(1f))
+                SummaryStat("Completed", s.completed, Modifier.weight(1f))
+                SummaryStat("Remaining", s.remaining, Modifier.weight(1f))
+                SummaryStat("Active days", s.activeDays, Modifier.weight(1f))
+            }
+            if (ui.analytics?.behindSchedule == true) {
+                StatusChip("Behind schedule", container = BrandGold.copy(alpha = 0.18f), content = Color(0xFFFCC15A))
+            }
+        }
+    }
+}
+
+@Composable
+private fun SummaryStat(label: String, value: Int, modifier: Modifier) {
+    Column(modifier) {
+        Text(value.toString(), style = KpiNumber.copy(fontSize = 22.sp), color = BrandWhite)
+        Text(label, fontSize = 12.sp, color = Color(0xFFB4BDD0), maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
+private fun FilterRow(selected: String, calendar: Boolean, onFilter: (String) -> Unit, onToggleCalendar: () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).background(Navy100).padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            listOf("ALL" to "All", "PLANNED" to "Pending", "COMPLETED" to "Completed").forEach { (key, label) ->
+                val on = selected == key
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(9.dp))
+                        .background(if (on) BrandWhite else Color.Transparent)
+                        .clickable(role = Role.Tab) { onFilter(key) }
+                        .heightIn(min = 40.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(label, fontFamily = LeagueSpartanFamily, fontWeight = if (on) FontWeight.Bold else FontWeight.Medium,
+                        fontSize = 14.sp, color = if (on) BrandNavy else TextSecondary)
+                }
+            }
+        }
+        Spacer(Modifier.width(8.dp))
+        IconButton(onClick = onToggleCalendar) {
+            Icon(if (calendar) Icons.AutoMirrored.Filled.ViewList else Icons.Default.CalendarMonth,
+                contentDescription = if (calendar) "Show list" else "Show calendar", tint = BrandNavy)
+        }
+    }
+}
+
+@Composable
+private fun VisitGroup(visits: List<PlannedVisitDto>, onClick: (PlannedVisitDto) -> Unit) {
+    Surface(shape = RoundedCornerShape(16.dp), color = BrandWhite, modifier = Modifier.fillMaxWidth().border(1.dp, BrandLightGray, RoundedCornerShape(16.dp))) {
+        Column {
+            visits.forEachIndexed { i, v ->
+                if (i > 0) HorizontalDivider(color = BrandLightGray, modifier = Modifier.padding(start = 16.dp))
+                Row(
+                    Modifier.fillMaxWidth().clickable { onClick(v) }.heightIn(min = 64.dp).padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(Modifier.size(8.dp).clip(CircleShape).background(priorityColor(v.priority)))
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(v.customerName ?: "Customer", fontFamily = LeagueSpartanFamily, fontWeight = FontWeight.SemiBold, fontSize = 16.sp,
+                            color = BrandNavy, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        val sub = listOfNotNull(v.customerOutletCode, v.areaName ?: v.territoryName).joinToString(" · ")
+                        if (sub.isNotBlank()) Text(sub, fontSize = 13.sp, color = TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        v.notes?.takeIf { it.isNotBlank() }?.let { Text(it, fontSize = 13.sp, color = TextSubtle, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    VisitStatusChip(v.status)
+                }
+            }
+        }
+    }
+}
+
+private fun priorityColor(p: String) = when (p.uppercase()) {
+    "HIGH" -> ErrorRed
+    "LOW" -> SuccessGreen
+    else -> BrandGold
+}
+
+@Composable
+private fun VisitStatusChip(status: String) = when (status.uppercase()) {
+    "COMPLETED" -> StatusChip("Done", container = SuccessGreenBg, content = SuccessGreenText)
+    "MISSED" -> StatusChip("Missed", container = ErrorRedBg, content = ErrorRed)
+    else -> StatusChip("Pending", container = WarningGoldBg, content = WarningGold)
+}
+
+@Composable
+private fun CalendarGrid(ui: MonthlyPlanUiState, onSelect: (String?) -> Unit) {
+    val cal = Calendar.getInstance().apply { set(ui.year, ui.month - 1, 1) }
+    val firstDow = (cal.get(Calendar.DAY_OF_WEEK) + 5) % 7 // Monday = 0
+    val days = cal.getActualMaximum(Calendar.DAY_OF_MONTH)
+    val counts = ui.filteredVisits.groupingBy { it.plannedDate }.eachCount()
+    val today = todayIso()
+    Surface(shape = RoundedCornerShape(16.dp), color = BrandWhite, modifier = Modifier.fillMaxWidth().border(1.dp, BrandLightGray, RoundedCornerShape(16.dp))) {
+        Column(Modifier.padding(10.dp)) {
+            Row { listOf("M", "T", "W", "T", "F", "S", "S").forEach { Text(it, Modifier.weight(1f), textAlign = TextAlign.Center, fontSize = 12.sp, color = TextSubtle) } }
+            Spacer(Modifier.height(6.dp))
+            val cells = firstDow + days
+            for (week in 0 until (cells + 6) / 7) {
+                Row {
+                    for (dow in 0 until 7) {
+                        val dayNum = week * 7 + dow - firstDow + 1
+                        Box(Modifier.weight(1f).aspectRatio(1f).padding(2.dp), contentAlignment = Alignment.Center) {
+                            if (dayNum in 1..days) {
+                                val iso = formatDateStr(ui.year, ui.month, dayNum)
+                                val selected = iso == ui.selectedDate
+                                val count = counts[iso] ?: 0
                                 Column(
+                                    Modifier.fillMaxSize().clip(RoundedCornerShape(10.dp))
+                                        .background(if (selected) BrandNavy else if (iso == today) Navy100 else Color.Transparent)
+                                        .clickable { onSelect(iso) },
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     verticalArrangement = Arrangement.Center
                                 ) {
-                                    // Day Number Circle
-                                    Box(
-                                        modifier = Modifier
-                                            .size(22.dp)
-                                            .clip(CircleShape)
-                                            .background(
-                                                when {
-                                                    isSelected -> BrandNavy
-                                                    isToday -> BrandGold
-                                                    else -> Color.Transparent
-                                                }
-                                            ),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = dayNum.toString(),
-                                            fontFamily = LeagueSpartanFamily,
-                                            fontWeight = if (isSelected || isToday || visitCount > 0) FontWeight.Bold else FontWeight.Medium,
-                                            fontSize = 11.sp,
-                                            color = when {
-                                                isSelected -> BrandWhite
-                                                isToday -> BrandBlack
-                                                else -> BrandNavy
-                                            }
-                                        )
-                                    }
-
-                                    // Status indicators & count badge
-                                    if (visitCount > 0) {
-                                        Row(
-                                            horizontalArrangement = Arrangement.spacedBy(2.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            modifier = Modifier.padding(top = 2.dp)
-                                        ) {
-                                            if (hasCompleted) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(4.dp)
-                                                        .clip(CircleShape)
-                                                        .background(SuccessGreen)
-                                                )
-                                            }
-                                            if (hasHighPriority) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(4.dp)
-                                                        .clip(CircleShape)
-                                                        .background(ErrorRed)
-                                                )
-                                            }
-                                            Box(
-                                                modifier = Modifier
-                                                    .clip(RoundedCornerShape(3.dp))
-                                                    .background(if (isSelected) BrandNavy else BrandGoldDark)
-                                                    .padding(horizontal = 3.dp, vertical = 0.5.dp)
-                                            ) {
-                                                Text(
-                                                    text = visitCount.toString(),
-                                                    fontFamily = LeagueSpartanFamily,
-                                                    fontWeight = FontWeight.Bold,
-                                                    fontSize = 8.sp,
-                                                    color = BrandWhite
-                                                )
-                                            }
-                                        }
-                                    }
+                                    Text(dayNum.toString(), fontSize = 14.sp, fontWeight = if (count > 0) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (selected) BrandWhite else TextPrimary)
+                                    if (count > 0) Box(Modifier.padding(top = 2.dp).size(5.dp).clip(CircleShape).background(if (selected) BrandGold else BrandGoldDark))
                                 }
                             }
                         }
@@ -1069,894 +471,308 @@ private fun MonthlyCalendarCard(
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Selected Day Inspector Card (Parity with Admin Day Details Inspector)
-// ─────────────────────────────────────────────────────────────────────────────
-
 @Composable
-private fun SelectedDayInspectorCard(
-    dateStr: String,
-    visits: List<PlannedVisitDto>,
-    onAddVisit: () -> Unit,
-    onEdit: (PlannedVisitDto) -> Unit,
-    onReschedule: (PlannedVisitDto) -> Unit,
-    onCancel: (PlannedVisitDto) -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(1.dp, BrandLightGray, RoundedCornerShape(12.dp)),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = BrandWhite),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(14.dp)
-        ) {
-            // Header
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "SELECTED DAY",
-                        fontFamily = LeagueSpartanFamily,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.8.sp,
-                        color = TextSubtle
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = formatDisplayDate(dateStr),
-                        fontFamily = LeagueSpartanFamily,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = BrandNavy
-                    )
-                    Text(
-                        text = if (visits.isEmpty()) "No customer visits scheduled" else "${visits.size} visit${if (visits.size > 1) "s" else ""} scheduled",
-                        fontFamily = LeagueSpartanFamily,
-                        fontSize = 11.sp,
-                        color = if (visits.isEmpty()) TextSubtle else BrandGoldDark,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-
-                Button(
-                    onClick = onAddVisit,
-                    colors = ButtonDefaults.buttonColors(containerColor = BrandNavy),
-                    shape = RoundedCornerShape(16.dp),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                    modifier = Modifier.height(34.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = null,
-                        tint = BrandWhite,
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "ADD VISIT",
-                        fontFamily = LeagueSpartanFamily,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp,
-                        color = BrandWhite
-                    )
-                }
+private fun EmptyPlan(ui: MonthlyPlanUiState, onAdd: (String?) -> Unit) {
+    Surface(shape = RoundedCornerShape(16.dp), color = BrandWhite, modifier = Modifier.fillMaxWidth().border(1.dp, BrandLightGray, RoundedCornerShape(16.dp))) {
+        Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(Modifier.size(48.dp).clip(RoundedCornerShape(14.dp)).background(Navy100), contentAlignment = Alignment.Center) {
+                Icon(Icons.Default.CalendarToday, contentDescription = null, tint = BrandNavy)
             }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            if (visits.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(SurfaceSecondary)
-                        .border(1.dp, BrandLightGray, RoundedCornerShape(8.dp))
-                        .padding(20.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            imageVector = Icons.Default.CalendarToday,
-                            contentDescription = null,
-                            tint = TextSubtle,
-                            modifier = Modifier.size(32.dp)
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "No visits scheduled for this date",
-                            fontFamily = LeagueSpartanFamily,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 13.sp,
-                            color = TextSecondary
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "Tap [+ ADD VISIT] above to schedule beats for ${formatDisplayDate(dateStr)}.",
-                            fontFamily = LeagueSpartanFamily,
-                            fontSize = 11.sp,
-                            color = TextSubtle
-                        )
-                    }
-                }
-            } else {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    visits.forEach { visit ->
-                        PlannedVisitItemCard(
-                            visit = visit,
-                            onEdit = { onEdit(visit) },
-                            onReschedule = { onReschedule(visit) },
-                            onCancel = { onCancel(visit) }
-                        )
-                    }
-                }
+            val text = when (ui.selectedFilter) {
+                "PLANNED" -> "No pending visits in ${MONTHS[ui.month - 1]}"
+                "COMPLETED" -> "No completed visits yet in ${MONTHS[ui.month - 1]}"
+                else -> "No visits planned for ${MONTHS[ui.month - 1]}"
+            }
+            Text(text, fontFamily = LeagueSpartanFamily, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, color = BrandNavy, textAlign = TextAlign.Center)
+            Text("Plan your outlet visits so your day is ready when you start it.", fontSize = 14.sp, color = TextSecondary, textAlign = TextAlign.Center)
+            if (ui.selectedFilter == "ALL") TextButton(onClick = { onAdd(null) }) {
+                Text("Plan a visit", fontFamily = LeagueSpartanFamily, fontWeight = FontWeight.Bold, color = BrandNavy)
             }
         }
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Planned Visit Item Card
-// ─────────────────────────────────────────────────────────────────────────────
-
 @Composable
-private fun PlannedVisitItemCard(
-    visit: PlannedVisitDto,
-    onEdit: () -> Unit,
-    onReschedule: () -> Unit,
-    onCancel: () -> Unit
-) {
-    var menuExpanded by remember { mutableStateOf(false) }
-
-    val priorityColor = when (visit.priority.uppercase()) {
-        "HIGH" -> ErrorRed
-        "LOW" -> SuccessGreen
-        else -> BrandGoldDark
+private fun LoadErrorState(kind: PlanLoadError, message: String, onRetry: () -> Unit, onSignInAgain: () -> Unit) {
+    val (icon, title) = when (kind) {
+        PlanLoadError.UNAUTHORIZED -> Icons.Default.Lock to "Session ended"
+        PlanLoadError.FORBIDDEN -> Icons.Default.Lock to "No access to monthly plans"
+        PlanLoadError.NETWORK -> Icons.Default.WifiOff to "You're offline"
+        PlanLoadError.SERVER -> Icons.Default.EventBusy to "Plan not available"
     }
-
-    val statusBg = when (visit.status) {
-        "COMPLETED" -> SuccessGreenBg
-        "CANCELLED" -> ErrorRedBg
-        else -> BrandNavy.copy(alpha = 0.08f)
-    }
-    val statusColor = when (visit.status) {
-        "COMPLETED" -> SuccessGreenText
-        "CANCELLED" -> ErrorRedText
-        else -> BrandNavy
-    }
-
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(1.dp, BrandLightGray, RoundedCornerShape(12.dp)),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = BrandWhite),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(14.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
-            ) {
-                // Customer Name & Outlet Code
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = visit.customerName ?: "Unnamed Customer",
-                        fontFamily = LeagueSpartanFamily,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
-                        color = BrandNavy,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    if (!visit.customerOutletCode.isNullOrBlank()) {
-                        Text(
-                            text = "Code: ${visit.customerOutletCode}",
-                            fontFamily = LeagueSpartanFamily,
-                            fontSize = 12.sp,
-                            color = TextSubtle
-                        )
-                    }
-                }
-
-                // Status Badge & Menu
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(statusBg)
-                            .padding(horizontal = 8.dp, vertical = 3.dp)
-                    ) {
-                        Text(
-                            text = visit.status,
-                            fontFamily = LeagueSpartanFamily,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 10.sp,
-                            letterSpacing = 0.5.sp,
-                            color = statusColor
-                        )
-                    }
-
-                    if (visit.status != "CANCELLED" && visit.status != "COMPLETED") {
-                        Box {
-                            IconButton(
-                                onClick = { menuExpanded = true },
-                                modifier = Modifier.size(28.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.MoreVert,
-                                    contentDescription = "Actions",
-                                    tint = TextSubtle
-                                )
-                            }
-                            DropdownMenu(
-                                expanded = menuExpanded,
-                                onDismissRequest = { menuExpanded = false }
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("Reschedule Date", fontFamily = LeagueSpartanFamily) },
-                                    leadingIcon = { Icon(Icons.Default.Event, null, modifier = Modifier.size(16.dp)) },
-                                    onClick = {
-                                        menuExpanded = false
-                                        onReschedule()
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Edit Details", fontFamily = LeagueSpartanFamily) },
-                                    leadingIcon = { Icon(Icons.Default.Edit, null, modifier = Modifier.size(16.dp)) },
-                                    onClick = {
-                                        menuExpanded = false
-                                        onEdit()
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Cancel Visit", fontFamily = LeagueSpartanFamily, color = ErrorRed) },
-                                    leadingIcon = { Icon(Icons.Default.DeleteOutline, null, tint = ErrorRed, modifier = Modifier.size(16.dp)) },
-                                    onClick = {
-                                        menuExpanded = false
-                                        onCancel()
-                                    }
-                                )
-                            }
-                        }
-                    }
-                }
+    Surface(shape = RoundedCornerShape(16.dp), color = BrandWhite, modifier = Modifier.fillMaxWidth().border(1.dp, BrandLightGray, RoundedCornerShape(16.dp))) {
+        Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(Modifier.size(52.dp).clip(CircleShape).background(Navy100), contentAlignment = Alignment.Center) {
+                Icon(icon, contentDescription = null, tint = BrandNavy)
             }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Date & Priority Badges Row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.CalendarToday,
-                        contentDescription = null,
-                        tint = BrandGoldDark,
-                        modifier = Modifier.size(13.dp)
-                    )
-                    Spacer(modifier = Modifier.width(5.dp))
-                    Text(
-                        text = formatDisplayDate(visit.plannedDate),
-                        fontFamily = LeagueSpartanFamily,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 12.sp,
-                        color = BrandNavy
-                    )
-                }
-
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    // Priority chip
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(priorityColor.copy(alpha = 0.12f))
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    ) {
-                        Text(
-                            text = "${visit.priority} PRIORITY",
-                            fontFamily = LeagueSpartanFamily,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 9.sp,
-                            color = priorityColor
-                        )
-                    }
-
-                    // Visit type chip
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(BrandLightGray.copy(alpha = 0.6f))
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    ) {
-                        Text(
-                            text = visit.visitType,
-                            fontFamily = LeagueSpartanFamily,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 9.sp,
-                            color = TextSubtle
-                        )
-                    }
-                }
-            }
-
-            // Area / Address
-            if (!visit.customerAddress.isNullOrBlank() || !visit.areaName.isNullOrBlank()) {
-                Spacer(modifier = Modifier.height(6.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.LocationOn,
-                        contentDescription = null,
-                        tint = TextSubtle,
-                        modifier = Modifier.size(12.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = listOfNotNull(visit.areaName, visit.customerAddress).joinToString(" • "),
-                        fontFamily = LeagueSpartanFamily,
-                        fontSize = 11.sp,
-                        color = TextSubtle,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-
-            // Notes
-            if (!visit.notes.isNullOrBlank()) {
-                Spacer(modifier = Modifier.height(6.dp))
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(SurfaceSecondary)
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    Text(
-                        text = "Notes: ${visit.notes}",
-                        fontFamily = LeagueSpartanFamily,
-                        fontSize = 11.sp,
-                        color = TextSecondary,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
+            Text(title, fontFamily = LeagueSpartanFamily, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = BrandNavy)
+            Text(message, fontSize = 14.sp, color = TextSecondary, textAlign = TextAlign.Center)
+            Text("Visit counts are hidden until the plan loads.", fontSize = 12.sp, color = TextSubtle, textAlign = TextAlign.Center)
+            if (kind == PlanLoadError.UNAUTHORIZED) PrimaryButton("Sign in again", onClick = onSignInAgain, modifier = Modifier.fillMaxWidth())
+            else PrimaryButton("Try again", onClick = onRetry, icon = Icons.Default.Refresh, modifier = Modifier.fillMaxWidth())
         }
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Add Planned Visit Dialog
-// ─────────────────────────────────────────────────────────────────────────────
+// ---------------------------------------------------------------------------------------------------------------
+// Add visit sheet
+// ---------------------------------------------------------------------------------------------------------------
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AddPlannedVisitDialog(
-    selectedYear: Int,
-    selectedMonth: Int,
-    initialPlannedDate: String? = null,
+fun AddVisitSheet(
+    year: Int,
+    month: Int,
+    initialDate: String?,
+    search: CustomerSearchState,
     isSaving: Boolean,
-    searchResults: List<CustomerDto>,
-    isSearching: Boolean,
-    onSearchCustomers: (String) -> Unit,
+    serverError: String?,
+    onQueryChange: (String) -> Unit,
     onDismiss: () -> Unit,
-    onConfirm: (customerId: String, plannedDate: String, priority: String, visitType: String, notes: String?) -> Unit
+    onSubmit: (CustomerDto, String, String, String?) -> Unit
 ) {
-    val context = LocalContext.current
-
-    var searchQuery by remember { mutableStateOf("") }
-    var selectedCustomer by remember { mutableStateOf<CustomerDto?>(null) }
-    var priority by remember { mutableStateOf("MEDIUM") }
-    var visitType by remember { mutableStateOf("PLANNED") }
-    var notes by remember { mutableStateOf("") }
-
-    // Initial default planned date: initialPlannedDate if provided, else today if current month, or 1st day of target month
-    val todayCal = Calendar.getInstance()
-    val defaultDateStr = remember(selectedYear, selectedMonth, initialPlannedDate) {
-        if (!initialPlannedDate.isNullOrBlank()) {
-            initialPlannedDate
-        } else {
-            val currentYear = todayCal.get(Calendar.YEAR)
-            val currentMonth = todayCal.get(Calendar.MONTH) + 1
-            val currentDay = todayCal.get(Calendar.DAY_OF_MONTH)
-            if (selectedYear == currentYear && selectedMonth == currentMonth) {
-                formatDateStr(selectedYear, selectedMonth, currentDay)
-            } else {
-                formatDateStr(selectedYear, selectedMonth, 1)
-            }
-        }
-    }
-    var plannedDate by remember { mutableStateOf(defaultDateStr) }
-
-    AlertDialog(
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
         onDismissRequest = { if (!isSaving) onDismiss() },
-        title = {
-            Text(
-                text = "Plan a Customer Visit",
-                fontFamily = LeagueSpartanFamily,
-                fontWeight = FontWeight.Bold,
-                color = BrandNavy
-            )
-        },
-        text = {
-            Column(
-                modifier = Modifier
+        sheetState = sheetState,
+        containerColor = BrandWhite,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+    ) {
+        AddVisitForm(year, month, initialDate, search, isSaving, serverError, onQueryChange, onDismiss, onSubmit)
+    }
+}
+
+/** Form body of the Add visit sheet (stateless apart from field state; rendered by the screenshot test). */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AddVisitForm(
+    year: Int,
+    month: Int,
+    initialDate: String?,
+    search: CustomerSearchState,
+    isSaving: Boolean,
+    serverError: String?,
+    onQueryChange: (String) -> Unit,
+    onDismiss: () -> Unit,
+    onSubmit: (CustomerDto, String, String, String?) -> Unit,
+    preselected: CustomerDto? = null
+) {
+    val today = todayIso()
+    val defaultDate = initialDate?.takeIf { isPlannableDate(it, today) }
+        ?: formatDateStr(year, month, 1).takeIf { isPlannableDate(it, today) }
+        ?: today
+    var selected by remember { mutableStateOf(preselected) }
+    var date by rememberSaveable { mutableStateOf(defaultDate) }
+    var priority by rememberSaveable { mutableStateOf("MEDIUM") }
+    var notes by rememberSaveable { mutableStateOf("") }
+    var showPicker by remember { mutableStateOf(false) }
+    var triedSubmit by remember { mutableStateOf(false) }
+
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .imePadding()
+            .navigationBarsPadding()
+            .padding(horizontal = 20.dp)
+            .padding(bottom = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp)
+    ) {
+        SheetHeader("Plan a visit", "Add an outlet visit to your monthly plan.")
+
+        CustomerPicker(
+            state = search,
+            selected = selected,
+            onQueryChange = onQueryChange,
+            onSelect = { selected = it },
+            onClearSelection = { selected = null }
+        )
+        if (triedSubmit && selected == null) Text("Choose an outlet to continue.", fontSize = 13.sp, color = ErrorRed)
+
+        FieldBlock("Planned date") {
+            Row(
+                Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 480.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .border(1.dp, BrandLightGray, RoundedCornerShape(14.dp))
+                    .background(Navy50)
+                    .clickable(role = Role.Button) { showPicker = true }
+                    .heightIn(min = 56.dp)
+                    .padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                // 1. Customer Selection
-                Text(
-                    text = "CUSTOMER / OUTLET *",
-                    fontFamily = LeagueSpartanFamily,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = BrandNavy
-                )
-
-                if (selectedCustomer != null) {
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .border(1.dp, BrandGoldDark, RoundedCornerShape(8.dp)),
-                        shape = RoundedCornerShape(8.dp),
-                        colors = CardDefaults.cardColors(containerColor = BrandGold.copy(alpha = 0.08f))
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(10.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = selectedCustomer!!.name,
-                                    fontFamily = LeagueSpartanFamily,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp,
-                                    color = BrandNavy
-                                )
-                                Text(
-                                    text = selectedCustomer!!.outletCode ?: selectedCustomer!!.address ?: "",
-                                    fontFamily = LeagueSpartanFamily,
-                                    fontSize = 11.sp,
-                                    color = TextSubtle
-                                )
-                            }
-                            IconButton(
-                                onClick = { selectedCustomer = null },
-                                modifier = Modifier.size(24.dp)
-                            ) {
-                                Icon(Icons.Default.Clear, "Remove", tint = TextSubtle)
-                            }
-                        }
-                    }
-                } else {
-                    OutlinedTextField(
-                        value = searchQuery,
-                        onValueChange = {
-                            searchQuery = it
-                            onSearchCustomers(it)
-                        },
-                        placeholder = { Text("Search customer name or code...", fontSize = 12.sp) },
-                        leadingIcon = { Icon(Icons.Default.Search, null, modifier = Modifier.size(18.dp)) },
-                        trailingIcon = {
-                            if (isSearching) {
-                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        shape = RoundedCornerShape(8.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = BrandNavy,
-                            unfocusedBorderColor = BrandLightGray
-                        )
-                    )
-
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 140.dp)
-                            .border(1.dp, BrandLightGray, RoundedCornerShape(8.dp))
-                    ) {
-                        if (searchResults.isEmpty()) {
-                            item {
-                                Text(
-                                    text = if (isSearching) "Searching..." else "No matching customers found",
-                                    fontFamily = LeagueSpartanFamily,
-                                    fontSize = 12.sp,
-                                    color = TextSubtle,
-                                    modifier = Modifier.padding(12.dp)
-                                )
-                            }
-                        } else {
-                            items(searchResults) { cust ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable { selectedCustomer = cust }
-                                        .padding(horizontal = 10.dp, vertical = 8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(Icons.Default.Store, null, tint = BrandNavyLight, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Column {
-                                        Text(
-                                            text = cust.name,
-                                            fontFamily = LeagueSpartanFamily,
-                                            fontWeight = FontWeight.SemiBold,
-                                            fontSize = 13.sp,
-                                            color = BrandNavy
-                                        )
-                                        Text(
-                                            text = cust.outletCode ?: cust.address ?: "",
-                                            fontFamily = LeagueSpartanFamily,
-                                            fontSize = 11.sp,
-                                            color = TextSubtle
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // 2. Date Picker
-                Text(
-                    text = "PLANNED DATE *",
-                    fontFamily = LeagueSpartanFamily,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = BrandNavy
-                )
-                OutlinedButton(
-                    onClick = {
-                        val parts = plannedDate.split("-").mapNotNull { it.toIntOrNull() }
-                        val initY = parts.getOrNull(0) ?: selectedYear
-                        val initM = (parts.getOrNull(1) ?: selectedMonth) - 1
-                        val initD = parts.getOrNull(2) ?: 1
-                        DatePickerDialog(context, { _, y, m, d ->
-                            plannedDate = formatDateStr(y, m + 1, d)
-                        }, initY, initM, initD).show()
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Icon(Icons.Default.CalendarToday, null, tint = BrandGoldDark, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = formatDisplayDate(plannedDate),
-                        fontFamily = LeagueSpartanFamily,
-                        fontWeight = FontWeight.SemiBold,
-                        color = BrandNavy
-                    )
-                }
-
-                // 3. Priority Row
-                Text(
-                    text = "PRIORITY",
-                    fontFamily = LeagueSpartanFamily,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = BrandNavy
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    listOf("LOW", "MEDIUM", "HIGH").forEach { p ->
-                        FilterChip(
-                            selected = priority == p,
-                            onClick = { priority = p },
-                            label = { Text(p, fontFamily = LeagueSpartanFamily, fontWeight = FontWeight.Bold, fontSize = 11.sp) },
-                            modifier = Modifier.weight(1f),
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = if (p == "HIGH") ErrorRed else if (p == "LOW") SuccessGreen else BrandGoldDark,
-                                selectedLabelColor = BrandWhite,
-                                containerColor = BrandWhite,
-                                labelColor = BrandNavy
-                            )
-                        )
-                    }
-                }
-
-                // 4. Notes
-                Text(
-                    text = "VISIT OBJECTIVE / REMARKS",
-                    fontFamily = LeagueSpartanFamily,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = BrandNavy
-                )
-                OutlinedTextField(
-                    value = notes,
-                    onValueChange = { notes = it },
-                    placeholder = { Text("Enter purpose (e.g. payment follow-up, stock audit)", fontSize = 12.sp) },
-                    modifier = Modifier.fillMaxWidth(),
-                    maxLines = 3,
-                    shape = RoundedCornerShape(8.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = BrandNavy,
-                        unfocusedBorderColor = BrandLightGray
-                    )
-                )
+                Icon(Icons.Default.CalendarToday, contentDescription = null, tint = BrandNavy, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(12.dp))
+                Text(formatDisplayDate(date), fontFamily = LeagueSpartanFamily, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = BrandNavy, modifier = Modifier.weight(1f))
+                Text("Change", fontSize = 14.sp, color = BrandGoldDark, fontWeight = FontWeight.SemiBold)
             }
-        },
-        confirmButton = {
-            Button(
+            Text("Visits can be planned for today or later.", fontSize = 12.sp, color = TextSubtle)
+        }
+
+        FieldBlock("Priority") {
+            PrioritySelector(priority) { priority = it }
+        }
+
+        FieldBlock("Visit objective (optional)") {
+            OutlinedTextField(
+                value = notes,
+                onValueChange = { notes = it.take(500) },
+                placeholder = { Text("e.g. Payment follow-up, new scheme, stock check") },
+                minLines = 3,
+                maxLines = 6,
+                shape = RoundedCornerShape(14.dp),
+                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = BrandGold, unfocusedBorderColor = BrandLightGray),
+                modifier = Modifier.fillMaxWidth()
+            )
+            Text("${notes.length}/500", fontSize = 12.sp, color = TextSubtle, modifier = Modifier.align(Alignment.End))
+        }
+
+        serverError?.let { InlineErrorCard(message = it) }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlineButton("Cancel", onClick = onDismiss, enabled = !isSaving, modifier = Modifier.weight(1f))
+            PrimaryButton(
+                text = "Add to plan",
                 onClick = {
-                    if (selectedCustomer == null) {
-                        Toast.makeText(context, "Please select a customer first", Toast.LENGTH_SHORT).show()
-                        return@Button
-                    }
-                    onConfirm(selectedCustomer!!.id, plannedDate, priority, visitType, notes)
+                    triedSubmit = true
+                    val c = selected ?: return@PrimaryButton
+                    if (!isPlannableDate(date)) return@PrimaryButton
+                    onSubmit(c, date, priority, notes.ifBlank { null })
                 },
-                colors = ButtonDefaults.buttonColors(containerColor = BrandNavy),
-                enabled = !isSaving && selectedCustomer != null
-            ) {
-                if (isSaving) {
-                    CircularProgressIndicator(modifier = Modifier.size(14.dp), color = BrandWhite, strokeWidth = 2.dp)
-                } else {
-                    Text("ADD TO PLAN", fontFamily = LeagueSpartanFamily, fontWeight = FontWeight.Bold)
-                }
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !isSaving) {
-                Text("CANCEL", fontFamily = LeagueSpartanFamily, fontWeight = FontWeight.Bold, color = TextSubtle)
-            }
-        }
-    )
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Edit Planned Visit Dialog
-// ─────────────────────────────────────────────────────────────────────────────
-
-@Composable
-private fun EditPlannedVisitDialog(
-    visit: PlannedVisitDto,
-    isSaving: Boolean,
-    onDismiss: () -> Unit,
-    onConfirm: (priority: String, visitType: String, notes: String?) -> Unit
-) {
-    var priority by remember { mutableStateOf(visit.priority) }
-    var visitType by remember { mutableStateOf(visit.visitType) }
-    var notes by remember { mutableStateOf(visit.notes ?: "") }
-
-    AlertDialog(
-        onDismissRequest = { if (!isSaving) onDismiss() },
-        title = {
-            Text(
-                text = "Edit Planned Visit",
-                fontFamily = LeagueSpartanFamily,
-                fontWeight = FontWeight.Bold,
-                color = BrandNavy
+                loading = isSaving,
+                modifier = Modifier.weight(1.4f)
             )
-        },
-        text = {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Text(
-                    text = visit.customerName ?: "Customer",
-                    fontFamily = LeagueSpartanFamily,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp,
-                    color = BrandNavy
-                )
-                Text(
-                    text = "Scheduled for ${formatDisplayDate(visit.plannedDate)}",
-                    fontFamily = LeagueSpartanFamily,
-                    fontSize = 12.sp,
-                    color = TextSubtle
-                )
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                Text(
-                    text = "PRIORITY",
-                    fontFamily = LeagueSpartanFamily,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = BrandNavy
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    listOf("LOW", "MEDIUM", "HIGH").forEach { p ->
-                        FilterChip(
-                            selected = priority.equals(p, ignoreCase = true),
-                            onClick = { priority = p },
-                            label = { Text(p, fontFamily = LeagueSpartanFamily, fontWeight = FontWeight.Bold, fontSize = 11.sp) },
-                            modifier = Modifier.weight(1f),
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = if (p == "HIGH") ErrorRed else if (p == "LOW") SuccessGreen else BrandGoldDark,
-                                selectedLabelColor = BrandWhite,
-                                containerColor = BrandWhite,
-                                labelColor = BrandNavy
-                            )
-                        )
-                    }
-                }
-
-                Text(
-                    text = "VISIT OBJECTIVE / NOTES",
-                    fontFamily = LeagueSpartanFamily,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = BrandNavy
-                )
-                OutlinedTextField(
-                    value = notes,
-                    onValueChange = { notes = it },
-                    placeholder = { Text("Update notes or remarks", fontSize = 12.sp) },
-                    modifier = Modifier.fillMaxWidth(),
-                    maxLines = 3,
-                    shape = RoundedCornerShape(8.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = BrandNavy,
-                        unfocusedBorderColor = BrandLightGray
-                    )
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = { onConfirm(priority, visitType, notes) },
-                colors = ButtonDefaults.buttonColors(containerColor = BrandNavy),
-                enabled = !isSaving
-            ) {
-                if (isSaving) {
-                    CircularProgressIndicator(modifier = Modifier.size(14.dp), color = BrandWhite, strokeWidth = 2.dp)
-                } else {
-                    Text("SAVE CHANGES", fontFamily = LeagueSpartanFamily, fontWeight = FontWeight.Bold)
-                }
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !isSaving) {
-                Text("CANCEL", fontFamily = LeagueSpartanFamily, fontWeight = FontWeight.Bold, color = TextSubtle)
-            }
         }
-    )
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Reschedule Planned Visit Dialog
-// ─────────────────────────────────────────────────────────────────────────────
-
-@Composable
-private fun ReschedulePlannedVisitDialog(
-    visit: PlannedVisitDto,
-    isSaving: Boolean,
-    onDismiss: () -> Unit,
-    onConfirm: (newDate: String) -> Unit
-) {
-    val context = LocalContext.current
-    var newDate by remember { mutableStateOf(visit.plannedDate) }
-
-    AlertDialog(
-        onDismissRequest = { if (!isSaving) onDismiss() },
-        title = {
-            Text(
-                text = "Reschedule Visit",
-                fontFamily = LeagueSpartanFamily,
-                fontWeight = FontWeight.Bold,
-                color = BrandNavy
-            )
-        },
-        text = {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Text(
-                    text = visit.customerName ?: "Customer",
-                    fontFamily = LeagueSpartanFamily,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp,
-                    color = BrandNavy
-                )
-                Text(
-                    text = "Currently scheduled: ${formatDisplayDate(visit.plannedDate)}",
-                    fontFamily = LeagueSpartanFamily,
-                    fontSize = 12.sp,
-                    color = TextSubtle
-                )
-
-                Spacer(modifier = Modifier.height(6.dp))
-
-                Text(
-                    text = "SELECT NEW TARGET DATE *",
-                    fontFamily = LeagueSpartanFamily,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = BrandNavy
-                )
-
-                OutlinedButton(
-                    onClick = {
-                        val parts = newDate.split("-").mapNotNull { it.toIntOrNull() }
-                        val initY = parts.getOrNull(0) ?: 2026
-                        val initM = (parts.getOrNull(1) ?: 9) - 1
-                        val initD = parts.getOrNull(2) ?: 1
-                        DatePickerDialog(context, { _, y, m, d ->
-                            newDate = formatDateStr(y, m + 1, d)
-                        }, initY, initM, initD).show()
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Icon(Icons.Default.CalendarToday, null, tint = BrandGoldDark, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = formatDisplayDate(newDate),
-                        fontFamily = LeagueSpartanFamily,
-                        fontWeight = FontWeight.SemiBold,
-                        color = BrandNavy
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = { onConfirm(newDate) },
-                colors = ButtonDefaults.buttonColors(containerColor = BrandNavy),
-                enabled = !isSaving
-            ) {
-                if (isSaving) {
-                    CircularProgressIndicator(modifier = Modifier.size(14.dp), color = BrandWhite, strokeWidth = 2.dp)
-                } else {
-                    Text("RESCHEDULE", fontFamily = LeagueSpartanFamily, fontWeight = FontWeight.Bold)
-                }
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !isSaving) {
-                Text("CANCEL", fontFamily = LeagueSpartanFamily, fontWeight = FontWeight.Bold, color = TextSubtle)
-            }
-        }
-    )
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Format Helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-private fun formatDateStr(year: Int, month: Int, day: Int): String {
-    return String.format(Locale.US, "%04d-%02d-%02d", year, month, day)
-}
-
-private fun formatDisplayDate(dateStr: String): String {
-    return try {
-        val parts = dateStr.split("-").map { it.toInt() }
-        val cal = Calendar.getInstance().apply {
-            set(parts[0], parts[1] - 1, parts[2])
-        }
-        val sdf = SimpleDateFormat("EEE, dd MMM yyyy", Locale.getDefault())
-        sdf.format(cal.time)
-    } catch (_: Exception) {
-        dateStr
     }
+
+    if (showPicker) {
+        PlanDatePicker(date, onDismiss = { showPicker = false }) {
+            date = it
+            showPicker = false
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PlanDatePicker(current: String, onDismiss: () -> Unit, onPicked: (String) -> Unit) {
+    val utc = TimeZone.getTimeZone("UTC")
+    val fmt = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { timeZone = utc }
+    val todayMillis = fmt.parse(todayIso())!!.time
+    val state = rememberDatePickerState(
+        initialSelectedDateMillis = runCatching { fmt.parse(current)!!.time }.getOrNull(),
+        selectableDates = object : SelectableDates {
+            override fun isSelectableDate(utcTimeMillis: Long) = utcTimeMillis >= todayMillis
+        }
+    )
+    DatePickerDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = { state.selectedDateMillis?.let { onPicked(fmt.format(java.util.Date(it))) } }) {
+                Text("Select", fontFamily = LeagueSpartanFamily, fontWeight = FontWeight.Bold, color = BrandNavy)
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = TextSecondary) } }
+    ) { DatePicker(state = state) }
+}
+
+@Composable
+internal fun SheetHeader(title: String, subtitle: String) {
+    Column {
+        Text(title, fontFamily = LeagueSpartanFamily, fontWeight = FontWeight.Bold, fontSize = 22.sp, color = BrandNavy)
+        Text(subtitle, fontSize = 14.sp, color = TextSecondary)
+    }
+}
+
+@Composable
+internal fun FieldBlock(label: String, content: @Composable ColumnScope.() -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(label.uppercase(), style = LabelCaps, color = TextSecondary)
+        content()
+    }
+}
+
+@Composable
+internal fun PrioritySelector(value: String, onChange: (String) -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        listOf("LOW" to "Low", "MEDIUM" to "Medium", "HIGH" to "High").forEach { (key, label) ->
+            val on = value == key
+            val accent = priorityColor(key)
+            Row(
+                Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(if (on) BrandNavy else BrandWhite)
+                    .border(1.dp, if (on) BrandNavy else BrandLightGray, RoundedCornerShape(12.dp))
+                    .clickable(role = Role.RadioButton) { onChange(key) }
+                    .heightIn(min = 48.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(Modifier.size(8.dp).clip(CircleShape).background(accent))
+                Spacer(Modifier.width(8.dp))
+                Text(label, fontFamily = LeagueSpartanFamily, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = if (on) BrandWhite else BrandNavy)
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Visit actions sheet (edit priority/objective, reschedule, cancel)
+// ---------------------------------------------------------------------------------------------------------------
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun VisitActionsSheet(
+    visit: PlannedVisitDto,
+    isSaving: Boolean,
+    onDismiss: () -> Unit,
+    onReschedule: (String) -> Unit,
+    onUpdate: (String, String?) -> Unit,
+    onCancelVisit: () -> Unit
+) {
+    var priority by remember(visit.id) { mutableStateOf(visit.priority.uppercase()) }
+    var notes by remember(visit.id) { mutableStateOf(visit.notes.orEmpty()) }
+    var showPicker by remember { mutableStateOf(false) }
+    var confirmCancel by remember { mutableStateOf(false) }
+    val editable = visit.status == "PLANNED"
+    ModalBottomSheet(
+        onDismissRequest = { if (!isSaving) onDismiss() },
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = BrandWhite
+    ) {
+        Column(
+            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).imePadding().navigationBarsPadding()
+                .padding(horizontal = 20.dp).padding(bottom = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            SheetHeader(visit.customerName ?: "Planned visit", "${formatDisplayDate(visit.plannedDate)}${visit.customerOutletCode?.let { " · $it" } ?: ""}")
+            if (!editable) {
+                Text("This visit is ${visit.status.lowercase()} and can no longer be changed.", fontSize = 14.sp, color = TextSecondary)
+            } else {
+                FieldBlock("Priority") { PrioritySelector(priority) { priority = it } }
+                FieldBlock("Visit objective") {
+                    OutlinedTextField(value = notes, onValueChange = { notes = it.take(500) }, minLines = 2, maxLines = 5,
+                        shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = BrandGold, unfocusedBorderColor = BrandLightGray))
+                }
+                PrimaryButton("Save changes", onClick = { onUpdate(priority, notes) }, loading = isSaving, modifier = Modifier.fillMaxWidth())
+                OutlineButton("Move to another date", onClick = { showPicker = true }, enabled = !isSaving, icon = Icons.Default.CalendarToday, modifier = Modifier.fillMaxWidth())
+                TextButton(onClick = { confirmCancel = true }, enabled = !isSaving, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+                    Text("Cancel this visit", color = ErrorRed, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+    }
+    if (showPicker) PlanDatePicker(visit.plannedDate, onDismiss = { showPicker = false }) {
+        showPicker = false
+        onReschedule(it)
+    }
+    if (confirmCancel) AlertDialog(
+        onDismissRequest = { confirmCancel = false },
+        title = { Text("Cancel this visit?", fontFamily = LeagueSpartanFamily, fontWeight = FontWeight.Bold) },
+        text = { Text("It will be removed from your plan.") },
+        confirmButton = { TextButton(onClick = { confirmCancel = false; onCancelVisit() }) { Text("Cancel visit", color = ErrorRed, fontWeight = FontWeight.Bold) } },
+        dismissButton = { TextButton(onClick = { confirmCancel = false }) { Text("Keep") } }
+    )
 }

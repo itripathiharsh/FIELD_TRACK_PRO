@@ -171,7 +171,21 @@ fun NavGraph(
                 onNavigateToSync = { navController.navigate(Screen.OfflineQueue.route) },
                 onNavigateToNotifications = { navController.navigate(Screen.Notifications.route) },
                 onNavigateToAddCustomer = { navController.navigate(Screen.AddCustomer.route) },
-                onNavigateToMonthlyPlanning = { navController.navigate(Screen.MonthlyPlanning.route) }
+                onNavigateToMonthlyPlanning = { navController.navigate(Screen.MonthlyPlanning.route) },
+                onNavigateToPerformance = { navController.navigate(Screen.EmployeeDashboard.route) }
+            )
+        }
+
+        composable(Screen.EmployeeDashboard.route) {
+            val vm = androidx.lifecycle.viewmodel.compose.viewModel {
+                com.fieldtrackpro.android.performance.EmployeeDashboardViewModel(
+                    source = com.fieldtrackpro.android.performance.ApiEmployeeDashboardSource(tokenManager),
+                    role = { tokenManager.getUserRole() }
+                )
+            }
+            com.fieldtrackpro.android.performance.EmployeeDashboardScreen(
+                viewModel = vm,
+                onNavigateBack = { navController.popBackStackSafely() }
             )
         }
 
