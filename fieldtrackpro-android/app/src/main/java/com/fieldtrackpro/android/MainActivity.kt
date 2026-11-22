@@ -3,6 +3,8 @@ package com.fieldtrackpro.android
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
@@ -114,7 +116,16 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Edge-to-edge on every API level (Android 15 enforces it for targetSdk 35 anyway): transparent bars, and each
+        // screen picks dark or light status-bar icons (see SystemBarIcons). Default: dark icons on the light app.
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT)
+        )
         super.onCreate(savedInstanceState)
+        // The launch window is navy (one seamless splash, see themes.xml); once Compose owns the window, use the light
+        // app background so keyboard/resize gaps never flash navy.
+        window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(0xFFF5F6F9.toInt()))
 
         // Initialize Notification Channel
         NotificationHelper.createNotificationChannel(applicationContext)

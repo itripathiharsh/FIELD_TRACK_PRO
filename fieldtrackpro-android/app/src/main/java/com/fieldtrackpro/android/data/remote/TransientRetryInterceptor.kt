@@ -18,9 +18,6 @@ class TransientRetryInterceptor(
     private val initialBackoffMs: Long = 500L
 ) : Interceptor {
 
-    companion object {
-        private const val TAG = "TransientRetry"
-    }
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
@@ -51,7 +48,7 @@ class TransientRetryInterceptor(
                 return response
             } catch (e: IOException) {
                 lastException = e
-                if (isIdempotent && attempt < maxRetries) {
+                if (isIdempotent && attempt < maxRetries && isRetryableIOException(e)) {
                     attempt++
                     Log.w(TAG, "Network IOException on ${request.url.encodedPath}, retrying attempt $attempt after ${backoffMs}ms: ${e.javaClass.simpleName}")
                     try {
@@ -69,4 +66,20 @@ class TransientRetryInterceptor(
     }
 
     private fun isTransientError(code: Int): Boolean = code in listOf(502, 503, 504)
+
+    companion object {
+        private const val TAG = "TransientRetry"
+
+        /**
+         * Retry only failures where a second attempt can plausibly succeed quickly (connection refused/reset, TLS
+         * hiccup). A read timeout already cost the full timeout and usually means a slow server, and an unknown host
+         * means no network at all: retrying those only made the user wait up to ~46 s before seeing an error.
+         */
+        fun isRetryableIOException(e: IOException): Boolean = when (e) {
+            is java.net.SocketTimeoutException -> false
+            is java.net.UnknownHostException -> false
+            is java.io.InterruptedIOException -> false
+            else -> true
+        }
+    }
 }

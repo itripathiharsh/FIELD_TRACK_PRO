@@ -93,11 +93,7 @@ import java.util.Locale
 
 private val PAYMENT_METHODS = listOf("CASH", "CHEQUE", "ONLINE")
 
-private fun formatRupees(amount: Double): String {
-    val formatter = NumberFormat.getCurrencyInstance(Locale("en", "IN"))
-    formatter.maximumFractionDigits = 2
-    return formatter.format(amount)
-}
+private fun formatRupees(amount: Double): String = com.fieldtrackpro.android.utils.MoneyFormat.inr(amount)
 
 /** Saver for the per-brand amount map: flat [brand, amount, brand, amount...] list. */
 private val BrandAmountsSaver = androidx.compose.runtime.saveable.Saver<androidx.compose.runtime.snapshots.SnapshotStateMap<String, String>, ArrayList<String>>(

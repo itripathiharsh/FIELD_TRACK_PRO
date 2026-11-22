@@ -1,5 +1,7 @@
 package com.fieldtrackpro.android.data.repository
 
+import com.fieldtrackpro.android.utils.WorkdayLocationPolicy
+
 import com.fieldtrackpro.android.data.api.WorkdayApi
 import com.fieldtrackpro.android.data.local.OfflineQueueManager
 import com.fieldtrackpro.android.data.local.PendingAction
@@ -43,6 +45,12 @@ class WorkdayRepository(
         skipEnqueueOnFailure: Boolean = false,
     ): Resource<EmployeeWorkdayResponseDto> {
         val isoTimestamp = isoFormat(capturedAtMillis)
+
+        // Never send or queue a NEW workday event without real coordinates (no 0,0 fallback). Replays of entries that
+        // are already queued (skipEnqueueOnFailure = true) keep their old behaviour so nothing in a device queue changes.
+        if (!skipEnqueueOnFailure && !WorkdayLocationPolicy.isSubmittable(latitude, longitude)) {
+            return Resource.Error("Couldn't get a valid GPS location, so the workday was not started. Try again in an open area.")
+        }
 
         if (isOfflineMode) {
             if (!skipEnqueueOnFailure && offlineQueueManager != null) {
@@ -147,6 +155,12 @@ class WorkdayRepository(
         skipEnqueueOnFailure: Boolean = false,
     ): Resource<EmployeeWorkdayResponseDto> {
         val isoTimestamp = isoFormat(capturedAtMillis)
+
+        // Never send or queue a NEW workday event without real coordinates (no 0,0 fallback). Replays of entries that
+        // are already queued (skipEnqueueOnFailure = true) keep their old behaviour so nothing in a device queue changes.
+        if (!skipEnqueueOnFailure && !WorkdayLocationPolicy.isSubmittable(latitude, longitude)) {
+            return Resource.Error("Couldn't get a valid GPS location, so the workday was not ended. Try again in an open area.")
+        }
 
         if (isOfflineMode) {
             if (!skipEnqueueOnFailure && offlineQueueManager != null) {

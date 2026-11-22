@@ -71,6 +71,17 @@ class AuthViewModel(
 
     private var lastSubmitTimestamp = 0L
 
+    /** Bumped after the cached profile is refreshed so screens re-read TokenManager. */
+    private val _profileRevision = MutableStateFlow(0)
+    val profileRevision: StateFlow<Int> = _profileRevision.asStateFlow()
+
+    fun refreshProfile() {
+        if (!tokenManager.isLoggedIn()) return
+        viewModelScope.launch {
+            if (authRepository.refreshProfile() is Resource.Success) _profileRevision.value += 1
+        }
+    }
+
     fun login(identity: String, pass: String) {
         val now = System.currentTimeMillis()
         if (_authState.value is AuthState.Loading || (now - lastSubmitTimestamp < 800L)) {

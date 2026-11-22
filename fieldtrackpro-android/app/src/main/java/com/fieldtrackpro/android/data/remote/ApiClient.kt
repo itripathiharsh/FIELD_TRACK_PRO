@@ -65,7 +65,10 @@ object ApiClient {
     /**
      * APP-API-002: Single unified OkHttpClient factory eliminating copy-pasted interceptor pipelines.
      */
-    fun createOkHttpClient(tokenManager: TokenManager, timeoutSeconds: Long = 15): OkHttpClient {
+    const val CONNECT_TIMEOUT_SECONDS = 10L
+    const val DEFAULT_TIMEOUT_SECONDS = 20L
+
+    fun createOkHttpClient(tokenManager: TokenManager, timeoutSeconds: Long = DEFAULT_TIMEOUT_SECONDS): OkHttpClient {
         val authInterceptor = Interceptor { chain ->
             val originalRequest = chain.request()
             val token = tokenManager.getAccessToken()
@@ -97,14 +100,15 @@ object ApiClient {
             .addInterceptor(transientRetryInterceptor)
             .addInterceptor(loggingInterceptor)
             .authenticator(tokenAuthenticator)
-            .connectTimeout(timeoutSeconds, TimeUnit.SECONDS)
+            // Field networks: fail a dead connection fast (10 s), but give a slow-but-alive response time to arrive.
+            .connectTimeout(minOf(CONNECT_TIMEOUT_SECONDS, timeoutSeconds), TimeUnit.SECONDS)
             .readTimeout(timeoutSeconds, TimeUnit.SECONDS)
             .writeTimeout(timeoutSeconds, TimeUnit.SECONDS)
             .build()
     }
 
     private fun createRetrofit(tokenManager: TokenManager): Retrofit {
-        val okHttpClient = createOkHttpClient(tokenManager, timeoutSeconds = 15)
+        val okHttpClient = createOkHttpClient(tokenManager, timeoutSeconds = DEFAULT_TIMEOUT_SECONDS)
 
         return Retrofit.Builder()
             .baseUrl(baseUrl)

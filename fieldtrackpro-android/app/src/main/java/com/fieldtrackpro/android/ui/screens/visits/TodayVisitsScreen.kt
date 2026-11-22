@@ -543,6 +543,7 @@ fun AdHocVisitDialog(
 
     val searchResults by viewModel.customerSearchResults.collectAsState()
     val isSearching by viewModel.isSearchingCustomers.collectAsState()
+    val searchError by viewModel.customerSearchError.collectAsState()
     val isCreating by viewModel.isCreatingAdHocVisit.collectAsState()
 
     Dialog(
@@ -672,6 +673,13 @@ fun AdHocVisitDialog(
                                 }
                             }
                         }
+                    } else if (customerSearchText.isNotBlank() && !isSearching && searchError != null) {
+                        Text(
+                            text = "Search failed: $searchError",
+                            fontSize = 13.sp,
+                            color = com.fieldtrackpro.android.ui.theme.ErrorRed,
+                            modifier = Modifier.padding(vertical = 6.dp)
+                        )
                     } else if (customerSearchText.isNotBlank() && !isSearching) {
                         Text(
                             text = "No matching outlets found in directory.",

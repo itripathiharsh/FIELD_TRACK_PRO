@@ -59,6 +59,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -116,27 +117,30 @@ fun AddCustomerScreen(
     }
 
     // Form fields
-    var name by remember { mutableStateOf("") }
-    var contactPerson by remember { mutableStateOf("") }
-    var contactNumber by remember { mutableStateOf("") }
-    var gstNumber by remember { mutableStateOf("") }
-    var address by remember { mutableStateOf("") }
-    var outletCode by remember { mutableStateOf("") }
+    // Form state survives rotation and process recreation (the camera intent can kill the app on low-memory phones).
+    var name by rememberSaveable { mutableStateOf("") }
+    var contactPerson by rememberSaveable { mutableStateOf("") }
+    var contactNumber by rememberSaveable { mutableStateOf("") }
+    var gstNumber by rememberSaveable { mutableStateOf("") }
+    var address by rememberSaveable { mutableStateOf("") }
+    var outletCode by rememberSaveable { mutableStateOf("") }
 
     // Brands
     var availableBrands by remember { mutableStateOf(emptyList<String>()) }
-    var selectedBrands by remember { mutableStateOf(setOf<String>()) }
+    var selectedBrands by rememberSaveable(
+        stateSaver = androidx.compose.runtime.saveable.listSaver<Set<String>, String>(save = { it.toList() }, restore = { it.toSet() })
+    ) { mutableStateOf(setOf<String>()) }
     var isAddBrandDialogOpen by remember { mutableStateOf(false) }
 
     // Requirement toggle & fields
-    var hasRequirement by remember { mutableStateOf(true) }
-    var reqBrand by remember { mutableStateOf("") }
-    var reqType by remember { mutableStateOf("Initial Dealership & Stock") }
-    var reqProductDetails by remember { mutableStateOf("") }
-    var reqQuantity by remember { mutableStateOf("") }
-    var reqExpectedValue by remember { mutableStateOf("") }
-    var reqFollowUpDate by remember { mutableStateOf("") }
-    var reqNotes by remember { mutableStateOf("") }
+    var hasRequirement by rememberSaveable { mutableStateOf(true) }
+    var reqBrand by rememberSaveable { mutableStateOf("") }
+    var reqType by rememberSaveable { mutableStateOf("Initial Dealership & Stock") }
+    var reqProductDetails by rememberSaveable { mutableStateOf("") }
+    var reqQuantity by rememberSaveable { mutableStateOf("") }
+    var reqExpectedValue by rememberSaveable { mutableStateOf("") }
+    var reqFollowUpDate by rememberSaveable { mutableStateOf("") }
+    var reqNotes by rememberSaveable { mutableStateOf("") }
 
     // GPS location
     var isCapturingLocation by remember { mutableStateOf(false) }
@@ -144,9 +148,16 @@ fun AddCustomerScreen(
     var locationError by remember { mutableStateOf<String?>(null) }
 
     // Submission & Duplicate Handling
-    var isSubmitting by remember { mutableStateOf(false) }
-    var submitError by remember { mutableStateOf<String?>(null) }
-    var duplicateWarningMessage by remember { mutableStateOf<String?>(null) }
+    val tokenManagerForSubmit = remember { TokenManager.getInstance(context) }
+    val submitVm: AddCustomerSubmitViewModel = viewModel(key = "add_customer_submit") {
+        AddCustomerSubmitViewModel { payload ->
+            CustomerRepository(ApiClient.createCustomerApi(tokenManagerForSubmit)).createCustomerProspect(payload)
+        }
+    }
+    val submitState by submitVm.state.collectAsState()
+    val isSubmitting = submitState is AddCustomerSubmitState.Submitting
+    var submitError by rememberSaveable { mutableStateOf<String?>(null) }
+    var duplicateWarningMessage by rememberSaveable { mutableStateOf<String?>(null) }
 
     // Live outlet proof (camera photo + GPS fix taken at the shutter click). Required to submit a new outlet.
     val proofVm: OutletProofFlowViewModel = viewModel(key = "outlet_proof_new")
@@ -208,27 +219,26 @@ fun AddCustomerScreen(
             return
         }
 
-        isSubmitting = true
         submitError = null
         duplicateWarningMessage = null
 
-        scope.launch {
-            val reqDto = if (hasRequirement && reqProductDetails.isNotBlank()) {
-                CustomerRequirementCreate(
-                    brand = reqBrand.ifBlank { selectedBrands.firstOrNull() },
-                    requirementType = reqType.ifBlank { null },
-                    productDetails = reqProductDetails.trim(),
-                    quantity = reqQuantity.toIntOrNull(),
-                    expectedValue = reqExpectedValue.toDoubleOrNull(),
-                    followUpDate = reqFollowUpDate.ifBlank { null },
-                    notes = reqNotes.ifBlank { null }
-                )
-            } else null
+        val reqDto = if (hasRequirement && reqProductDetails.isNotBlank()) {
+            CustomerRequirementCreate(
+                brand = reqBrand.ifBlank { selectedBrands.firstOrNull() },
+                requirementType = reqType.ifBlank { null },
+                productDetails = reqProductDetails.trim(),
+                quantity = reqQuantity.toIntOrNull(),
+                expectedValue = reqExpectedValue.toDoubleOrNull(),
+                followUpDate = reqFollowUpDate.ifBlank { null },
+                notes = reqNotes.ifBlank { null }
+            )
+        } else null
 
-            // The server takes latitude/longitude/accuracy from the live outlet proof (outlet_proof_id).
-            val locDto: GeoPointDto? = null
+        // The server takes latitude/longitude/accuracy from the live outlet proof (outlet_proof_id).
+        val locDto: GeoPointDto? = null
 
-            val prospectPayload = CustomerProspectCreate(
+        submitVm.submit(
+            CustomerProspectCreate(
                 name = name.trim(),
                 contactNumber = contactNumber.trim(),
                 contactPerson = contactPerson.trim().ifEmpty { null },
@@ -242,29 +252,31 @@ fun AddCustomerScreen(
                 force = force,
                 outletProofId = uploadedProof?.proof?.id
             )
+        )
+    }
 
-            when (val res = customerRepository.createCustomerProspect(prospectPayload)) {
-                is Resource.Success -> {
-                    proofVm.onConsumed()
-                    Toast.makeText(context, "Outlet added successfully!", Toast.LENGTH_LONG).show()
-                    onCustomerCreated(res.data)
-                    onNavigateBack()
-                }
-                is Resource.Error -> {
-                    if (res.errorCode?.startsWith("OUTLET_PROOF") == true) {
-                        // The photo bundle is no longer usable (expired / already used / missing): retake it.
-                        submitError = OutletProofMessages.forCode(res.errorCode, res.code, res.message) +
-                            " Please retake the outlet photo."
-                        proofVm.discard()
-                    } else if (res.code == 409) {
-                        duplicateWarningMessage = res.message
-                    } else {
-                        submitError = res.message
-                    }
-                }
-                else -> {}
+    LaunchedEffect(submitState) {
+        when (val st = submitState) {
+            is AddCustomerSubmitState.Created -> {
+                proofVm.onConsumed()
+                Toast.makeText(context, "Outlet added successfully!", Toast.LENGTH_LONG).show()
+                submitVm.acknowledge()
+                onCustomerCreated(st.customer) // NavGraph refreshes the lists and leaves this screen
             }
-            isSubmitting = false
+            is AddCustomerSubmitState.Failed -> {
+                if (st.errorCode?.startsWith("OUTLET_PROOF") == true) {
+                    // The photo bundle is no longer usable (expired / already used / missing): retake it.
+                    submitError = OutletProofMessages.forCode(st.errorCode, st.code, st.message) +
+                        " Please retake the outlet photo."
+                    proofVm.discard()
+                } else if (st.code == 409) {
+                    duplicateWarningMessage = st.message
+                } else {
+                    submitError = st.message
+                }
+                submitVm.acknowledge()
+            }
+            else -> {}
         }
     }
 
