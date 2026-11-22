@@ -1,7 +1,10 @@
 package com.fieldtrackpro.android.screens
 
 import android.graphics.Bitmap
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.OutlinedTextField
@@ -132,6 +135,59 @@ abstract class ScreenshotCaptureBase(private val sizeLabel: String) {
                 beat = BeatUi.Error("Can't reach the server. Check your connection."),
                 pendingOffline = 2
             )
+        )
+    }
+
+    private val release = com.fieldtrackpro.android.update.UpdateManifest(
+        schema = 1, packageName = "com.fieldtrackpro.android", versionCode = 7, versionName = "1.3.1",
+        apkUrl = "https://fieldtrack-pro-rosy.vercel.app/downloads/releases/FieldTrackPro-1.3.1-7.apk",
+        apkSha256 = "0".repeat(64), apkSizeBytes = 24_380_000, minSupportedVersionCode = 6, mandatory = false,
+        releaseNotes = listOf("Start Day now asks for location permission", "Faster dashboard loading", "Payment amounts keep paise")
+    )
+
+    @Composable
+    private fun dialogFrame(state: com.fieldtrackpro.android.update.UpdateUiState) {
+        // The real popup is a Dialog window; render the same card over a scrim so it can be captured.
+        androidx.compose.foundation.layout.Box(
+            Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color(0xFF0B1426).copy(alpha = 0.55f)),
+            contentAlignment = androidx.compose.ui.Alignment.Center
+        ) {
+            androidx.compose.material3.Surface(
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+                color = androidx.compose.ui.graphics.Color.White,
+                modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth()
+            ) {
+                com.fieldtrackpro.android.ui.screens.update.UpdateCardContent(state, mandatory = false, {}, {}, {})
+            }
+        }
+    }
+
+    @Test fun updateOptional() = shoot("07_update_optional") {
+        dialogFrame(com.fieldtrackpro.android.update.UpdateUiState.Available(release, false, null))
+    }
+
+    @Test fun updateDownloading() = shoot("08_update_downloading") {
+        dialogFrame(com.fieldtrackpro.android.update.UpdateUiState.Downloading(release, false, 9_750_000, 24_380_000))
+    }
+
+    @Test fun updateFailed() = shoot("09_update_failed") {
+        dialogFrame(
+            com.fieldtrackpro.android.update.UpdateUiState.Failed(
+                release, false, "Download interrupted. Check your internet connection and tap Retry; it continues where it stopped."
+            )
+        )
+    }
+
+    @Test fun updatePermission() = shoot("10_update_install_permission") {
+        dialogFrame(com.fieldtrackpro.android.update.UpdateUiState.NeedsInstallPermission(release, false))
+    }
+
+    @Test fun updateMandatory() = shoot("11_update_mandatory") {
+        com.fieldtrackpro.android.ui.screens.update.MandatoryUpdateScreen(
+            state = com.fieldtrackpro.android.update.UpdateUiState.Available(
+                release.copy(mandatory = true), true, "This version of FieldTrack Pro is no longer supported."
+            ),
+            onUpdateNow = {}, onOpenInstallPermission = {}, onExitApp = {}
         )
     }
 

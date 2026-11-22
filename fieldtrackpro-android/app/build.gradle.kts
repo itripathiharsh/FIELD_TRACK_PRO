@@ -44,6 +44,11 @@ val deletionUrlValue = configValue("DELETION_URL")
 val productionBaseUrl = "https://51-79-158-138.sslip.io/"
 val releaseBaseUrlValue: String = (configValue("RELEASE_BASE_URL") ?: productionBaseUrl).let { if (it.endsWith("/")) it else "$it/" }
 val blockedReleaseHosts = listOf("onrender.com", "fieldtrackpro-backend-s7hs", "localhost", "127.0.0.1", "10.0.2.2", "192.168.", "10.0.0.")
+// In-app updates: static release manifest + versioned APKs on the existing free Vercel site (see
+// design-review/IN_APP_UPDATES.md). UPDATE_MANIFEST_URL may override (https + allowed host only); blank disables.
+val defaultUpdateManifestUrl = "https://fieldtrack-pro-rosy.vercel.app/downloads/app-update.json"
+val updateManifestUrlValue: String = configValue("UPDATE_MANIFEST_URL") ?: defaultUpdateManifestUrl
+val updateAllowedHostsValue: String = configValue("UPDATE_ALLOWED_HOSTS") ?: "fieldtrack-pro-rosy.vercel.app"
 val allowNoFcm = configValue("ALLOW_NO_FCM")?.equals("true", ignoreCase = true) == true
 val hasGoogleServicesJson = file("google-services.json").exists()
 
@@ -62,6 +67,8 @@ android {
 
         // Web URL where an account (and its data) deletion can be requested without the app (Play requirement).
         buildConfigField("String", "DELETION_URL", buildConfigString(deletionUrlValue ?: ""))
+        buildConfigField("String", "UPDATE_MANIFEST_URL", buildConfigString(updateManifestUrlValue))
+        buildConfigField("String", "UPDATE_ALLOWED_HOSTS", buildConfigString(updateAllowedHostsValue))
     }
 
     signingConfigs {
@@ -251,6 +258,13 @@ gradle.taskGraph.whenReady {
         blockedReleaseHosts.firstOrNull { releaseBaseUrlValue.contains(it, ignoreCase = true) }?.let {
             problems += "RELEASE_BASE_URL points at a blocked host ('$it'). Release builds must use the production backend " +
                 "($productionBaseUrl); the old Render host and local addresses are refused."
+        }
+        if (updateManifestUrlValue.isNotBlank()) {
+            val manifestHost = Regex("^https://([^/:?#]+)", RegexOption.IGNORE_CASE).find(updateManifestUrlValue)?.groupValues?.get(1)
+            val hosts = updateAllowedHostsValue.split(',').map { it.trim().lowercase() }.filter { it.isNotEmpty() }
+            if (manifestHost == null || manifestHost.lowercase() !in hosts) {
+                problems += "UPDATE_MANIFEST_URL must be an https:// URL on one of UPDATE_ALLOWED_HOSTS ($hosts)."
+            }
         }
         if (!hasGoogleServicesJson && !allowNoFcm) {
             problems += "app/google-services.json is missing, so push notifications would not work. Download it from " +
