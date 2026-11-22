@@ -13,10 +13,33 @@ val localProperties = Properties().apply {
     if (f.exists()) FileInputStream(f).use { load(it) }
 }
 
-fun configValue(name: String): String? =
+// Non-secret production settings, committed: release.properties (backend, map style, privacy/deletion pages...).
+val releaseProperties = Properties().apply {
+    val f = rootProject.file("release.properties")
+    if (f.exists()) FileInputStream(f).use { load(it) }
+}
+
+fun rawValue(name: String): String? =
     System.getenv(name)?.trim()?.removeSurrounding("\"")?.takeIf { it.isNotBlank() }
         ?: localProperties.getProperty(name)?.trim()?.removeSurrounding("\"")?.takeIf { it.isNotBlank() }
         ?: (project.findProperty(name) as? String)?.trim()?.removeSurrounding("\"")?.takeIf { it.isNotBlank() }
+
+// Secret signing settings live OUTSIDE the repository: FIELDTRACK_SIGNING_PROPERTIES (env var, local.properties or -P)
+// points to a properties file holding RELEASE_STORE_FILE / RELEASE_STORE_PASSWORD / RELEASE_KEY_ALIAS /
+// RELEASE_KEY_PASSWORD. Never commit that file or the keystore.
+val signingProperties = Properties().apply {
+    val path = rawValue("FIELDTRACK_SIGNING_PROPERTIES")
+    if (path != null) {
+        val f = file(path)
+        if (f.exists()) FileInputStream(f).use { load(it) }
+    }
+}
+
+// Lookup order: env var -> local.properties -> -P / gradle.properties -> external signing file -> release.properties.
+fun configValue(name: String): String? =
+    rawValue(name)
+        ?: signingProperties.getProperty(name)?.trim()?.takeIf { it.isNotBlank() }
+        ?: releaseProperties.getProperty(name)?.trim()?.takeIf { it.isNotBlank() }
 
 fun buildConfigString(value: String): String =
     "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
@@ -146,6 +169,9 @@ android {
         unitTests.all {
             it.systemProperty("captureScreens", (project.findProperty("captureScreens") as? String) ?: "false")
             it.systemProperty("screensDir", rootProject.file("design-review/screens").absolutePath)
+            // Opt-in release artifact check (ReleaseArtifactVerificationTest).
+            it.systemProperty("releaseManifest", (project.findProperty("releaseManifest") as? String) ?: "")
+            it.systemProperty("releaseApk", (project.findProperty("releaseApk") as? String) ?: "")
         }
     }
 }
@@ -225,6 +251,9 @@ gradle.taskGraph.whenReady {
     val releaseRequested = allTasks.any { it.project == project && releaseTaskRegex.matches(it.name) }
     if (releaseRequested) {
         val problems = mutableListOf<String>()
+        if (releaseSigningComplete && (releaseKeyAlias == "androiddebugkey" || file(releaseStoreFile!!).name == "debug.keystore")) {
+            problems += "Release builds must not be signed with the Android debug key."
+        }
         if (!releaseSigningComplete) {
             problems += "Release signing is not configured. Set ALL of: RELEASE_STORE_FILE (path to an existing keystore), " +
                 "RELEASE_STORE_PASSWORD, RELEASE_KEY_ALIAS, RELEASE_KEY_PASSWORD " +
