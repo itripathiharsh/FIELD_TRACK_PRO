@@ -60,6 +60,7 @@ from app.models.tally_writeback import TallyWritebackQueue, WritebackStatus
 from app.models.tally_audit import TallyAuditLog
 from app.models.tally_ledger import TallyLedgerAdjustment, TallyOpenBill, TallySnapshotRun, TallyManifestGuid
 from app.models.tally_debtor_ledger import TallyDebtorLedger
+from app.models.tally_scope_group import TallyScopeGroup
 from app.models.tally_voucher_index import TallyVoucherIndex
 from app.models.outlet_link_event import OutletLinkEvent
 from app.models.security_audit import SecurityAuditLog
@@ -143,6 +144,7 @@ __all__ = [
     "TallyLedgerAdjustment",
     "TallyVoucherIndex",
     "TallyDebtorLedger",
+    "TallyScopeGroup",
     "OutletLinkEvent",
     "TallyOpenBill",
     "TallySnapshotRun",

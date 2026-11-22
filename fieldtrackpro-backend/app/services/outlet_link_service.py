@@ -285,7 +285,7 @@ async def unlink(session: AsyncSession, ledger_id: uuid.UUID, actor: Optional[Us
         src = Customer(name=led.name, tally_guid=None if taken else led.tally_guid, address=led.address or "",
                        contact_number=(led.mobile or "")[:20], gst_number=led.gst_number, mobile_number=led.mobile,
                        location_status="MISSING", created_by=actor.id if actor else outlet.created_by,
-                       tally_is_debtor=led.is_debtor)
+                       tally_is_debtor=bool(led.is_debtor) and led.in_scope)
         session.add(src)
         await session.flush()
         target_id = src.id

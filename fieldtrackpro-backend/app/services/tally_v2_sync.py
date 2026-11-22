@@ -67,7 +67,7 @@ from app.schemas.tally_sync_v2 import (
     VoucherItem,
     VoucherSyncBatch,
 )
-from app.services import tally_audit_service
+from app.services import business_scope, tally_audit_service
 from app.services.brand_service import ensure_brand, resolve_canonical_brand_name
 
 ZERO = Decimal("0.00")
@@ -744,6 +744,8 @@ async def _sync_one_voucher(session, v: VoucherItem, resolver: CustomerResolver,
             created = await _upsert_payment(session, v, p, cust, uid, now, st, lid)
         else:
             created = await _upsert_adjustment(session, v, p, cust, lid)
+        if await business_scope.retire_out_of_scope_row(session, led, p.kind, p.key, now):
+            st.excluded["OUT_OF_SCOPE"] = st.excluded.get("OUT_OF_SCOPE", 0) + 1
         keep[p.kind].add(p.key)
         st.by_kind[p.kind] += 1
         if created:
@@ -857,15 +859,8 @@ def _ledger_facts(led: TallyDebtorLedger, item: LedgerItem, batch: LedgerSyncBat
 
 
 async def _refresh_outlet_debtor_flag(session, cust: Customer) -> None:
-    """An outlet is hidden as "not a debtor" only when ALL its ledgers are non-debtors."""
-    flags = (await session.execute(
-        select(TallyDebtorLedger.is_debtor).where(TallyDebtorLedger.customer_id == cust.id)
-    )).scalars().all()
-    if flags:
-        if any(f for f in flags):
-            cust.tally_is_debtor = True
-        elif all(f is False for f in flags):
-            cust.tally_is_debtor = False
+    """An outlet is hidden as "not a debtor" when none of its ledgers is a debtor in the business scope (3.1)."""
+    await business_scope.refresh_customer_flag(session, cust)
 
 
 async def _upsert_debtor(session, item: LedgerItem, batch: LedgerSyncBatch, uid, st: _Stats, conflicts: list):
@@ -954,6 +949,7 @@ async def _upsert_debtor(session, item: LedgerItem, batch: LedgerSyncBatch, uid,
     cust.tally_is_debtor = True
     cust.needs_tally_entry = False
     await session.flush()
+    await business_scope.apply_ledger_scope(session, led)  # 3.1: Distribution-only (no-op without rules)
     if brand and not (await session.execute(select(CustomerBrand.id).where(
             CustomerBrand.customer_id == cust.id, CustomerBrand.brand == brand))).first():
         session.add(CustomerBrand(customer_id=cust.id, brand=brand, brand_id=brand_id, is_active=True))

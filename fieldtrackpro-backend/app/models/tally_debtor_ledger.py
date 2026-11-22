@@ -31,6 +31,17 @@ MAPPING_NEW = "NEW_UNREVIEWED"
 MAPPING_CONFIRMED = "CONFIRMED"
 MAPPING_REVIEW = "REVIEW"
 
+# Business scope (release 3.1): FieldTrack holds the SGRG Distribution business only.
+#   DISTRIBUTION  in scope (also NULL: not evaluated, i.e. scope enforcement off)
+#   EXCLUDED      another business vertical / staff / inter-company: hidden, its rows retired (never deleted)
+#   PENDING       not decided yet (unknown group, ambiguous ledger): hidden until an admin decides
+SCOPE_DISTRIBUTION = "DISTRIBUTION"
+SCOPE_EXCLUDED = "EXCLUDED"
+SCOPE_PENDING = "PENDING"
+SCOPE_SOURCE_GROUP = "GROUP"
+SCOPE_SOURCE_MANUAL = "MANUAL"
+SCOPE_SOURCE_DEFAULT = "DEFAULT"
+
 
 class TallyDebtorLedger(Base):
     __tablename__ = "tally_debtor_ledgers"
@@ -64,6 +75,11 @@ class TallyDebtorLedger(Base):
                                                 server_default=MAPPING_AUTO)
     linked_by: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     linked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    business_scope: Mapped[Optional[str]] = mapped_column(String(12), nullable=True, index=True)
+    scope_source: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    scope_reason: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)
+    scope_decided_by: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    scope_decided_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
@@ -71,6 +87,11 @@ class TallyDebtorLedger(Base):
         Index("uq_tally_debtor_ledgers_one_primary", "customer_id", unique=True,
               postgresql_where=text("is_primary")),
     )
+
+    @property
+    def in_scope(self) -> bool:
+        """In the Distribution business scope (NULL = not evaluated: scope enforcement off)."""
+        return self.business_scope in (None, SCOPE_DISTRIBUTION)
 
     @property
     def effective_brand(self) -> Optional[str]:

@@ -11,7 +11,8 @@ Per debtor (receivable sign: positive = the customer owes):
   = difference   -> must be 0.00; anything else is listed, never hidden.
 
 Also reported: open bills vs closing (the unallocated part), retired rows by
-reason, field collections linked to a retired receipt, non-debtor customers.
+reason, field collections linked to a retired receipt, non-debtor customers, and
+(3.1) the ledgers excluded from the Distribution business scope with their Tally balances.
 """
 from __future__ import annotations
 
@@ -19,6 +20,8 @@ from decimal import Decimal
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.services import business_scope
 
 ZERO = Decimal("0.00")
 
@@ -33,6 +36,7 @@ WITH l AS (
          d.opening_balance_as_of AS since, -COALESCE(d.opening_balance, 0) AS opening,
          -COALESCE(d.closing_balance, 0) AS closing, d.closing_balance_at AS closing_at, d.is_primary
     FROM tally_debtor_ledgers d WHERE d.is_debtor IS TRUE
+     AND COALESCE(d.business_scope, 'DISTRIBUTION') = 'DISTRIBUTION'  -- 3.1: Distribution only
   UNION ALL
   SELECT NULL, c.id, c.name, c.outlet_code, c.tally_opening_balance_as_of,
          -COALESCE(c.tally_opening_balance, 0), -COALESCE(c.tally_closing_balance, 0), c.tally_closing_balance_at, TRUE
@@ -124,6 +128,9 @@ async def build_report(session: AsyncSession, limit: int = 200) -> dict:
         "retired": [{"kind": r["kind"], "reason": r["reason"], "count": r["n"], "amount": str(r["amt"])} for r in retired],
         "field_collections_linked_to_retired_receipt": linked_to_retired,
         "non_debtor_customers": non_debtors,
+        # 3.1: ledgers outside the Distribution business scope - kept apart, never hidden.
+        # Tally Sundry Debtors total = totals.closing + the receivable of these rows.
+        "excluded_business_scope": await business_scope.excluded_summary(session),
         "latest_snapshots": [
             {k: (v.isoformat() if hasattr(v, "isoformat") else v) for k, v in dict(r).items()} for r in runs
         ],
