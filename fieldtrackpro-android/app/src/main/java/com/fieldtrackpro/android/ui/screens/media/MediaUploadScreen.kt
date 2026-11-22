@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -570,6 +571,14 @@ fun MediaUploadScreen(
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
+                                        if (!isOrderMode || media.hasPhotoAttachment) {
+                                            com.fieldtrackpro.android.ui.components.AttachmentThumbnail(
+                                                mediaId = media.id,
+                                                fileName = media.originalFilename ?: media.storageKey,
+                                                isPhoto = media.isPhoto
+                                            )
+                                            Spacer(modifier = Modifier.width(12.dp))
+                                        }
                                         Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                                             Text(
                                                 text = if (isOrderMode) media.orderText else media.displayName,
@@ -580,7 +589,7 @@ fun MediaUploadScreen(
                                             )
                                             Spacer(modifier = Modifier.height(3.dp))
                                             Text(
-                                                text = "Captured: ${media.uploadedAt.take(19).replace('T', ' ')}",
+                                                text = "Captured: ${media.uploadedAt.take(19).replace('T', ' ')}  |  ${formatSize(media.fileSizeBytes)}",
                                                 fontFamily = com.fieldtrackpro.android.ui.theme.LibreBaskervilleFamily,
                                                 fontSize = 13.sp,
                                                 fontWeight = FontWeight.Normal,
@@ -686,4 +695,10 @@ private fun uploadOrder(
     } catch (e: Exception) {
         viewModel.reportError(e.localizedMessage ?: "Could not process order.")
     }
+}
+
+private fun formatSize(bytes: Long): String = when {
+    bytes >= 1024 * 1024 -> String.format(java.util.Locale.US, "%.1f MB", bytes / 1048576.0)
+    bytes >= 1024 -> "${bytes / 1024} KB"
+    else -> "$bytes B"
 }

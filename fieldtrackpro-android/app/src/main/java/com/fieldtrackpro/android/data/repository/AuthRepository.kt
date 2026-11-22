@@ -90,7 +90,13 @@ class AuthRepository(
             Resource.Success(user)
         } catch (e: Exception) {
             tokenManager.clear()
-            Resource.Error("Network error: ${e.localizedMessage ?: "Connection failed"}")
+            Resource.Error(
+                when (e) {
+                    is java.net.UnknownHostException, is java.net.ConnectException, is java.net.SocketTimeoutException, is java.io.IOException ->
+                        "Can't reach the server. Check your internet connection and try again."
+                    else -> "Sign-in could not be completed. Please try again."
+                }
+            )
         }
     }
 
