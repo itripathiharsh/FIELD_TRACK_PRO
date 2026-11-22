@@ -192,7 +192,9 @@ async def _lock_customer(session: AsyncSession, customer_id: uuid.UUID) -> Custo
     # of=Customer: Customer.territory/area are lazy="joined"; Postgres rejects FOR UPDATE on
     # the nullable side of an outer join (same note as mark_tally_entry_done).
     stmt = select(Customer).where(Customer.id == customer_id).with_for_update(of=Customer)
-    customer = (await session.execute(stmt)).scalar_one_or_none()
+    # populate_existing: after waiting for the lock, re-read the row (a concurrent first registration may have
+    # just set the location) instead of trusting a copy already in the session.
+    customer = (await session.execute(stmt.execution_options(populate_existing=True))).scalar_one_or_none()
     if customer is None:
         raise _err(404, "CUSTOMER_NOT_FOUND", f"Customer with id '{customer_id}' not found.")
     return customer
@@ -367,7 +369,8 @@ async def create_outlet_proof(
             customer.location_status = "PENDING_APPROVAL"
         await session.flush()
         if customer is not None:
-            await _maybe_auto_verify(session, customer, proof)
+            if not await _maybe_accept_first_location(session, customer, proof):
+                await _maybe_auto_verify(session, customer, proof)
         await session.commit()
     except IntegrityError:
         # Lost an idempotency race (or a constraint): drop our object and return the winner if any.
@@ -479,6 +482,46 @@ async def _apply_approval(
 
     await session.flush()
     return notes
+
+
+async def _maybe_accept_first_location(session: AsyncSession, customer: Customer, proof: OutletProof) -> bool:
+    """
+    FIRST LOCATION = AUTOMATIC ACCEPTANCE (business rule, outlet_proof_first_location_auto_accept).
+
+    The caller holds the customer row lock and has already validated the capture (fresh, accurate, not mock, inside
+    India, real photo). Accepted here only when the outlet has NO coordinates at all and no proof was ever accepted for
+    it, so this can happen once per outlet: a concurrent second registration waits on the lock, re-reads the row and
+    is then handled as a CONFIRMATION or CHANGE_REQUEST. Nothing here creates a visit or a check-in.
+    """
+    if not settings.outlet_proof_first_location_auto_accept:
+        return False
+    if proof.kind != OutletProofKind.INITIAL.value or proof.status != OutletProofStatus.PENDING.value:
+        return False
+    if customer.location is not None:
+        return False
+    ever_accepted = (
+        await session.execute(
+            select(OutletProof.id).where(
+                OutletProof.customer_id == customer.id,
+                OutletProof.id != proof.id,
+                OutletProof.status.in_((OutletProofStatus.APPROVED.value, OutletProofStatus.SUPERSEDED.value)),
+            ).limit(1)
+        )
+    ).first()
+    if ever_accepted is not None:
+        return False
+    notes = await _apply_approval(session, customer, proof, None, _now())
+    proof.auto_accepted = True
+    # The submitter is told it was registered (not "approved by an admin").
+    notes = [(uid, "Outlet location registered", "Your photo and GPS were saved as this outlet's location.")
+             if uid == proof.submitted_by and title == "Outlet location approved" else (uid, title, msg)
+             for uid, title, msg in notes]
+    session.info.setdefault("outlet_proof_post_commit_notes", []).extend(notes)
+    logger.info(
+        "event=outlet_proof_first_location result=auto_accepted request_id=%s customer_id=%s proof_id=%s accuracy_m=%s",
+        get_current_request_id(), customer.id, proof.id, proof.accuracy_m,
+    )
+    return True
 
 
 async def _maybe_auto_verify(session: AsyncSession, customer: Customer, new_proof: OutletProof) -> bool:
@@ -754,6 +797,7 @@ def _base_read(proof: OutletProof, names: dict, image_url: str | None) -> Outlet
         kind=proof.kind,
         status=proof.status,
         is_primary=proof.is_primary,
+        auto_accepted=bool(proof.auto_accepted),
         latitude=proof.latitude,
         longitude=proof.longitude,
         accuracy_m=proof.accuracy_m,

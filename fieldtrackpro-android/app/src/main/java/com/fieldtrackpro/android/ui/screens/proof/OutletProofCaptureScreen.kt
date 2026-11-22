@@ -18,6 +18,15 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.core.view.WindowCompat
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
@@ -238,7 +247,14 @@ fun rememberOutletProofCapture(
     if (showCapture) {
         Dialog(
             onDismissRequest = { showCapture = false },
-            properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false)
+            // decorFitsSystemWindows = false: the dialog window draws edge-to-edge and delivers the real status/
+            // navigation/cutout insets to Compose. With the default (true) the insets were consumed by the dialog's
+            // decor view, so navigationBarsPadding() was 0 and the shutter sat on the gesture bar.
+            properties = DialogProperties(
+                usePlatformDefaultWidth = false,
+                dismissOnClickOutside = false,
+                decorFitsSystemWindows = false
+            )
         ) {
             OutletProofCaptureScreen(
                 vm = captureVm,
@@ -346,6 +362,17 @@ fun OutletProofCaptureScreen(
         onDispose { client.removeLocationUpdates(callback) }
     }
 
+    // Light icons on the dark camera screen (the dialog has its own window, so SystemBarIcons() cannot reach it).
+    val hostView = LocalView.current
+    val dialogWindow = (hostView.parent as? DialogWindowProvider)?.window
+    SideEffect {
+        dialogWindow?.let {
+            val c = WindowCompat.getInsetsController(it, hostView)
+            c.isAppearanceLightStatusBars = false
+            c.isAppearanceLightNavigationBars = false
+        }
+    }
+
     val shutterState = OutletProofRules.evaluate(fix, nowElapsed)
     val band = OutletProofRules.band(fix?.accuracyM?.takeIf { it != Float.MAX_VALUE })
     val shutterReady = shutterState is ShutterState.Ready && phase == CapturePhase.CAPTURING && cameraError == null
@@ -370,11 +397,13 @@ fun OutletProofCaptureScreen(
             object : ImageCapture.OnImageSavedCallback {
                 override fun onImageSaved(output: ImageCapture.OutputFileResults) {
                     scope.launch {
-                        val payload = withContext(Dispatchers.IO) {
+                        val result = withContext(Dispatchers.IO) {
                             buildPayload(context, raw, clickFix, clickWallMs, customerId, outletName)
                         }
-                        if (payload != null) vm.onCaptured(payload)
-                        else vm.onCaptureFailed("The photo could not be processed. Please try again.")
+                        when (result) {
+                            is PayloadResult.Ok -> vm.onCaptured(result.payload)
+                            is PayloadResult.Failed -> vm.onCaptureFailed(result.userMessage)
+                        }
                     }
                 }
 
@@ -400,7 +429,9 @@ fun OutletProofCaptureScreen(
             AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
 
             Column(
-                modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(16.dp),
+                modifier = Modifier.fillMaxWidth()
+                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
+                    .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -417,7 +448,10 @@ fun OutletProofCaptureScreen(
             }
 
             Column(
-                modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().padding(16.dp),
+                // Real system insets (gesture bar OR 3-button bar, any device) plus ordinary design spacing.
+                modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal))
+                    .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 28.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
@@ -437,37 +471,52 @@ fun OutletProofCaptureScreen(
     }
 }
 
+sealed class PayloadResult {
+    data class Ok(val payload: OutletProofPayload) : PayloadResult()
+
+    /** [stage] is where it failed (for logs/tests); [userMessage] tells the employee what to do. */
+    data class Failed(val stage: String, val userMessage: String) : PayloadResult()
+}
+
 /** Downsamples (<=1600 px, JPEG q82) into the final private file and bundles it with the click-time fix. */
-private fun buildPayload(
+internal fun buildPayload(
     context: Context,
     raw: File,
     fix: ProofFix,
     clickWallMs: Long,
     customerId: String?,
     outletName: String?
-): OutletProofPayload? {
+): PayloadResult {
     return try {
+        if (!raw.isFile || raw.length() == 0L) {
+            return PayloadResult.Failed("CAMERA_FILE", "The camera did not save the photo. Please try again.")
+        }
         val bytes = ImageDownsampler.downsample(
             context, Uri.fromFile(raw), OutletProofRules.MAX_LONG_EDGE_PX, OutletProofRules.JPEG_QUALITY
-        ) ?: return null
+        ) ?: return PayloadResult.Failed("DECODE", "The photo could not be read. Please retake it.")
         val out = OutletProofStore.newFile(context, "proof")
         out.writeBytes(bytes)
-        OutletProofPayload(
-            idempotencyKey = UUID.randomUUID().toString(),
-            customerId = customerId,
-            outletName = outletName,
-            photoPath = out.absolutePath,
-            latitude = fix.latitude,
-            longitude = fix.longitude,
-            accuracyM = fix.accuracyM.toDouble(),
-            capturedAt = OutletProofRules.isoWithOffset(clickWallMs),
-            capturedAtEpochMs = clickWallMs,
-            isMock = fix.isMock,
-            deviceInfo = Build.MODEL?.take(200)
+        PayloadResult.Ok(
+            OutletProofPayload(
+                idempotencyKey = UUID.randomUUID().toString(),
+                customerId = customerId,
+                outletName = outletName,
+                photoPath = out.absolutePath,
+                latitude = fix.latitude,
+                longitude = fix.longitude,
+                accuracyM = fix.accuracyM.toDouble(),
+                capturedAt = OutletProofRules.isoWithOffset(clickWallMs),
+                capturedAtEpochMs = clickWallMs,
+                isMock = fix.isMock,
+                deviceInfo = Build.MODEL?.take(200)
+            )
         )
+    } catch (e: java.io.IOException) {
+        if (BuildConfig.DEBUG) android.util.Log.w("OutletProofCapture", "save failed: " + e.javaClass.simpleName)
+        PayloadResult.Failed("SAVE", "The photo could not be saved. Free some phone storage and try again.")
     } catch (e: Exception) {
-        if (BuildConfig.DEBUG) android.util.Log.w("OutletProofCapture", "buildPayload failed: ${e.javaClass.simpleName}")
-        null
+        if (BuildConfig.DEBUG) android.util.Log.w("OutletProofCapture", "buildPayload failed: " + e.javaClass.simpleName)
+        PayloadResult.Failed("PROCESS", "The photo could not be processed. Please try again.")
     } finally {
         OutletProofStore.delete(raw.absolutePath)
     }
@@ -524,7 +573,7 @@ private fun ReviewContent(payload: OutletProofPayload, onUse: () -> Unit, onReta
             }
         }
     }
-    Column(modifier = Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(16.dp)) {
+    Column(modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).padding(16.dp)) {
         Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
             bitmap?.let {
                 Image(
@@ -546,7 +595,7 @@ private fun ReviewContent(payload: OutletProofPayload, onUse: () -> Unit, onReta
             Button(
                 onClick = onUse, modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.buttonColors(containerColor = BrandGold)
-            ) { Text("Use photo", color = BrandNavy, fontWeight = FontWeight.Bold) }
+            ) { Text("Continue", color = BrandNavy, fontWeight = FontWeight.Bold) }
         }
     }
 }

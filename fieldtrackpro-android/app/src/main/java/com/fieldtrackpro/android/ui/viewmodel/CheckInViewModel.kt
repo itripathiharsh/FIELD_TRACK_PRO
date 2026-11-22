@@ -130,6 +130,10 @@ class CheckInViewModel(
         }
     }
 
+    /** "Check-in rejected (422): {"error":{"message":"..."}}" -> just the server's message. */
+    private fun cleanServerMessage(raw: String): String =
+        Regex("\"message\"\\s*:\\s*\"([^\"]+)\"").find(raw)?.groupValues?.get(1) ?: raw
+
     private fun parseError(rawMessage: String, code: Int?): CheckInState {
         val msg = rawMessage.lowercase()
         return when {
@@ -145,13 +149,16 @@ class CheckInViewModel(
             msg.contains("exceeds allowed radius") || msg.contains("outside") || msg.contains("geofence") -> CheckInState.GeoRejected(
                 "You are outside the outlet location. Move closer to check in."
             )
+            msg.contains("outlet_location_not_configured") || msg.contains("outlet location is not configured") -> CheckInState.Error(
+                "This outlet has no GPS location yet. Go back to the visit and tap Suggest Outlet Location while you are at the shop. Check-in itself needs no photo."
+            )
             msg.contains("mock location") -> CheckInState.Error(
                 "Mock location provider detected. Please disable fake GPS apps."
             )
             code == 409 || (code == 422 && msg.contains("invalid_state_transition")) || msg.contains("conflict") || msg.contains("cannot transition") -> CheckInState.Conflict(
                 "Visit status changed on server (e.g. marked missed). Please review schedule."
             )
-            else -> CheckInState.Error(rawMessage)
+            else -> CheckInState.Error(cleanServerMessage(rawMessage))
         }
     }
 }

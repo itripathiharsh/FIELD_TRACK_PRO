@@ -20,6 +20,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.util.UUID
 
+/** Registered (active) brands the employee may allocate a collection to - GET /brands, never invented. */
+sealed class BrandListState {
+    object Loading : BrandListState()
+    data class Ready(val brands: List<String>) : BrandListState()
+    data class Error(val message: String) : BrandListState()
+}
+
 sealed class AccountState {
     object Loading : AccountState()
     data class Success(val account: AccountSummaryDto) : AccountState() {
@@ -48,7 +55,9 @@ class CollectionViewModel(
     private val tokenManager: TokenManager? = null,
     customRepository: CollectionRepository? = null,
     offlineQueueManager: OfflineQueueManager? = null,
-    customSubmitter: PaymentSubmitter? = null
+    customSubmitter: PaymentSubmitter? = null,
+    /** Test seam for the brand list; production reads GET /brands. */
+    private val brandSource: (suspend () -> Resource<List<String>>)? = null
 ) : ViewModel() {
 
     private val repository: CollectionRepository = customRepository ?: CollectionRepository(
@@ -70,6 +79,24 @@ class CollectionViewModel(
     // not write its result - or call onSubmitted(), which pops a screen - into whatever form is open by then.
     // The payment itself is unaffected: it was already created/queued under its own idempotency key.
     @Volatile private var formGeneration = 0
+
+    private val _brandState = MutableStateFlow<BrandListState>(BrandListState.Loading)
+    val brandState: StateFlow<BrandListState> = _brandState.asStateFlow()
+
+    fun loadBrands() {
+        viewModelScope.launch {
+            _brandState.value = BrandListState.Loading
+            val res = brandSource?.invoke()
+                ?: com.fieldtrackpro.android.data.repository.CustomerRepository(
+                    ApiClient.createCustomerApi(tokenManager ?: throw IllegalArgumentException("TokenManager must not be null"))
+                ).getBrandNames(activeOnly = true)
+            _brandState.value = when (res) {
+                is Resource.Success -> BrandListState.Ready(res.data)
+                is Resource.Error -> BrandListState.Error(res.message)
+                else -> BrandListState.Loading
+            }
+        }
+    }
 
     fun loadAccount(customerId: String) {
         viewModelScope.launch {
@@ -169,6 +196,7 @@ class CollectionViewModel(
         formGeneration++
         currentSubmissionKey = null
         _accountState.value = AccountState.Loading
+        _brandState.value = BrandListState.Loading
         _collectionState.value = CollectionState.Idle
     }
 }

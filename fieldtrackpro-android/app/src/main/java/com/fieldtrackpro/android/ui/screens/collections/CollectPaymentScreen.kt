@@ -123,8 +123,11 @@ fun CollectPaymentScreen(
     val state by viewModel.collectionState.collectAsState()
     val accountState by viewModel.accountState.collectAsState()
 
+    val brandListState by viewModel.brandState.collectAsState()
+
     LaunchedEffect(customerId) {
         viewModel.loadAccount(customerId)
+        viewModel.loadBrands()
     }
 
     // Form state survives rotation / dark-mode toggle / process death (rememberSaveable -> saved instance state).
@@ -189,8 +192,17 @@ fun CollectPaymentScreen(
         (accountState as? AccountState.Success)?.summary?.brandSummary ?: emptyList()
     }
 
-    // Calculate dynamic sum across all brand inputs
-    val totalAmount = brandAmounts.values.mapNotNull { it.toDoubleOrNull() }.filter { it > 0 }.sum()
+    // Only REAL, active brands from the backend list can be allocated. The account summary also contains a synthetic
+    // "Unbranded" bucket (unallocated Tally balance); allocating to it was rejected with UNKNOWN_BRAND.
+    val registeredBrands: List<String>? = (brandListState as? com.fieldtrackpro.android.ui.viewmodel.BrandListState.Ready)?.brands
+    val brandRows = remember(brandSummaryList, registeredBrands) {
+        registeredBrands?.let { com.fieldtrackpro.android.utils.PaymentBrandRules.rows(brandSummaryList, it) }
+    }
+    val allocatableNames = remember(brandRows) { brandRows?.allocatable?.map { it.brand }?.toSet() ?: emptySet() }
+
+    // Total of the amounts typed against allocatable brands only (stale amounts of removed rows are ignored).
+    val totalAmount = brandAmounts.filterKeys { it in allocatableNames }.values
+        .mapNotNull { it.toDoubleOrNull() }.filter { it > 0 }.sum()
 
     Scaffold(
         topBar = { FieldTrackTopAppBar(title = "Collect Payment", onBackClick = onNavigateBack) },
@@ -335,7 +347,26 @@ fun CollectPaymentScreen(
 
                         Spacer(modifier = Modifier.height(12.dp))
 
-                        brandSummaryList.forEach { brandDto ->
+                        when (val bs = brandListState) {
+                            is com.fieldtrackpro.android.ui.viewmodel.BrandListState.Loading ->
+                                Text("Loading brands...", fontSize = 13.sp, color = TextSecondary, modifier = Modifier.padding(vertical = 8.dp))
+                            is com.fieldtrackpro.android.ui.viewmodel.BrandListState.Error -> {
+                                ErrorBanner(message = "Couldn't load the brand list: ${bs.message}")
+                                androidx.compose.material3.TextButton(onClick = { viewModel.loadBrands() }) { Text("Try again", fontWeight = FontWeight.Bold, color = BrandNavy) }
+                            }
+                            is com.fieldtrackpro.android.ui.viewmodel.BrandListState.Ready -> {
+                                if (brandRows != null && !brandRows.hasAllocatableBrand) {
+                                    ErrorBanner(message = "No active brand is linked to this outlet, so a collection cannot be allocated yet. Ask your administrator to link a brand to this outlet.")
+                                } else if (brandRows != null && brandRows.notAllocatableOutstanding > 0.0) {
+                                    Text(
+                                        "${formatRupees(brandRows.notAllocatableOutstanding)} of this outlet's balance is not assigned to a brand. It cannot be allocated here; your administrator can assign it.",
+                                        fontSize = 12.sp, color = TextSecondary, modifier = Modifier.padding(bottom = 6.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        (brandRows?.allocatable ?: emptyList()).forEach { brandDto ->
                             val brandName = brandDto.brand
                             val outstanding = brandDto.totalOutstanding.toDoubleOrNull() ?: 0.0
 
@@ -710,13 +741,15 @@ fun CollectPaymentScreen(
                                     return@Button
                                 }
 
-                                val allocationsList = brandAmounts.mapNotNull { (brand, amtStr) ->
+                                val allocationsList = brandAmounts.filterKeys { it in allocatableNames }.mapNotNull { (brand, amtStr) ->
                                     val amt = amtStr.toDoubleOrNull()
                                     if (amt != null && amt > 0) BrandAllocationInput(brand, amt) else null
                                 }
 
-                                if (allocationsList.isEmpty()) {
-                                    fieldError = "Please enter a valid payment amount against at least one brand."
+                                val allocationProblem = com.fieldtrackpro.android.utils.PaymentBrandRules
+                                    .validate(allocationsList, totalAmount, registeredBrands.orEmpty())
+                                if (allocationProblem != null) {
+                                    fieldError = allocationProblem
                                     return@Button
                                 }
 
@@ -766,7 +799,7 @@ fun CollectPaymentScreen(
                                 containerColor = BrandNavy,
                                 contentColor = BrandWhite
                             ),
-                            enabled = state !is CollectionState.Submitting && state !is CollectionState.SavedOffline && !isUploadingProof && totalAmount > 0
+                            enabled = state !is CollectionState.Submitting && state !is CollectionState.SavedOffline && !isUploadingProof && totalAmount > 0 && brandRows?.hasAllocatableBrand == true
                         ) {
                             if (state is CollectionState.Submitting || isUploadingProof) {
                                 CircularProgressIndicator(color = BrandGold, modifier = Modifier.size(24.dp))

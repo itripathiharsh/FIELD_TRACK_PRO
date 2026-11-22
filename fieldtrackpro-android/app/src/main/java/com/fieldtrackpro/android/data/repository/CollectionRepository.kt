@@ -46,7 +46,11 @@ class CollectionRepository(private val collectionApi: CollectionApi) {
                 Resource.Success(response.body()!!)
             } else {
                 val err = response.errorBody()?.string() ?: "Collection rejected"
-                Resource.Error(com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Failed to record collection (${response.code()}): $err"), response.code())
+                val fallback = com.fieldtrackpro.android.data.remote.HttpErrors.message(response.code(), "Failed to record collection (${response.code()}): $err")
+                Resource.Error(
+                    com.fieldtrackpro.android.utils.PaymentBrandRules.friendlyServerMessage(response.code(), err, fallback),
+                    response.code()
+                )
             }
         } catch (e: Exception) {
             Resource.Error("Network error: ${e.localizedMessage}")
