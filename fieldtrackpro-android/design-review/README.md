@@ -16,6 +16,11 @@ Rendered on the JVM (Robolectric) with **demo data only**, at 360×640, 393×852
 | 04_dashboard_not_started | Dashboard before Start Day, empty beat |
 | 05_dashboard_errors | GPS rejection, server unreachable, offline queue: actions stay available |
 | 06_profile | Profile & settings |
+| 07_update_optional | In-app update popup (optional: Update now / Later) |
+| 08_update_downloading | Download progress |
+| 09_update_failed | Interrupted download with Retry |
+| 10_update_install_permission | One-time "Install unknown apps" step |
+| 11_update_mandatory | Mandatory update screen (blocks the app) |
 
 ## Design system
 - Tokens in `ui/theme/Color.kt` (navy scale, gold-ink for gold text on light, navy-tinted neutrals, AA-contrast status colours), `Type.kt` (League Spartan for brand/numbers, device sans for body), `Theme.kt` (shapes, `SystemBarIcons`).
@@ -37,5 +42,7 @@ Rendered on the JVM (Robolectric) with **demo data only**, at 360×640, 393×852
 | Timeouts 10 s connect / 20 s read; no retry on read timeout or no network; no unused `/dashboard/summary` or duplicate `/workday/today` | `ApiClient.kt`, `TransientRetryInterceptor.kt` | RetryPolicyTest |
 | Profile refreshed from existing `GET /auth/me` (never ends the session) | `AuthRepository.kt` | ProfileRefreshTest |
 | Release `BASE_URL` = production by default, `RELEASE_BASE_URL` override, Render/local hosts refused | `app/build.gradle.kts` | ReleaseConfigGuardTest + Gradle dry run |
+
+In-app updates: see `IN_APP_UPDATES.md` (architecture, publishing, permissions, rollout decisions).
 
 Employee performance dashboard: see `EMPLOYEE_PERFORMANCE_PROPOSAL.md` (proposal only).

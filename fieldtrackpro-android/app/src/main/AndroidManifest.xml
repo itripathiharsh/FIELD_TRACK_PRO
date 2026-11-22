@@ -9,6 +9,10 @@
 
     <!-- Media Permissions -->
     <uses-permission android:name="android.permission.CAMERA" />
+
+    <!-- In-app updates: lets the user allow "Install unknown apps" for FieldTrack Pro. Android still shows its own
+         confirmation for every install. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <!-- Google Maps feature (not required for devices without Google Play) -->
@@ -49,6 +53,11 @@
             android:name=".geofencing.GeofenceBroadcastReceiver"
             android:exported="false"
             android:enabled="true" />
+
+        <!-- PackageInstaller status callbacks for in-app updates (only our own PendingIntent targets it). -->
+        <receiver
+            android:name=".update.UpdateInstallReceiver"
+            android:exported="false" />
 
         <service
             android:name=".notifications.FieldTrackFirebaseMessagingService"

@@ -111,6 +111,8 @@ class MainActivity : ComponentActivity() {
     private val collectionViewModel by viewModels<CollectionViewModel> {
         viewModelFactory { initializer { CollectionViewModel(tokenManager, offlineQueueManager = offlineQueueManager) } }
     }
+    private val appUpdateViewModel by viewModels<com.fieldtrackpro.android.update.AppUpdateViewModel>()
+
     private val monthlyPlanningViewModel by viewModels<MonthlyPlanningViewModel> {
         viewModelFactory { initializer { MonthlyPlanningViewModel(tokenManager) } }
     }
@@ -139,6 +141,9 @@ class MainActivity : ComponentActivity() {
 
         // Check for incoming intent with visitId from notification tap
         handleNotificationIntent(intent)
+
+        // In-app updates: apply any cached mandatory update immediately, then check the release manifest.
+        if (savedInstanceState == null) appUpdateViewModel.onAppStart()
 
         setContent {
             FieldTrackProTheme {
@@ -191,6 +196,28 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
+                    val updateState by appUpdateViewModel.state.collectAsState()
+                    val openInstallPermission = {
+                        runCatching { startActivity(appUpdateViewModel.installPermissionIntent()) }
+                        Unit
+                    }
+                    if (updateState.isMandatory) {
+                        // A mandatory update replaces the whole app until it is installed (no bypass).
+                        com.fieldtrackpro.android.ui.screens.update.MandatoryUpdateScreen(
+                            state = updateState,
+                            onUpdateNow = appUpdateViewModel::updateNow,
+                            onOpenInstallPermission = openInstallPermission,
+                            onExitApp = { finish() }
+                        )
+                        return@Surface
+                    }
+                    com.fieldtrackpro.android.ui.screens.update.OptionalUpdateDialog(
+                        state = updateState,
+                        onUpdateNow = appUpdateViewModel::updateNow,
+                        onLater = appUpdateViewModel::later,
+                        onOpenInstallPermission = openInstallPermission
+                    )
+
                     NavGraph(
                         navController = navController,
                         tokenManager = tokenManager,
@@ -213,6 +240,11 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        appUpdateViewModel.onResume()
     }
 
     override fun onNewIntent(intent: Intent) {

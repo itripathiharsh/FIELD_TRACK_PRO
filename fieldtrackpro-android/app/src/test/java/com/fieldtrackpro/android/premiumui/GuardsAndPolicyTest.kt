@@ -63,6 +63,11 @@ class ReleaseConfigGuardTest {
         assertTrue(script.contains("buildConfigField(\"String\", \"BASE_URL\", buildConfigString(releaseBaseUrlValue))"))
     }
 
+    @Test fun updateManifestUrlIsHttpsOnAnAllowedHost() {
+        assertTrue(script.contains("val defaultUpdateManifestUrl = \"https://fieldtrack-pro-rosy.vercel.app/downloads/app-update.json\""))
+        assertTrue(script.contains("UPDATE_MANIFEST_URL must be an https:// URL on one of UPDATE_ALLOWED_HOSTS"))
+    }
+
     @Test fun renderHostIsBlockedAndNeverTheReleaseValue() {
         assertFalse(script.contains("\"https://fieldtrackpro-backend-s7hs.onrender.com/\""))
         assertTrue(script.contains("\"onrender.com\""))
