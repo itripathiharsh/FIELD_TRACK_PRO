@@ -63,6 +63,19 @@ class ReleaseConfigGuardTest {
         assertTrue(script.contains("buildConfigField(\"String\", \"BASE_URL\", buildConfigString(releaseBaseUrlValue))"))
     }
 
+    @Test fun committedReleasePropertiesArePurelyProduction() {
+        val props = listOf(File("release.properties"), File("../release.properties")).first { it.exists() }.readText()
+        assertTrue(props.contains("RELEASE_BASE_URL=https://51-79-158-138.sslip.io/"))
+        listOf("onrender.com", "192.168.", "10.0.2.2", "localhost", "127.0.0.1", "demotiles", "http://").forEach {
+            assertFalse("release.properties must not contain $it", props.contains(it))
+        }
+        // Secrets never live in the repository.
+        listOf("RELEASE_STORE_PASSWORD", "RELEASE_KEY_PASSWORD", ".jks").forEach {
+            assertFalse("release.properties must not contain $it", props.contains(it))
+        }
+        assertTrue(script.contains("Release builds must not be signed with the Android debug key."))
+    }
+
     @Test fun updateManifestUrlIsHttpsOnAnAllowedHost() {
         assertTrue(script.contains("val defaultUpdateManifestUrl = \"https://fieldtrack-pro-rosy.vercel.app/downloads/app-update.json\""))
         assertTrue(script.contains("UPDATE_MANIFEST_URL must be an https:// URL on one of UPDATE_ALLOWED_HOSTS"))
