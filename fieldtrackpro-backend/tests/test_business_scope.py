@@ -187,3 +187,4 @@ async def test_reconciliation_reports_excluded_scope_separately(env, rules):
     assert f"Scope Ledger {t} 2" not in names            # excluded ledger is not a Distribution debtor row
     exc = {x["scope"]: x for x in rep["excluded_business_scope"]}
     assert "EXCLUDED" in exc and exc["EXCLUDED"]["ledgers"] >= 1 and exc["EXCLUDED"]["invoices_retired"] >= 1
+    assert isinstance(exc["EXCLUDED"]["invoices_retired"], int)

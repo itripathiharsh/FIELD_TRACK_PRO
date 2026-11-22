@@ -226,5 +226,5 @@ async def excluded_summary(session: AsyncSession) -> list[dict]:
           FROM l GROUP BY l.s ORDER BY l.s
     """))).mappings().all()
     return [{"scope": r["scope"], "ledgers": r["ledgers"], "receivable": str(r["receivable"]),
-             "open_bills": str(r["open_bills"]), "invoices_retired": r["invoices"],
-             "receipts_retired": r["payments"], "adjustments_retired": r["adjustments"]} for r in rows]
+             "open_bills": str(r["open_bills"]), "invoices_retired": int(r["invoices"]),
+             "receipts_retired": int(r["payments"]), "adjustments_retired": int(r["adjustments"])} for r in rows]
