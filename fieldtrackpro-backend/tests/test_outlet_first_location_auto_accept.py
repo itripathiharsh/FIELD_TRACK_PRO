@@ -131,3 +131,33 @@ async def test_checkin_on_outlet_without_gps_is_rejected(env, client):
         "latitude": LAT, "longitude": LON, "accuracy_m": 10.0, "is_mock_location": False,
         "captured_at": datetime.now(timezone.utc).isoformat()})
     assert r.status_code == 422 and ecode(r) == "OUTLET_LOCATION_NOT_CONFIGURED"
+
+
+async def test_first_registration_saves_exact_coordinates_then_checkin_uses_them(env, client):
+    """lat/lon order, no rounding, and an immediate check-in measured against the saved point."""
+    from datetime import datetime, timezone
+    la, lo = 26.7341061, 80.9435936  # asymmetric on purpose: a swap would be obvious
+    cid = await make_customer(env)
+    emp = hdr(env["ua"].id)
+    r = await upload(client, emp, make_image(930), customer_id=cid, lat=la, lon=lo, acc=14.78)
+    assert r.status_code == 201 and r.json()["auto_accepted"]
+    c = await get_customer(cid)
+    slat, slon = extract_coords(c.location)
+    assert slat == pytest.approx(la, abs=1e-9) and slon == pytest.approx(lo, abs=1e-9)
+
+    v = await client.post("/api/v1/visits/ad-hoc", headers=emp, json={"customer_id": str(cid), "adhoc_reason": "Cheque Bounce"})
+    assert v.status_code == 201, v.text
+    vid = v.json()["id"]
+
+    def body(lat):
+        return {"latitude": lat, "longitude": lo, "accuracy_m": 14.0, "is_mock_location": False,
+                "captured_at": datetime.now(timezone.utc).isoformat()}
+    # 500 m away is rejected, and the reported distance is about 500 m (not 449 m or any cached figure)
+    far = await client.post(f"/api/v1/visits/{vid}/check-in", headers=emp, json=body(la + 0.0044966))
+    assert far.status_code == 422 and ecode(far) == "GEO_VERIFICATION_FAILED"
+    import re
+    reported = float(re.search(r"Distance \(([\d.]+)m\)", far.text).group(1))
+    # PostGIS measures on the WGS84 ellipsoid (498.2 m here); Android's spherical haversine says 500.0 m: <1% apart
+    assert reported == pytest.approx(500.0, rel=0.01)
+    ok = await client.post(f"/api/v1/visits/{vid}/check-in", headers=emp, json=body(la + 0.000045))  # ~5 m
+    assert ok.status_code == 200, ok.text

@@ -138,10 +138,11 @@ class OutletProofFlowViewModel(application: Application) : AndroidViewModel(appl
                         if (uid != null) draftStore.save(uid, stored)
                         _ui.value = ProofUi.Uploaded(stored, outcome.proof)
                     } else {
-                        // Existing outlet: the server has it; the local photo and draft are no longer needed.
-                        discardFiles(payload)
+                        // Existing outlet: the server has it, so the draft is no longer needed (it can never be sent
+                        // twice). The local JPEG stays ONLY as the on-screen preview until this screen is closed
+                        // (onCleared) or the photo is retaken (discard), so the employee still sees what was sent.
                         if (uid != null) draftStore.clear(uid, customerId)
-                        _ui.value = ProofUi.Uploaded(payload.copy(photoPath = null), outcome.proof)
+                        _ui.value = ProofUi.Uploaded(payload, outcome.proof)
                     }
                 }
                 is OutletProofOutcome.SavedOffline -> {
@@ -195,9 +196,9 @@ class OutletProofFlowViewModel(application: Application) : AndroidViewModel(appl
                 is ProofUi.Uploading -> cur.payload
                 else -> null
             }
-            if (payload != null && customerId == null) {
+            if (payload != null) {
                 discardFiles(payload)
-                userId()?.let { draftStore.clear(it, customerId) }
+                if (customerId == null) userId()?.let { draftStore.clear(it, customerId) }
             }
         }
         super.onCleared()

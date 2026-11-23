@@ -108,6 +108,7 @@ fun VisitDetailsScreen(
     val formRepository = remember { FormTemplateRepository(ApiClient.createFormTemplateApi(TokenManager.getInstance(context))) }
     var requiredFormSubmission by remember { mutableStateOf<FormSubmissionDto?>(null) }
     var showSuggestLocationDialog by remember { mutableStateOf(false) }
+    var proofReloadKey by remember { mutableStateOf(0) }
 
     val onLocationDenied = com.fieldtrackpro.android.ui.components.rememberPermissionDeniedHandler(
         com.fieldtrackpro.android.ui.components.PermissionDisclosureKind.LOCATION, android.Manifest.permission.ACCESS_FINE_LOCATION
@@ -320,6 +321,14 @@ fun VisitDetailsScreen(
                         isMonitoring = geofenceUiState.isMonitoring,
                         errorMessage = geofenceUiState.errorMessage,
                         distanceM = geofenceUiState.distanceM,
+                        accuracyM = geofenceUiState.accuracyM,
+                        onRefreshClick = {
+                            geofenceViewModel.onResume(
+                                customer = s.customer,
+                                visitId = visitId,
+                                radiusMeters = s.customer?.geofenceRadiusM?.toFloat() ?: 100f
+                            )
+                        },
                         geofenceRadiusM = s.customer?.geofenceRadiusM?.toDouble(),
                         isLoadingLocation = geofenceUiState.isLoadingLocation,
                         onEnableLocationClick = {
@@ -331,8 +340,10 @@ fun VisitDetailsScreen(
                     Spacer(modifier = Modifier.height(8.dp))
 
                     // Approved live outlet photo (authenticated GET /customers/{id}/outlet-image), only when one exists.
-                    if (s.customer?.primaryOutletImageAvailable == true) {
-                        com.fieldtrackpro.android.ui.components.OutletPhotoSection(customerId = s.customer.id)
+                    // The visit payload does not say whether a photo exists, so the section asks the server itself and
+                    // shows loading / photo / "no photo yet" / retry. It reloads when a new proof was just submitted.
+                    s.customer?.let {
+                        com.fieldtrackpro.android.ui.components.OutletPhotoSection(customerId = it.id, reloadKey = proofReloadKey)
                     }
 
                     val outletHasGps = s.customer?.latitude != null && s.customer.longitude != null
@@ -651,6 +662,7 @@ fun VisitDetailsScreen(
                             hasLocation = s.customer.latitude != null && s.customer.longitude != null,
                             onDismiss = {
                                 showSuggestLocationDialog = false
+                                proofReloadKey++
                                 // The first registration is accepted at once: reload so the outlet shows its new GPS
                                 // location and check-in becomes available (nothing is checked in automatically).
                                 viewModel.loadVisitDetails(visitId)

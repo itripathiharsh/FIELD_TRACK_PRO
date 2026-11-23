@@ -54,7 +54,9 @@ fun GeofenceStatusCard(
     errorMessage: String? = null,
     distanceM: Double? = null,
     geofenceRadiusM: Double? = null,
+    accuracyM: Double? = null,
     isLoadingLocation: Boolean = false,
+    onRefreshClick: (() -> Unit)? = null,
     onEnableLocationClick: (() -> Unit)? = null,
     onRequestPermissionClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -68,7 +70,8 @@ fun GeofenceStatusCard(
         errorMessage = errorMessage,
         distanceM = distanceM,
         geofenceRadiusM = geofenceRadiusM,
-        isLoadingLocation = isLoadingLocation
+        isLoadingLocation = isLoadingLocation,
+        accuracyM = accuracyM
     )
 
     Card(
@@ -162,6 +165,12 @@ fun GeofenceStatusCard(
                     )
                 }
             }
+
+            if (onRefreshClick != null && hasPermission && isLocationEnabled && !isLoadingLocation) {
+                androidx.compose.material3.TextButton(onClick = onRefreshClick) {
+                    Text("Refresh distance", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = BrandNavy)
+                }
+            }
         }
     }
 }
@@ -183,7 +192,9 @@ private fun getGeofenceStatus(
     distanceM: Double? = null,
     geofenceRadiusM: Double? = null,
     isLoadingLocation: Boolean = false,
+    accuracyM: Double? = null,
 ): GeofenceStatus {
+    val acc = accuracyM?.takeIf { it > 0.0 && it < 100000.0 }?.let { " (GPS +-${it.toInt()}m)" } ?: ""
     return when {
         errorMessage != null -> GeofenceStatus(
             icon = Icons.Default.Error,
@@ -210,7 +221,7 @@ private fun getGeofenceStatus(
             subtitle = "Measuring distance to customer outlet..."
         )
         isInside -> {
-            val distText = if (distanceM != null) "${distanceM.toInt()}m from outlet. Ready to check in." else "Ready to check in."
+            val distText = if (distanceM != null) "${distanceM.toInt()}m from outlet$acc. Ready to check in." else "Ready to check in."
             GeofenceStatus(
                 icon = Icons.Default.CheckCircle,
                 iconColor = SuccessGreen,
@@ -220,9 +231,9 @@ private fun getGeofenceStatus(
         }
         isOutside -> {
             val distText = if (distanceM != null && geofenceRadiusM != null) {
-                "${distanceM.toInt()}m away (allowed radius: ${geofenceRadiusM.toInt()}m). Move closer to check in."
+                "${distanceM.toInt()}m away$acc (allowed radius: ${geofenceRadiusM.toInt()}m). Move closer to check in."
             } else if (distanceM != null) {
-                "${distanceM.toInt()}m away. Move closer to the customer location to check in."
+                "${distanceM.toInt()}m away$acc. Move closer to the customer location to check in."
             } else {
                 "Move closer to the customer location to check in."
             }
