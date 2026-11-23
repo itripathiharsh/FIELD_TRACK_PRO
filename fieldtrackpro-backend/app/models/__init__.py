@@ -7,6 +7,7 @@ from app.models.customer import Customer
 from app.models.visit import Visit, VisitStatus
 from app.models.refresh_token import RefreshToken
 from app.models.geo_verification_log import GeoVerificationLog
+from app.models.checkin_review import CheckInReview
 from app.models.notification import Notification, NotificationType
 from app.models.requirement_category import RequirementCategory
 from app.models.requirement_form import RequirementForm, Priority

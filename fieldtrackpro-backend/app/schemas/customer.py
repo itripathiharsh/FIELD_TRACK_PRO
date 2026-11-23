@@ -256,6 +256,8 @@ class CustomerRead(BaseModel):
     primary_outlet_proof_id: uuid.UUID | None = None  # stream via GET /customers/outlet-proofs/{id}/image
     outlet_proof_count: int = 0
     outlet_location_confirmations: int = 0
+    # Accuracy (m) of the GPS fix the current pin was registered with; lets check-in account for pin uncertainty.
+    outlet_pin_accuracy_m: float | None = None
 
     @classmethod
     def from_model(cls, customer: "CustomerModel") -> "CustomerRead":

@@ -7,7 +7,10 @@ import com.fieldtrackpro.android.data.model.CustomerDto
 import com.fieldtrackpro.android.geofencing.GeofenceManager
 import com.fieldtrackpro.android.geofencing.GeofenceState
 import com.fieldtrackpro.android.geofencing.GeofenceStateHolder
+import com.fieldtrackpro.android.services.FixSelector
+import com.fieldtrackpro.android.services.FusedFixCollector
 import com.fieldtrackpro.android.services.LocationCaptureService
+import com.fieldtrackpro.android.utils.GeoDecision
 import com.fieldtrackpro.android.services.LocationPermissionDeniedException
 import com.fieldtrackpro.android.services.LocationServicesDisabledException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,6 +23,7 @@ enum class GeofenceUiStatus {
     LOCATING,
     INSIDE,
     OUTSIDE,
+    UNCERTAIN,
     GPS_UNAVAILABLE,
     PERMISSION_REQUIRED,
     LOCATION_NOT_CONFIGURED
@@ -41,6 +45,10 @@ data class GeofenceUiState(
     val distanceM: Double? = null,
     val geofenceRadiusM: Double? = null,
     val accuracyM: Double? = null,
+    /** UNCERTAIN: the GPS error circle crosses the radius edge (see GeoDecision). */
+    val isUncertain: Boolean = false,
+    /** Point estimate inside the radius (meaningful with isUncertain). */
+    val pointInside: Boolean = false,
     val errorMessage: String? = null,
     val status: GeofenceUiStatus = GeofenceUiStatus.UNKNOWN
 ) {
@@ -101,14 +109,14 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
     /**
      * Called on Activity / Screen Resume to re-check location providers and re-trigger proximity detection.
      */
-    fun onResume(customer: CustomerDto? = null, visitId: String? = null, radiusMeters: Float = 100f) {
+    fun onResume(customer: CustomerDto? = null, visitId: String? = null, radiusMeters: Float = 100f, pinAccuracyM: Double? = null) {
         checkPermissions()
         val lat = customer?.latitude
         val lng = customer?.longitude
         if (lat != null && lng != null && geofenceManager.isValidCoordinate(lat, lng)) {
             val radiusD = customer.geofenceRadiusM?.toDouble() ?: radiusMeters.toDouble()
             if (locationService.isLocationEnabled() && locationService.hasFineLocationPermission()) {
-                refreshRealtimeProximity(lat, lng, radiusD)
+                refreshRealtimeProximity(lat, lng, radiusD, pinAccuracyM)
             }
         }
     }
@@ -124,6 +132,7 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
         visitId: String,
         customer: CustomerDto,
         radiusMeters: Float = 100f,
+        pinAccuracyM: Double? = null,
     ) {
         checkPermissions()
         val lat = customer.latitude
@@ -141,7 +150,7 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
         val radiusD = radiusMeters.toDouble()
 
         if (currentGeofenceId == visitId && _uiState.value.isMonitoring) {
-            refreshRealtimeProximity(lat, lng, radiusD)
+            refreshRealtimeProximity(lat, lng, radiusD, pinAccuracyM)
             return
         }
 
@@ -172,31 +181,58 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
                 errorMessage = if (success) null else "Could not register background geofence",
             )
 
-            refreshRealtimeProximity(lat, lng, radiusD)
+            refreshRealtimeProximity(lat, lng, radiusD, pinAccuracyM)
         }
     }
 
-    private fun refreshRealtimeProximity(targetLat: Double, targetLng: Double, radiusM: Double) {
-        viewModelScope.launch {
+    private var proximityJob: kotlinx.coroutines.Job? = null
+
+    private fun refreshRealtimeProximity(targetLat: Double, targetLng: Double, radiusM: Double, pinAccuracyM: Double? = null) {
+        proximityJob?.cancel()
+        proximityJob = viewModelScope.launch {
             try {
                 _uiState.value = _uiState.value.copy(isLoadingLocation = true, status = GeofenceUiStatus.LOCATING)
-                val loc = locationService.getCurrentLocation()
-                val dist = LocationCaptureService.calculateDistanceM(
-                    loc.latitude, loc.longitude, targetLat, targetLng
+                if (!locationService.hasFineLocationPermission()) throw LocationPermissionDeniedException()
+                if (!locationService.isLocationEnabled()) throw LocationServicesDisabledException()
+                // Same method as check-in: fresh fused fixes, best one kept, the shared accuracy-aware decision.
+                val selector = FixSelector(targetLat, targetLng, pinAccuracyM, radiusM)
+                FusedFixCollector(getApplication()).collect(
+                    maxMs = FusedFixCollector.MAX_WINDOW_MS,
+                    onFix = { selector.offer(it) },
+                    stopWhen = { selector.latest?.conclusive == true && selector.latest?.fix === it }
                 )
-                val inside = dist <= radiusM
+                val best = selector.best
+                if (best == null || !best.decidable) {
+                    _uiState.value = _uiState.value.copy(
+                        isInside = false, isOutside = false, isUncertain = false,
+                        isLoadingLocation = false, isLocationEnabled = true, hasPermission = true,
+                        distanceM = null, accuracyM = best?.fix?.accuracy?.toDouble()?.takeIf { it < 1e6 },
+                        errorMessage = "No reliable GPS fix yet. Move closer to the entrance or a window, then tap Refresh distance.",
+                        status = GeofenceUiStatus.GPS_UNAVAILABLE
+                    )
+                    return@launch
+                }
+                val outcome = best.decision.outcome
                 _uiState.value = _uiState.value.copy(
-                    isInside = inside,
-                    isOutside = !inside,
-                    distanceM = dist,
+                    isInside = outcome == GeoDecision.Outcome.INSIDE,
+                    isOutside = outcome == GeoDecision.Outcome.OUTSIDE,
+                    isUncertain = outcome == GeoDecision.Outcome.UNCERTAIN,
+                    pointInside = best.decision.pointInside,
+                    distanceM = best.distanceM,
                     geofenceRadiusM = radiusM,
-                    accuracyM = loc.accuracy.toDouble(),
+                    accuracyM = best.fix.accuracy.toDouble(),
                     isLoadingLocation = false,
                     isLocationEnabled = true,
                     hasPermission = true,
                     errorMessage = null,
-                    status = if (inside) GeofenceUiStatus.INSIDE else GeofenceUiStatus.OUTSIDE
+                    status = when (outcome) {
+                        GeoDecision.Outcome.INSIDE -> GeofenceUiStatus.INSIDE
+                        GeoDecision.Outcome.OUTSIDE -> GeofenceUiStatus.OUTSIDE
+                        else -> GeofenceUiStatus.UNCERTAIN
+                    }
                 )
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: LocationPermissionDeniedException) {
                 _uiState.value = _uiState.value.copy(
                     hasPermission = false,
@@ -215,7 +251,7 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
                 _uiState.value = _uiState.value.copy(
                     isLoadingLocation = false,
                     status = GeofenceUiStatus.GPS_UNAVAILABLE,
-                    errorMessage = e.message ?: "Unable to acquire fresh GPS fix",
+                    errorMessage = e.message ?: "Unable to acquire a fresh GPS fix",
                 )
             }
         }

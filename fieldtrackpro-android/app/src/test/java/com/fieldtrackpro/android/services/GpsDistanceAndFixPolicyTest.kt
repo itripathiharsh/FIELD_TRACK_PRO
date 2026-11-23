@@ -40,11 +40,13 @@ class GpsDistanceAndFixPolicyTest {
     }
 
     @Test fun coarseNetworkFixIsRejectedEvenWhenFresh() {
-        // The device case: first fix +-464 m, then +-43 m. Only the accurate one may be used.
+        // The device case: first fix +-464 m, then +-43 m. The limit is the shared 100 m (no separate Android gate).
         val (coarse, now) = fix(464f, 1_000)
         assertFalse(FixPolicy.isAcceptable(coarse, nowMillis = now))
         assertTrue(FixPolicy.isAcceptable(fix(43f, 1_000).first, nowMillis = now))
-        assertFalse(FixPolicy.isAcceptable(fix(51f, 1_000).first, nowMillis = now))
+        assertTrue(FixPolicy.isAcceptable(fix(99f, 1_000).first, nowMillis = now))
+        assertFalse(FixPolicy.isAcceptable(fix(101f, 1_000).first, nowMillis = now))
+        assertEquals(com.fieldtrackpro.android.utils.GeoDecision.MAX_ACCURACY_M.toFloat(), FixPolicy.REQUIRED_ACCURACY_M)
     }
 
     @Test fun staleFixIsRejected() {
@@ -70,7 +72,6 @@ class GpsDistanceAndFixPolicyTest {
     @Test fun poorAccuracyMessageTellsTheEmployeeWhatToDo() {
         val msg = FixPolicy.poorAccuracyMessage(fix(464f, 0).first)
         assertTrue(msg.contains("464"))
-        assertTrue(msg.contains("open area"))
-        assertTrue(msg.contains("50"))
+        assertTrue(msg.contains("entrance"))
     }
 }

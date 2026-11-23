@@ -57,6 +57,11 @@ import com.fieldtrackpro.android.ui.theme.SurfaceSecondary
 import com.fieldtrackpro.android.ui.theme.TextPrimary
 import com.fieldtrackpro.android.ui.theme.TextSecondary
 import com.fieldtrackpro.android.ui.viewmodel.CheckInState
+import com.fieldtrackpro.android.BuildConfig
+import com.fieldtrackpro.android.utils.GeoDecision
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.TextButton
 import com.fieldtrackpro.android.ui.viewmodel.CheckInViewModel
 import com.fieldtrackpro.android.utils.CoordinateValidator
 
@@ -69,13 +74,7 @@ fun CheckInScreen(
     onSuccess: () -> Unit
 ) {
     val state by viewModel.state.collectAsState()
-
-    var latText by remember { mutableStateOf("") }
-    var lonText by remember { mutableStateOf("") }
-    var capturedAccuracyM by remember { mutableStateOf<Double?>(null) }
-    var capturedIsMock by remember { mutableStateOf(false) }
-    var capturedAtMillis by remember { mutableStateOf<Long?>(null) }
-    var isOfflineMode by remember { mutableStateOf(false) }
+    var simulateOffline by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         viewModel.resetState()
@@ -88,10 +87,12 @@ fun CheckInScreen(
         }
     }
 
+    val busy = state is CheckInState.Collecting || state is CheckInState.Processing
+
     Scaffold(
         topBar = {
             FieldTrackTopAppBar(
-                title = "Check-In Geo Verification",
+                title = "Check In",
                 onBackClick = onNavigateBack
             )
         }
@@ -114,14 +115,15 @@ fun CheckInScreen(
             ) {
                 Column(modifier = Modifier.padding(18.dp)) {
                     Text(
-                        text = "GPS Coordinate Verification",
+                        text = "Check in at the outlet",
                         fontFamily = LeagueSpartanFamily,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         color = BrandNavy
                     )
                     Text(
-                        text = "Server verifies proximity against the customer's configured geofence radius and GPS accuracy.",
+                        text = "Your location is checked against the outlet's saved GPS position. No photo is needed. " +
+                            "Indoors the signal can be weaker: the app waits up to 45 seconds for a good reading.",
                         fontFamily = LibreBaskervilleFamily,
                         fontSize = 13.sp,
                         color = TextSecondary
@@ -129,233 +131,76 @@ fun CheckInScreen(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    LocationCaptureButton(
-                        onCaptured = { result ->
-                            latText = result.latitude.toString()
-                            lonText = result.longitude.toString()
-                            capturedAccuracyM = result.accuracy.toDouble()
-                            capturedIsMock = result.isMockLocation
-                            capturedAtMillis = result.timestamp
-                        }
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    if (state is CheckInState.Error) {
-                        ErrorBanner(message = (state as CheckInState.Error).message)
+                    (state as? CheckInState.Collecting)?.let { c ->
+                        CollectingCard(c, onCancel = { viewModel.cancelCollection() })
                         Spacer(modifier = Modifier.height(12.dp))
                     }
 
-                    if (state is CheckInState.InvalidCoordinates) {
-                        ErrorBanner(message = (state as CheckInState.InvalidCoordinates).message)
-                        Spacer(modifier = Modifier.height(12.dp))
-                    }
+                    (state as? CheckInState.Error)?.let { ErrorBanner(message = it.message); Spacer(modifier = Modifier.height(12.dp)) }
+                    (state as? CheckInState.InvalidCoordinates)?.let { ErrorBanner(message = it.message); Spacer(modifier = Modifier.height(12.dp)) }
+                    (state as? CheckInState.GeoRejected)?.let { ErrorBanner(message = it.message); Spacer(modifier = Modifier.height(12.dp)) }
+                    (state as? CheckInState.LowAccuracy)?.let { ErrorBanner(message = it.message); Spacer(modifier = Modifier.height(12.dp)) }
+                    (state as? CheckInState.StaleLocation)?.let { ErrorBanner(message = it.message); Spacer(modifier = Modifier.height(12.dp)) }
 
-                    if (state is CheckInState.GeoRejected) {
-                        ErrorBanner(message = (state as CheckInState.GeoRejected).message)
-                        Spacer(modifier = Modifier.height(12.dp))
-                    }
-
-                    if (state is CheckInState.LowAccuracy) {
-                        ErrorBanner(message = (state as CheckInState.LowAccuracy).message)
-                        Spacer(modifier = Modifier.height(12.dp))
-                    }
-
-                    if (state is CheckInState.StaleLocation) {
-                        ErrorBanner(message = (state as CheckInState.StaleLocation).message)
-                        Spacer(modifier = Modifier.height(12.dp))
-                    }
-
-                    if (state is CheckInState.Conflict) {
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .border(1.dp, BrandGold, RoundedCornerShape(8.dp)),
-                            shape = RoundedCornerShape(8.dp),
-                            colors = CardDefaults.cardColors(containerColor = BrandGold.copy(alpha = 0.12f))
+                    (state as? CheckInState.NeedsVerification)?.let { v ->
+                        NoticeCard(
+                            title = "LOCATION NOT CERTAIN",
+                            body = "The GPS reading is about ${v.distanceM.toInt()} m from the outlet with an accuracy of ±${v.accuracyM.toInt()} m, " +
+                                "so the app cannot tell whether you are at the shop. You can move closer to the entrance and try again, " +
+                                "or ask an administrator to verify your visit."
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = { viewModel.requestVerification(visitId) },
+                            modifier = Modifier.fillMaxWidth().height(46.dp),
+                            shape = RoundedCornerShape(10.dp)
                         ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Text(
-                                    text = "SCHEDULE CONFLICT",
-                                    fontFamily = LeagueSpartanFamily,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    letterSpacing = 0.5.sp,
-                                    color = BrandNavy
-                                )
-                                Text(
-                                    text = (state as CheckInState.Conflict).message,
-                                    fontFamily = LibreBaskervilleFamily,
-                                    fontSize = 12.sp,
-                                    color = TextPrimary
-                                )
-                            }
+                            Text("REQUEST ADMIN VERIFICATION", fontFamily = LeagueSpartanFamily, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = BrandNavy)
                         }
                         Spacer(modifier = Modifier.height(12.dp))
                     }
 
-                    if (state is CheckInState.Queued) {
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .border(1.dp, BrandGold, RoundedCornerShape(8.dp)),
-                            shape = RoundedCornerShape(8.dp),
-                            colors = CardDefaults.cardColors(containerColor = BrandGold.copy(alpha = 0.12f))
-                        ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Text(
-                                    text = "QUEUED FOR SYNC",
-                                    fontFamily = LeagueSpartanFamily,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    letterSpacing = 0.5.sp,
-                                    color = BrandNavy
-                                )
-                                Text(
-                                    text = (state as CheckInState.Queued).message,
-                                    fontFamily = LibreBaskervilleFamily,
-                                    fontSize = 12.sp,
-                                    color = TextPrimary
-                                )
-                            }
-                        }
+                    (state as? CheckInState.VerificationRequested)?.let {
+                        NoticeCard(title = "REQUEST SENT", body = it.message)
                         Spacer(modifier = Modifier.height(12.dp))
                     }
 
-                    if (state is CheckInState.VerifySuccess) {
-                        val ver = (state as CheckInState.VerifySuccess).verify
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .border(
-                                    1.dp,
-                                    if (ver.isValid) SuccessGreen else BrandGold,
-                                    RoundedCornerShape(8.dp)
-                                ),
-                            shape = RoundedCornerShape(8.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = if (ver.isValid) SuccessGreen.copy(alpha = 0.12f) else BrandGold.copy(alpha = 0.12f)
+                    (state as? CheckInState.Conflict)?.let {
+                        NoticeCard(title = "SCHEDULE CONFLICT", body = it.message)
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
+
+                    (state as? CheckInState.Queued)?.let {
+                        NoticeCard(title = "QUEUED FOR SYNC", body = it.message)
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
+
+                    if (BuildConfig.DEBUG) {
+                        // QA aid only: send this check-in through the offline queue.
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(
+                                checked = simulateOffline,
+                                onCheckedChange = { simulateOffline = it },
+                                colors = CheckboxDefaults.colors(checkedColor = BrandNavy, checkmarkColor = BrandGold)
                             )
-                        ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Text(
-                                    text = if (ver.isValid) "PROXIMITY VERIFIED PASS" else "OUTSIDE GEOFENCE RADIUS (WARNING)",
-                                    fontFamily = LeagueSpartanFamily,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    letterSpacing = 0.5.sp,
-                                    color = if (ver.isValid) SuccessGreen else BrandNavy
-                                )
-                                Text(
-                                    text = "Distance to customer: ${ver.distanceM.toInt()}m (geofence radius: ${ver.geofenceRadiusM.toInt()}m)${if (!ver.isValid) " - You may still attempt check-in; server will evaluate." else ""}",
-                                    fontFamily = LibreBaskervilleFamily,
-                                    fontSize = 12.sp,
-                                    color = TextPrimary
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(12.dp))
-                    }
-
-                    OutlinedTextField(
-                        value = latText,
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { 
+                            Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                "Latitude",
+                                text = "Debug: simulate offline (queue this check-in)",
                                 fontFamily = LeagueSpartanFamily,
-                                fontWeight = FontWeight.SemiBold
-                            ) 
-                        },
-                        placeholder = { Text("Capture your location above", color = TextSecondary) },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = TextPrimary,
-                            unfocusedTextColor = TextPrimary,
-                            focusedBorderColor = BrandGold,
-                            unfocusedBorderColor = BrandLightGray,
-                            focusedContainerColor = SurfaceSecondary,
-                            unfocusedContainerColor = SurfaceSecondary
-                        )
-                    )
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    OutlinedTextField(
-                        value = lonText,
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { 
-                            Text(
-                                "Longitude",
-                                fontFamily = LeagueSpartanFamily,
-                                fontWeight = FontWeight.SemiBold
-                            ) 
-                        },
-                        placeholder = { Text("Capture your location above", color = TextSecondary) },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = TextPrimary,
-                            unfocusedTextColor = TextPrimary,
-                            focusedBorderColor = BrandGold,
-                            unfocusedBorderColor = BrandLightGray,
-                            focusedContainerColor = SurfaceSecondary,
-                            unfocusedContainerColor = SurfaceSecondary
-                        )
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(
-                            checked = isOfflineMode,
-                            onCheckedChange = { isOfflineMode = it },
-                            colors = CheckboxDefaults.colors(
-                                checkedColor = BrandNavy,
-                                checkmarkColor = BrandGold
+                                fontSize = 13.sp,
+                                color = TextPrimary
                             )
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "Simulate Offline Mode (Enqueue Action)",
-                            fontFamily = LeagueSpartanFamily,
-                            fontSize = 13.sp,
-                            color = TextPrimary
-                        )
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
                     }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    val parsedLat = CoordinateValidator.parseCoordinate(latText)
-                    val parsedLon = CoordinateValidator.parseCoordinate(lonText)
-                    val canSubmit = CoordinateValidator.isValidCoordinate(parsedLat, parsedLon) && state !is CheckInState.Processing
 
                     Button(
-                        onClick = {
-                            if (parsedLat != null && parsedLon != null) {
-                                val acc = capturedAccuracyM ?: 10.0
-                                val isMock = capturedIsMock
-                                val ts = capturedAtMillis ?: System.currentTimeMillis()
-
-                                viewModel.executeCheckIn(
-                                    visitId = visitId,
-                                    lat = parsedLat,
-                                    lon = parsedLon,
-                                    accuracyM = acc,
-                                    isMock = isMock,
-                                    capturedAtMillis = ts,
-                                    isOfflineMode = isOfflineMode
-                                )
-                            }
-                        },
+                        onClick = { viewModel.startCheckIn(visitId, customerId, simulateOffline) },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(52.dp),
                         shape = RoundedCornerShape(10.dp),
-                        enabled = canSubmit,
+                        enabled = !busy,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = BrandNavy,
                             contentColor = BrandWhite,
@@ -370,23 +215,77 @@ fun CheckInScreen(
                                 Icon(
                                     imageVector = Icons.Default.LocationOn,
                                     contentDescription = null,
-                                    tint = if (canSubmit) BrandGold else TextSecondary,
+                                    tint = if (!busy) BrandGold else TextSecondary,
                                     modifier = Modifier.size(20.dp)
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    "VERIFY & SUBMIT CHECK-IN",
+                                    if (state is CheckInState.Collecting) "GETTING LOCATION…" else "CHECK IN",
                                     fontFamily = LeagueSpartanFamily,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 14.sp,
                                     letterSpacing = 0.5.sp,
-                                    color = if (canSubmit) BrandWhite else TextSecondary
+                                    color = if (!busy) BrandWhite else TextSecondary
                                 )
                             }
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun CollectingCard(c: CheckInState.Collecting, onCancel: () -> Unit) {
+    val verdict = when (c.outcome) {
+        GeoDecision.Outcome.INSIDE -> "Inside the outlet radius"
+        GeoDecision.Outcome.OUTSIDE -> "Outside the outlet radius"
+        GeoDecision.Outcome.UNCERTAIN -> "Not certain yet, improving…"
+        GeoDecision.Outcome.POOR_FIX -> "Waiting for a usable GPS fix…"
+        null -> "Looking for GPS…"
+    }
+    Card(
+        modifier = Modifier.fillMaxWidth().border(1.dp, BrandGold, RoundedCornerShape(8.dp)),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = BrandGold.copy(alpha = 0.12f))
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(
+                text = "GETTING A RELIABLE LOCATION",
+                fontFamily = LeagueSpartanFamily, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp, color = BrandNavy
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            LinearProgressIndicator(
+                progress = { (c.elapsedS / 45f).coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth(),
+                color = BrandNavy
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            val acc = c.bestAccuracyM?.let { "best GPS ±${it.toInt()} m" } ?: "no GPS reading yet"
+            val dist = c.distanceM?.let { " · about ${it.toInt()} m from the outlet" } ?: ""
+            Text(
+                text = "$verdict\n$acc$dist · ${c.elapsedS}s of 45s",
+                fontFamily = LibreBaskervilleFamily, fontSize = 12.sp, color = TextPrimary
+            )
+            TextButton(onClick = onCancel) { Text("Cancel", color = BrandNavy, fontWeight = FontWeight.Bold) }
+        }
+    }
+}
+
+@Composable
+private fun NoticeCard(title: String, body: String) {
+    Card(
+        modifier = Modifier.fillMaxWidth().border(1.dp, BrandGold, RoundedCornerShape(8.dp)),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = BrandGold.copy(alpha = 0.12f))
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(
+                text = title,
+                fontFamily = LeagueSpartanFamily, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp, color = BrandNavy
+            )
+            Text(text = body, fontFamily = LibreBaskervilleFamily, fontSize = 12.sp, color = TextPrimary)
         }
     }
 }

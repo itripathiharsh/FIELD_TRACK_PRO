@@ -55,6 +55,12 @@ class GeoVerificationLog(Base):
     is_valid: Mapped[bool] = mapped_column(Boolean)
     failure_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
     idempotency_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Accuracy-aware decision audit (all nullable: older rows predate it).
+    accuracy_m: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
+    pin_accuracy_m: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
+    decision: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    device_captured_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    is_offline: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
     visit: Mapped["Visit"] = relationship(back_populates="geo_verification_logs")
 

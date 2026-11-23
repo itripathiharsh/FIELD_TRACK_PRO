@@ -953,24 +953,24 @@ async def enrich_customer_reads(session: AsyncSession, reads: list) -> None:
             .group_by(OutletProof.customer_id)
         )
     ).all()
-    primaries = dict(
-        (
-            await session.execute(
-                select(OutletProof.customer_id, OutletProof.id).where(
-                    OutletProof.customer_id.in_(ids),
-                    OutletProof.is_primary.is_(True),
-                    OutletProof.status == OutletProofStatus.APPROVED.value,
-                )
+    primary_rows = (
+        await session.execute(
+            select(OutletProof.customer_id, OutletProof.id, OutletProof.accuracy_m).where(
+                OutletProof.customer_id.in_(ids),
+                OutletProof.is_primary.is_(True),
+                OutletProof.status == OutletProofStatus.APPROVED.value,
             )
-        ).all()
-    )
+        )
+    ).all()
+    primaries = {row[0]: (row[1], row[2]) for row in primary_rows}
     by_id = {r.id: r for r in reads}
     for cid, total, confirmed in counts:
         by_id[cid].outlet_proof_count = total
         by_id[cid].outlet_location_confirmations = confirmed
-    for cid, pid in primaries.items():
+    for cid, (pid, pin_acc) in primaries.items():
         by_id[cid].primary_outlet_proof_id = pid
         by_id[cid].primary_outlet_image_available = True
+        by_id[cid].outlet_pin_accuracy_m = float(pin_acc) if pin_acc is not None else None
 
 async def attach_outlet_proofs(session, reads):
     """Fill outlet_proof_* on CustomerProspectRead objects from their linked proof (one query)."""
