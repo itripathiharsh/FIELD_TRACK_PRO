@@ -50,8 +50,9 @@ fun buildConfigString(value: String): String =
 // 4 / 1.1.0: offline payments, outlet-proof capture/queue, queue schema + session/auth hardening.
 // 6 / 1.3.0: premium UI (design system v2, new mark), workday GPS/permission fixes, release URL guard. (5 / 1.2.0 was the
 // landing-page debug build.)
-val appVersionCode = 6
-val appVersionName = "1.3.0"
+// 7 / 1.4.0: accuracy-aware check-in, camera/GPS/outlet-photo/payment fixes, media previews, admin check-in verification.
+val appVersionCode = 7
+val appVersionName = "1.4.0"
 
 val releaseStoreFile = configValue("RELEASE_STORE_FILE")
 val releaseStorePassword = configValue("RELEASE_STORE_PASSWORD")
