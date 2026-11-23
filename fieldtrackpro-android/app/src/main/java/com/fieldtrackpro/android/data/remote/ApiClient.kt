@@ -166,6 +166,9 @@ object ApiClient {
     fun createVisitPlanningApi(tokenManager: TokenManager): VisitPlanningApi =
         getRetrofit(tokenManager).create(VisitPlanningApi::class.java)
 
+    fun createCheckInReviewApi(tokenManager: TokenManager): com.fieldtrackpro.android.data.api.CheckInReviewApi =
+        getRetrofit(tokenManager).create(com.fieldtrackpro.android.data.api.CheckInReviewApi::class.java)
+
     fun createOutletProofApi(tokenManager: TokenManager): com.fieldtrackpro.android.data.api.OutletProofApi =
         getRetrofit(tokenManager).create(com.fieldtrackpro.android.data.api.OutletProofApi::class.java)
 }

@@ -68,6 +68,8 @@ class GeoLogRepository(BaseRepository[GeoVerificationLog]):
         return await self.count(
             GeoVerificationLog.visit_id == visit_id,
             GeoVerificationLog.is_valid.is_(False),
+            # A poor or uncertain GPS fix is a reason to retry, never a reason to flag the employee.
+            (GeoVerificationLog.decision.is_(None)) | (GeoVerificationLog.decision.notin_(("POOR_FIX", "UNCERTAIN"))),
         )
 
     async def count_failed_by_visit_ids(self, visit_ids: list[uuid.UUID]) -> dict[uuid.UUID, int]:

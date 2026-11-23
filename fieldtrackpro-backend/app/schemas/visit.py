@@ -102,6 +102,7 @@ class VisitRead(BaseModel):
     adhoc_notes: str | None = None
     check_in_at: datetime | None
     check_in_received_at: datetime | None = None
+    check_in_confidence: str | None = None
     check_out_at: datetime | None
     check_out_received_at: datetime | None = None
     synced: bool

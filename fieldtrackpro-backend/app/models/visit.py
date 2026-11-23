@@ -41,6 +41,8 @@ class Visit(Base):
     check_in_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     check_in_location: Mapped[Optional[Any]] = mapped_column(Geography(geometry_type="POINT", srid=4326), nullable=True)
     check_in_received_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # HIGH | LOW (uncertain, flagged) | OFFLINE (queued) | ADMIN_VERIFIED | ADMIN_CONFIRMED; null for older rows.
+    check_in_confidence: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
     check_out_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     check_out_location: Mapped[Optional[Any]] = mapped_column(Geography(geometry_type="POINT", srid=4326), nullable=True)
     check_out_received_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -40,7 +40,9 @@ data class CustomerDto(
     @SerializedName("created_at") val createdAt: String? = null,
     // Live outlet proof: additive fields on CustomerRead (absent on older servers).
     @SerializedName("primary_outlet_image_available") val primaryOutletImageAvailable: Boolean = false,
-    @SerializedName("primary_outlet_proof_id") val primaryOutletProofId: String? = null
+    @SerializedName("primary_outlet_proof_id") val primaryOutletProofId: String? = null,
+    /** Accuracy (m) of the GPS fix the outlet pin was registered with; used by the check-in decision. */
+    @SerializedName("outlet_pin_accuracy_m") val outletPinAccuracyM: Double? = null
 ) {
     val latitude: Double? get() = location?.latitude
     val longitude: Double? get() = location?.longitude

@@ -472,7 +472,7 @@ async def check_in(
                 raise BaseAPIException(
                     status_code=422,
                     detail=f"Check-in failed: {existing_log.failure_reason}",
-                    error_code="GEO_VERIFICATION_FAILED",
+                    error_code="GEO_UNCERTAIN" if existing_log.decision == "UNCERTAIN" else "GEO_VERIFICATION_FAILED",
                 )
             logger.info("event=visit_checkin result=success idempotency_replay=true request_id=%s visit_id=%s", req_id, visit.id)
             return visit
@@ -493,16 +493,18 @@ async def check_in(
             error_code="OUTLET_LOCATION_NOT_CONFIGURED",
         )
 
-    # FT-004: PostGIS measures the distance from the stored geography.
-    geo_res = await verify_device_against_customer(
-        customer,
-        session,
-        device_lat=data.latitude,
-        device_lng=data.longitude,
-        accuracy_m=data.accuracy_m,
-        is_mock_location=data.is_mock_location,
-        captured_at=data.captured_at,
+    # Accuracy-aware decision (design-review/gps-checkin-decision-spec.md). FT-004: PostGIS measures the distance from
+    # the stored geography, and the same figure goes to the audit log. The pin is never modified here.
+    from app.models.checkin_review import CheckInReview, CheckInReviewKind
+    from app.services.checkin_geo import evaluate_checkin_fix
+    from sqlalchemy.exc import IntegrityError
+
+    ev = await evaluate_checkin_fix(
+        session, customer,
+        latitude=data.latitude, longitude=data.longitude, accuracy_m=data.accuracy_m,
+        is_mock=data.is_mock_location, captured_at=data.captured_at,
     )
+    received_at = datetime.now(tz=timezone.utc)
 
     # Log the verification attempt (success or failure) - insert-only audit.
     geo_repo = GeoLogRepository(session)
@@ -510,52 +512,91 @@ async def check_in(
         visit_id=visit.id,
         verification_type=GeoVerificationType.CHECK_IN,
         device_location=f"SRID=4326;POINT({data.longitude} {data.latitude})",
-        distance_from_customer_m=geo_res.distance_m,
-        is_valid=geo_res.is_valid,
-        failure_reason=geo_res.failure_reason,
+        distance_from_customer_m=ev.distance_m,
+        is_valid=ev.accepted,
+        failure_reason=ev.reason,
         idempotency_key=data.idempotency_key,
+        accuracy_m=ev.accuracy_m,
+        pin_accuracy_m=ev.pin_accuracy_m,
+        decision=ev.label,
+        device_captured_at=data.captured_at,
+        is_offline=ev.is_offline,
     )
     await geo_repo.add(log)
 
-    if not geo_res.is_valid:
-        # Check if failure threshold reached — auto-flag visit
+    if not ev.accepted:
+        # Check if failure threshold reached - auto-flag visit (poor/uncertain fixes are retries and do not count).
         fail_count = await geo_repo.count_failed_for_visit(visit.id)
         if fail_count >= GEO_FAILURE_THRESHOLD and visit.status in (VisitStatus.PENDING, VisitStatus.IN_PROGRESS):
             visit.status = VisitStatus.FLAGGED
             session.add(visit)
         await geo_repo.commit()
         logger.warning(
-            "event=visit_checkin result=rejected reason=%s request_id=%s visit_id=%s employee_id=%s customer_id=%s distance_m=%s accuracy_m=%s allowed_radius_m=%s is_mock=%s",
-            geo_res.failure_reason,
+            "event=visit_checkin result=rejected decision=%s reason=%s request_id=%s visit_id=%s employee_id=%s customer_id=%s distance_m=%s accuracy_m=%s allowed_radius_m=%s is_mock=%s",
+            ev.label,
+            ev.reason,
             req_id,
             visit.id,
             visit.employee_id,
             visit.customer_id,
-            geo_res.distance_m,
+            ev.distance_m,
             data.accuracy_m,
             customer.geofence_radius_m,
             data.is_mock_location,
         )
         raise BaseAPIException(
             status_code=422,
-            detail=f"Check-in failed: {geo_res.failure_reason}",
-            error_code="GEO_VERIFICATION_FAILED",
+            detail=f"Check-in failed: {ev.reason}",
+            error_code=ev.error_code or "GEO_VERIFICATION_FAILED",
+            details={
+                "decision": ev.label,
+                "distance_m": ev.distance_m,
+                "accuracy_m": ev.accuracy_m,
+                "radius_m": float(customer.geofence_radius_m),
+                "verification_available": ev.needs_verification,
+            },
         )
 
     visit.status = VisitStatus.IN_PROGRESS
-    visit.check_in_at = data.captured_at if data.captured_at else datetime.now(tz=timezone.utc)
-    visit.check_in_received_at = datetime.now(tz=timezone.utc)
+    visit.check_in_at = data.captured_at if data.captured_at else received_at
+    visit.check_in_received_at = received_at
     visit.check_in_location = f"SRID=4326;POINT({data.longitude} {data.latitude})"
+    visit.check_in_confidence = ev.confidence
     session.add(visit)
+
+    if ev.confidence in ("LOW", "OFFLINE"):
+        # Flag for admin review. The partial unique index keeps this to one pending row per visit and kind even if two
+        # requests race; the loser's insert is skipped.
+        review = CheckInReview(
+            visit_id=visit.id,
+            customer_id=customer.id,
+            employee_id=visit.employee_id,
+            requested_by=current_user.id,
+            kind=CheckInReviewKind.OFFLINE if ev.confidence == "OFFLINE" else CheckInReviewKind.CONDITIONAL,
+            decision=ev.label,
+            distance_m=ev.distance_m,
+            accuracy_m=ev.accuracy_m,
+            pin_accuracy_m=ev.pin_accuracy_m,
+            device_location=f"SRID=4326;POINT({data.longitude} {data.latitude})",
+            device_captured_at=data.captured_at,
+            received_at=received_at,
+        )
+        try:
+            async with session.begin_nested():
+                session.add(review)
+        except IntegrityError:
+            logger.info("event=checkin_review_duplicate_skipped visit_id=%s", visit.id)
     await geo_repo.commit()
 
     logger.info(
-        "event=visit_checkin result=success request_id=%s visit_id=%s employee_id=%s customer_id=%s distance_m=%s accuracy_m=%s visit_type=%s",
+        "event=visit_checkin result=success decision=%s confidence=%s request_id=%s visit_id=%s employee_id=%s customer_id=%s distance_m=%s accuracy_m=%s visit_type=%s",
+        ev.label,
+        ev.confidence,
         req_id,
         visit.id,
         visit.employee_id,
         visit.customer_id,
-        geo_res.distance_m,
+        ev.distance_m,
         data.accuracy_m,
         visit.visit_type.value if hasattr(visit.visit_type, "value") else str(visit.visit_type),
     )

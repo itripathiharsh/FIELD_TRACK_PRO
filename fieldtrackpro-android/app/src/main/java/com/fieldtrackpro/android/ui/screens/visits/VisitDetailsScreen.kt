@@ -148,6 +148,16 @@ fun VisitDetailsScreen(
     }
 
     val successState = detailState as? VisitDetailState.Success
+    // Accuracy of the GPS fix the outlet pin was registered with (part of the shared check-in decision).
+    val pinCustomerId = successState?.customer?.id
+    val pinAccuracyM by androidx.compose.runtime.produceState<Double?>(null, pinCustomerId, proofReloadKey) {
+        value = if (pinCustomerId == null) null else try {
+            val repo = com.fieldtrackpro.android.data.repository.CustomerRepository(
+                com.fieldtrackpro.android.data.remote.ApiClient.createCustomerApi(
+                    com.fieldtrackpro.android.data.local.TokenManager.getInstance(context)))
+            (repo.getCustomerById(pinCustomerId) as? com.fieldtrackpro.android.data.repository.Resource.Success)?.data?.outletPinAccuracyM
+        } catch (e: Exception) { null }
+    }
     LaunchedEffect(successState?.customer, successState?.visit?.id, successState?.visit?.status) {
         val v = successState?.visit
         val cust = successState?.customer
@@ -155,7 +165,8 @@ fun VisitDetailsScreen(
             geofenceViewModel.startMonitoring(
                 visitId = v.id,
                 customer = cust,
-                radiusMeters = cust.geofenceRadiusM.toFloat()
+                radiusMeters = cust.geofenceRadiusM.toFloat(),
+                pinAccuracyM = pinAccuracyM
             )
         } else {
             geofenceViewModel.stopMonitoring()
@@ -169,7 +180,8 @@ fun VisitDetailsScreen(
                 geofenceViewModel.onResume(
                     customer = successState?.customer,
                     visitId = visitId,
-                    radiusMeters = successState?.customer?.geofenceRadiusM?.toFloat() ?: 100f
+                    radiusMeters = successState?.customer?.geofenceRadiusM?.toFloat() ?: 100f,
+                    pinAccuracyM = pinAccuracyM
                 )
             }
         }
@@ -322,11 +334,14 @@ fun VisitDetailsScreen(
                         errorMessage = geofenceUiState.errorMessage,
                         distanceM = geofenceUiState.distanceM,
                         accuracyM = geofenceUiState.accuracyM,
+                        isUncertain = geofenceUiState.isUncertain,
+                        pointInside = geofenceUiState.pointInside,
                         onRefreshClick = {
                             geofenceViewModel.onResume(
                                 customer = s.customer,
                                 visitId = visitId,
-                                radiusMeters = s.customer?.geofenceRadiusM?.toFloat() ?: 100f
+                                radiusMeters = s.customer?.geofenceRadiusM?.toFloat() ?: 100f,
+                                pinAccuracyM = pinAccuracyM
                             )
                         },
                         geofenceRadiusM = s.customer?.geofenceRadiusM?.toDouble(),

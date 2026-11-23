@@ -32,6 +32,8 @@ data class VisitDto(
     @SerializedName("adhoc_notes") val adhocNotes: String? = null,
     @SerializedName("check_in_at") val checkInAt: String? = null,
     @SerializedName("check_in_received_at") val checkInReceivedAt: String? = null,
+    /** HIGH | LOW (uncertain, flagged for admin review) | OFFLINE | ADMIN_VERIFIED | ADMIN_CONFIRMED. */
+    @SerializedName("check_in_confidence") val checkInConfidence: String? = null,
     @SerializedName("check_out_at") val checkOutAt: String? = null,
     @SerializedName("check_out_received_at") val checkOutReceivedAt: String? = null,
     val synced: Boolean = false,

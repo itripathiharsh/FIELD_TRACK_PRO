@@ -587,7 +587,7 @@ internal fun CaptureLayout(
                     TextButton(onClick = onCancel) { Text("CANCEL", color = Color.White, fontWeight = FontWeight.Bold) }
                 }
                 Text(
-                    "Show the shop board and front",
+                    "Show the shop board and front\nStand at the entrance for the best GPS (this sets the outlet's permanent location)",
                     color = Color.White,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,

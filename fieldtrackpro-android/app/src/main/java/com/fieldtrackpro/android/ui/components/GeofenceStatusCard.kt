@@ -55,6 +55,8 @@ fun GeofenceStatusCard(
     distanceM: Double? = null,
     geofenceRadiusM: Double? = null,
     accuracyM: Double? = null,
+    isUncertain: Boolean = false,
+    pointInside: Boolean = false,
     isLoadingLocation: Boolean = false,
     onRefreshClick: (() -> Unit)? = null,
     onEnableLocationClick: (() -> Unit)? = null,
@@ -71,7 +73,9 @@ fun GeofenceStatusCard(
         distanceM = distanceM,
         geofenceRadiusM = geofenceRadiusM,
         isLoadingLocation = isLoadingLocation,
-        accuracyM = accuracyM
+        accuracyM = accuracyM,
+        isUncertain = isUncertain,
+        pointInside = pointInside
     )
 
     Card(
@@ -193,6 +197,8 @@ private fun getGeofenceStatus(
     geofenceRadiusM: Double? = null,
     isLoadingLocation: Boolean = false,
     accuracyM: Double? = null,
+    isUncertain: Boolean = false,
+    pointInside: Boolean = false,
 ): GeofenceStatus {
     val acc = accuracyM?.takeIf { it > 0.0 && it < 100000.0 }?.let { " (GPS +-${it.toInt()}m)" } ?: ""
     return when {
@@ -219,6 +225,14 @@ private fun getGeofenceStatus(
             iconColor = FieldTrackNavy,
             title = "Determining location...",
             subtitle = "Measuring distance to customer outlet..."
+        )
+        isUncertain -> GeofenceStatus(
+            icon = Icons.Default.Warning,
+            iconColor = FieldTrackAmber,
+            title = "Location not certain",
+            subtitle = (distanceM?.let { "About ${it.toInt()}m from the outlet$acc. " } ?: "") +
+                if (pointInside) "You can check in: it will be flagged for an admin to review. A better GPS fix removes the flag."
+                else "Move closer to the entrance, or request admin verification when you check in."
         )
         isInside -> {
             val distText = if (distanceM != null) "${distanceM.toInt()}m from outlet$acc. Ready to check in." else "Ready to check in."
