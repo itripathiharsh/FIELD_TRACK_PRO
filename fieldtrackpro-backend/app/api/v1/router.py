@@ -10,6 +10,7 @@ from app.api.v1 import (
     outlet_proofs,
     visits,
     checkin_reviews,
+    fos_assignments,
     geo,
     media,
     signatures,
@@ -60,6 +61,7 @@ api_router.include_router(orders.router)
 api_router.include_router(workday.router)
 api_router.include_router(visits.router)
 api_router.include_router(checkin_reviews.router)
+api_router.include_router(fos_assignments.router)
 api_router.include_router(geo.router)
 api_router.include_router(media.router)
 api_router.include_router(signatures.router)

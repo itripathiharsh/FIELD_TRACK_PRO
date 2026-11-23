@@ -8,6 +8,7 @@ import uuid
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.customer import Customer
 from app.models.tally_debtor_ledger import TallyDebtorLedger
 from app.models.employee_area_assignment import EmployeeAreaAssignment
@@ -135,12 +136,16 @@ class CustomerRepository(BaseRepository[Customer]):
                 )
             ),
             Customer.id.in_(select(Visit.customer_id).where(Visit.employee_id == employee_id, own_visit)),
-            Customer.area_id.in_(
-                select(EmployeeAreaAssignment.area_id).where(
-                    EmployeeAreaAssignment.employee_id == employee_id
-                )
-            ),
         ]
+        if settings.fos_assigned_only_scope:
+            # Release 3.2: Tally decides the FOS, so an employee sees exactly the outlets assigned to them (plus
+            # their own visits above). Home territory / covered areas no longer widen the list.
+            return or_(clauses[0], clauses[1])
+        clauses.append(
+            Customer.area_id.in_(
+                select(EmployeeAreaAssignment.area_id).where(EmployeeAreaAssignment.employee_id == employee_id)
+            )
+        )
         if territory_id is not None:
             clauses.append(Customer.territory_id == territory_id)
         return or_(*clauses)

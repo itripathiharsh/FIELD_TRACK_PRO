@@ -1017,6 +1017,11 @@ async def sync_ledgers(agent: SyncAgent, batch: LedgerSyncBatch, session: AsyncS
         run.received_count += len(batch.ledgers)
         if batch.is_final_chunk:
             details["missing_from_tally"] = await _finish_ledger_snapshot(session, run, st)
+    # Release 3.2: Tally ledger group -> FOS. Isolated in a savepoint and never raises (see fos_sync_service).
+    from app.services import fos_sync_service
+    fos_full = bool(batch.snapshot_id and batch.is_final_chunk)
+    fos_guids = [] if (batch.snapshot_id and not batch.is_final_chunk) else [i.guid for i in batch.ledgers]
+    await fos_sync_service.sync_after_ledger_batch(session, fos_guids, full=fos_full)
     agent.last_sync_at = _now()
     await session.commit()
     await _audit(session, agent, "SYNC_LEDGERS", "CUSTOMERS", len(batch.ledgers), st, started, batch.batch_id,

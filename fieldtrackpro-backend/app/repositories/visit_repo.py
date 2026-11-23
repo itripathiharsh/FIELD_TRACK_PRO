@@ -10,6 +10,7 @@ from sqlalchemy import select, func, or_, cast, String, and_, exists
 from sqlalchemy.orm import selectinload, aliased
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.area import Area
 from app.models.customer import Customer
 from app.models.employee import Employee
@@ -31,7 +32,7 @@ def visit_in_scope_clause():
     Requires Visit and Customer in the enclosing FROM.
     """
     other = aliased(Visit)
-    return or_(
+    clauses = [
         exists().where(
             EmployeeCustomerAssignment.employee_id == Visit.employee_id,
             EmployeeCustomerAssignment.customer_id == Visit.customer_id,
@@ -42,11 +43,15 @@ def visit_in_scope_clause():
             other.id != Visit.id,
             other.visit_type != VisitType.AD_HOC,
         ),
-        exists().where(
-            EmployeeAreaAssignment.employee_id == Visit.employee_id,
-            EmployeeAreaAssignment.area_id == Customer.area_id,
-        ),
-    )
+    ]
+    if not settings.fos_assigned_only_scope:  # release 3.2: assigned-only scope ignores covered areas
+        clauses.append(
+            exists().where(
+                EmployeeAreaAssignment.employee_id == Visit.employee_id,
+                EmployeeAreaAssignment.area_id == Customer.area_id,
+            )
+        )
+    return or_(*clauses)
 
 
 def adhoc_outside_assignment_clause():

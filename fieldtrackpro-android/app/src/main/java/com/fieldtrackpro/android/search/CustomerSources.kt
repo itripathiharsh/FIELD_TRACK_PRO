@@ -7,7 +7,8 @@ import com.fieldtrackpro.android.data.repository.Resource
 /**
  * Data sources for customer pickers, using only the existing GET /api/v1/customers contract:
  *  - portfolio: no `search` parameter -> the backend returns exactly the caller's authorized outlets
- *    (assigned, in covered areas / home territory, or on their planned visits); paged until complete.
+ *    (assigned - the FOS comes from Tally, synchronised by the backend - or on their planned visits; unless the
+ *    server runs with FOS_ASSIGNED_ONLY_SCOPE=false also those in covered areas / home territory); paged until complete.
  *  - directory: `search` of 3+ characters -> the backend also returns other outlets, redacted (off-beat picker).
  */
 object CustomerSources {

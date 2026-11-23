@@ -35,6 +35,7 @@ const PaymentReviewPage = lazy(() => import('./pages/PaymentReviewPage').then((m
 const RequirementsPage = lazy(() => import('./pages/RequirementsPage').then((m) => ({ default: m.RequirementsPage })));
 const EmployeeDailyLogsPage = lazy(() => import('./pages/EmployeeDailyLogsPage').then((m) => ({ default: m.EmployeeDailyLogsPage })));
 const OutletMappingPage = lazy(() => import('./pages/OutletMappingPage').then((m) => ({ default: m.OutletMappingPage })));
+const FosAssignmentsPage = lazy(() => import('./pages/FosAssignmentsPage').then((m) => ({ default: m.FosAssignmentsPage })));
 const OutletVerificationPage = lazy(() => import('./pages/OutletVerificationPage').then((m) => ({ default: m.OutletVerificationPage })));
 
 /** Suspense + chunk-failure boundary for lazy routes; a navigation clears a previous failure. */
@@ -72,6 +73,7 @@ export function AppContent() {
                 <Route path="/customers" element={<AdminRoute><CustomersPage /></AdminRoute>} />
                 <Route path="/customers/outlet-verification" element={<AdminRoute><OutletVerificationPage /></AdminRoute>} />
                 <Route path="/customers/outlet-mapping" element={<AdminRoute><OutletMappingPage /></AdminRoute>} />
+                <Route path="/customers/fos-assignments" element={<AdminRoute><FosAssignmentsPage /></AdminRoute>} />
                 <Route path="/visit-planning" element={<MonthlyVisitPlanningPage />} />
                 <Route path="/admin/visit-planning" element={<AdminRoute><AdminVisitPlanningPage /></AdminRoute>} />
                 <Route path="/visits" element={<VisitsPage />} />

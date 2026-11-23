@@ -2122,3 +2122,81 @@ export interface AgentHealth {
   interval_seconds?: number;
   error?: string;
 }
+
+
+// ---------------------------------------------------------------------------
+// Tally -> FieldTrack FOS assignment synchronisation (release 3.2)
+// ---------------------------------------------------------------------------
+export type FosStatus = 'ASSIGNED' | 'MULTIPLE' | 'UNASSIGNED' | 'UNMAPPED_GROUP' | 'CONFLICT' | 'NO_TALLY';
+
+export interface FosRef {
+  employee_id: string;
+  name: string;
+  /** TALLY = managed by the sync; LEGACY = existed before the sync; APP = created in FieldTrack. */
+  source: 'TALLY' | 'LEGACY' | 'APP' | string;
+}
+
+export interface OutletFos {
+  id: string;
+  name: string;
+  outlet_code: string | null;
+  tally_group: string | null;
+  fos: FosRef[];
+  fos_status: FosStatus | null;
+  fos_synced_at: string | null;
+}
+
+export interface FosSummary {
+  total_outlets: number;
+  outlets_with_fos: number;
+  outlets_without_fos: number;
+  by_status: Record<string, number>;
+  groups: Record<string, number>;
+  sync_enabled: boolean;
+  legacy_policy: string;
+  last_run_at: string | null;
+  last_run_trigger: string | null;
+  last_synced_at: string | null;
+}
+
+export interface FosGroup {
+  id: string;
+  group_name: string;
+  status: 'UNMAPPED' | 'MAPPED' | 'NOT_FOS';
+  employee_id: string | null;
+  employee_name: string | null;
+  suggested_employee_id: string | null;
+  suggested_employee_name: string | null;
+  suggestion_basis: string | null;
+  outlets: number;
+  assigned_outlets: number;
+  decided_at: string | null;
+  note: string | null;
+}
+
+export interface FosAuditEntry {
+  id: string;
+  run_id: string | null;
+  customer_id: string | null;
+  customer_name: string | null;
+  previous_fos: string | null;
+  new_fos: string | null;
+  action: string;
+  source: string;
+  tally_group: string | null;
+  tally_ledger_guid: string | null;
+  result: string;
+  detail: string | null;
+  created_at: string;
+}
+
+export interface FosReconciliation {
+  generated_at: string;
+  sync_enabled: boolean;
+  legacy_policy: string;
+  outlets_evaluated: number;
+  outlet_status: Record<string, number>;
+  counts: Record<string, number>;
+  unmatched_salesperson_groups: string[];
+  proposed_mappings: { group: string; employee_id: string | null; employee: string | null; existing_assignments: number; note?: string }[];
+}
