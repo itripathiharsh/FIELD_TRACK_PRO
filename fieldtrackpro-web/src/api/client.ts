@@ -10,6 +10,11 @@ import {
   ImportRevertResult,
   LinkEventRead,
   OutletMappingQueues,
+  FosSummary,
+  OutletFos,
+  FosGroup,
+  FosAuditEntry,
+  FosReconciliation,
   AdminPasswordReset,
   Area,
   Brand,
@@ -2671,6 +2676,47 @@ export class ApiClient {
       offset: String(params?.offset ?? 0),
     });
     return this.request<AccountHistoryResponse>(`/api/v1/customers/${customerId}/history?${q.toString()}`);
+  }
+
+  // ---- Tally FOS synchronisation (admin view; the FOS itself is never edited here) ----
+  async getFosSummary(): Promise<FosSummary> {
+    return this.request<FosSummary>('/api/v1/fos-assignments/summary');
+  }
+
+  async getFosOutlets(params: {
+    assignment?: 'all' | 'assigned' | 'unassigned'; status?: string; employee_id?: string; group?: string;
+    search?: string; limit?: number; offset?: number;
+  }): Promise<{ items: OutletFos[]; total: number }> {
+    const q = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== '') q.set(k, String(v)); });
+    return this.request(`/api/v1/fos-assignments/outlets?${q.toString()}`);
+  }
+
+  async getFosGroups(status?: string): Promise<FosGroup[]> {
+    return this.request<FosGroup[]>(`/api/v1/fos-assignments/groups${status ? `?status=${status}` : ''}`);
+  }
+
+  /** Map a Tally group to an employee, or mark it NOT a FOS group, or (neither) un-map it. */
+  async mapFosGroup(groupId: string, body: { employee_id?: string | null; not_fos?: boolean; note?: string }): Promise<FosGroup> {
+    return this.request<FosGroup>(`/api/v1/fos-assignments/groups/${groupId}`, { method: 'PUT', body: JSON.stringify(body) });
+  }
+
+  async mapFosGroupsBulk(items: { group_id: string; employee_id?: string | null; not_fos?: boolean }[]): Promise<{ mapped: number; sync_enabled: boolean }> {
+    return this.request('/api/v1/fos-assignments/groups/bulk', { method: 'POST', body: JSON.stringify(items) });
+  }
+
+  async getFosReconciliation(): Promise<FosReconciliation> {
+    return this.request<FosReconciliation>('/api/v1/fos-assignments/reconciliation');
+  }
+
+  async runFosSync(dryRun: boolean): Promise<{ run_id: string; dry_run: boolean; summary: Record<string, unknown> | null }> {
+    return this.request('/api/v1/fos-assignments/sync', { method: 'POST', body: JSON.stringify({ dry_run: dryRun }) });
+  }
+
+  async getFosAudit(params?: { customer_id?: string; action?: string; limit?: number; offset?: number }): Promise<FosAuditEntry[]> {
+    const q = new URLSearchParams();
+    Object.entries(params ?? {}).forEach(([k, v]) => { if (v !== undefined && v !== '') q.set(k, String(v)); });
+    return this.request<FosAuditEntry[]>(`/api/v1/fos-assignments/audit?${q.toString()}`);
   }
 
   async getOutletMappingQueues(): Promise<OutletMappingQueues> {

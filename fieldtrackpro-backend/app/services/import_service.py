@@ -39,6 +39,7 @@ from app.models.territory import Territory
 from app.models.area import Area
 from app.models.user import User, Role
 from app.models.employee_customer_assignment import EmployeeCustomerAssignment
+from app.config import settings
 from app.models.fos_mapping import FOSEmployeeMapping
 from app.models.outlet_financial_snapshot import OutletFinancialSnapshot
 from app.core.security import hash_password
@@ -844,6 +845,10 @@ async def commit_import_batch(
 
                 # FOS Direct Assignment
                 matched_emp_id = row.get("matched_employee_id")
+                # Release 3.2: when Tally drives FOS assignment, a spreadsheet must not add a second FOS to an
+                # outlet that has a Tally ledger group.
+                if matched_emp_id and settings.tally_fos_sync_enabled and getattr(cust_obj, "tally_parent_group", None):
+                    matched_emp_id = None
                 if matched_emp_id:
                     emp_uuid = uuid.UUID(matched_emp_id)
                     # Check assignment

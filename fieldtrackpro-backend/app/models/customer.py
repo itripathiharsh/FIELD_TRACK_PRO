@@ -45,6 +45,9 @@ class Customer(Base):
     # lists, never deleted; None = not (yet) seen in a full Tally ledger snapshot.
     tally_is_debtor: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True, index=True)
     tally_parent_group: Mapped[Optional[str]] = mapped_column(String(150), nullable=True)
+    # Release 3.2: result of the last Tally FOS synchronisation for this outlet (see models/tally_fos.py).
+    fos_status: Mapped[Optional[str]] = mapped_column(String(16), nullable=True, index=True)
+    fos_synced_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     tally_aliases: Mapped[Optional[list[str]]] = mapped_column(JSONB, nullable=True)
     tally_is_bill_wise: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
     tally_credit_period: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)

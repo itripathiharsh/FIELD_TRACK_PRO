@@ -107,7 +107,9 @@ async def test_migration_head_backfill_and_downgrade_guard():
     spec.loader.exec_module(mig)
     async with AsyncSessionLocal() as s:
         # h1b2c3d4e5f6 is applied; i2c3d4e5f6a7 (payments.tally_bill_allocations) and j3d4e5f6a7b8 (ACCOUNTANT role), both additive, may follow it.
-        assert (await s.execute(text("SELECT version_num FROM alembic_version"))).scalar() in ("h1b2c3d4e5f6", "i2c3d4e5f6a7", "j3d4e5f6a7b8", "r3c0n1d2x3y4", "s1c0p3d1st5r")
+        assert (await s.execute(text("SELECT version_num FROM alembic_version"))).scalar() in ("h1b2c3d4e5f6", "i2c3d4e5f6a7", "j3d4e5f6a7b8", "r3c0n1d2x3y4", "s1c0p3d1st5r",
+                                                                                          # later additive heads (outlet proofs, accuracy-aware check-in, Tally FOS sync)
+                                                                                          "a7f1r5t10c4t", "c8e0g3p5d1x2", "d9h2k6s8f4z3")
         # The migration's 1:1 backfill gives every customer holding a Tally GUID its ledger (idempotent);
         # customers created later by the v1 sync get theirs lazily on the first v2 touch.
         await s.execute(text(mig.BACKFILL_LEDGERS_SQL))

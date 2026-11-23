@@ -84,6 +84,18 @@ class Settings(BaseSettings):
     # place is a CHANGE_REQUEST for the admin. Set False to send first proofs to admin review instead.
     outlet_proof_first_location_auto_accept: bool = True
 
+    # Release 3.2: Tally is the source of truth for FOS assignment (the FOS of an outlet = the Tally ledger
+    # group it sits in, mapped to an employee by an admin). Everything below is OFF / report-only by default so
+    # that deploying the code changes no assignment: the reconciliation report and the group mapping work
+    # regardless, assignments are only written once TALLY_FOS_SYNC_ENABLED=true.
+    tally_fos_sync_enabled: bool = False
+    # How the sync treats assignments that existed before it (source LEGACY / APP) on an outlet that has a Tally
+    # ledger: REPORT_ONLY = keep a disagreeing one and flag the outlet CONFLICT; TALLY_WINS = Tally replaces it.
+    tally_fos_legacy_policy: str = "REPORT_ONLY"
+    # When true an EMPLOYEE sees only outlets assigned to them (plus their own visits), not every outlet of their
+    # home territory / covered areas. Off by default (existing behaviour); turn on together with the sync.
+    fos_assigned_only_scope: bool = False
+
     # CORS
     # Exact-match allow-list only (no wildcard / *.vercel.app regex - any
     # attacker can deploy to *.vercel.app). The default is local development
