@@ -36,6 +36,35 @@ data class LocationResult(
 
 class LocationPermissionDeniedException(message: String = "Location permission not granted. Enable permission in settings.") : SecurityException(message)
 class LocationServicesDisabledException(message: String = "Location services are disabled. Please turn on GPS.") : Exception(message)
+/**
+ * Pure rules for choosing a GPS fix (no Android types, unit-tested on the JVM).
+ *
+ * ROOT CAUSE of "449 m away after moving two steps": getCurrentLocation() used to return the FIRST fix delivered by
+ * either provider, whatever its accuracy. Right after the camera closes the first delivery is usually a coarse NETWORK
+ * fix (+-400 m or more), so the distance card measured from a point hundreds of metres off the real position.
+ */
+object FixPolicy {
+    /** A fix must be at least this accurate to be used for distance / check-in. */
+    const val REQUIRED_ACCURACY_M = 50f
+
+    /** Android reports 0 when a location has no accuracy at all; treat that (and NaN) as unknown, i.e. unusable. */
+    fun accuracyKnown(accuracyM: Float): Boolean = !accuracyM.isNaN() && accuracyM > 0f && accuracyM != Float.MAX_VALUE
+
+    fun isAcceptable(fix: LocationResult, requiredAccuracyM: Float = REQUIRED_ACCURACY_M, nowMillis: Long = System.currentTimeMillis()): Boolean =
+        accuracyKnown(fix.accuracy) && fix.accuracy <= requiredAccuracyM &&
+            fix.ageMillis(nowMillis) in -1_000L..LocationCaptureService.MAX_FRESHNESS_MS
+
+    /** Keeps the more accurate of two fixes. */
+    fun better(current: LocationResult?, candidate: LocationResult): LocationResult =
+        if (current == null || !accuracyKnown(current.accuracy) || (accuracyKnown(candidate.accuracy) && candidate.accuracy < current.accuracy)) candidate else current
+
+    fun poorAccuracyMessage(best: LocationResult?, requiredAccuracyM: Float = REQUIRED_ACCURACY_M): String {
+        val seen = best?.takeIf { accuracyKnown(it.accuracy) }?.let { " (best fix was +-${it.accuracy.toInt()} m)" } ?: ""
+        return "GPS is not accurate enough yet$seen. Move to an open area and wait until accuracy is within " +
+            "${requiredAccuracyM.toInt()} m, then try again."
+    }
+}
+
 class LocationUnavailableException(message: String = "Unable to determine location within timeout. Move to open sky and try again.") : Exception(message)
 
 /**
@@ -111,23 +140,35 @@ class LocationCaptureService(private val context: Context) {
      * @throws LocationServicesDisabledException if location services are disabled
      * @throws LocationUnavailableException if location unavailable or timed out
      */
-    suspend fun getCurrentLocation(timeoutMs: Long = LOCATION_TIMEOUT_MS): LocationResult {
+    suspend fun getCurrentLocation(
+        timeoutMs: Long = LOCATION_TIMEOUT_MS,
+        requiredAccuracyM: Float = FixPolicy.REQUIRED_ACCURACY_M
+    ): LocationResult {
+        // Best fix seen so far, kept only to tell the employee how close we got.
+        val best = java.util.concurrent.atomic.AtomicReference<LocationResult?>(null)
         return try {
             withTimeout(timeoutMs) {
-                getCurrentLocationInternal()
+                getCurrentLocationInternal(requiredAccuracyM, best)
             }
         } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
-            // Check if fallback last-known location is available and strictly fresh (<= 30s)
+            // Last-known is only a fallback when it is BOTH fresh (<= 30 s) and accurate enough.
             val fallback = getLastLocationInternal()
-            if (fallback != null && fallback.ageMillis() <= MAX_FRESHNESS_MS) {
+            if (fallback != null && FixPolicy.isAcceptable(fallback, requiredAccuracyM)) {
                 fallback
             } else {
-                throw LocationUnavailableException("GPS location capture timed out (${timeoutMs / 1000}s). Move to an open area and tap retry.")
+                val seen = best.get()?.let { FixPolicy.better(it, fallback ?: it) } ?: fallback
+                throw LocationUnavailableException(
+                    if (seen != null) FixPolicy.poorAccuracyMessage(seen, requiredAccuracyM)
+                    else "No GPS fix received (${timeoutMs / 1000}s). Move to an open area and try again."
+                )
             }
         }
     }
 
-    private suspend fun getCurrentLocationInternal(): LocationResult = suspendCancellableCoroutine { cont ->
+    private suspend fun getCurrentLocationInternal(
+        requiredAccuracyM: Float,
+        best: java.util.concurrent.atomic.AtomicReference<LocationResult?>
+    ): LocationResult = suspendCancellableCoroutine { cont ->
         if (!hasFineLocationPermission()) {
             if (hasLocationPermission()) {
                 cont.resumeWithException(LocationPermissionDeniedException("Precise location is required for attendance."))
@@ -153,11 +194,13 @@ class LocationCaptureService(private val context: Context) {
             try {
                 val lastLocation = locationManager.getLastKnownLocation(provider)
                 if (lastLocation != null && !locationReceived) {
-                    val ageMs = System.currentTimeMillis() - lastLocation.time
-                    if (ageMs <= MAX_FRESHNESS_MS) {
+                    val candidate = lastLocation.toLocationResult()
+                    best.set(FixPolicy.better(best.get(), candidate))
+                    // Fresh AND accurate enough; a coarse cached network fix is not good enough to measure distance.
+                    if (FixPolicy.isAcceptable(candidate, requiredAccuracyM)) {
                         locationReceived = true
                         cleanupListeners(registeredListeners)
-                        cont.resume(lastLocation.toLocationResult())
+                        cont.resume(candidate)
                         return@suspendCancellableCoroutine
                     }
                 }
@@ -168,13 +211,14 @@ class LocationCaptureService(private val context: Context) {
             // Request fresh asynchronous location
             val listener = object : LocationListener {
                 override fun onLocationChanged(location: Location) {
-                    if (!locationReceived) {
-                        locationReceived = true
-                        cleanupListeners(registeredListeners)
-                        if (cont.isActive) {
-                            cont.resume(location.toLocationResult())
-                        }
-                    }
+                    if (locationReceived) return
+                    val candidate = location.toLocationResult()
+                    best.set(FixPolicy.better(best.get(), candidate))
+                    // Keep listening until a fix is accurate enough: the first delivery is often a coarse network fix.
+                    if (!FixPolicy.isAcceptable(candidate, requiredAccuracyM)) return
+                    locationReceived = true
+                    cleanupListeners(registeredListeners)
+                    if (cont.isActive) cont.resume(candidate)
                 }
 
                 @Deprecated("Deprecated in API 29")
@@ -239,7 +283,8 @@ class LocationCaptureService(private val context: Context) {
     private fun Location.toLocationResult(): LocationResult = LocationResult(
         latitude = latitude,
         longitude = longitude,
-        accuracy = accuracy,
+        // hasAccuracy() == false means "unknown", which must never look like a perfect 0 m fix.
+        accuracy = if (hasAccuracy()) accuracy else Float.MAX_VALUE,
         isMockLocation = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
             isMock
         } else {
