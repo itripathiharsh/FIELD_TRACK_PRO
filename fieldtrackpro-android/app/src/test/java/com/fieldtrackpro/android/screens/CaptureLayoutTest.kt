@@ -3,6 +3,7 @@ package com.fieldtrackpro.android.screens
 import android.graphics.Bitmap
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -18,7 +19,6 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.fieldtrackpro.android.ui.screens.proof.BarInsets
 import com.fieldtrackpro.android.ui.screens.proof.CaptureLayout
 import com.fieldtrackpro.android.ui.theme.FieldTrackProTheme
 import com.fieldtrackpro.android.utils.AccuracyBand
@@ -49,7 +49,7 @@ class CaptureLayoutTest {
                 Box(Modifier.fillMaxSize()) {
                     CaptureLayout(
                         preview = { Box(Modifier.fillMaxSize().background(Color(0xFF6B5B4B))) { Text("camera preview", color = Color.White, modifier = Modifier.align(Alignment.Center)) } },
-                        insets = BarInsets(extraTop = 24.dp, extraBottom = barHeight),
+                        insets = WindowInsets(top = 24.dp, bottom = barHeight),
                         onCancel = {}, band = AccuracyBand.NONE, fix = null as ProofFix?, blockedText = "Waiting for GPS...",
                         locationEnabled = true, onTurnOnLocation = {}, errorText = null,
                         shutterReady = false, busy = false, onShutter = {}
@@ -89,5 +89,36 @@ class CaptureLayoutTest {
         val bar = 48.dp
         val (bottom, _) = render(bar, "capture_layout_three_button_nav")
         assertTrue("shutter bottom $bottom must be above the bar at ${windowHeight() - bar}", bottom <= windowHeight() - bar)
+    }
+
+    /** Real system-bar insets delivered through the view hierarchy (what Android does), not a parameter. */
+    @Test fun shutterClearsBarWhenInsetsAreDispatchedThroughTheWindow() {
+        val barDp = 48
+        rule.setContent {
+            FieldTrackProTheme {
+                androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
+                    CaptureLayout(
+                        preview = { androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().background(Color.DarkGray)) },
+                        onCancel = {}, band = AccuracyBand.NONE, fix = null as ProofFix?, blockedText = null,
+                        locationEnabled = true, onTurnOnLocation = {}, errorText = null,
+                        shutterReady = true, busy = false, onShutter = {}
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        val density = rule.activity.resources.displayMetrics.density
+        val px = (barDp * density).toInt()
+        rule.runOnUiThread {
+            val root = rule.activity.findViewById<android.view.ViewGroup>(android.R.id.content).getChildAt(0)
+            val insets = androidx.core.view.WindowInsetsCompat.Builder()
+                .setInsets(androidx.core.view.WindowInsetsCompat.Type.navigationBars(), androidx.core.graphics.Insets.of(0, 0, 0, px))
+                .setInsets(androidx.core.view.WindowInsetsCompat.Type.statusBars(), androidx.core.graphics.Insets.of(0, 24, 0, 0))
+                .build()
+            androidx.core.view.ViewCompat.dispatchApplyWindowInsets(root, insets)
+        }
+        rule.waitForIdle()
+        val bottom = rule.onNodeWithContentDescription("Take photo").getUnclippedBoundsInRoot().bottom
+        assertTrue("shutter bottom $bottom must be above ${windowHeight() - barDp.dp}", bottom <= windowHeight() - barDp.dp)
     }
 }

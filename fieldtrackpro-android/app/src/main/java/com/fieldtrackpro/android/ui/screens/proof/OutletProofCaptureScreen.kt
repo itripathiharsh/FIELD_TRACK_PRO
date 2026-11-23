@@ -26,7 +26,6 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.view.WindowCompat
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
@@ -83,8 +82,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
@@ -187,8 +184,22 @@ fun rememberOutletProofCapture(
     onCaptured: (OutletProofPayload) -> Unit
 ): () -> Unit {
     val context = LocalContext.current
-    val captureVm: OutletProofCaptureViewModel = viewModel(key = "outlet_proof_capture_${customerId ?: "new"}")
-    var showCapture by rememberSaveable { mutableStateOf(false) }
+    val currentOnCaptured by androidx.compose.runtime.rememberUpdatedState(onCaptured)
+    val captureLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            result.data?.getStringExtra(OutletProofCaptureActivity.EXTRA_PAYLOAD)?.let { json ->
+                runCatching { com.google.gson.Gson().fromJson(json, OutletProofPayload::class.java) }.getOrNull()
+                    ?.let { currentOnCaptured(it) }
+            }
+        }
+    }
+    val openCapture = {
+        captureLauncher.launch(
+            Intent(context, OutletProofCaptureActivity::class.java)
+                .putExtra(OutletProofCaptureActivity.EXTRA_CUSTOMER_ID, customerId)
+                .putExtra(OutletProofCaptureActivity.EXTRA_OUTLET_NAME, outletName)
+        )
+    }
     var settingsMessage by remember { mutableStateOf<String?>(null) }
 
     fun hasAll() = context.hasPermission(Manifest.permission.CAMERA) &&
@@ -196,8 +207,7 @@ fun rememberOutletProofCapture(
 
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         if (hasAll()) {
-            captureVm.reset()
-            showCapture = true
+            openCapture()
         } else {
             val activity = context.findActivity()
             val missing = buildList {
@@ -245,35 +255,9 @@ fun rememberOutletProofCapture(
         )
     }
 
-    if (showCapture) {
-        Dialog(
-            onDismissRequest = { showCapture = false },
-            // decorFitsSystemWindows = false: the dialog window draws edge-to-edge and delivers the real status/
-            // navigation/cutout insets to Compose. With the default (true) the insets were consumed by the dialog's
-            // decor view, so navigationBarsPadding() was 0 and the shutter sat on the gesture bar.
-            properties = DialogProperties(
-                usePlatformDefaultWidth = false,
-                dismissOnClickOutside = false,
-                decorFitsSystemWindows = false
-            )
-        ) {
-            OutletProofCaptureScreen(
-                vm = captureVm,
-                customerId = customerId,
-                outletName = outletName,
-                onCancel = { showCapture = false },
-                onConfirmed = { payload ->
-                    showCapture = false
-                    onCaptured(payload)
-                }
-            )
-        }
-    }
-
     return {
         if (hasAll()) {
-            captureVm.reset()
-            showCapture = true
+            openCapture()
         } else {
             afterCameraDisclosure()
         }
@@ -363,17 +347,6 @@ fun OutletProofCaptureScreen(
         onDispose { client.removeLocationUpdates(callback) }
     }
 
-    // Light icons on the dark camera screen (the dialog has its own window, so SystemBarIcons() cannot reach it).
-    val hostView = LocalView.current
-    val dialogWindow = (hostView.parent as? DialogWindowProvider)?.window
-    SideEffect {
-        dialogWindow?.let {
-            val c = WindowCompat.getInsetsController(it, hostView)
-            c.isAppearanceLightStatusBars = false
-            c.isAppearanceLightNavigationBars = false
-        }
-    }
-
     val shutterState = OutletProofRules.evaluate(fix, nowElapsed)
     val band = OutletProofRules.band(fix?.accuracyM?.takeIf { it != Float.MAX_VALUE })
     val shutterReady = shutterState is ShutterState.Ready && phase == CapturePhase.CAPTURING && cameraError == null
@@ -429,7 +402,6 @@ fun OutletProofCaptureScreen(
         } else {
             CaptureLayout(
                 preview = { AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize()) },
-                insets = rememberSystemBarInsets(),
                 onCancel = { cancel() },
                 band = band,
                 fix = fix,
@@ -590,7 +562,7 @@ private fun ReviewContent(payload: OutletProofPayload, onUse: () -> Unit, onReta
 @Composable
 internal fun CaptureLayout(
     preview: @Composable () -> Unit,
-    insets: BarInsets,
+    insets: WindowInsets = WindowInsets.safeDrawing,
     onCancel: () -> Unit,
     band: AccuracyBand,
     fix: ProofFix?,
@@ -607,8 +579,7 @@ internal fun CaptureLayout(
             preview()
             Column(
                 modifier = Modifier.fillMaxWidth()
-                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
-                    .padding(top = insets.extraTop)
+                    .windowInsetsPadding(insets.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
@@ -627,13 +598,12 @@ internal fun CaptureLayout(
         }
 
         Column(
-            // Real system insets (gesture bar OR 3-button bar, any device). If this dialog window does not deliver
-            // them to Compose, the window's own raw insets fill the gap (extraBottom); the spacing below is
-            // ordinary design padding on top of that, not a device-specific number.
+            // The control bar is its own region: it is padded by the real system insets (gesture pill OR 3-button
+            // bar, any device), so the whole shutter and its touch target stay above the navigation area. The
+            // spacing below is ordinary design padding, not a device-specific number.
             modifier = Modifier.fillMaxWidth()
                 .background(Color(0xFF0B0B0B))
-                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal))
-                .padding(bottom = insets.extraBottom)
+                .windowInsetsPadding(insets.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal))
                 .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -649,41 +619,10 @@ internal fun CaptureLayout(
                 Text(it, color = Color(0xFFFF8A80), fontSize = 13.sp, textAlign = TextAlign.Center)
             }
             if (com.fieldtrackpro.android.BuildConfig.DEBUG) {
-                Text("QA build ${com.fieldtrackpro.android.BuildConfig.BUILD_STAMP}", color = Color(0x88FFFFFF), fontSize = 10.sp)
+                Text("QA build ${com.fieldtrackpro.android.BuildConfig.BUILD_STAMP} | nav inset ${with(androidx.compose.ui.platform.LocalDensity.current) { insets.getBottom(this).toDp().value.toInt() }}dp", color = Color(0x88FFFFFF), fontSize = 10.sp)
             }
             Shutter(enabled = shutterReady, busy = busy, onClick = onShutter)
         }
     }
 }
 
-/** How much extra space the window's raw system-bar insets need beyond what Compose already applies. */
-internal data class BarInsets(val extraTop: androidx.compose.ui.unit.Dp, val extraBottom: androidx.compose.ui.unit.Dp)
-
-@Composable
-internal fun rememberSystemBarInsets(): BarInsets {
-    val view = androidx.compose.ui.platform.LocalView.current
-    val density = androidx.compose.ui.platform.LocalDensity.current
-    var rawTop by androidx.compose.runtime.remember { androidx.compose.runtime.mutableIntStateOf(0) }
-    var rawBottom by androidx.compose.runtime.remember { androidx.compose.runtime.mutableIntStateOf(0) }
-    androidx.compose.runtime.DisposableEffect(view) {
-        fun read() {
-            val i = androidx.core.view.ViewCompat.getRootWindowInsets(view) ?: return
-            val bars = i.getInsetsIgnoringVisibility(
-                androidx.core.view.WindowInsetsCompat.Type.systemBars() or androidx.core.view.WindowInsetsCompat.Type.displayCutout()
-            )
-            val gestures = i.getInsets(androidx.core.view.WindowInsetsCompat.Type.mandatorySystemGestures())
-            rawTop = bars.top
-            rawBottom = maxOf(bars.bottom, gestures.bottom)
-        }
-        read()
-        val l = android.view.ViewTreeObserver.OnGlobalLayoutListener { read() }
-        view.viewTreeObserver.addOnGlobalLayoutListener(l)
-        onDispose { if (view.viewTreeObserver.isAlive) view.viewTreeObserver.removeOnGlobalLayoutListener(l) }
-    }
-    val appliedTop = WindowInsets.safeDrawing.getTop(density)
-    val appliedBottom = WindowInsets.safeDrawing.getBottom(density)
-    return BarInsets(
-        extraTop = with(density) { maxOf(0, rawTop - appliedTop).toDp() },
-        extraBottom = with(density) { maxOf(0, rawBottom - appliedBottom).toDp() }
-    )
-}

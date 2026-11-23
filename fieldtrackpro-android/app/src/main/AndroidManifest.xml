@@ -29,6 +29,10 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.FieldTrackPro">
         <activity
+            android:name=".ui.screens.proof.OutletProofCaptureActivity"
+            android:exported="false"
+            android:theme="@style/Theme.FieldTrackPro" />
+        <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
