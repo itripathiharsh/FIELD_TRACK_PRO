@@ -1,0 +1,89 @@
+# FieldTrack Pro - QA / DEMO environment (Render blueprint)
+#
+# A completely separate stack for demonstrations and accountant testing:
+#   * its own Postgres database (synthetic data only), its own web service, its own secrets
+#   * ONE public HTTPS address serves the web app and the API (qa_asgi.py)
+#   * no Tally agent, no write-back, no SMS/e-mail, no push notifications, no production URL anywhere
+#
+# Free-plan behaviour (known limits): the web service sleeps after ~15 min idle (first request then takes up to ~1 min),
+# the free database expires after 30 days, and files uploaded during testing are lost on restart/redeploy
+# (the seeded demo photographs ship inside the deploy and always come back).
+databases:
+  - name: fieldtrackpro-qa-db
+    databaseName: fieldtrackpro_qa
+    user: fieldtrackpro_qa
+    plan: free
+    region: singapore
+    postgresMajorVersion: "17"
+
+services:
+  - type: web
+    name: fieldtrackpro-qa
+    runtime: python
+    region: singapore
+    plan: free
+    branch: main
+    rootDir: fieldtrackpro-backend
+    buildCommand: pip install poetry && poetry install --only main --no-root
+    # CORS_ALLOWED_ORIGINS must contain this site's own origin (the refresh-token cookie endpoint rejects any other browser
+    # Origin). Render exposes the public address to the running service as RENDER_EXTERNAL_URL.
+    startCommand: CORS_ALLOWED_ORIGINS="$RENDER_EXTERNAL_URL" poetry run alembic upgrade head && CORS_ALLOWED_ORIGINS="$RENDER_EXTERNAL_URL" poetry run uvicorn qa_asgi:application --host 0.0.0.0 --port $PORT --no-proxy-headers
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: "false"
+      - key: API_V1_PREFIX
+        value: /api/v1
+      - key: DATABASE_URL
+        fromDatabase:
+          name: fieldtrackpro-qa-db
+          property: connectionString
+      - key: MIGRATION_DATABASE_URL
+        fromDatabase:
+          name: fieldtrackpro-qa-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: MEDIA_SIGNING_SECRET
+        generateValue: true
+      - key: OTP_HMAC_SECRET
+        generateValue: true
+      - key: TRUSTED_PROXY_HOPS
+        value: "1"
+      - key: REFRESH_COOKIE_SAMESITE
+        value: lax
+      - key: ENFORCE_PASSWORD_CHANGE
+        value: "false"
+      # ---- storage: seeded demo photographs live in the deploy itself
+      - key: STORAGE_PROVIDER
+        value: LOCAL
+      - key: MEDIA_STORAGE_PATH
+        value: qa_media
+      # ---- isolation: nothing leaves this environment
+      - key: TALLY_WRITEBACK_ENABLED
+        value: "false"
+      - key: ENABLE_SCHEDULER
+        value: "false"
+      - key: ALLOW_MOCK_COMMUNICATIONS
+        value: "true"
+      - key: SMS_PROVIDER
+        value: mock
+      - key: FIREBASE_CREDENTIALS_PATH
+        value: ""
+      # ---- organisation profile shown in Settings: FICTIONAL (the defaults are the real company)
+      - key: ORGANIZATION_NAME
+        value: DEMO Distribution Co. (QA - fictional)
+      - key: ORGANIZATION_HUB
+        value: Demo City (fictional)
+      - key: ORGANIZATION_DIVISIONS
+        value: Demo Mobiles & Demo Electronics (fictional)
+      - key: ORGANIZATION_CONTACT_EMAIL
+        value: demo@fieldtrack-demo.test
+      - key: ORGANIZATION_CONTACT_PHONE
+        value: "+91 99999 00000"
+      - key: ORGANIZATION_GSTIN
+        value: 09DEMO0000A1Z0

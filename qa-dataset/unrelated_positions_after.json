@@ -1,0 +1,524 @@
+{
+ "000906fa-e465-4d91-8225-5fa9f742d5d0": {
+  "invoiced": "10000.00",
+  "outstanding": "7500.00",
+  "overdue": "0.00",
+  "paid": "2500.00"
+ },
+ "009e6564-ddf0-4527-9bc1-0d73575afcda": {
+  "invoiced": "11800.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "10000.00"
+ },
+ "00c147f2-0a7f-42d0-a344-ef129a92f3c3": {
+  "invoiced": "6660.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "6700.00"
+ },
+ "00c1dfba-b037-4c82-a5d4-5865824a4d57": {
+  "invoiced": "900.00",
+  "outstanding": "400.00",
+  "overdue": "400.00",
+  "paid": "500.00"
+ },
+ "00f2fc30-b2f6-402d-bea3-49c4458287f1": {
+  "invoiced": "10000.00",
+  "outstanding": "5000.00",
+  "overdue": "0.00",
+  "paid": "5000.00"
+ },
+ "00f5eea0-555a-4a20-8f1a-c26f43ce55c2": {
+  "invoiced": "0.00",
+  "outstanding": "2500.00",
+  "overdue": "0.00",
+  "paid": "0.00"
+ },
+ "00f8627c-4928-40f5-af2d-3c54d359535e": {
+  "invoiced": "0.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "0.00"
+ },
+ "00fd41b8-a381-464d-ab42-a47cca94cd75": {
+  "invoiced": "10000.00",
+  "outstanding": "10000.00",
+  "overdue": "0.00",
+  "paid": "0.00"
+ },
+ "012190b2-38c6-4c0c-bab8-139755cd93f1": {
+  "invoiced": "2000.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "700.00"
+ },
+ "01242e46-e2ff-4049-876d-7ba4d91fb884": {
+  "invoiced": "3093070.00",
+  "outstanding": "434070.00",
+  "overdue": "434070.00",
+  "paid": "2659000.00"
+ },
+ "012d1043-2d53-43f0-9773-5fe3c508bea6": {
+  "invoiced": "44.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "0.00"
+ },
+ "015dc040-3651-4c40-91a6-385381e20efc": {
+  "invoiced": "10000.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "25000.00"
+ },
+ "016db1e0-0822-4270-a299-bc968e793e88": {
+  "invoiced": "5400.00",
+  "outstanding": "5400.00",
+  "overdue": "5400.00",
+  "paid": "0.00"
+ },
+ "0177ee61-83de-4a14-aecd-68f6f3c35983": {
+  "invoiced": "186406.00",
+  "outstanding": "170468.00",
+  "overdue": "170468.00",
+  "paid": "15938.00"
+ },
+ "017e9b51-d4f3-41f6-b7e7-1e289abe3a5b": {
+  "invoiced": "481601.00",
+  "outstanding": "241601.00",
+  "overdue": "241601.00",
+  "paid": "240000.00"
+ },
+ "019854c0-fff9-4b6d-93c7-a056297b0a0d": {
+  "invoiced": "31647.00",
+  "outstanding": "31647.00",
+  "overdue": "31647.00",
+  "paid": "0.00"
+ },
+ "019ed27f-ff4e-42e4-ace6-4c91c7764e44": {
+  "invoiced": "37999.00",
+  "outstanding": "18998.00",
+  "overdue": "18998.00",
+  "paid": "19001.00"
+ },
+ "01f4f0de-1a8d-4eb3-8932-6317e3657f95": {
+  "invoiced": "30524.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "5899.00"
+ },
+ "02178111-3c63-407d-b2fb-f3f141d6c884": {
+  "invoiced": "0.00",
+  "outstanding": "1500.00",
+  "overdue": "0.00",
+  "paid": "0.00"
+ },
+ "0228a473-d77e-4aef-bc26-12a8de81d2e4": {
+  "invoiced": "0.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "0.00"
+ },
+ "0244302e-41ae-4568-ae65-e9036117cc0d": {
+  "invoiced": "0.00",
+  "outstanding": "2500.00",
+  "overdue": "0.00",
+  "paid": "0.00"
+ },
+ "0285f9fa-3402-4265-a73e-4b1ad2c08dbc": {
+  "invoiced": "10000.00",
+  "outstanding": "6000.00",
+  "overdue": "6000.00",
+  "paid": "4000.00"
+ },
+ "02873a91-8c0e-4d4d-adc3-90f5fc982366": {
+  "invoiced": "10000.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "25000.00"
+ },
+ "028a5373-8594-4feb-9d15-6f17d58db361": {
+  "invoiced": "60.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "0.00"
+ },
+ "02973377-82bc-4bd6-bb2b-52a1fc8dc922": {
+  "invoiced": "101103.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "170281.00"
+ },
+ "02afe92e-717e-4eba-9043-160037a686d0": {
+  "invoiced": "56186.00",
+  "outstanding": "42434.00",
+  "overdue": "42434.00",
+  "paid": "13752.00"
+ },
+ "02dc0534-3e18-49b2-b1ad-583e5c641856": {
+  "invoiced": "44.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "0.00"
+ },
+ "0304a486-cf79-42ab-a8a2-b3b2711e1675": {
+  "invoiced": "42024.00",
+  "outstanding": "42024.00",
+  "overdue": "42024.00",
+  "paid": "0.00"
+ },
+ "031cef6d-a1f9-4c0b-b55e-8718f7cdeba1": {
+  "invoiced": "9480.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "13000.00"
+ },
+ "0350eb49-f2d2-4872-a2f7-3d3cd98cc712": {
+  "invoiced": "434057.00",
+  "outstanding": "185709.00",
+  "overdue": "185709.00",
+  "paid": "248348.00"
+ },
+ "0353eac1-97e1-496d-bbb4-9175b810ed72": {
+  "invoiced": "44.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "0.00"
+ },
+ "039284fe-86af-4ff0-9dcf-d4ecb961d898": {
+  "invoiced": "10000.00",
+  "outstanding": "6000.00",
+  "overdue": "0.00",
+  "paid": "4000.00"
+ },
+ "03b6e543-e11f-4ed2-a447-558c8bb58471": {
+  "invoiced": "50000.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "10000.00"
+ },
+ "03daf0e0-1644-4eb9-8c55-1ef7a8ddad50": {
+  "invoiced": "3020.00",
+  "outstanding": "3020.00",
+  "overdue": "3020.00",
+  "paid": "0.00"
+ },
+ "0406aa91-3a82-4930-9d94-ae00b871dd78": {
+  "invoiced": "1375582.00",
+  "outstanding": "406582.00",
+  "overdue": "406582.00",
+  "paid": "969000.00"
+ },
+ "046f8599-a74a-4721-82db-6d8007f83c54": {
+  "invoiced": "846805.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "1177244.00"
+ },
+ "0484ec30-83c7-41e6-a419-532b97d15d34": {
+  "invoiced": "10000.00",
+  "outstanding": "10000.00",
+  "overdue": "0.00",
+  "paid": "0.00"
+ },
+ "04870c98-8eda-42f8-81a4-97030cbf4583": {
+  "invoiced": "29265.00",
+  "outstanding": "29265.00",
+  "overdue": "29265.00",
+  "paid": "0.00"
+ },
+ "04a4a84a-55b9-4895-b923-a5832528ff7c": {
+  "invoiced": "1150.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "1150.00"
+ },
+ "04cfb28c-9a1f-42f5-aad0-29fd0fab866a": {
+  "invoiced": "49980.00",
+  "outstanding": "49980.00",
+  "overdue": "49980.00",
+  "paid": "0.00"
+ },
+ "04d2ee5c-2296-4b10-8b0e-43fad92d2ba3": {
+  "invoiced": "0.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "0.00"
+ },
+ "05024184-39f1-4ac0-9bb1-d873c7e14682": {
+  "invoiced": "10000.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "24999.00"
+ },
+ "0580c1bf-f12d-408a-80e4-f7e15e362597": {
+  "invoiced": "10000.00",
+  "outstanding": "6000.00",
+  "overdue": "6000.00",
+  "paid": "4000.00"
+ },
+ "05a9980d-ee7a-4231-8800-01e214712e3f": {
+  "invoiced": "1200000.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "100000.00"
+ },
+ "05f675c8-1f18-4505-9dca-0874b916ac75": {
+  "invoiced": "11800.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "10000.00"
+ },
+ "06079407-cc83-49e7-9471-c5d43e2e07b2": {
+  "invoiced": "76234.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "31234.00"
+ },
+ "0638796e-159d-4b42-a5d8-ed4ea13526b4": {
+  "invoiced": "30524.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "5899.00"
+ },
+ "06730b51-2c79-4e62-98f1-d837e518e922": {
+  "invoiced": "0.00",
+  "outstanding": "100.00",
+  "overdue": "0.00",
+  "paid": "0.00"
+ },
+ "067674a6-5d18-48c1-9264-78d9df58ba33": {
+  "invoiced": "0.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "0.00"
+ },
+ "06865e7b-3cde-4b8f-9df5-f053a252dbf5": {
+  "invoiced": "0.00",
+  "outstanding": "6000.00",
+  "overdue": "0.00",
+  "paid": "0.00"
+ },
+ "06ad6153-616a-4b18-9cd1-0a9641f1addf": {
+  "invoiced": "1200000.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "100000.00"
+ },
+ "071d2d19-20c2-4751-8e03-401930dff1fa": {
+  "invoiced": "11800.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "10000.00"
+ },
+ "07281777-2aac-4e8f-a4f4-e58712bf83d8": {
+  "invoiced": "0.00",
+  "outstanding": "50.00",
+  "overdue": "0.00",
+  "paid": "0.00"
+ },
+ "073c73c0-8610-4e05-a43f-01c7b5630b30": {
+  "invoiced": "200.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "0.00"
+ },
+ "07c1d8d7-20f9-4334-ab44-7dbdd74dc29c": {
+  "invoiced": "0.00",
+  "outstanding": "6000.00",
+  "overdue": "0.00",
+  "paid": "0.00"
+ },
+ "07e164c4-1f3b-4175-bbb9-96bbf030092b": {
+  "invoiced": "50000.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "10000.00"
+ },
+ "08689272-3113-4597-9b32-91a8ce3db41e": {
+  "invoiced": "5000.00",
+  "outstanding": "5300.00",
+  "overdue": "0.00",
+  "paid": "1500.00"
+ },
+ "086b76ae-bbe8-4ec7-8ec3-c02a1a0e930d": {
+  "invoiced": "0.00",
+  "outstanding": "100.00",
+  "overdue": "0.00",
+  "paid": "0.00"
+ },
+ "087a0b1e-4cc7-4f9b-9141-7aaf85464008": {
+  "invoiced": "30000.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "30000.00"
+ },
+ "08b2072a-8f43-4a15-83fc-8e7e62b4b741": {
+  "invoiced": "0.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "0.00"
+ },
+ "08b5a85c-829c-458d-a7a3-21cb76da48a6": {
+  "invoiced": "0.00",
+  "outstanding": "2500.00",
+  "overdue": "0.00",
+  "paid": "0.00"
+ },
+ "08fdeee4-1a34-448c-b2ce-85b48588f250": {
+  "invoiced": "50000.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "10000.00"
+ },
+ "0a209f16-8098-47df-b729-26eb64e95e34": {
+  "invoiced": "11800.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "10000.00"
+ },
+ "0a25f7da-cbac-43f8-bf44-2d6bef677dad": {
+  "invoiced": "0.00",
+  "outstanding": "6000.00",
+  "overdue": "0.00",
+  "paid": "0.00"
+ },
+ "0a3c81e1-a198-4de6-9d93-b075118c6522": {
+  "invoiced": "200.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "0.00"
+ },
+ "0a43e7d1-3424-4904-9e81-103d115a00b9": {
+  "invoiced": "7300.00",
+  "outstanding": "8800.00",
+  "overdue": "0.00",
+  "paid": "0.00"
+ },
+ "0a903954-3251-47a0-80e3-97d4988e30d8": {
+  "invoiced": "0.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "0.00"
+ },
+ "0acbe6b5-e3f1-435e-ae8c-117627458eba": {
+  "invoiced": "10000.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "25000.00"
+ },
+ "0aefabbb-60d3-4216-88ca-1e429d863d97": {
+  "invoiced": "0.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "0.00"
+ },
+ "0b298ad0-596f-4fbc-85f6-33b290813464": {
+  "invoiced": "30524.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "5899.00"
+ },
+ "0b8e0f8b-1af8-484f-add1-7d1ae6664aa1": {
+  "invoiced": "0.00",
+  "outstanding": "1500.00",
+  "overdue": "0.00",
+  "paid": "0.00"
+ },
+ "0c9036ec-6dc8-4cf8-8626-a022ea93dd10": {
+  "invoiced": "0.00",
+  "outstanding": "2500.00",
+  "overdue": "0.00",
+  "paid": "0.00"
+ },
+ "0cb77791-bf6a-465b-9425-f1b6ff61c89f": {
+  "invoiced": "2000.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "700.00"
+ },
+ "0d0d9f9b-fd7d-4805-b741-bd93f37f25ac": {
+  "invoiced": "0.00",
+  "outstanding": "1500.00",
+  "overdue": "0.00",
+  "paid": "0.00"
+ },
+ "0d198bd1-32c1-4446-b9ef-b22bfc38d31e": {
+  "invoiced": "0.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "0.00"
+ },
+ "0d7dbc4c-af0c-43e5-bd37-fa41a1de43a6": {
+  "invoiced": "11800.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "10000.00"
+ },
+ "0e209428-3114-489a-a765-57c51ea623e5": {
+  "invoiced": "0.00",
+  "outstanding": "1500.00",
+  "overdue": "0.00",
+  "paid": "0.00"
+ },
+ "0e274791-0f7e-4292-a4e6-61b3ba9cf7ff": {
+  "invoiced": "0.00",
+  "outstanding": "2500.00",
+  "overdue": "0.00",
+  "paid": "0.00"
+ },
+ "0e52822d-6603-4b54-9d56-457eea8547f5": {
+  "invoiced": "10000.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "25000.00"
+ },
+ "0e64b308-5c19-44d5-85cb-f0b95520a326": {
+  "invoiced": "44.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "0.00"
+ },
+ "0eab56d0-5b40-466d-810b-cbf343ba4df2": {
+  "invoiced": "0.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "0.00"
+ },
+ "10308686-18c2-45ca-b843-076116fb3980": {
+  "invoiced": "2000.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "700.00"
+ },
+ "10642d1e-ccc3-4381-83fb-00642055229e": {
+  "invoiced": "0.00",
+  "outstanding": "2500.00",
+  "overdue": "0.00",
+  "paid": "0.00"
+ },
+ "10a15a4e-03bb-401f-8612-b9a161e909cc": {
+  "invoiced": "76234.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "31234.00"
+ },
+ "10f18cc5-c599-437e-a1f9-5d5cc4518f4c": {
+  "invoiced": "30524.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "5899.00"
+ },
+ "110f4e17-7c9a-4835-aa8a-2925e7871045": {
+  "invoiced": "1200000.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "100000.00"
+ },
+ "112be36c-b39b-4672-8b2f-0dd81a6c864f": {
+  "invoiced": "0.00",
+  "outstanding": "0.00",
+  "overdue": "0.00",
+  "paid": "0.00"
+ }
+}
