@@ -50,6 +50,7 @@ import {
   GeoReportRow,
   OutletReportRow,
   OutstandingAgeingReportRow,
+  OutstandingSummary,
   VisitDetailedReportRow,
   MonthlyReportingPeriod,
   DashboardHistoryPeriod,
@@ -60,6 +61,20 @@ import {
   Brand,
 } from '../types';
 import { formatMoney as formatCurrency } from '../utils/money';
+import { MultiSelectFilter } from '../components/filters/MultiSelectFilter';
+import { joinMulti, splitMulti } from '../utils/multiValue';
+import {
+  AGEING_BUCKETS,
+  AGEING_EXPLAINER,
+  BrandFilterOption,
+  ageingLabel,
+  isBrandOptionList,
+  biFiltersFromSearch,
+  brandOptions,
+  fosOptions,
+  periodOptions,
+  writeBiFiltersToSearch,
+} from '../utils/biFilters';
 
 interface DateRange {
   startDate: string;
@@ -73,6 +88,7 @@ const TAB_IDS: TabType[] = ['financial_bi', 'business_bi', 'collections_workbenc
 const ADMIN_ONLY_TABS: TabType[] = ['employees', 'visits'];
 
 const SEARCH_DEBOUNCE_MS = 350;
+const OS_PAGE_SIZE = 50;
 
 const CONTROL_CLASS =
   'w-full h-9 bg-surface border border-outline-variant rounded-lg px-2.5 py-1.5 text-xs text-on-surface font-body-md focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-surface-container-low';
@@ -115,12 +131,18 @@ export const ReportsPage: React.FC = () => {
   };
 
   // Filter State
-  const [selectedMonth, setSelectedMonth] = useState<string>('ALL');
-  const [selectedBrand, setSelectedBrand] = useState<string>('ALL');
-  const [selectedZoneId, setSelectedZoneId] = useState<string>('ALL');
-  const [selectedAreaId, setSelectedAreaId] = useState<string>('ALL');
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>('ALL');
-  const [selectedAgeingBucket, setSelectedAgeingBucket] = useState<string>('ALL');
+  // Same filters (and URL keys) as the Dashboard: ?period=&brand=&fos=&zone=&area=&ageing= (multi = comma-joined).
+  const [initialBi] = useState(() => biFiltersFromSearch(searchParams));
+  const [selectedMonth, setSelectedMonth] = useState<string>(initialBi.month);
+  const [selectedBrand, setSelectedBrand] = useState<string>(initialBi.brand);
+  const [selectedZoneId, setSelectedZoneId] = useState<string>(initialBi.zoneId);
+  const [selectedAreaId, setSelectedAreaId] = useState<string>(initialBi.areaId);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>(initialBi.employeeId);
+  const [selectedAgeingBucket, setSelectedAgeingBucket] = useState<string>(initialBi.ageingBucket);
+  const [brandFilterOptions, setBrandFilterOptions] = useState<BrandFilterOption[] | null>(null);
+  const [mastersError, setMastersError] = useState<string | null>(null);
+  const [outstandingSummary, setOutstandingSummary] = useState<OutstandingSummary | null>(null);
+  const [outstandingPage, setOutstandingPage] = useState(1);
   const [collectionStatus, setCollectionStatus] = useState<string>('');
   const [visitStatus, setVisitStatus] = useState<string>('ALL');
   const [locationStatus, setLocationStatus] = useState<string>('ALL');
@@ -176,30 +198,62 @@ export const ReportsPage: React.FC = () => {
     },
   );
 
-  // Load Reference Data (Territories, Areas, Employees, Monthly Periods)
+  // Load Reference Data (Territories, Areas, Monthly Periods, Brands) once the signed-in user is known.
+  // A list that fails to load is reported (and retried on the next visit) instead of showing "Zones (0)".
+  const loadMasters = useCallback(async () => {
+    const failed: string[] = [];
+    const guard = <T,>(name: string, p: Promise<T>, fallback: T) =>
+      p.catch(() => {
+        failed.push(name);
+        return fallback;
+      });
+    const [tList, aList, pList, bList, bOpts] = await Promise.all([
+      guard('zones', apiClient.getTerritories(), [] as Territory[]),
+      guard('areas', apiClient.getAreas(), [] as Area[]),
+      guard('months', apiClient.getMonthlyPeriods(), [] as MonthlyReportingPeriod[]),
+      guard('brands', apiClient.getBrands(true), [] as Brand[]),
+      apiClient.getBrandFilterOptions().catch(() => null),
+    ]);
+    setTerritories(tList || []);
+    setAreas(aList || []);
+    setMonthlyPeriods(pList || []);
+    setMasterBrands(bList || []);
+    setBrandFilterOptions(isBrandOptionList(bOpts) ? bOpts : null);
+    setMastersError(failed.length ? `Filter lists could not be loaded (${failed.join(', ')}).` : null);
+  }, []);
+
   useEffect(() => {
-    const loadMasters = async () => {
-      try {
-        const [tList, aList, pList, bList] = await Promise.all([
-          apiClient.getTerritories().catch(() => [] as Territory[]),
-          apiClient.getAreas().catch(() => [] as Area[]),
-          apiClient.getMonthlyPeriods().catch(() => [] as MonthlyReportingPeriod[]),
-          apiClient.getBrands(true).catch(() => [] as Brand[]),
-        ]);
-        setTerritories(tList || []);
-        setAreas(aList || []);
-        setMonthlyPeriods(pList || []);
-        setMasterBrands(bList || []);
-      } catch (err) {
-        console.error('Failed to load master filters', err);
-      }
-    };
-    loadMasters();
+    if (!user) return;
+    void loadMasters();
     Promise.resolve()
       .then(() => apiClient.getDashboardHistoryPeriods())
       .then((r) => setHistoryPeriods(r?.periods || []))
       .catch(() => setHistoryPeriods([]));
-  }, []);
+  }, [user, loadMasters]);
+
+  // Keep the URL in step with the shared BI filters (other params such as ?tab= are kept).
+  useEffect(() => {
+    setSearchParams(
+      (prev) => {
+        const next = writeBiFiltersToSearch(prev, {
+          month: selectedMonth, brand: selectedBrand, zoneId: selectedZoneId, areaId: selectedAreaId,
+          employeeId: selectedEmployeeId, ageingBucket: selectedAgeingBucket,
+        });
+        return next.toString() === prev.toString() ? prev : next;
+      },
+      { replace: true },
+    );
+  }, [setSearchParams, selectedMonth, selectedBrand, selectedZoneId, selectedAreaId, selectedEmployeeId, selectedAgeingBucket]);
+
+  const periodFilterOptions = useMemo(() => periodOptions(monthlyPeriods, historyPeriods), [monthlyPeriods, historyPeriods]);
+  const brandFilterOpts = useMemo(
+    () =>
+      brandOptions(
+        brandFilterOptions ?? masterBrands.map((b) => ({ name: b.name, records: 0, unattributed: false })),
+      ).map((o) => (brandFilterOptions ? o : { ...o, hint: undefined })),
+    [brandFilterOptions, masterBrands],
+  );
+  const fosFilterOptions = useMemo(() => fosOptions(employeeOptions), [employeeOptions]);
 
   // The staff list feeds the employee filter (admins and the accountant may read it).
   useEffect(() => {
@@ -215,12 +269,15 @@ export const ReportsPage: React.FC = () => {
 
   /** Label of the selected History period ("FY 2025-26 (full year)" or "July 2025 · FY 2025-26"), or null. */
   const selectedHistoryLabel = useMemo(() => {
-    for (const fy of historyPeriods) {
-      if (fy.value === selectedMonth) return `${fy.label} (full year)`;
-      const m = fy.months.find((x) => x.value === selectedMonth);
-      if (m) return `${m.label} · ${fy.label}`;
+    const labels: string[] = [];
+    for (const v of splitMulti(selectedMonth)) {
+      for (const fy of historyPeriods) {
+        if (fy.value === v) labels.push(`${fy.label} (full year)`);
+        const m = fy.months.find((x) => x.value === v);
+        if (m) labels.push(`${m.label} · ${fy.label}`);
+      }
     }
-    return null;
+    return labels.length ? labels.join(', ') : null;
   }, [historyPeriods, selectedMonth]);
 
   // Filtered areas cascading with selected Zone
@@ -272,9 +329,17 @@ export const ReportsPage: React.FC = () => {
         case 'business_summary':
           setBusinessBI(await apiClient.getReport<BusinessBIDashboard>('business_summary', req.params));
           break;
-        case 'outstanding':
-          setOutstandingList(await apiClient.getReport<OutstandingAgeingReportRow[]>('outstanding', req.params));
+        case 'outstanding': {
+          const [rows, summary] = await Promise.all([
+            apiClient.getReport<OutstandingAgeingReportRow[]>('outstanding', req.params),
+            apiClient.getOutstandingSummary(req.params).catch(() => null),
+          ]);
+          if (seq !== loadSeq.current) return;
+          setOutstandingList(rows);
+          setOutstandingSummary(summary && typeof summary.accounts === 'number' ? summary : null);
+          setOutstandingPage(1);
           break;
+        }
         case 'outlets':
           setOutletsList(await apiClient.getReport<OutletReportRow[]>('outlets', req.params));
           break;
@@ -487,6 +552,7 @@ export const ReportsPage: React.FC = () => {
       />
 
       {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
+      {mastersError && <ErrorBanner message={mastersError} onRetry={() => void loadMasters()} />}
       {actionSuccess && (
         <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm flex items-center gap-2">
           <CheckCircle2 className="w-5 h-5 text-emerald-600" />
@@ -514,60 +580,32 @@ export const ReportsPage: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-              {/* Month Filter */}
+              {/* Period / Month (multi-select) */}
               <div title={na('month') ? FILTER_TOOLTIP_NOT_APPLICABLE : hasDates ? MONTH_DISABLED_TOOLTIP : undefined}>
-                <label htmlFor="rf-month" className="font-label-md text-xs text-on-surface uppercase tracking-wider block font-semibold mb-1">
-                  Month Period
-                </label>
-                <select
-                  id="rf-month"
-                  className={CONTROL_CLASS}
-                  value={selectedMonth}
+                <MultiSelectFilter
+                  testId="rf-month"
+                  label="Period / Month"
+                  allLabel="Current Live Data"
+                  options={periodFilterOptions}
+                  value={splitMulti(selectedMonth)}
+                  onChange={(v) => setSelectedMonth(joinMulti(v))}
                   disabled={na('month') || hasDates}
-                  onChange={(e) => setSelectedMonth(e.target.value)}
-                >
-                  <option value="ALL">All Available Months</option>
-                  {availablePeriodsWithData.map((p) => {
-                    const mStr = `${p.period_year}-${String(p.period_month).padStart(2, '0')}`;
-                    const tag = p.status === 'FINALIZED' ? '🔒 (Locked)' : p.status === 'PENDING_CLOSE' ? '⏳ (Pending Close)' : '🟢 (Current)';
-                    return (
-                      <option key={p.id} value={mStr}>
-                        {p.period_name} {tag}
-                      </option>
-                    );
-                  })}
-                  {historyPeriods.map((fy) => (
-                    <optgroup key={fy.value} label={`History (read-only) · ${fy.label}`}>
-                      <option value={fy.value}>{`📜 ${fy.label} — full year (History)`}</option>
-                      {fy.months.map((m) => (
-                        <option key={m.value} value={m.value}>
-                          {`📜 ${m.label} (History)`}
-                        </option>
-                      ))}
-                    </optgroup>
-                  ))}
-                </select>
+                  disabledReason={na('month') ? FILTER_TOOLTIP_NOT_APPLICABLE : MONTH_DISABLED_TOOLTIP}
+                />
               </div>
 
-              {/* Brand Filter */}
+              {/* Brand (multi-select) */}
               <div title={tip('brand')}>
-                <label htmlFor="rf-brand" className="font-label-md text-xs text-on-surface uppercase tracking-wider block font-semibold mb-1">
-                  Brand
-                </label>
-                <select
-                  id="rf-brand"
-                  className={CONTROL_CLASS}
-                  value={selectedBrand}
+                <MultiSelectFilter
+                  testId="rf-brand"
+                  label="Brand"
+                  allLabel="All Brands"
+                  options={brandFilterOpts}
+                  value={splitMulti(selectedBrand)}
+                  onChange={(v) => setSelectedBrand(joinMulti(v))}
                   disabled={na('brand')}
-                  onChange={(e) => setSelectedBrand(e.target.value)}
-                >
-                  <option value="ALL">All Brands</option>
-                  {masterBrands.map((b) => (
-                    <option key={b.id} value={b.name}>
-                      {b.name}
-                    </option>
-                  ))}
-                </select>
+                  disabledReason={FILTER_TOOLTIP_NOT_APPLICABLE}
+                />
               </div>
 
               {/* Zone Filter */}
@@ -585,7 +623,7 @@ export const ReportsPage: React.FC = () => {
                     setSelectedAreaId('ALL');
                   }}
                 >
-                  <option value="ALL">All Zones ({territories.length})</option>
+                  <option value="ALL">{mastersError && territories.length === 0 ? 'All Zones (list unavailable)' : `All Zones (${territories.length})`}</option>
                   {territories.map((t) => (
                     <option key={t.id} value={t.id}>
                       {t.name}
@@ -606,7 +644,7 @@ export const ReportsPage: React.FC = () => {
                   disabled={na('area')}
                   onChange={(e) => setSelectedAreaId(e.target.value)}
                 >
-                  <option value="ALL">All Areas ({availableAreas.length})</option>
+                  <option value="ALL">{mastersError && areas.length === 0 ? 'All Areas (list unavailable)' : `All Areas (${availableAreas.length})`}</option>
                   {availableAreas.map((a) => (
                     <option key={a.id} value={a.id}>
                       {a.name}
@@ -615,25 +653,18 @@ export const ReportsPage: React.FC = () => {
                 </select>
               </div>
 
-              {/* FOS / Employee Filter */}
+              {/* FOS (multi-select) */}
               <div title={tip('employee')}>
-                <label htmlFor="rf-employee" className="font-label-md text-xs text-on-surface uppercase tracking-wider block font-semibold mb-1">
-                  FOS / Field Officer
-                </label>
-                <select
-                  id="rf-employee"
-                  className={CONTROL_CLASS}
-                  value={selectedEmployeeId}
+                <MultiSelectFilter
+                  testId="rf-employee"
+                  label="FOS / Field Officer"
+                  allLabel={`All Field Officers (${fosFilterOptions.length})`}
+                  options={fosFilterOptions}
+                  value={splitMulti(selectedEmployeeId)}
+                  onChange={(v) => setSelectedEmployeeId(joinMulti(v))}
                   disabled={na('employee')}
-                  onChange={(e) => setSelectedEmployeeId(e.target.value)}
-                >
-                  <option value="ALL">All Field Officers ({employeeOptions.length})</option>
-                  {employeeOptions.map((emp) => (
-                    <option key={emp.id} value={emp.id}>
-                      {emp.full_name} ({emp.employee_code})
-                    </option>
-                  ))}
-                </select>
+                  disabledReason={FILTER_TOOLTIP_NOT_APPLICABLE}
+                />
               </div>
 
               {/* Ageing Bucket Filter (snapshot buckets - Outstanding tab only) */}
@@ -648,14 +679,12 @@ export const ReportsPage: React.FC = () => {
                   disabled={na('ageing')}
                   onChange={(e) => setSelectedAgeingBucket(e.target.value)}
                 >
-                  <option value="ALL">All Overdue Buckets</option>
-                  <option value=">90">Critical (&gt;90 Days)</option>
-                  <option value="75-90">Severe (75-90 Days)</option>
-                  <option value="60-75">High (60-75 Days)</option>
-                  <option value="45-60">Medium (45-60 Days)</option>
-                  <option value="30-45">Low (30-45 Days)</option>
-                  <option value="15-30">Early (15-30 Days)</option>
-                  <option value="<15">Normal (&lt;15 Days)</option>
+                  <option value="ALL">All Ageing Buckets</option>
+                  {AGEING_BUCKETS.map((b) => (
+                    <option key={b.key} value={b.key}>
+                      {b.label}
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -968,12 +997,73 @@ export const ReportsPage: React.FC = () => {
             <h3 className="font-headline-sm text-sm font-bold text-primary">Market Outstanding &amp; 7 Ageing Buckets</h3>
             {exportButtons()}
           </div>
+          {outstandingSummary && (
+            <div data-testid="outstanding-summary" className="space-y-3">
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                {[
+                  ['Market outstanding', formatCurrency(outstandingSummary.market_outstanding)],
+                  ['Accounts (outlet + brand)', outstandingSummary.accounts.toLocaleString('en-IN')],
+                  ['Outlets', outstandingSummary.outlets.toLocaleString('en-IN')],
+                  ['Zones', outstandingSummary.zones.toLocaleString('en-IN')],
+                  ['Areas', outstandingSummary.areas.toLocaleString('en-IN')],
+                ].map(([label, value]) => (
+                  <div key={label} className="p-3 rounded-lg bg-surface border border-surface-container-highest">
+                    <div className="text-[10px] uppercase tracking-wider text-on-surface-variant font-semibold">{label}</div>
+                    <div className="text-sm font-bold text-primary">{value}</div>
+                  </div>
+                ))}
+              </div>
+              <p className="text-[11px] text-on-surface-variant" data-testid="outstanding-source">
+                <strong className="text-on-surface">
+                  {outstandingSummary.data_source === 'SNAPSHOT' ? 'Monthly snapshot' : 'Live from Tally'}
+                  {outstandingSummary.as_of_date ? `, as of ${formatCalendarDate(outstandingSummary.as_of_date)} (IST)` : ''}
+                </strong>
+                {' · '}
+                {outstandingSummary.period_label}. {outstandingSummary.data_source_note}
+              </p>
+              <div role="group" aria-label="Ageing buckets" className="flex flex-wrap gap-2">
+                {AGEING_BUCKETS.map((bk) => {
+                  const field = ({
+                    '<15': 'bucket_lt_15', '15-30': 'bucket_15_30', '30-45': 'bucket_30_45', '45-60': 'bucket_45_60',
+                    '60-75': 'bucket_60_75', '75-90': 'bucket_75_90', '>90': 'bucket_gt_90',
+                  } as const)[bk.key as '<15'];
+                  const active = selectedAgeingBucket === bk.key;
+                  return (
+                    <button
+                      key={bk.key}
+                      type="button"
+                      aria-pressed={active}
+                      data-testid={`os-bucket-${bk.key}`}
+                      onClick={() => setSelectedAgeingBucket(active ? 'ALL' : bk.key)}
+                      className={`px-2.5 py-1.5 rounded-lg border text-left text-[11px] cursor-pointer transition-colors ${
+                        active ? 'border-primary bg-primary-container/40 text-primary' : 'border-outline-variant bg-surface hover:bg-surface-container-low'
+                      }`}
+                    >
+                      <span className="block font-semibold">{bk.label}</span>
+                      <span className={`block font-bold ${bk.tone === 'bad' ? 'text-error' : 'text-on-surface'}`}>
+                        {formatCurrency(outstandingSummary[field])}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-[11px] text-on-surface-variant">{outstandingSummary.ageing_basis || AGEING_EXPLAINER}</p>
+              {selectedAgeingBucket !== 'ALL' && (
+                <p role="status" className="text-[11px] text-primary font-semibold">
+                  Showing only money aged {ageingLabel(selectedAgeingBucket)}. Click the bucket again or Reset Filters to see all.
+                </p>
+              )}
+            </div>
+          )}
           <Card>
             <CardHeader>
               <CardTitle>Market Outstanding &amp; Ageing Buckets</CardTitle>
-              <CardSubtitle>Accounts with open balances grouped across 7 overdue intervals (latest snapshot in the period, as of the date shown)</CardSubtitle>
+              <CardSubtitle>
+                One row per outlet and brand with money outstanding, most overdue first. The same figures as the dashboard
+                for the same filters.
+              </CardSubtitle>
             </CardHeader>
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto" aria-busy={isLoading}>
               <table className="w-full text-xs">
                 <thead className="bg-surface-container-low text-on-surface-variant font-label-md uppercase text-[10px] tracking-wider border-b border-surface-container-highest">
                   <tr>
@@ -981,33 +1071,43 @@ export const ReportsPage: React.FC = () => {
                     <th className="px-3 py-2 text-left font-bold text-primary">DMS Code</th>
                     <th className="px-3 py-2 text-left font-bold text-primary">Outlet Name</th>
                     <th className="px-3 py-2 text-left font-bold text-primary">Zone</th>
+                    <th className="px-3 py-2 text-left font-bold text-primary">Area</th>
                     <th className="px-3 py-2 text-left font-bold text-primary">FOS</th>
                     <th className="px-3 py-2 text-right font-bold text-primary">Market OS</th>
-                    <th className="px-3 py-2 text-right font-bold text-primary">&lt;15d</th>
-                    <th className="px-3 py-2 text-right font-bold text-primary">15-30d</th>
-                    <th className="px-3 py-2 text-right font-bold text-primary">30-45d</th>
-                    <th className="px-3 py-2 text-right font-bold text-primary">45-60d</th>
-                    <th className="px-3 py-2 text-right font-bold text-primary">60-75d</th>
-                    <th className="px-3 py-2 text-right font-bold text-primary">75-90d</th>
-                    <th className="px-3 py-2 text-right font-bold text-primary">&gt;90d</th>
+                    {AGEING_BUCKETS.map((bk) => (
+                      <th key={bk.key} className="px-3 py-2 text-right font-bold text-primary">{bk.label.replace(' days', 'd')}</th>
+                    ))}
                     <th className="px-3 py-2 text-center font-bold text-primary">Severity</th>
                     <th className="px-3 py-2 text-center font-bold text-primary">As of</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-surface-container-highest font-body-md">
-                  {outstandingList.length === 0 ? (
+                  {isLoading && outstandingList.length === 0 ? (
                     <tr>
-                      <td colSpan={15} className="text-center py-8 text-on-surface-variant font-caption">
+                      <td colSpan={16} className="text-center py-8 text-on-surface-variant font-caption" role="status">
+                        Loading outstanding accounts...
+                      </td>
+                    </tr>
+                  ) : error ? (
+                    <tr>
+                      <td colSpan={16} className="text-center py-8 text-error font-caption">
+                        The report could not be loaded, so no figures are shown. Use Retry above.
+                      </td>
+                    </tr>
+                  ) : outstandingList.length === 0 ? (
+                    <tr>
+                      <td colSpan={16} className="text-center py-8 text-on-surface-variant font-caption">
                         No outstanding accounts found matching the current filters.
                       </td>
                     </tr>
                   ) : (
-                    outstandingList.map((r, i) => (
-                      <tr key={i} className="hover:bg-surface-container-low/70 transition-colors">
+                    outstandingList.slice((outstandingPage - 1) * OS_PAGE_SIZE, outstandingPage * OS_PAGE_SIZE).map((r) => (
+                      <tr key={`${r.customer_id}-${r.brand}`} className="hover:bg-surface-container-low/70 transition-colors">
                         <td className="px-3 py-2 font-headline-sm text-xs font-bold text-primary">{r.brand}</td>
                         <td className="px-3 py-2 font-mono text-xs text-primary font-semibold">{r.dms_code || '-'}</td>
                         <td className="px-3 py-2 font-semibold text-on-surface">{r.outlet_name}</td>
                         <td className="px-3 py-2 text-on-surface-variant font-caption">{r.zone_name}</td>
+                        <td className="px-3 py-2 text-on-surface-variant font-caption">{r.area_name}</td>
                         <td className="px-3 py-2 text-on-surface-variant font-caption">{r.fos_name}</td>
                         <td className="px-3 py-2 text-right font-headline-sm text-xs font-bold text-primary">{formatCurrency(r.market_outstanding)}</td>
                         <td className="px-3 py-2 text-right font-headline-sm text-xs text-on-surface-variant">{formatCurrency(r.bucket_lt_15)}</td>
@@ -1037,6 +1137,27 @@ export const ReportsPage: React.FC = () => {
                 </tbody>
               </table>
             </div>
+            {outstandingList.length > OS_PAGE_SIZE && (
+              <div className="flex items-center justify-between gap-2 pt-3 text-xs text-on-surface-variant" data-testid="outstanding-pager">
+                <span>
+                  Rows {(outstandingPage - 1) * OS_PAGE_SIZE + 1}-{Math.min(outstandingPage * OS_PAGE_SIZE, outstandingList.length)} of{' '}
+                  {outstandingList.length.toLocaleString('en-IN')}
+                </span>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" disabled={outstandingPage <= 1} onClick={() => setOutstandingPage((n) => n - 1)}>
+                    Previous
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={outstandingPage * OS_PAGE_SIZE >= outstandingList.length}
+                    onClick={() => setOutstandingPage((n) => n + 1)}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            )}
           </Card>
         </div>
       )}

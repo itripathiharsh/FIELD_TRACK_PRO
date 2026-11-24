@@ -35,7 +35,7 @@ function routes(extra: Record<string, unknown> = {}) {
 describe('FosAssignmentsPage', () => {
   beforeEach(() => localStorage.clear());
 
-  it('shows each outlet with its synchronised FOS, group, status and last-synced time, read-only', async () => {
+  it('shows each outlet with its synchronised FOS, group, status and last-synced time, and a Change FOS action', async () => {
     signIn(ADMIN_USER);
     mockApi(routes());
     renderWithProviders(<FosAssignmentsPage />);
@@ -48,8 +48,9 @@ describe('FosAssignmentsPage', () => {
     expect(within(row2).getByText('Unassigned')).toBeInTheDocument();
     expect(within(row2).getByText('No FOS in Tally')).toBeInTheDocument();
     expect(screen.getByText('1089')).toBeInTheDocument();
-    // The Outlets tab has filters but no control that edits an outlet's FOS.
-    expect(screen.queryByRole('button', { name: /assign|change fos|edit/i })).toBeNull();
+    // Release 3.3: every outlet row offers "Change FOS".
+    expect(within(row).getByRole('button', { name: 'Change FOS of Katiyar Watch & Radio' })).toBeInTheDocument();
+    expect(within(row2).getByRole('button', { name: 'Change FOS of Sharma Mobiles' })).toBeInTheDocument();
     // Synchronisation off: the page says so instead of implying Tally changes will show up.
     expect(screen.getByRole('note')).toHaveTextContent(/not switched on/i);
   });
@@ -70,7 +71,7 @@ describe('FosAssignmentsPage', () => {
     await waitFor(() => expect(urls.some((u) => u.includes('status=UNMAPPED_GROUP'))).toBe(true));
   });
 
-  it('maps a Tally group to an employee (suggestion pre-selected) and can mark a group as not a FOS group', async () => {
+  it('maps a Tally group only after an explicit choice and a confirmation that states the consequences', async () => {
     signIn(ADMIN_USER);
     const puts: { url: string; body: unknown }[] = [];
     mockApi(routes({
@@ -78,19 +79,39 @@ describe('FosAssignmentsPage', () => {
       '/api/v1/fos-assignments/groups/g2': route((url, init) => { puts.push({ url, body: JSON.parse(String(init?.body)) }); return json(GROUP({ id: 'g2', status: 'NOT_FOS' })); }),
     }));
     renderWithProviders(<FosAssignmentsPage />);
-    await userEvent.click(await screen.findByRole('tab', { name: /Tally groups/ }));
+    // The page explains the model in plain words before anything else.
+    const explainer = await screen.findByTestId('fos-explainer');
+    expect(explainer).toHaveTextContent(/Tally decides/);
+    expect(explainer).toHaveTextContent(/moves its ledger to the other FOS/);
+    expect(explainer).toHaveTextContent(/Changing one outlet here/);
+    expect(explainer).toHaveTextContent(/nothing is overwritten silently/);
+    // "Manage FOS Group Mapping" opens the mapping tab.
+    await userEvent.click(screen.getByTestId('manage-fos-mapping'));
+    expect(screen.getByRole('tab', { name: /Tally groups/ })).toHaveAttribute('aria-selected', 'true');
+
     const row1 = (await screen.findByText('Raunak Usha')).closest('tr') as HTMLElement;
-    expect(within(row1).getByText(/Suggested: Test Field Rep/)).toBeInTheDocument();
+    expect(within(row1).getByText(/Possible match: Test Field Rep/)).toBeInTheDocument();
     const select = within(row1).getByLabelText('Employee for Raunak Usha') as HTMLSelectElement;
-    expect(select.value).toBe(EMPLOYEE.id);                       // pre-selected, not applied
+    expect(select.value).toBe('');                                  // a suggestion is never pre-selected
+    expect(within(row1).getByRole('button', { name: 'Map' })).toBeDisabled();
+    await userEvent.click(within(row1).getByRole('button', { name: 'Use this' }));
+    expect(select.value).toBe(EMPLOYEE.id);
+    await userEvent.click(within(row1).getByRole('button', { name: 'Map' }));
+    // Confirmation says what will happen; Cancel sends nothing.
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveTextContent(/Map "Raunak Usha" to Test Field Rep/);
+    expect(dialog).toHaveTextContent(/Assignments of other groups are not touched/);
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
     expect(puts).toHaveLength(0);
     await userEvent.click(within(row1).getByRole('button', { name: 'Map' }));
+    await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Confirm' }));
     await waitFor(() => expect(puts).toHaveLength(1));
     expect(puts[0].body).toEqual({ employee_id: EMPLOYEE.id });
 
     const row2 = screen.getByText('Sundry Debtors ZBR').closest('tr') as HTMLElement;
-    expect(within(row2).getByRole('button', { name: 'Map' })).toBeDisabled();   // nothing chosen, nothing suggested
+    expect(within(row2).getByRole('button', { name: 'Map' })).toBeDisabled();   // nothing chosen
     await userEvent.click(within(row2).getByRole('button', { name: 'Not a FOS group' }));
+    await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Confirm' }));
     await waitFor(() => expect(puts).toHaveLength(2));
     expect(puts[1].body).toEqual({ not_fos: true });
   });
@@ -105,7 +126,7 @@ describe('FosAssignmentsPage', () => {
       },
     }));
     renderWithProviders(<FosAssignmentsPage />);
-    await userEvent.click(await screen.findByRole('tab', { name: 'Reconciliation' }));
+    await userEvent.click(await screen.findByRole('tab', { name: 'Check against Tally' }));
     expect(screen.getByRole('button', { name: /Synchronise now/ })).toBeDisabled();
     await userEvent.click(screen.getByRole('button', { name: /Check against Tally/ }));
     expect(await screen.findByText(/Nothing was changed/)).toBeInTheDocument();
@@ -128,5 +149,39 @@ describe('FosAssignmentsPage', () => {
     await userEvent.click(await screen.findByRole('tab', { name: 'Change log' }));
     expect(await screen.findByText('Sahil')).toBeInTheDocument();
     expect(screen.getByText('CHANGED')).toBeInTheDocument();
+  });
+});
+
+
+describe('FosAssignmentsPage - Change FOS for one outlet', () => {
+  beforeEach(() => localStorage.clear());
+
+  it('shows the current FOS, asks for confirmation, sends the expected FOS and an idempotency key, and says what to do in Tally', async () => {
+    signIn(ADMIN_USER);
+    const puts: { url: string; body: Record<string, unknown>; key: string | null }[] = [];
+    const OTHER = { ...EMPLOYEE, id: 'emp-2', full_name: 'Second Rep' };
+    mockApi(routes({
+      '/api/v1/employees': [EMPLOYEE, OTHER],
+      '/api/v1/fos-assignments/outlets/o1': route((url, init) => {
+        puts.push({ url, body: JSON.parse(String(init?.body)), key: new Headers(init?.headers).get('Idempotency-Key') });
+        return json({ id: 'm1', customer_id: 'o1', status: 'PENDING_TALLY', from_group: 'Raunak ZBR', to_group: 'Second ZBR',
+          ledger_name: 'Katiyar Watch & Radio', employee_id: 'emp-2', writeback_status: 'NOT_SENT', requested_at: '2026-11-24T05:00:00Z' });
+      }),
+    }));
+    renderWithProviders(<FosAssignmentsPage />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Change FOS of Katiyar Watch & Radio' }));
+    const dlg = await screen.findByTestId('change-fos-dialog');
+    expect(dlg).toHaveTextContent('Current FOS: Raunak');
+    await userEvent.selectOptions(within(dlg).getByLabelText('New FOS'), 'emp-2');
+    await userEvent.click(within(dlg).getByRole('button', { name: 'Continue' }));
+    expect(dlg).toHaveTextContent(/Change the FOS of Katiyar Watch & Radio from Raunak to Second Rep\?/);
+    expect(dlg).toHaveTextContent(/No invoice, receipt or amount changes/);
+    expect(puts).toHaveLength(0);                                   // nothing saved before the confirmation
+    await userEvent.click(within(dlg).getByRole('button', { name: 'Confirm change' }));
+    await waitFor(() => expect(puts).toHaveLength(1));
+    expect(puts[0].body.employee_id).toBe('emp-2');
+    expect(puts[0].body.expected_employee_ids).toEqual(['e1']);
+    expect(puts[0].key).toMatch(/^fos-o1-/);
+    expect(await screen.findByRole('status')).toHaveTextContent(/move ledger "Katiyar Watch & Radio" to "Second ZBR"/);
   });
 });

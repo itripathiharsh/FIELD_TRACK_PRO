@@ -13,6 +13,7 @@ from app.database import get_async_session
 from app.models.user import Role
 from app.schemas.dashboard import DashboardSummaryResponse, EmployeeDayDashboardResponse, HistoryPeriodsResponse
 from app.services import dashboard_service
+from app.services.report_filters import as_list, as_uuid_list
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -27,32 +28,35 @@ FinanceRead = Depends(require_role(Role.ADMIN, Role.ACCOUNTANT))
 async def get_dashboard_summary(
     current_user: CurrentUser,
     session: DbSession,
-    brand: Optional[str] = Query(default=None),
+    brand: Optional[list[str]] = Query(default=None, description="Brand(s); repeat or comma-separate. 'Unattributed' = no brand in Tally"),
     zone_id: Optional[uuid.UUID] = Query(default=None),
     area_id: Optional[uuid.UUID] = Query(default=None),
-    employee_id: Optional[uuid.UUID] = Query(default=None),
-    ageing_bucket: Optional[str] = Query(default=None),
-    month: Optional[str] = Query(default=None, description="Month format YYYY-MM or 'ALL'/'LIVE'"),
+    employee_id: Optional[list[str]] = Query(default=None, description="FOS employee id(s); repeat or comma-separate"),
+    ageing_bucket: Optional[str] = Query(default=None, description="'<15', '15-30', '30-45', '45-60', '60-75', '75-90' or '>90'"),
+    month: Optional[list[str]] = Query(default=None, description="Period(s) YYYY-MM or FYyyyy-yy; repeat or comma-separate; none/'ALL' = Current Live Data"),
 ):
     """
     Unified Executive Dashboard BI summary.
-    Role-aware: If user is EMPLOYEE, employee_id is automatically scoped to caller.
+    Role-aware: If user is EMPLOYEE, employee_id is automatically scoped to caller (any requested id is ignored).
+    Brand, period and FOS accept several values (OR inside a filter, AND across filters).
     """
-    scoped_emp_id = employee_id
+    scoped_emp_id = as_uuid_list(employee_id)
     if current_user.role == Role.EMPLOYEE:
         from app.services.employee_service import get_employee_by_user_id
         emp = await get_employee_by_user_id(current_user.id, session)
-        scoped_emp_id = emp.id
+        scoped_emp_id = [emp.id]
+    months = as_list(month)
+    brands = as_list(brand)
 
     return await dashboard_service.get_dashboard_summary(
         current_user=current_user,
         session=session,
-        brand=brand,
+        brand=",".join(brands) if brands else None,
         zone_id=zone_id,
         area_id=area_id,
         employee_id=scoped_emp_id,
         ageing_bucket=ageing_bucket,
-        month=month,
+        month=",".join(months) if months else None,
     )
 
 

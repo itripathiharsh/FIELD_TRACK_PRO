@@ -92,6 +92,10 @@ class Settings(BaseSettings):
     # How the sync treats assignments that existed before it (source LEGACY / APP) on an outlet that has a Tally
     # ledger: REPORT_ONLY = keep a disagreeing one and flag the outlet CONFLICT; TALLY_WINS = Tally replaces it.
     tally_fos_legacy_policy: str = "REPORT_ONLY"
+    # Release 3.3: offer admin per-outlet FOS changes to the Tally agent as ledger moves (alter the ledger's parent
+    # group, nothing else). OFF by default: the agent in production cannot alter masters yet; the accountant moves the
+    # ledger by hand and the next ledger sync confirms the change.
+    tally_fos_writeback_enabled: bool = False
     # When true an EMPLOYEE sees only outlets assigned to them (plus their own visits), not every outlet of their
     # home territory / covered areas. Off by default (existing behaviour); turn on together with the sync.
     fos_assigned_only_scope: bool = False

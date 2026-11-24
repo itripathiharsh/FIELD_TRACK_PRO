@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,6 +25,7 @@ from app.models.employee_customer_assignment import EmployeeCustomerAssignment
 from app.models.tally_fos import (
     ALL_STATUSES, FosAssignmentAudit, FosSyncRun, TallyFosGroup,
 )
+from app.exceptions.custom import BaseAPIException
 from app.models.user import Role
 from app.services import fos_sync_service as svc
 
@@ -39,6 +40,18 @@ class FosRef(BaseModel):
     source: str
 
 
+class PendingMoveRead(BaseModel):
+    id: uuid.UUID
+    customer_id: uuid.UUID
+    status: str
+    from_group: Optional[str] = None
+    to_group: Optional[str] = None
+    ledger_name: Optional[str] = None
+    employee_id: Optional[uuid.UUID] = None
+    writeback_status: str
+    requested_at: datetime
+
+
 class OutletFosRead(BaseModel):
     id: uuid.UUID
     name: str
@@ -47,6 +60,7 @@ class OutletFosRead(BaseModel):
     fos: list[FosRef] = []
     fos_status: Optional[str] = None
     fos_synced_at: Optional[datetime] = None
+    pending_move: Optional[PendingMoveRead] = None
 
 
 class OutletFosPage(BaseModel):
@@ -179,9 +193,72 @@ async def list_outlets(
             .where(EmployeeCustomerAssignment.customer_id.in_(ids)).order_by(Employee.full_name))).all()
         for cid, eid, name, src in rows:
             fos.setdefault(cid, []).append(FosRef(employee_id=eid, name=name, source=src))
+    moves: dict[uuid.UUID, PendingMoveRead] = {}
+    if ids:
+        from app.models.tally_fos import FosLedgerMove, OPEN_MOVE_STATUSES
+        for m in (await session.execute(select(FosLedgerMove).where(
+                FosLedgerMove.customer_id.in_(ids), FosLedgerMove.status.in_(OPEN_MOVE_STATUSES)))).scalars().all():
+            moves[m.customer_id] = PendingMoveRead.model_validate(m, from_attributes=True)
     return OutletFosPage(total=total, items=[
         OutletFosRead(id=c.id, name=c.name, outlet_code=c.outlet_code, tally_group=c.tally_parent_group,
-                      fos=fos.get(c.id, []), fos_status=c.fos_status, fos_synced_at=c.fos_synced_at) for c in custs])
+                      fos=fos.get(c.id, []), fos_status=c.fos_status, fos_synced_at=c.fos_synced_at,
+                      pending_move=moves.get(c.id)) for c in custs])
+
+
+class ChangeFosBody(BaseModel):
+    employee_id: uuid.UUID
+    # The FOS the admin saw when opening the dialog: if it changed meanwhile the request is refused (409).
+    expected_employee_ids: Optional[list[uuid.UUID]] = None
+    note: Optional[str] = Field(default=None, max_length=300)
+
+
+@router.put("/outlets/{customer_id}", response_model=PendingMoveRead, dependencies=[AdminOnly])
+async def change_outlet_fos(
+    customer_id: uuid.UUID, body: ChangeFosBody, current_user: CurrentUser, session: DbSession,
+    idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key", max_length=80),
+):
+    """Admin per-outlet FOS change: replaces the outlet's assignment now, audits it, and records the Tally ledger
+    move it needs (protected from the Tally sync until Tally agrees; a disagreement is flagged, never overwritten)."""
+    from app.services import fos_outlet_edit as ed
+    try:
+        move = await ed.change_outlet_fos(session, customer_id, body.employee_id, current_user,
+                                          expected_employee_ids=body.expected_employee_ids, note=body.note,
+                                          idempotency_key=idempotency_key)
+    except ed.FosEditError as ex:
+        raise BaseAPIException(detail=ex.message, status_code=ex.status, error_code=ex.code)
+    await session.commit()
+    await ed.send_post_commit_notes(session)
+    return PendingMoveRead.model_validate(move, from_attributes=True)
+
+
+@router.get("/moves", response_model=list[PendingMoveRead], dependencies=[AdminOnly])
+async def list_moves(session: DbSession, status: Optional[str] = Query(default=None, max_length=20),
+                     limit: int = Query(default=200, ge=1, le=500)):
+    """Admin per-outlet FOS changes and their Tally state (PENDING_TALLY, CONFLICT, CONFIRMED, ...)."""
+    from app.models.tally_fos import FosLedgerMove
+    stmt = select(FosLedgerMove).order_by(FosLedgerMove.requested_at.desc()).limit(limit)
+    if status:
+        stmt = stmt.where(FosLedgerMove.status == status)
+    return [PendingMoveRead.model_validate(m, from_attributes=True) for m in (await session.execute(stmt)).scalars().all()]
+
+
+class ResolveBody(BaseModel):
+    keep: str = Field(pattern="^(ADMIN|TALLY)$")
+
+
+@router.post("/moves/{move_id}/resolve", response_model=PendingMoveRead, dependencies=[AdminOnly])
+async def resolve_move(move_id: uuid.UUID, body: ResolveBody, current_user: CurrentUser, session: DbSession):
+    """Decide an open admin change: keep the FieldTrack FOS (wait for Tally again) or let Tally's FOS apply."""
+    from app.services import fos_outlet_edit as ed
+    try:
+        move = await ed.resolve_conflict(session, move_id, body.keep, current_user)
+    except ed.FosEditError as ex:
+        raise BaseAPIException(detail=ex.message, status_code=ex.status, error_code=ex.code)
+    customer_id = move.customer_id
+    if body.keep == "TALLY" and svc.apply_enabled():
+        await svc.run_sync(session, trigger="ADMIN", dry_run=False, customer_ids=[customer_id], user_id=current_user.id)
+    await session.commit()
+    return PendingMoveRead.model_validate(move, from_attributes=True)
 
 
 @router.get("/groups", response_model=list[GroupRead], dependencies=[AdminOnly])

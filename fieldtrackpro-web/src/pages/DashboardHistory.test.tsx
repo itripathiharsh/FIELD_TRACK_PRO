@@ -52,24 +52,26 @@ describe('DashboardPage - History periods', () => {
 
     renderWithProviders(<DashboardPage />);
 
-    const fyOption = await screen.findByRole('option', { name: /FY 2025-26 — full year \(History\)/ });
-    expect(screen.getByRole('option', { name: /July 2025 \(History\)/ })).toBeInTheDocument();
-    expect(fyOption.closest('optgroup')?.getAttribute('label')).toBe('History (read-only) · FY 2025-26');
-    // Current Live Data stays the default selection; no History banner yet.
-    const select = fyOption.closest('select') as HTMLSelectElement;
-    expect(select.value).toBe('ALL');
+    // The Period filter is a multi-select: History financial years and their months are their own group.
+    const periodButton = await screen.findByLabelText('Period / Month');
+    expect(periodButton).toHaveAccessibleName(/Current Live Data/);
     expect(screen.queryByTestId('history-banner')).not.toBeInTheDocument();
+    fireEvent.click(periodButton);
+    expect(await screen.findByText('History (read-only) · FY 2025-26')).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /FY 2025-26 - full year/ })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /July 2025/ })).toBeInTheDocument();
+    const box = (v: string) => document.querySelector<HTMLInputElement>(`input[type="checkbox"][value="${v}"]`)!;
 
-    fireEvent.change(select, { target: { value: 'FY2025-26' } });
+    fireEvent.click(box('FY2025-26'));
     await waitFor(() => expect(summaryMonths).toContain('FY2025-26'));
     expect(await screen.findByTestId('history-banner')).toHaveTextContent('History (read-only) · FY 2025-26 (full year)');
-    expect(screen.getByText(/📜 History · FY 2025-26 \(full year\)/)).toBeInTheDocument();
 
-    fireEvent.change(select, { target: { value: '2025-07' } });
+    fireEvent.click(box('FY2025-26'));
+    fireEvent.click(box('2025-07'));
     await waitFor(() => expect(summaryMonths).toContain('2025-07'));
     expect(await screen.findByTestId('history-banner')).toHaveTextContent('July 2025 · FY 2025-26');
 
-    fireEvent.change(select, { target: { value: 'ALL' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Clear all' }));
     await waitFor(() => expect(screen.queryByTestId('history-banner')).not.toBeInTheDocument());
     fetchSpy.mockRestore();
   });

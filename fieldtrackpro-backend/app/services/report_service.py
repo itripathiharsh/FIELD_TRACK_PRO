@@ -46,6 +46,7 @@ from app.schemas.reports import (
     EmployeeMasterReportRow,
     OutletReportRow,
     OutstandingAgeingReportRow,
+    OutstandingSummary,
     CollectionReportRow,
     VisitDetailedReportRow,
     GeoVerificationReportRow,
@@ -57,13 +58,18 @@ from app.services.brand_service import (
 )
 from app.services.reporting_floor import effective_start
 from app.services.report_filters import (
+    UNATTRIBUTED_BRAND,
     SnapshotWindow,
+    as_list,
+    as_uuid_list,
+    in_ranges,
     ist_now,
     like_pattern,
     resolve_snapshot_window,
     validate_date_order,
     where_date_range,
     where_ist_range,
+    where_ist_window,
 )
 
 LIKE_ESCAPE = "\\"
@@ -84,13 +90,45 @@ def _get_brand_filter_aliases(brand_query: str) -> list[str]:
     return aliases
 
 
-def _brand_aliases(brand: Optional[str]) -> Optional[list[str]]:
-    if brand and brand != "ALL":
-        return _get_brand_filter_aliases(brand)
-    return None
+def _brand_aliases(brand: Any) -> Optional[list[str]]:
+    """Every alias of every selected brand (multi-select), or None when no brand is selected.
+    The special value 'Unattributed' is handled by :func:`_brand_clause`, not here."""
+    brands = [b for b in (as_list(brand) or []) if b.lower() != UNATTRIBUTED_BRAND.lower()]
+    out: list[str] = []
+    for b in brands:
+        for a in _get_brand_filter_aliases(b):
+            if a not in out:
+                out.append(a)
+    return out or None
+
+
+def _wants_unattributed(brand: Any) -> bool:
+    return any(b.lower() == UNATTRIBUTED_BRAND.lower() for b in (as_list(brand) or []))
+
+
+def _brand_clause(column, brand: Any):
+    """SQL filter for the selected brand(s); None = no brand filter. 'Unattributed' = no brand in Tally."""
+    if not as_list(brand):
+        return None
+    parts = []
+    aliases = _brand_aliases(brand)
+    if aliases:
+        parts.append(func.lower(column).in_(aliases))
+    if _wants_unattributed(brand):
+        parts.append(or_(column.is_(None), func.trim(column) == "", func.lower(column) == "general"))
+    return or_(*parts) if parts else literal(False)
+
+
+def _brand_label(raw: Optional[str]) -> str:
+    """Display brand of a record; no brand in Tally (or the legacy 'General') is 'Unattributed'."""
+    if not raw or not raw.strip() or raw.strip().lower() == "general":
+        return UNATTRIBUTED_BRAND
+    return resolve_canonical_brand_name(raw)
 
 
 def _snapshot_window_where(stmt, window: SnapshotWindow):
+    if window.ranges:
+        return stmt.where(in_ranges(_S.snapshot_date, list(window.ranges)))
     if window.start is not None:
         stmt = stmt.where(_S.snapshot_date >= window.start)
     if window.end is not None:
@@ -128,19 +166,21 @@ def effective_snapshots(window: SnapshotWindow, brand: Optional[str] = None):
         func.row_number().over(partition_by=part, order_by=(_S.snapshot_date.desc(), _S.id.desc())).label("rn"),
     )
     inner = _snapshot_window_where(inner, window)
-    aliases = _brand_aliases(brand)
-    if aliases:
-        inner = inner.where(func.lower(_S.brand).in_(aliases))
+    clause = _brand_clause(_S.brand, brand)
+    if clause is not None:
+        inner = inner.where(clause)
     win = inner.subquery("snap_window")
     return select(win).where(win.c.rn == 1).subquery("eff")
 
 
-def _employee_filter(employee_id: Optional[uuid.UUID]):
-    """EXISTS (not a join) so an outlet with several employees is never fanned out."""
+def _employee_filter(employee_id: Any):
+    """EXISTS (not a join) so an outlet with several employees is never fanned out.
+    One id or several (multi-select FOS: the outlet is assigned to ANY of them)."""
+    ids = as_uuid_list(employee_id) or []
     return exists(
         select(literal(1))
         .select_from(_ECA)
-        .where(_ECA.customer_id == Customer.id, _ECA.employee_id == employee_id)
+        .where(_ECA.customer_id == Customer.id, _ECA.employee_id.in_(ids))
         .correlate(Customer)
     )
 
@@ -171,7 +211,7 @@ def _outlet_search_clause(query: str, include_contact: bool = False):
 
 
 async def _load_fos_map(
-    session: AsyncSession, only_employee: Optional[uuid.UUID] = None
+    session: AsyncSession, only_employee: Any = None
 ) -> dict[uuid.UUID, list[tuple[uuid.UUID, str]]]:
     """customer_id -> [(employee_id, name)] assigned FOS list (sorted by name)."""
     stmt = (
@@ -179,8 +219,9 @@ async def _load_fos_map(
         .join(Employee, Employee.id == _ECA.employee_id)
         .order_by(Employee.full_name.asc(), Employee.id.asc())
     )
-    if only_employee:
-        stmt = stmt.where(Employee.id == only_employee)
+    only = as_uuid_list(only_employee)
+    if only:
+        stmt = stmt.where(Employee.id.in_(only))
     out: dict[uuid.UUID, list[tuple[uuid.UUID, str]]] = {}
     for cid, eid, name in (await session.execute(stmt)).all():
         out.setdefault(cid, []).append((eid, name))
@@ -235,6 +276,283 @@ class _BiEntry:
     market_os: Decimal
     buckets: list  # 7 Decimals: <15, 15-30, 30-45, 45-60, 60-75, 75-90, >90
     as_of: Optional[date] = None
+#: How an amount is placed in an ageing bucket (shown on the dashboard and the outstanding report).
+AGEING_BASIS_NOTE = (
+    "Age = days from the Tally bill (invoice) date to today, Asia/Kolkata. Buckets: 0-15, 16-30, 31-45, 46-60, "
+    "61-75, 76-90 and more than 90 days. Due dates are not used: Tally sends no due date for most bills."
+)
+#: Bucket key -> position in the 7-bucket list (<15, 15-30, 30-45, 45-60, 60-75, 75-90, >90).
+_BUCKET_ORDER = ["bucket_lt_15", "bucket_15_30", "bucket_30_45", "bucket_45_60",
+                 "bucket_60_75", "bucket_75_90", "bucket_gt_90"]
+_BUCKET_DISPLAY = ["<15", "15-30", "30-45", "45-60", "60-75", "75-90", ">90"]
+
+
+def ageing_bucket_index(ageing_bucket: Optional[str]) -> Optional[int]:
+    """'>90' / 'gt_90' / ... -> 0..6; None / '' / 'ALL' -> None; anything else is a 422."""
+    if not ageing_bucket or ageing_bucket == "ALL":
+        return None
+    col_name = _BUCKET_FILTERS.get(ageing_bucket)
+    if col_name is None:
+        raise BaseAPIException(
+            detail=f"Unknown ageing_bucket '{ageing_bucket}'",
+            status_code=422,
+            error_code="INVALID_AGEING_BUCKET",
+        )
+    return _BUCKET_ORDER.index(col_name)
+
+
+def age_bucket_of(age_days: int) -> int:
+    """Bucket position for an age in days (0-15 -> 0, 16-30 -> 1, ..., >90 -> 6)."""
+    for i, upper in enumerate((15, 30, 45, 60, 75, 90)):
+        if age_days <= upper:
+            return i
+    return 6
+
+
+@dataclass
+class _BiCollection:
+    entries: list
+    window: SnapshotWindow
+    today: date
+    data_source: str
+    as_of: Optional[date]
+    total_collection: Decimal
+    total_collection_posted: Decimal
+    total_collection_awaiting: Decimal
+    brand_collection_override: Optional[dict]
+    ageing_key: Optional[str]
+    customer_ids: Optional[set]
+
+
+async def collect_bi_entries(
+    session: AsyncSession,
+    brand: Any = None,
+    zone_id: Optional[uuid.UUID] = None,
+    area_id: Optional[uuid.UUID] = None,
+    employee_id: Any = None,
+    month: Any = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    ageing_bucket: Optional[str] = None,
+) -> _BiCollection:
+    """
+    The ONE source of outlet+brand money figures for the Dashboard, the Business BI report and the
+    Outstanding & Ageing report (so their totals reconcile for the same filters).
+
+    Data source:
+      * SNAPSHOT      - outlet financial snapshots in the window. FLOWS (sales, collection) are summed across
+                        the snapshots, STOCK (market OS, ageing) is the latest snapshot per outlet+brand.
+      * LIVE_INVOICES - used ONLY when no snapshot exists at all in the window: live Tally invoices
+                        (invoice_date in the window) and collections received (payment_date in the window);
+                        outstanding and ageing are as of today (IST).
+
+    Filters: brand / month / employee_id take one value or several (OR inside a filter, AND across filters).
+    ``ageing_bucket`` keeps only the outstanding that falls in that bucket: market outstanding = that bucket,
+    the other buckets are 0, and only outlets with money in that bucket remain (collections follow them).
+    """
+    window = resolve_snapshot_window(month, start_date, end_date)
+    today = ist_now().date()
+    emp_ids = as_uuid_list(employee_id)
+    b_idx = ageing_bucket_index(ageing_bucket)
+    zero = Decimal("0.00")
+
+    any_snapshot = (
+        await session.execute(
+            _snapshot_window_where(select(literal(1)).select_from(_S), window).limit(1)
+        )
+    ).first() is not None
+
+    entries: list[_BiEntry] = []
+    total_collection = total_posted = total_awaiting = zero
+    brand_collection_override: Optional[dict[str, Decimal]] = None
+    data_source = "SNAPSHOT"
+    fos_map = await _load_fos_map(session, only_employee=emp_ids)
+
+    if any_snapshot:
+        eff = effective_snapshots(window, brand)
+        stmt = (
+            select(
+                eff,
+                Customer.name.label("customer_name"),
+                Customer.outlet_code.label("dms_code"),
+                Territory.name.label("zone_name"),
+                Area.name.label("area_name"),
+            )
+            .join(Customer, eff.c.customer_id == Customer.id)
+            .outerjoin(Territory, Customer.territory_id == Territory.id)
+            .outerjoin(Area, Customer.area_id == Area.id)
+            .order_by(eff.c.id.asc())
+        )
+        if zone_id:
+            stmt = stmt.where(Customer.territory_id == zone_id)
+        if area_id:
+            stmt = stmt.where(Customer.area_id == area_id)
+        if emp_ids:
+            stmt = stmt.where(_employee_filter(emp_ids))
+        for r in (await session.execute(stmt)).all():
+            entries.append(_BiEntry(
+                key=r.id, customer_id=r.customer_id, brand=_brand_label(r.brand),
+                outlet_name=r.customer_name, dms_code=r.dms_code or "",
+                zone=r.zone_name or "Unknown Zone", area=r.area_name or "Unknown Area",
+                fos=fos_map.get(r.customer_id, []), sales=r.sales_sum, collection=r.collection_sum,
+                market_os=r.market_outstanding,
+                buckets=[r.bucket_lt_15, r.bucket_15_30, r.bucket_30_45, r.bucket_45_60,
+                         r.bucket_60_75, r.bucket_75_90, r.bucket_gt_90],
+                as_of=r.snapshot_date,
+            ))
+    else:
+        data_source = "LIVE_INVOICES"
+        inv_stmt = (
+            select(
+                Invoice,
+                Customer.name.label("customer_name"),
+                Customer.outlet_code.label("dms_code"),
+                Territory.name.label("zone_name"),
+                Area.name.label("area_name"),
+            )
+            .join(Customer, Invoice.customer_id == Customer.id)
+            .outerjoin(Territory, Customer.territory_id == Territory.id)
+            .outerjoin(Area, Customer.area_id == Area.id)
+            .where(Invoice.source == InvoiceSource.TALLY)
+            .order_by(Invoice.id.asc())
+        )
+        b_clause = _brand_clause(Invoice.brand, brand)
+        if b_clause is not None:
+            inv_stmt = inv_stmt.where(b_clause)
+        if zone_id:
+            inv_stmt = inv_stmt.where(Customer.territory_id == zone_id)
+        if area_id:
+            inv_stmt = inv_stmt.where(Customer.area_id == area_id)
+        if emp_ids:
+            inv_stmt = inv_stmt.where(_employee_filter(emp_ids))
+        # 2.2.0 (B4): no explicit start = the live FY; an explicit window may reach into history.
+        if window.ranges:
+            inv_stmt = inv_stmt.where(in_ranges(Invoice.invoice_date, list(window.ranges)))
+        else:
+            inv_stmt = where_date_range(inv_stmt, Invoice.invoice_date, effective_start(window.start), window.end)
+        inv_rows = (await session.execute(inv_stmt)).all()
+        # Outstanding = amount - money settled by receipts POSTED in Tally (the same rule as the outlet
+        # account). imported_outstanding_amount is a point-in-time reference figure and never drives it.
+        settled = await payment_tally.posted_paid_by_invoice(session, [r[0].id for r in inv_rows])
+        for inv, c_name, dms, z_name, a_name in inv_rows:
+            inv_amt = inv.amount or zero
+            inv_os = max(inv_amt - settled.get(inv.id, zero), zero)
+            age_days = (today - inv.invoice_date).days if inv.invoice_date else 0
+            buckets = [zero] * 7
+            buckets[age_bucket_of(age_days)] = inv_os
+            entries.append(_BiEntry(
+                key=inv.id, customer_id=inv.customer_id, brand=_brand_label(inv.brand),
+                outlet_name=c_name, dms_code=dms or "",
+                zone=z_name or "Unknown Zone", area=a_name or "Unknown Area",
+                fos=fos_map.get(inv.customer_id, []), sales=inv_amt, collection=zero,
+                market_os=inv_os, buckets=buckets, as_of=today,
+            ))
+
+    # Ageing bucket filter: only the outstanding in that bucket (and the outlets holding it).
+    customer_ids: Optional[set] = None
+    if b_idx is not None:
+        kept = []
+        for e in entries:
+            amt = e.buckets[b_idx] or zero
+            if amt > 0:
+                e.buckets = [amt if i == b_idx else zero for i in range(7)]
+                e.market_os = amt
+                kept.append(e)
+        entries = kept
+        customer_ids = {e.customer_id for e in entries}
+
+    if data_source == "SNAPSHOT":
+        total_collection = sum((e.collection for e in entries), zero)
+    elif customer_ids is None or customer_ids:
+        # Collections received (each rupee once: receipts in Tally + verified field collections not yet in
+        # Tally), same window / brand / zone / area / FOS filters (and the ageing bucket's outlets).
+        total_collection, total_posted, total_awaiting, brand_collection_override = await _live_collections(
+            session, brand=brand, zone_id=zone_id, area_id=area_id, emp_ids=emp_ids, window=window,
+            customer_ids=customer_ids,
+        )
+    else:
+        brand_collection_override = {}
+
+    as_of = max((e.as_of for e in entries if e.as_of), default=None) if data_source == "SNAPSHOT" else today
+    return _BiCollection(
+        entries=entries, window=window, today=today, data_source=data_source, as_of=as_of,
+        total_collection=total_collection, total_collection_posted=total_posted,
+        total_collection_awaiting=total_awaiting, brand_collection_override=brand_collection_override,
+        ageing_key=_BUCKET_DISPLAY[b_idx] if b_idx is not None else None, customer_ids=customer_ids,
+    )
+
+
+async def _live_collections(session, *, brand, zone_id, area_id, emp_ids, window, customer_ids):
+    """(total, posted in Tally, awaiting Tally, per-brand) collections for the live-invoice source.
+    Brand-filtered money uses the receipt's brand allocation; 'Unattributed' = receipts without any brand
+    allocation (Tally gave the ledger no brand)."""
+    zero = Decimal("0.00")
+    collected = payment_tally.collected_clause(emp_ids)
+
+    def _filters(stmt):
+        stmt = stmt.where(collected)
+        if window.ranges:
+            stmt = stmt.where(in_ranges(Payment.payment_date, list(window.ranges)))
+        else:
+            stmt = where_date_range(stmt, Payment.payment_date, effective_start(window.start), window.end)
+        if zone_id:
+            stmt = stmt.where(Customer.territory_id == zone_id)
+        if area_id:
+            stmt = stmt.where(Customer.area_id == area_id)
+        if customer_ids is not None:
+            stmt = stmt.where(Payment.customer_id.in_(list(customer_ids)))
+        return stmt
+
+    no_alloc = ~exists(select(literal(1)).where(PaymentBrandAllocation.payment_id == Payment.id).correlate(Payment))
+    brand_filtered = as_list(brand) is not None
+    aliases = _brand_aliases(brand)
+    want_unattr = _wants_unattributed(brand)
+
+    def _amount_q(extra):
+        q = _filters(select(func.coalesce(func.sum(Payment.amount), zero)).select_from(Payment)
+                     .join(Customer, Payment.customer_id == Customer.id))
+        return q.where(extra) if extra is not None else q
+
+    def _alloc_q(extra):
+        q = _filters(select(func.coalesce(func.sum(PaymentBrandAllocation.allocated_amount), zero))
+                     .select_from(Payment).join(Customer, Payment.customer_id == Customer.id)
+                     .join(PaymentBrandAllocation, PaymentBrandAllocation.payment_id == Payment.id)
+                     .where(func.lower(PaymentBrandAllocation.brand).in_(aliases)))
+        return q.where(extra) if extra is not None else q
+
+    async def _sum(extra=None):
+        if not brand_filtered:
+            return (await session.execute(_amount_q(extra))).scalar() or zero
+        total = zero
+        if aliases:
+            total += (await session.execute(_alloc_q(extra))).scalar() or zero
+        if want_unattr:
+            q = _amount_q(extra).where(no_alloc)
+            total += (await session.execute(q)).scalar() or zero
+        return total
+
+    total = await _sum()
+    posted = await _sum(payment_tally.posted_clause_for(emp_ids))
+    awaiting = await _sum(payment_tally.awaiting_clause())
+
+    by_brand: dict[str, Decimal] = {}
+    pay_brand_stmt = _filters(
+        select(PaymentBrandAllocation.brand, func.coalesce(func.sum(PaymentBrandAllocation.allocated_amount), zero))
+        .select_from(Payment).join(Customer, Payment.customer_id == Customer.id)
+        .join(PaymentBrandAllocation, PaymentBrandAllocation.payment_id == Payment.id)
+    )
+    if brand_filtered:
+        pay_brand_stmt = pay_brand_stmt.where(func.lower(PaymentBrandAllocation.brand).in_(aliases or [""]))
+    for b_raw, b_col in (await session.execute(pay_brand_stmt.group_by(PaymentBrandAllocation.brand))).all():
+        key = _brand_label(b_raw)
+        by_brand[key] = by_brand.get(key, zero) + b_col
+    if not brand_filtered or want_unattr:
+        unattr = (await session.execute(_amount_q(None).where(no_alloc))).scalar() or zero
+        if unattr:
+            by_brand[UNATTRIBUTED_BRAND] = by_brand.get(UNATTRIBUTED_BRAND, zero) + unattr
+    return total, posted, awaiting, by_brand
+
+
 class ReportService:
 
     @staticmethod
@@ -266,8 +584,9 @@ class ReportService:
 
         # Count total active employees within filter scope
         emp_stmt = select(func.count(func.distinct(Employee.id)))
-        if employee_id:
-            emp_stmt = emp_stmt.where(Employee.id == employee_id)
+        emp_ids = as_uuid_list(employee_id)
+        if emp_ids:
+            emp_stmt = emp_stmt.where(Employee.id.in_(emp_ids))
         if zone_id:
             emp_stmt = emp_stmt.where(Employee.territory_id == zone_id)
         if area_id:
@@ -286,16 +605,15 @@ class ReportService:
             func.count(Visit.id).label("total_visits"),
             func.sum(case((Visit.status == VisitStatus.COMPLETED, 1), else_=0)).label("completed_visits"),
         )
-        if employee_id:
-            visit_stmt = visit_stmt.where(Visit.employee_id == employee_id)
+        if emp_ids:
+            visit_stmt = visit_stmt.where(Visit.employee_id.in_(emp_ids))
         if zone_id or area_id:
             visit_stmt = visit_stmt.join(Customer, Visit.customer_id == Customer.id)
             if zone_id:
                 visit_stmt = visit_stmt.where(Customer.territory_id == zone_id)
             if area_id:
                 visit_stmt = visit_stmt.where(Customer.area_id == area_id)
-        if not window.is_all:
-            visit_stmt = where_ist_range(visit_stmt, Visit.scheduled_at, window.start, window.end)
+        visit_stmt = where_ist_window(visit_stmt, Visit.scheduled_at, window)
 
         visit_res = await session.execute(visit_stmt)
         v_row = visit_res.one_or_none()
@@ -515,14 +833,68 @@ class ReportService:
         return out
 
     @staticmethod
-    async def get_outstanding_ageing_report(
+    async def _outstanding_rows(
         session: AsyncSession,
-        brand: Optional[str] = None,
+        brand: Any = None,
         zone_id: Optional[uuid.UUID] = None,
         area_id: Optional[uuid.UUID] = None,
-        employee_id: Optional[uuid.UUID] = None,
+        employee_id: Any = None,
         ageing_bucket: Optional[str] = None,
-        month: Optional[str] = None,
+        month: Any = None,
+        query: Optional[str] = None,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+    ) -> tuple[list[OutstandingAgeingReportRow], "_BiCollection"]:
+        """Every outlet+brand with money outstanding, from the SAME entries as the dashboard
+        (collect_bi_entries): snapshots when the period has any, otherwise live Tally invoices."""
+        col = await collect_bi_entries(
+            session, brand=brand, zone_id=zone_id, area_id=area_id, employee_id=employee_id, month=month,
+            start_date=start_date, end_date=end_date, ageing_bucket=ageing_bucket,
+        )
+        zero = Decimal("0.00")
+        grouped: dict[tuple, dict] = {}
+        for e in col.entries:
+            if (e.market_os or zero) <= 0:
+                continue
+            g = grouped.get((e.customer_id, e.brand))
+            if g is None:
+                g = grouped[(e.customer_id, e.brand)] = {"e": e, "os": zero, "b": [zero] * 7, "n": 0, "as_of": e.as_of}
+            g["os"] += e.market_os
+            g["b"] = [x + y for x, y in zip(g["b"], e.buckets)]
+            g["n"] += 1
+            if e.as_of and (g["as_of"] is None or e.as_of > g["as_of"]):
+                g["as_of"] = e.as_of
+        rows: list[OutstandingAgeingReportRow] = []
+        for (cid, brand_name), g in grouped.items():
+            e, b = g["e"], g["b"]
+            row = OutstandingAgeingReportRow(
+                customer_id=cid, dms_code=e.dms_code or "", outlet_name=e.outlet_name, brand=brand_name,
+                zone_name=e.zone if e.zone != "Unknown Zone" else "Unassigned",
+                area_name=e.area if e.area != "Unknown Area" else "Unassigned",
+                fos_name=_fos_label(e.fos), market_outstanding=g["os"],
+                bucket_lt_15=b[0], bucket_15_30=b[1], bucket_30_45=b[2], bucket_45_60=b[3],
+                bucket_60_75=b[4], bucket_75_90=b[5], bucket_gt_90=b[6],
+                highest_overdue_bucket="", as_of_date=g["as_of"],
+                invoice_count=g["n"] if col.data_source == "LIVE_INVOICES" else 0,
+            )
+            row.highest_overdue_bucket = _highest_bucket_label(row)
+            rows.append(row)
+        if query and query.strip():
+            q = query.strip().lower()
+            rows = [r for r in rows if any(q in (v or "").lower() for v in
+                                           (r.outlet_name, r.dms_code, r.zone_name, r.area_name, r.fos_name, r.brand))]
+        rows.sort(key=lambda r: (-r.bucket_gt_90, -r.market_outstanding, r.outlet_name.lower(), r.brand))
+        return rows, col
+
+    @staticmethod
+    async def get_outstanding_ageing_report(
+        session: AsyncSession,
+        brand: Any = None,
+        zone_id: Optional[uuid.UUID] = None,
+        area_id: Optional[uuid.UUID] = None,
+        employee_id: Any = None,
+        ageing_bucket: Optional[str] = None,
+        month: Any = None,
         query: Optional[str] = None,
         skip: Optional[int] = None,
         limit: Optional[int] = None,
@@ -530,76 +902,61 @@ class ReportService:
         end_date: Optional[date] = None,
     ) -> list[OutstandingAgeingReportRow]:
         """
-        Market Outstanding & Ageing Buckets: STOCK figures from the LATEST snapshot
-        in the window per outlet+brand (never summed across snapshot dates).
+        Market Outstanding & Ageing Buckets, one row per outlet+brand with money outstanding.
+
+        Same source and filters as the dashboard: the latest snapshot in the period per outlet+brand when the
+        period has snapshots, otherwise live Tally invoices less the receipts posted against them (as of today).
+        Before 3.2 this report read snapshots ONLY, so it was empty wherever Tally is the source (no snapshots).
         """
-        window = resolve_snapshot_window(month, start_date, end_date)
-        eff = effective_snapshots(window, brand)
-        stmt = (
-            select(
-                eff,
-                Customer.name.label("customer_name"),
-                Customer.outlet_code.label("dms_code"),
-                Territory.name.label("zone_name"),
-                Area.name.label("area_name"),
-            )
-            .join(Customer, eff.c.customer_id == Customer.id)
-            .outerjoin(Territory, Customer.territory_id == Territory.id)
-            .outerjoin(Area, Customer.area_id == Area.id)
-            .where(eff.c.market_outstanding > 0)
-            .order_by(eff.c.bucket_gt_90.desc(), eff.c.market_outstanding.desc(), eff.c.id.asc())
+        rows, _ = await ReportService._outstanding_rows(
+            session, brand=brand, zone_id=zone_id, area_id=area_id, employee_id=employee_id,
+            ageing_bucket=ageing_bucket, month=month, query=query, start_date=start_date, end_date=end_date,
         )
+        start = skip or 0
+        return rows[start:start + limit] if limit is not None else rows[start:]
 
-        if zone_id:
-            stmt = stmt.where(Customer.territory_id == zone_id)
-        if area_id:
-            stmt = stmt.where(Customer.area_id == area_id)
-        if employee_id:
-            stmt = stmt.where(_employee_filter(employee_id))
-        if ageing_bucket and ageing_bucket != "ALL":
-            col_name = _BUCKET_FILTERS.get(ageing_bucket)
-            if col_name is None:
-                raise BaseAPIException(
-                    detail=f"Unknown ageing_bucket '{ageing_bucket}'",
-                    status_code=422,
-                    error_code="INVALID_AGEING_BUCKET",
-                )
-            stmt = stmt.where(eff.c[col_name] > 0)
-        if query:
-            stmt = stmt.where(_outlet_search_clause(query))
-
-        if skip is not None:
-            stmt = stmt.offset(skip)
-        if limit is not None:
-            stmt = stmt.limit(limit)
-
-        records = (await session.execute(stmt)).all()
-        fos_map = await _load_fos_map(session)
-
-        out = []
-        for r in records:
-            out.append(
-                OutstandingAgeingReportRow(
-                    customer_id=r.customer_id,
-                    dms_code=r.dms_code or "",
-                    outlet_name=r.customer_name,
-                    brand=r.brand,
-                    zone_name=r.zone_name or "Unassigned",
-                    area_name=r.area_name or "Unassigned",
-                    fos_name=_fos_label(fos_map.get(r.customer_id, [])),
-                    market_outstanding=r.market_outstanding,
-                    bucket_lt_15=r.bucket_lt_15,
-                    bucket_15_30=r.bucket_15_30,
-                    bucket_30_45=r.bucket_30_45,
-                    bucket_45_60=r.bucket_45_60,
-                    bucket_60_75=r.bucket_60_75,
-                    bucket_75_90=r.bucket_75_90,
-                    bucket_gt_90=r.bucket_gt_90,
-                    highest_overdue_bucket=_highest_bucket_label(r),
-                    as_of_date=r.snapshot_date,
-                )
-            )
-        return out
+    @staticmethod
+    async def get_outstanding_summary(
+        session: AsyncSession,
+        brand: Any = None,
+        zone_id: Optional[uuid.UUID] = None,
+        area_id: Optional[uuid.UUID] = None,
+        employee_id: Any = None,
+        ageing_bucket: Optional[str] = None,
+        month: Any = None,
+        query: Optional[str] = None,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+    ) -> OutstandingSummary:
+        """Totals over ALL rows of the filtered outstanding report (for the header, pagination and checks)."""
+        rows, col = await ReportService._outstanding_rows(
+            session, brand=brand, zone_id=zone_id, area_id=area_id, employee_id=employee_id,
+            ageing_bucket=ageing_bucket, month=month, query=query, start_date=start_date, end_date=end_date,
+        )
+        zero = Decimal("0.00")
+        tot = lambda f: sum((getattr(r, f) for r in rows), zero)  # noqa: E731
+        months = as_list(month)
+        if col.window.source == "DATES":
+            label = f"{col.window.start or '...'} to {col.window.end or '...'}"
+        elif months:
+            label = ", ".join(months)
+        else:
+            label = "Current Live Data"
+        note = (
+            "Live from Tally: invoice amount less receipts posted in Tally against that bill, as of today. "
+            "Receipts Tally records without a bill reference (on account) are not deducted here."
+            if col.data_source == "LIVE_INVOICES"
+            else "Monthly snapshot: the latest outlet snapshot in the selected period."
+        )
+        return OutstandingSummary(
+            accounts=len(rows), outlets=len({r.customer_id for r in rows}),
+            zones=len({r.zone_name for r in rows}), areas=len({r.area_name for r in rows}),
+            market_outstanding=tot("market_outstanding"),
+            bucket_lt_15=tot("bucket_lt_15"), bucket_15_30=tot("bucket_15_30"), bucket_30_45=tot("bucket_30_45"),
+            bucket_45_60=tot("bucket_45_60"), bucket_60_75=tot("bucket_60_75"), bucket_75_90=tot("bucket_75_90"),
+            bucket_gt_90=tot("bucket_gt_90"), data_source=col.data_source, data_source_note=note,
+            ageing_basis=AGEING_BASIS_NOTE, as_of_date=col.as_of, period_label=label,
+        )
 
     @staticmethod
     async def get_collection_report(
@@ -994,205 +1351,50 @@ class ReportService:
     @staticmethod
     async def get_business_bi_dashboard(
         session: AsyncSession,
-        brand: Optional[str] = None,
+        brand: Any = None,
         zone_id: Optional[uuid.UUID] = None,
         area_id: Optional[uuid.UUID] = None,
-        employee_id: Optional[uuid.UUID] = None,
-        month: Optional[str] = None,
+        employee_id: Any = None,
+        month: Any = None,
         start_date: Optional[date] = None,
         end_date: Optional[date] = None,
+        ageing_bucket: Optional[str] = None,
     ) -> BusinessBIDashboard:
-        """
-        Aggregated Business BI summaries.
+        """Aggregated Business BI summaries (see :func:`collect_bi_entries` for the data source rules)."""
+        dash, _ = await ReportService.build_business_bi(
+            session, brand=brand, zone_id=zone_id, area_id=area_id, employee_id=employee_id, month=month,
+            start_date=start_date, end_date=end_date, ageing_bucket=ageing_bucket,
+        )
+        return dash
 
-        Data source (explicit in ``data_source``):
-          * SNAPSHOT      - outlet financial snapshots in the window.  FLOWS (sales,
-                            collection) are summed across the snapshots, STOCK
-                            (market OS, ageing) is the latest snapshot per
-                            outlet+brand.
-          * LIVE_INVOICES - used ONLY when no snapshot exists at all in the window:
-                            live Tally invoices (invoice_date in the window) and
-                            verified payments (payment_date in the window); ageing
-                            is as of today.
-        """
-        window = resolve_snapshot_window(month, start_date, end_date)
-        today = ist_now().date()
-
-        any_snapshot = (
-            await session.execute(
-                _snapshot_window_where(select(literal(1)).select_from(_S), window).limit(1)
-            )
-        ).first() is not None
-
-        entries: list[_BiEntry] = []
-        total_collection = Decimal("0.00")
-        total_collection_posted = Decimal("0.00")
-        total_collection_awaiting = Decimal("0.00")
-        brand_collection_override: Optional[dict[str, Decimal]] = None
-        data_source = "SNAPSHOT"
-        as_of: Optional[date] = None
-
-        fos_map = await _load_fos_map(session, only_employee=employee_id)
-
-        if any_snapshot:
-            eff = effective_snapshots(window, brand)
-            stmt = (
-                select(
-                    eff,
-                    Customer.name.label("customer_name"),
-                    Customer.outlet_code.label("dms_code"),
-                    Territory.name.label("zone_name"),
-                    Area.name.label("area_name"),
-                )
-                .join(Customer, eff.c.customer_id == Customer.id)
-                .outerjoin(Territory, Customer.territory_id == Territory.id)
-                .outerjoin(Area, Customer.area_id == Area.id)
-                .order_by(eff.c.id.asc())
-            )
-            if zone_id:
-                stmt = stmt.where(Customer.territory_id == zone_id)
-            if area_id:
-                stmt = stmt.where(Customer.area_id == area_id)
-            if employee_id:
-                stmt = stmt.where(_employee_filter(employee_id))
-            for r in (await session.execute(stmt)).all():
-                entries.append(
-                    _BiEntry(
-                        key=r.id,
-                        customer_id=r.customer_id,
-                        brand=resolve_canonical_brand_name(r.brand) if r.brand else "General",
-                        outlet_name=r.customer_name,
-                        dms_code=r.dms_code or "",
-                        zone=r.zone_name or "Unknown Zone",
-                        area=r.area_name or "Unknown Area",
-                        fos=fos_map.get(r.customer_id, []),
-                        sales=r.sales_sum,
-                        collection=r.collection_sum,
-                        market_os=r.market_outstanding,
-                        buckets=[r.bucket_lt_15, r.bucket_15_30, r.bucket_30_45, r.bucket_45_60,
-                                 r.bucket_60_75, r.bucket_75_90, r.bucket_gt_90],
-                        as_of=r.snapshot_date,
-                    )
-                )
-            as_of = max((e.as_of for e in entries if e.as_of), default=None)
-            total_collection = sum((e.collection for e in entries), Decimal("0.00"))
-        else:
-            data_source = "LIVE_INVOICES"
-            aliases = _brand_aliases(brand)
-            inv_stmt = (
-                select(
-                    Invoice,
-                    Customer.name.label("customer_name"),
-                    Customer.outlet_code.label("dms_code"),
-                    Territory.name.label("zone_name"),
-                    Area.name.label("area_name"),
-                )
-                .join(Customer, Invoice.customer_id == Customer.id)
-                .outerjoin(Territory, Customer.territory_id == Territory.id)
-                .outerjoin(Area, Customer.area_id == Area.id)
-                .where(Invoice.source == InvoiceSource.TALLY)
-                .order_by(Invoice.id.asc())
-            )
-            if aliases:
-                inv_stmt = inv_stmt.where(func.lower(Invoice.brand).in_(aliases))
-            if zone_id:
-                inv_stmt = inv_stmt.where(Customer.territory_id == zone_id)
-            if area_id:
-                inv_stmt = inv_stmt.where(Customer.area_id == area_id)
-            if employee_id:
-                inv_stmt = inv_stmt.where(_employee_filter(employee_id))
-            # 2.2.0 (B4): no explicit start = the live FY; an explicit window may reach into history.
-            inv_stmt = where_date_range(inv_stmt, Invoice.invoice_date, effective_start(window.start), window.end)
-            inv_rows = (await session.execute(inv_stmt)).all()
-            # Outstanding = amount - money settled by receipts POSTED in Tally (the same
-            # rule as the outlet account). imported_outstanding_amount is a point-in-time
-            # reference figure and never drives the balance.
-            settled = await payment_tally.posted_paid_by_invoice(session, [r[0].id for r in inv_rows])
-
-            for inv, c_name, dms, z_name, a_name in inv_rows:
-                inv_amt = inv.amount or Decimal("0.00")
-                inv_os = max(inv_amt - settled.get(inv.id, Decimal("0.00")), Decimal("0.00"))
-                age_days = (today - inv.invoice_date).days if inv.invoice_date else 0
-                zero = Decimal("0.00")
-                buckets = [
-                    inv_os if age_days <= 15 else zero,
-                    inv_os if 16 <= age_days <= 30 else zero,
-                    inv_os if 31 <= age_days <= 45 else zero,
-                    inv_os if 46 <= age_days <= 60 else zero,
-                    inv_os if 61 <= age_days <= 75 else zero,
-                    inv_os if 76 <= age_days <= 90 else zero,
-                    inv_os if age_days > 90 else zero,
-                ]
-                entries.append(
-                    _BiEntry(
-                        key=inv.id,
-                        customer_id=inv.customer_id,
-                        brand=resolve_canonical_brand_name(inv.brand) if inv.brand else "General",
-                        outlet_name=c_name,
-                        dms_code=dms or "",
-                        zone=z_name or "Unknown Zone",
-                        area=a_name or "Unknown Area",
-                        fos=fos_map.get(inv.customer_id, []),
-                        sales=inv_amt,
-                        collection=Decimal("0.00"),
-                        market_os=inv_os,
-                        buckets=buckets,
-                        as_of=today,
-                    )
-                )
-            as_of = today
-
-            # Collections received (each rupee once: receipts in Tally + verified field
-            # collections not yet in Tally), same window / brand / zone / area / employee filters.
-            def _pay_filters(stmt):
-                stmt = stmt.where(payment_tally.collected_clause(employee_id))
-                stmt = where_date_range(stmt, Payment.payment_date, effective_start(window.start), window.end)
-                if zone_id:
-                    stmt = stmt.where(Customer.territory_id == zone_id)
-                if area_id:
-                    stmt = stmt.where(Customer.area_id == area_id)
-                return stmt
-
-            if aliases:
-                pay_stmt = (
-                    select(func.coalesce(func.sum(PaymentBrandAllocation.allocated_amount), Decimal("0.00")))
-                    .select_from(Payment)
-                    .join(Customer, Payment.customer_id == Customer.id)
-                    .join(PaymentBrandAllocation, PaymentBrandAllocation.payment_id == Payment.id)
-                    .where(func.lower(PaymentBrandAllocation.brand).in_(aliases))
-                )
-            else:
-                pay_stmt = (
-                    select(func.coalesce(func.sum(Payment.amount), Decimal("0.00")))
-                    .select_from(Payment)
-                    .join(Customer, Payment.customer_id == Customer.id)
-                )
-            pay_stmt = _pay_filters(pay_stmt)
-            total_collection = (await session.execute(pay_stmt)).scalar() or Decimal("0.00")
-            # Split of the same collections: in Tally vs awaiting Tally (posted + awaiting == total).
-            total_collection_posted = (
-                await session.execute(pay_stmt.where(payment_tally.posted_clause_for(employee_id)))
-            ).scalar() or Decimal("0.00")
-            total_collection_awaiting = (
-                await session.execute(pay_stmt.where(payment_tally.awaiting_clause()))
-            ).scalar() or Decimal("0.00")
-
-            pay_brand_stmt = (
-                select(
-                    PaymentBrandAllocation.brand,
-                    func.coalesce(func.sum(PaymentBrandAllocation.allocated_amount), Decimal("0.00")),
-                )
-                .select_from(Payment)
-                .join(Customer, Payment.customer_id == Customer.id)
-                .join(PaymentBrandAllocation, PaymentBrandAllocation.payment_id == Payment.id)
-            )
-            if aliases:
-                pay_brand_stmt = pay_brand_stmt.where(func.lower(PaymentBrandAllocation.brand).in_(aliases))
-            pay_brand_stmt = _pay_filters(pay_brand_stmt).group_by(PaymentBrandAllocation.brand)
-            brand_collection_override = {}
-            for b_raw, b_col in (await session.execute(pay_brand_stmt)).all():
-                canon_b = resolve_canonical_brand_name(b_raw) if b_raw else "General"
-                brand_collection_override[canon_b] = brand_collection_override.get(canon_b, Decimal("0.00")) + b_col
+    @staticmethod
+    async def build_business_bi(
+        session: AsyncSession,
+        brand: Any = None,
+        zone_id: Optional[uuid.UUID] = None,
+        area_id: Optional[uuid.UUID] = None,
+        employee_id: Any = None,
+        month: Any = None,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+        ageing_bucket: Optional[str] = None,
+    ) -> tuple[BusinessBIDashboard, Optional[set]]:
+        """The BI dashboard plus, when an ageing bucket is selected, the set of outlets in that bucket
+        (so the caller can scope its own counts - visits, collections, orders - to the same outlets)."""
+        col = await collect_bi_entries(
+            session, brand=brand, zone_id=zone_id, area_id=area_id, employee_id=employee_id, month=month,
+            start_date=start_date, end_date=end_date, ageing_bucket=ageing_bucket,
+        )
+        entries = col.entries
+        window = col.window
+        today = col.today
+        data_source = col.data_source
+        as_of = col.as_of
+        total_collection = col.total_collection
+        total_collection_posted = col.total_collection_posted
+        total_collection_awaiting = col.total_collection_awaiting
+        brand_collection_override = col.brand_collection_override
+        months = as_list(month)
 
         # ---- aggregation (identical for both sources) ---------------------------------
         zero = Decimal("0.00")
@@ -1277,8 +1479,8 @@ class ReportService:
 
         # Check finalization status if a calendar month (and not a date range) was selected
         is_fin = False
-        if window.source == "MONTH" and month and not month.startswith("FY"):   # a financial year is no monthly period
-            y, m = [int(x) for x in month.split("-")]
+        if window.source == "MONTH" and months and not months[0].startswith("FY"):   # a financial year is no monthly period
+            y, m = [int(x) for x in months[0].split("-")]
             period_row = (
                 await session.execute(
                     select(MonthlyReportingPeriod).where(
@@ -1311,7 +1513,7 @@ class ReportService:
 
         return BusinessBIDashboard(
             snapshot_date=as_of or today,
-            month_period=month if (month and month != "ALL" and not window.month_ignored) else None,
+            month_period=",".join(months) if (months and not window.month_ignored) else None,
             is_finalized=is_fin,
             total_outlets=len(unique_outlets),
             total_sales=total_sales,
@@ -1332,7 +1534,9 @@ class ReportService:
             period_end=window.end,
             period_source=window.source,
             month_ignored=window.month_ignored,
-        )
+            ageing_bucket=col.ageing_key,
+            ageing_basis=AGEING_BASIS_NOTE,
+        ), col.customer_ids
 
     # -----------------------------------------------------------------------
     # PHASE 4: Monthly Reporting Periods & Historical Snapshots

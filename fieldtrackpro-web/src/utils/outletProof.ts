@@ -27,6 +27,29 @@ export const KIND_LABEL: Record<OutletProofKind, string> = {
   CHANGE_REQUEST: 'CHANGE REQUEST',
 };
 
+/** What each proof kind means, in plain words (tooltips + the line under the badges). */
+export const KIND_HELP: Record<OutletProofKind, string> = {
+  INITIAL: 'First photo and GPS point for this outlet: it has no approved location yet.',
+  CONFIRMATION: 'Taken at the approved location (within the confirm radius): it confirms it. No action needed.',
+  CHANGE_REQUEST: "Taken away from the approved location: approving it moves the outlet's official pin here.",
+};
+
+export const STATUS_HELP: Record<OutletProofStatus, string> = {
+  UNATTACHED: 'Captured on the phone but not yet attached to an outlet or a new-outlet request.',
+  PENDING: 'Waiting for an admin to approve or reject it.',
+  CONFIRMED: 'Agrees with the approved location; counted as a confirmation.',
+  APPROVED: "Approved: this photo and GPS point are the outlet's official ones.",
+  REJECTED: 'Rejected by an admin; the outlet location did not change.',
+  SUPERSEDED: 'Replaced by a newer approved location.',
+};
+
+/** '±18 m' explained: how sure the phone was of its position, with the colour bands used on the chip. */
+export function accuracyHelp(accuracyM: number): string {
+  const m = Math.round(accuracyM);
+  const band = accuracyM <= 20 ? 'good (20 m or better)' : accuracyM <= 30 ? 'fair (21-30 m)' : 'poor (more than 30 m)';
+  return `GPS accuracy: the phone placed itself within about ${m} m of the true spot when the photo was taken - ${band}.`;
+}
+
 export const KIND_CLASS: Record<OutletProofKind, string> = {
   INITIAL: 'bg-sky-100 text-sky-900 border-sky-300',
   CONFIRMATION: 'bg-emerald-100 text-emerald-900 border-emerald-300',
@@ -63,7 +86,7 @@ export function outletProofErrorMessage(err: unknown): string {
       case 'OUTLET_PROOF_NOT_PENDING':
         return 'This proof was already reviewed by someone else. The list has been refreshed.';
       case 'OUTLET_PROOF_PROSPECT_PENDING':
-        return 'Approve the new outlet first. The location and photo are approved together with it.';
+        return 'This photo belongs to a new-outlet request. Approve or reject the request in Customers > New Outlet Approvals; its location and photo follow that decision.';
       case 'OUTLET_PROOF_NOT_FOUND':
         return 'This proof no longer exists. The list has been refreshed.';
       default:

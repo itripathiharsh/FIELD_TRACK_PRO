@@ -687,20 +687,33 @@ async def claim_unattached_proof(proof_id: uuid.UUID, current_user: User, sessio
 
 
 def link_proof_to_prospect(proof: OutletProof, prospect: CustomerProspect) -> None:
+    """The first photo + GPS of a NEW outlet. It already passed the live-capture checks at upload (validate_capture:
+    not mock, accuracy, inside India, fresh, real photo, not a duplicate), so - with
+    outlet_proof_first_location_auto_accept (the agreed business rule) - it is ACCEPTED at once: it never waits in the
+    Outlet Verification queue (reviewed_by NULL = system). The admin still approves the new OUTLET itself (name, GST,
+    area) in New Outlet Approvals; approving it makes this the outlet's location and photo, rejecting it rejects both."""
     proof.prospect_id = prospect.id
     proof.kind = OutletProofKind.INITIAL.value
-    proof.status = OutletProofStatus.PENDING.value
+    if settings.outlet_proof_first_location_auto_accept:
+        proof.status = OutletProofStatus.APPROVED.value
+        proof.auto_accepted = True
+        proof.reviewed_by = None
+        proof.reviewed_at = _now()
+    else:
+        proof.status = OutletProofStatus.PENDING.value
 
 
 async def on_prospect_approved(
     prospect_id: uuid.UUID, customer: Customer, admin: User, session: AsyncSession
 ) -> bool:
-    """Attach the prospect's proof(s) to the new customer; the first becomes the APPROVED primary."""
+    """Attach the prospect's proof(s) to the new customer; the first becomes the APPROVED primary.
+    An auto-accepted proof keeps its system acceptance (auto_accepted, reviewed_by NULL) as its history."""
     proofs = (
         await session.execute(
             select(OutletProof).where(
                 OutletProof.prospect_id == prospect_id,
-                OutletProof.status == OutletProofStatus.PENDING.value,
+                OutletProof.customer_id.is_(None),
+                OutletProof.status.in_((OutletProofStatus.PENDING.value, OutletProofStatus.APPROVED.value)),
             ).order_by(OutletProof.received_at)
         )
     ).scalars().all()
@@ -708,10 +721,11 @@ async def on_prospect_approved(
     for i, p in enumerate(proofs):
         p.customer_id = customer.id
         if i == 0:
-            p.status = OutletProofStatus.APPROVED.value
+            if p.status != OutletProofStatus.APPROVED.value:
+                p.status = OutletProofStatus.APPROVED.value
+                p.reviewed_by = admin.id
+                p.reviewed_at = now
             p.is_primary = True
-            p.reviewed_by = admin.id
-            p.reviewed_at = now
     await session.flush()
     return bool(proofs)
 
@@ -719,11 +733,13 @@ async def on_prospect_approved(
 async def on_prospect_rejected(
     prospect_id: uuid.UUID, reason: str, admin: User, session: AsyncSession
 ) -> None:
+    # The outlet is not created, so its photo/GPS (pending, or accepted automatically) is rejected with it.
     proofs = (
         await session.execute(
             select(OutletProof).where(
                 OutletProof.prospect_id == prospect_id,
-                OutletProof.status == OutletProofStatus.PENDING.value,
+                OutletProof.customer_id.is_(None),
+                OutletProof.status.in_((OutletProofStatus.PENDING.value, OutletProofStatus.APPROVED.value)),
             )
         )
     ).scalars().all()

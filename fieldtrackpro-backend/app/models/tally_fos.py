@@ -41,7 +41,7 @@ ST_UNASSIGNED = "UNASSIGNED"          # Tally says: no FOS (the ledger sits in a
 ST_UNMAPPED_GROUP = "UNMAPPED_GROUP"  # the Tally group is not mapped to an employee yet (existing access is kept)
 ST_CONFLICT = "CONFLICT"              # a pre-sync assignment disagrees with Tally (kept until approved)
 ST_NO_TALLY = "NO_TALLY"              # no in-scope Tally debtor ledger (e.g. a prospect not yet in Tally)
-ALL_STATUSES = (ST_ASSIGNED, ST_MULTIPLE, ST_UNASSIGNED, ST_UNMAPPED_GROUP, ST_CONFLICT, ST_NO_TALLY)
+ALL_STATUSES = (ST_ASSIGNED, ST_MULTIPLE, ST_UNASSIGNED, ST_UNMAPPED_GROUP, ST_CONFLICT, ST_NO_TALLY, "ADMIN_PENDING")
 
 
 class TallyFosGroup(Base):
@@ -95,3 +95,45 @@ class FosAssignmentAudit(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
 
     __table_args__ = (Index("ix_fos_audit_customer_created", "customer_id", "created_at"),)
+
+
+# FieldTrack -> Tally per-outlet FOS changes (release 3.3)
+SRC_ADMIN = "ADMIN"                   # employee_customer_assignments.source: set by an admin's per-outlet "Change FOS"
+ST_ADMIN_PENDING_TALLY = "ADMIN_PENDING"  # customers.fos_status: admin change made, Tally ledger not yet moved
+
+MOVE_PENDING = "PENDING_TALLY"        # waiting for the ledger to be moved in Tally (by the accountant or the agent)
+MOVE_CONFIRMED = "CONFIRMED"          # Tally now gives the outlet the same FOS: the move is done
+MOVE_CONFLICT = "CONFLICT"            # Tally moved the ledger somewhere else meanwhile: kept, flagged, needs a decision
+MOVE_SUPERSEDED = "SUPERSEDED"        # replaced by a later admin change
+MOVE_CANCELLED = "CANCELLED"          # an admin resolved it in favour of Tally
+OPEN_MOVE_STATUSES = (MOVE_PENDING, MOVE_CONFLICT)
+
+WB_NOT_SENT = "NOT_SENT"              # write-back disabled / no target group: the accountant moves the ledger by hand
+WB_QUEUED = "QUEUED"                  # offered to the Tally agent
+WB_DONE = "DONE"                      # the agent reported the ledger altered in Tally (confirmed only by the next sync)
+WB_FAILED = "FAILED"
+
+
+class FosLedgerMove(Base):
+    """One admin per-outlet FOS change and the Tally ledger move it needs. Never edits vouchers or amounts."""
+    __tablename__ = "fos_ledger_moves"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    customer_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("customers.id", ondelete="CASCADE"), index=True)
+    ledger_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("tally_debtor_ledgers.id", ondelete="SET NULL"), nullable=True)
+    tally_ledger_guid: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    ledger_name: Mapped[Optional[str]] = mapped_column(String(150), nullable=True)
+    from_group: Mapped[Optional[str]] = mapped_column(String(150), nullable=True)
+    to_group: Mapped[Optional[str]] = mapped_column(String(150), nullable=True)
+    previous_employee_ids: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
+    employee_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("employees.id", ondelete="SET NULL"), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default=MOVE_PENDING, server_default=MOVE_PENDING, index=True)
+    writeback_status: Mapped[str] = mapped_column(String(16), nullable=False, default=WB_NOT_SENT, server_default=WB_NOT_SENT)
+    writeback_attempts: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
+    writeback_error: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    idempotency_key: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    requested_by: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    note: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

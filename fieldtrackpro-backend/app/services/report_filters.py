@@ -133,6 +133,9 @@ class SnapshotWindow:
     source: str = "ALL"
     # True when a month was supplied but ignored because a date range won
     month_ignored: bool = False
+    # Several selected periods (multi-select): snapshot_date must fall in one of these inclusive ranges.
+    # start/end then span the whole selection. None = the single start..end window above.
+    ranges: Optional[tuple] = None
 
     @property
     def is_all(self) -> bool:
@@ -143,11 +146,13 @@ def resolve_snapshot_window(
     month: Optional[str], start_date: Optional[date], end_date: Optional[date]
 ) -> SnapshotWindow:
     validate_date_order(start_date, end_date)
-    month_range = parse_month(month)  # validates even when dates win
+    ranges = month_ranges(month)  # validates every period even when dates win
     if start_date or end_date:
-        return SnapshotWindow(start_date, end_date, "DATES", month_ignored=month_range is not None)
-    if month_range:
-        return SnapshotWindow(month_range[0], month_range[1], "MONTH")
+        return SnapshotWindow(start_date, end_date, "DATES", month_ignored=ranges is not None)
+    if ranges and len(ranges) == 1:
+        return SnapshotWindow(ranges[0][0], ranges[0][1], "MONTH")
+    if ranges:
+        return SnapshotWindow(min(r[0] for r in ranges), max(r[1] for r in ranges), "MONTHS", ranges=tuple(ranges))
     return SnapshotWindow()
 
 
@@ -155,3 +160,74 @@ def like_pattern(query: str) -> str:
     """Case-insensitive contains pattern with LIKE wildcards in the input escaped."""
     q = query.strip().lower().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     return f"%{q}%"
+
+
+# ---------------------------------------------------------------------------
+# Multi-value BI filters (Dashboard + Reports): brand, period/month and FOS may
+# each carry several values. They arrive either as a repeated query parameter
+# (?brand=Oppo&brand=Samsung) or comma separated (?brand=Oppo,Samsung); both
+# are accepted. Values OR together inside one filter and AND across filters.
+# ---------------------------------------------------------------------------
+#: Brand filter value that selects records Tally gives no brand for (shown as "Unattributed").
+UNATTRIBUTED_BRAND = "Unattributed"
+_ALL_TOKENS = {"", "ALL", "LIVE"}
+
+
+def as_list(value: Any) -> Optional[list[str]]:
+    """None / 'ALL' / [] -> None (no filter); 'a,b' or ['a', 'b,c'] -> de-duplicated list in input order."""
+    if value is None:
+        return None
+    raw = value if isinstance(value, (list, tuple, set)) else [value]
+    out: list[str] = []
+    for item in raw:
+        if item is None:
+            continue
+        for part in str(item).split(","):
+            p = part.strip()
+            if p and p.upper() not in _ALL_TOKENS and p not in out:
+                out.append(p)
+    return out or None
+
+
+def as_uuid_list(value: Any) -> Optional[list]:
+    """Like :func:`as_list` for ids; a malformed id is a 422 (never silently dropped)."""
+    import uuid as _uuid
+    items = as_list(value)
+    if not items:
+        return None
+    try:
+        return [v if isinstance(v, _uuid.UUID) else _uuid.UUID(str(v)) for v in items]
+    except ValueError:
+        raise BaseAPIException(detail="employee_id must be one or more valid ids", status_code=422,
+                               error_code="INVALID_EMPLOYEE_ID")
+
+
+def month_ranges(months: Any) -> Optional[list[tuple[date, date]]]:
+    """Several periods ('2026-10', '2026-11', 'FY2025-26') -> their (start, end) ranges, sorted. None = no period."""
+    items = as_list(months)
+    if not items:
+        return None
+    return sorted({parse_month(m) for m in items})
+
+
+def in_ranges(column: Any, ranges: list[tuple[date, date]]):
+    """column BETWEEN start AND end for any of the ranges (inclusive calendar dates)."""
+    return or_(*[column.between(s, e) for s, e in ranges])
+
+
+def single_or_none(values: Optional[list]) -> Any:
+    """The one value of a one-element filter, else None (for code paths that only take one value)."""
+    return values[0] if values and len(values) == 1 else None
+
+
+def where_ist_window(stmt: Select, column: Any, window: "SnapshotWindow") -> Select:
+    """Timestamp column inside the window's IST day range(s): one range, or any of several selected periods."""
+    if window.ranges:
+        parts = []
+        for s, e in window.ranges:
+            lo, hi = ist_window(s, e)
+            parts.append(and_(column >= lo, column < hi))
+        return stmt.where(or_(*parts))
+    if window.is_all:
+        return stmt
+    return where_ist_range(stmt, column, window.start, window.end)

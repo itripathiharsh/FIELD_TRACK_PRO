@@ -97,6 +97,28 @@ class OutstandingAgeingReportRow(BaseModel):
     highest_overdue_bucket: str = "Normal"
     # Date of the (latest in period) snapshot these stock figures are "as of".
     as_of_date: Optional[date] = None
+    invoice_count: int = 0
+
+
+class OutstandingSummary(BaseModel):
+    """Totals of the WHOLE filtered outstanding report (all pages), the same figures the dashboard shows."""
+    accounts: int = 0
+    outlets: int = 0
+    zones: int = 0
+    areas: int = 0
+    market_outstanding: Decimal = Decimal("0.00")
+    bucket_lt_15: Decimal = Decimal("0.00")
+    bucket_15_30: Decimal = Decimal("0.00")
+    bucket_30_45: Decimal = Decimal("0.00")
+    bucket_45_60: Decimal = Decimal("0.00")
+    bucket_60_75: Decimal = Decimal("0.00")
+    bucket_75_90: Decimal = Decimal("0.00")
+    bucket_gt_90: Decimal = Decimal("0.00")
+    data_source: str = "LIVE_INVOICES"
+    data_source_note: Optional[str] = None
+    ageing_basis: Optional[str] = None
+    as_of_date: Optional[date] = None
+    period_label: str = "Current Live Data"
 
 
 class CollectionReportRow(BaseModel):

@@ -83,6 +83,10 @@ class BusinessBIDashboard(BaseModel):
     period_source: str = "ALL"
     # True when a month was supplied but ignored because an explicit date range won.
     month_ignored: bool = False
+    # Selected ageing bucket ('<15' ... '>90') when the figures are restricted to one bucket, else None.
+    ageing_bucket: Optional[str] = None
+    # Plain-language rule used to place money in an ageing bucket.
+    ageing_basis: Optional[str] = None
 
 
 class MonthlyPeriodRead(BaseModel):

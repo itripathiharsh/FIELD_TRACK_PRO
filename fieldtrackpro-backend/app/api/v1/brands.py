@@ -21,6 +21,24 @@ ReadLists = Depends(require_role(Role.ADMIN, Role.EMPLOYEE, Role.ACCOUNTANT))
 AdminAuth = Depends(require_role(Role.ADMIN))
 
 
+FinanceRead = Depends(require_role(Role.ADMIN, Role.ACCOUNTANT))
+
+
+@router.get("/filter-options", dependencies=[FinanceRead])
+async def brand_filter_options(session: DbSession):
+    """Brands to offer in the Dashboard / Reports brand filter: every brand that has Tally invoices or
+    receipts (most records first), plus 'Unattributed' when Tally sends records without a brand."""
+    from app.services.brand_reconciliation import brand_filter_options as _opts
+    return await _opts(session)
+
+
+@router.get("/reconciliation", dependencies=[FinanceRead])
+async def brand_reconciliation(session: DbSession):
+    """Read-only Tally vs FieldTrack brand table (Tally brand | FieldTrack brand | status | records)."""
+    from app.services.brand_reconciliation import brand_reconciliation as _rec
+    return await _rec(session)
+
+
 @router.get("", response_model=list[BrandOut], dependencies=[ReadLists])
 async def list_brands(
     session: DbSession,

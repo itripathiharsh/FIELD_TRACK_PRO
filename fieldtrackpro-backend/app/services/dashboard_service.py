@@ -1,8 +1,8 @@
 from __future__ import annotations
 import uuid
 from decimal import Decimal
-from typing import Optional
-from sqlalchemy import select, func, case, or_, and_
+from typing import Any, Optional
+from sqlalchemy import select, func, case, or_, and_, exists, literal
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.datetime_utils import get_ist_today_range
@@ -16,10 +16,11 @@ from app.models.visit import Visit, VisitStatus
 from app.models.visit_media import MediaType, VisitMedia
 from app.schemas.dashboard import (
     DashboardExecutiveKPIs,
+    DashboardRecentVisit,
     DashboardSummaryResponse,
     EmployeeDayDashboardResponse,
 )
-from app.services.report_filters import parse_month
+from app.services.report_filters import as_list, as_uuid_list, in_ranges, resolve_snapshot_window, where_ist_window
 from app.services.reporting_floor import live_payment_clause, reporting_floor
 from app.services import field_exception_service, payment_tally, report_service
 from app.services.employee_service import get_employee_by_user_id
@@ -28,50 +29,61 @@ from app.services.employee_service import get_employee_by_user_id
 async def get_dashboard_summary(
     current_user: User,
     session: AsyncSession,
-    brand: Optional[str] = None,
+    brand: Any = None,
     zone_id: Optional[uuid.UUID] = None,
     area_id: Optional[uuid.UUID] = None,
-    employee_id: Optional[uuid.UUID] = None,
+    employee_id: Any = None,
     ageing_bucket: Optional[str] = None,
-    month: Optional[str] = None,
+    month: Any = None,
 ) -> DashboardSummaryResponse:
     """
-    Unified Dashboard aggregation sharing 100% single source of truth with ReportService.
-    Eliminates redundant execution of get_business_bi_dashboard.
-    """
-    # The period: None = Current Live Data; 'YYYY-MM' = one month; 'FYyyyy-yy' = a whole financial year.
-    # A period before the reporting floor is HISTORY (read-only view; no reporting period, no close workflow).
-    period = parse_month(month)
-    is_history = bool(period and period[0] < reporting_floor())
+    Unified Dashboard aggregation sharing one source of truth with ReportService (collect_bi_entries).
 
-    # 1. Fetch Business BI multi-dimensional summaries (single execution)
-    bi_data = await report_service.ReportService.get_business_bi_dashboard(
+    * brand / month / employee_id take one value or several (OR inside a filter, AND across filters).
+    * ageing_bucket restricts EVERY widget to the outlets holding outstanding in that bucket; the money
+      figures show only the outstanding in that bucket.
+    * Month boundaries are Asia/Kolkata calendar days (timestamps are compared with IST day windows).
+    """
+    from app.services.report_service import _brand_aliases, _wants_unattributed
+
+    brands = as_list(brand)
+    months = as_list(month)
+    emp_ids = as_uuid_list(employee_id)
+    # None = Current Live Data; one or several months / financial years otherwise.
+    window = resolve_snapshot_window(",".join(months) if months else None, None, None)
+    has_period = bool(months)
+    is_history = bool(has_period and window.start and window.start < reporting_floor())
+
+    # 1. Business BI (single execution) + the outlets of the selected ageing bucket.
+    bi_data, bucket_customers = await report_service.ReportService.build_business_bi(
         session=session,
-        brand=brand,
+        brand=",".join(brands) if brands else None,
         zone_id=zone_id,
         area_id=area_id,
-        employee_id=employee_id,
-        month=month,
+        employee_id=emp_ids,
+        month=",".join(months) if months else None,
+        ageing_bucket=ageing_bucket,
     )
+    cust_scope = list(bucket_customers) if bucket_customers is not None else None
+    no_match = cust_scope is not None and not cust_scope  # ageing bucket selected, nothing in it
 
-    # 2. Count total active employees within active filter scope (WEB-DASH-012)
+    # 2. Employees within the filter scope (WEB-DASH-012)
     emp_stmt = select(func.count(func.distinct(Employee.id)))
-    if employee_id:
-        emp_stmt = emp_stmt.where(Employee.id == employee_id)
+    if emp_ids:
+        emp_stmt = emp_stmt.where(Employee.id.in_(emp_ids))
     if zone_id:
         emp_stmt = emp_stmt.where(Employee.territory_id == zone_id)
-    if area_id:
+    if area_id or cust_scope is not None:
         emp_stmt = emp_stmt.join(
-            EmployeeCustomerAssignment,
-            EmployeeCustomerAssignment.employee_id == Employee.id,
-        ).join(
-            Customer,
-            Customer.id == EmployeeCustomerAssignment.customer_id,
-        ).where(Customer.area_id == area_id)
-    emp_res = await session.execute(emp_stmt)
-    total_employees = emp_res.scalar() or 0
+            EmployeeCustomerAssignment, EmployeeCustomerAssignment.employee_id == Employee.id,
+        ).join(Customer, Customer.id == EmployeeCustomerAssignment.customer_id)
+        if area_id:
+            emp_stmt = emp_stmt.where(Customer.area_id == area_id)
+        if cust_scope is not None:
+            emp_stmt = emp_stmt.where(Customer.id.in_(cust_scope or [uuid.UUID(int=0)]))
+    total_employees = (await session.execute(emp_stmt)).scalar() or 0
 
-    # 3. Fetch Operational Visit Counts within active filter scope
+    # 3. Visits within the filter scope (period = IST calendar days of the selected month(s))
     visit_q = select(
         func.count(Visit.id).label("total"),
         func.count(Visit.id).filter(Visit.status == VisitStatus.COMPLETED).label("completed"),
@@ -80,146 +92,190 @@ async def get_dashboard_summary(
         func.count(Visit.id).filter(Visit.status == VisitStatus.FLAGGED).label("flagged"),
         func.count(Visit.id).filter(Visit.check_in_location.isnot(None)).label("gps_verified"),
     )
-    if employee_id:
-        visit_q = visit_q.where(Visit.employee_id == employee_id)
+    if emp_ids:
+        visit_q = visit_q.where(Visit.employee_id.in_(emp_ids))
     if zone_id or area_id:
         visit_q = visit_q.join(Customer, Visit.customer_id == Customer.id)
         if zone_id:
             visit_q = visit_q.where(Customer.territory_id == zone_id)
         if area_id:
             visit_q = visit_q.where(Customer.area_id == area_id)
-    if period:  # the same window as the BI figures: a month, or a whole financial year (history)
-        visit_q = visit_q.where(func.date(Visit.scheduled_at).between(period[0], period[1]))
+    if cust_scope is not None:
+        visit_q = visit_q.where(Visit.customer_id.in_(cust_scope or [uuid.UUID(int=0)]))
+    if has_period:
+        visit_q = where_ist_window(visit_q, Visit.scheduled_at, window)
+    v_row = (await session.execute(visit_q)).one()
 
-    v_res = await session.execute(visit_q)
-    v_row = v_res.one()
-
-    # 4. Fetch Exceptions count
+    # 4. Exceptions
     exc_q = select(
         func.count(FieldException.id).label("total"),
         func.count(FieldException.id).filter(FieldException.status == ExceptionStatus.PENDING_REVIEW).label("pending"),
     )
-    if employee_id:
-        exc_q = exc_q.where(FieldException.employee_id == employee_id)
-    exc_res = await session.execute(exc_q)
-    exc_row = exc_res.one()
+    if emp_ids:
+        exc_q = exc_q.where(FieldException.employee_id.in_(emp_ids))
+    if cust_scope is not None:
+        exc_q = exc_q.where(FieldException.customer_id.in_(cust_scope or [uuid.UUID(int=0)]))
+    exc_row = (await session.execute(exc_q)).one()
 
-    # 5. Fetch Collections count & Realized Live Payments sum. Money is counted once:
-    # receipts in Tally + verified field collections not yet in Tally (payment_tally).
-    collected = payment_tally.collected_clause(employee_id)
-    posted = payment_tally.posted_clause_for(employee_id)
-    if brand and brand != "ALL":
-        from app.services.brand_service import resolve_canonical_brand_name
-        canonical_b = resolve_canonical_brand_name(brand)
-        col_q = select(
-            func.count(func.distinct(Payment.id)).label("total_count"),
-            func.coalesce(
-                func.sum(case((collected, PaymentBrandAllocation.allocated_amount), else_=Decimal("0.00"))),
-                Decimal("0.00"),
-            ).label("verified_sum"),
-            func.coalesce(
-                func.sum(case((posted, PaymentBrandAllocation.allocated_amount), else_=Decimal("0.00"))),
-                Decimal("0.00"),
-            ).label("posted_sum"),
-            func.coalesce(
-                func.sum(case((payment_tally.awaiting_clause(), PaymentBrandAllocation.allocated_amount), else_=Decimal("0.00"))),
-                Decimal("0.00"),
-            ).label("awaiting_sum"),
-        ).join(PaymentBrandAllocation, PaymentBrandAllocation.payment_id == Payment.id).where(
-            func.lower(PaymentBrandAllocation.brand) == canonical_b.lower()
+    # 5. Collections. Money is counted once: receipts in Tally + verified field collections not yet in Tally.
+    collected = payment_tally.collected_clause(emp_ids)
+    posted = payment_tally.posted_clause_for(emp_ids)
+
+    def _col_scope(q):
+        if zone_id or area_id:
+            q = q.join(Customer, Payment.customer_id == Customer.id)
+            if zone_id:
+                q = q.where(Customer.territory_id == zone_id)
+            if area_id:
+                q = q.where(Customer.area_id == area_id)
+        if cust_scope is not None:
+            q = q.where(Payment.customer_id.in_(cust_scope or [uuid.UUID(int=0)]))
+        if has_period:
+            q = q.where(in_ranges(Payment.payment_date, list(window.ranges or [(window.start, window.end)])))
+        else:
+            # Current Live Data: Tally receipts dated before the reporting floor are HISTORY.
+            q = q.where(live_payment_clause(Payment))
+        return q
+
+    def _sums(amount_col):
+        return (
+            func.coalesce(func.sum(case((collected, amount_col), else_=Decimal("0.00"))), Decimal("0.00")),
+            func.coalesce(func.sum(case((posted, amount_col), else_=Decimal("0.00"))), Decimal("0.00")),
+            func.coalesce(func.sum(case((payment_tally.awaiting_clause(), amount_col), else_=Decimal("0.00"))),
+                          Decimal("0.00")),
         )
-    else:
-        col_q = select(
-            func.count(Payment.id).label("total_count"),
-            func.coalesce(
-                func.sum(case((collected, Payment.amount), else_=Decimal("0.00"))),
-                Decimal("0.00"),
-            ).label("verified_sum"),
-            func.coalesce(
-                func.sum(case((posted, Payment.amount), else_=Decimal("0.00"))),
-                Decimal("0.00"),
-            ).label("posted_sum"),
-            func.coalesce(
-                func.sum(case((payment_tally.awaiting_clause(), Payment.amount), else_=Decimal("0.00"))),
-                Decimal("0.00"),
-            ).label("awaiting_sum"),
-        )
-    if employee_id:
-        col_q = col_q.where(Payment.employee_id == employee_id)
-    if zone_id or area_id:
-        col_q = col_q.join(Customer, Payment.customer_id == Customer.id)
-        if zone_id:
-            col_q = col_q.where(Customer.territory_id == zone_id)
-        if area_id:
-            col_q = col_q.where(Customer.area_id == area_id)
-    if period:  # the same window as the BI figures: a month, or a whole financial year (history)
-        col_q = col_q.where(Payment.payment_date.between(period[0], period[1]))
-    else:
-        # Current Live Data: Tally receipts dated before the reporting floor are HISTORY and never counted here
-        # (field collections are always live). Before this, the live collection tile included past years.
-        col_q = col_q.where(live_payment_clause(Payment))
 
-    col_res = (await session.execute(col_q)).one()
-    col_count = col_res.total_count or 0
-    live_verified_col = col_res.verified_sum or Decimal("0.00")
-    # Split of the verified collections: receipt already in Tally vs not yet.
-    live_posted_col = col_res.posted_sum or Decimal("0.00")
-    live_awaiting_col = col_res.awaiting_sum or Decimal("0.00")
-
-    # 5b. Compute accurate total customer accounts (from snapshots, assignments, or visits)
-    cust_q = select(func.count(func.distinct(Customer.id)))
-    if employee_id:
-        cust_q = cust_q.outerjoin(
-            EmployeeCustomerAssignment,
-            EmployeeCustomerAssignment.customer_id == Customer.id,
-        ).outerjoin(
-            Visit,
-            Visit.customer_id == Customer.id,
-        ).where(
-            or_(
-                EmployeeCustomerAssignment.employee_id == employee_id,
-                Visit.employee_id == employee_id,
+    col_count = 0
+    live_verified_col = live_posted_col = live_awaiting_col = Decimal("0.00")
+    queries = []
+    if brands:
+        aliases = _brand_aliases(brands)
+        if aliases:
+            queries.append(
+                select(func.count(func.distinct(Payment.id)), *_sums(PaymentBrandAllocation.allocated_amount))
+                .join(PaymentBrandAllocation, PaymentBrandAllocation.payment_id == Payment.id)
+                .where(func.lower(PaymentBrandAllocation.brand).in_(aliases))
             )
-        )
+        if _wants_unattributed(brands):
+            no_alloc = ~exists(select(literal(1)).where(PaymentBrandAllocation.payment_id == Payment.id)
+                               .correlate(Payment))
+            queries.append(select(func.count(Payment.id), *_sums(Payment.amount)).where(no_alloc))
+    else:
+        queries.append(select(func.count(Payment.id), *_sums(Payment.amount)))
+    for q in queries:
+        if emp_ids:
+            q = q.where(Payment.employee_id.in_(emp_ids))
+        n, v, p_, a = (await session.execute(_col_scope(q))).one()
+        col_count += n or 0
+        live_verified_col += v or 0
+        live_posted_col += p_ or 0
+        live_awaiting_col += a or 0
+
+    # 5b. Customer accounts in scope (assignments / visits) - brand-aware so a brand filter never shows all outlets.
+    cust_q = select(func.count(func.distinct(Customer.id)))
+    if emp_ids:
+        cust_q = cust_q.where(or_(
+            exists(select(literal(1)).where(EmployeeCustomerAssignment.customer_id == Customer.id,
+                                            EmployeeCustomerAssignment.employee_id.in_(emp_ids)).correlate(Customer)),
+            exists(select(literal(1)).where(Visit.customer_id == Customer.id,
+                                            Visit.employee_id.in_(emp_ids)).correlate(Customer)),
+        ))
+    if brands:
+        from app.models.customer_brand import CustomerBrand
+        aliases = _brand_aliases(brands) or []
+        parts = []
+        if aliases:
+            parts.append(exists(select(literal(1)).where(
+                CustomerBrand.customer_id == Customer.id, CustomerBrand.is_active.is_(True),
+                func.lower(CustomerBrand.brand).in_(aliases)).correlate(Customer)))
+        if _wants_unattributed(brands):
+            parts.append(~exists(select(literal(1)).where(
+                CustomerBrand.customer_id == Customer.id, CustomerBrand.is_active.is_(True)).correlate(Customer)))
+        cust_q = cust_q.where(or_(*parts))
     if zone_id:
         cust_q = cust_q.where(Customer.territory_id == zone_id)
     if area_id:
         cust_q = cust_q.where(Customer.area_id == area_id)
-
     act_outlets_count = (await session.execute(cust_q)).scalar() or 0
-    final_outlets = bi_data.total_outlets if (month and month != "ALL") else max(bi_data.total_outlets, act_outlets_count)
-    # Authoritative single collection sum: prevents double counting of bi_data + live_verified_col
-    final_collection = bi_data.total_collection if (month and month != "ALL") else live_verified_col
+    if has_period or cust_scope is not None:
+        final_outlets = bi_data.total_outlets
+    else:
+        final_outlets = max(bi_data.total_outlets, act_outlets_count)
 
-    # 6. Fetch Orders count
+    # One collection figure everywhere: from live Tally invoices the BI already counted each rupee once with
+    # the same filters (brand cards add up to it); snapshots keep the period / live split used before.
+    if bi_data.data_source == "LIVE_INVOICES":
+        final_collection = bi_data.total_collection
+        live_posted_col = bi_data.total_collection_posted_in_tally
+        live_awaiting_col = bi_data.total_collection_verified_awaiting_tally
+    else:
+        final_collection = bi_data.total_collection if has_period else live_verified_col
+
+    # 6. Orders (order photos) in scope
     order_q = select(func.count(VisitMedia.id)).where(VisitMedia.media_type == MediaType.ORDER)
-    if employee_id:
-        emp_user_stmt = select(Employee.user_id).where(Employee.id == employee_id)
-        emp_uid = (await session.execute(emp_user_stmt)).scalar_one_or_none()
-        if emp_uid:
-            order_q = order_q.where(VisitMedia.uploaded_by == emp_uid)
-    if period:  # the same window as the BI figures: a month, or a whole financial year (history)
-        order_q = order_q.where(func.date(VisitMedia.uploaded_at).between(period[0], period[1]))
+    if emp_ids:
+        emp_uids = (await session.execute(select(Employee.user_id).where(Employee.id.in_(emp_ids)))).scalars().all()
+        order_q = order_q.where(VisitMedia.uploaded_by.in_([u for u in emp_uids if u] or [uuid.UUID(int=0)]))
+    if cust_scope is not None or zone_id or area_id:
+        order_q = order_q.join(Visit, Visit.id == VisitMedia.visit_id)
+        if cust_scope is not None:
+            order_q = order_q.where(Visit.customer_id.in_(cust_scope or [uuid.UUID(int=0)]))
+        if zone_id or area_id:
+            order_q = order_q.join(Customer, Customer.id == Visit.customer_id)
+            if zone_id:
+                order_q = order_q.where(Customer.territory_id == zone_id)
+            if area_id:
+                order_q = order_q.where(Customer.area_id == area_id)
+    if has_period:
+        order_q = where_ist_window(order_q, VisitMedia.uploaded_at, window)
     order_count = (await session.execute(order_q)).scalar_one() or 0
 
-    # 7. Recent Exceptions for preview
-    recent_exceptions, _ = await field_exception_service.list_field_exceptions(
-        current_user=current_user,
-        session=session,
-        employee_id=employee_id,
-        limit=5,
+    # 7. Recent exceptions (same FOS / ageing scope)
+    if no_match:
+        recent_exceptions = []
+    else:
+        recent_exceptions, _ = await field_exception_service.list_field_exceptions(
+            current_user=current_user,
+            session=session,
+            employee_id=emp_ids[0] if emp_ids and len(emp_ids) == 1 else None,
+            limit=5 if not ((emp_ids and len(emp_ids) > 1) or cust_scope is not None) else 100,
+        )
+        if emp_ids and len(emp_ids) > 1:
+            wanted = {str(i) for i in emp_ids}
+            recent_exceptions = [e for e in recent_exceptions if str(e.employee_id) in wanted]
+        if cust_scope is not None:
+            scope = {str(i) for i in cust_scope}
+            recent_exceptions = [e for e in recent_exceptions if str(getattr(e, "customer_id", "")) in scope]
+        recent_exceptions = recent_exceptions[:5]
+
+    # 7b. Recent field operations: the latest visits in the SAME scope (FOS, zone, area, period, ageing outlets).
+    rv_q = (
+        select(Visit.id, Visit.customer_id, Customer.name, Employee.full_name, Visit.scheduled_at, Visit.status,
+               Visit.check_in_at)
+        .join(Customer, Customer.id == Visit.customer_id)
+        .join(Employee, Employee.id == Visit.employee_id)
+        .order_by(Visit.scheduled_at.desc(), Visit.id.desc())
+        .limit(6)
     )
+    if emp_ids:
+        rv_q = rv_q.where(Visit.employee_id.in_(emp_ids))
+    if zone_id:
+        rv_q = rv_q.where(Customer.territory_id == zone_id)
+    if area_id:
+        rv_q = rv_q.where(Customer.area_id == area_id)
+    if cust_scope is not None:
+        rv_q = rv_q.where(Visit.customer_id.in_(cust_scope or [uuid.UUID(int=0)]))
+    if has_period:
+        rv_q = where_ist_window(rv_q, Visit.scheduled_at, window)
+    recent_visits = [
+        DashboardRecentVisit(id=str(r[0]), customer_id=str(r[1]), customer_name=r[2], employee_name=r[3],
+                             scheduled_at=r[4], status=r[5].value if hasattr(r[5], "value") else str(r[5]),
+                             check_in_at=r[6])
+        for r in (await session.execute(rv_q)).all()
+    ]
 
     # 8. 7 Ageing Buckets Distribution
-    ageing_distribution = {
-        "<15": Decimal("0.00"),
-        "15-30": Decimal("0.00"),
-        "30-45": Decimal("0.00"),
-        "45-60": Decimal("0.00"),
-        "60-75": Decimal("0.00"),
-        "75-90": Decimal("0.00"),
-        ">90": Decimal("0.00"),
-    }
+    ageing_distribution = {k: Decimal("0.00") for k in ("<15", "15-30", "30-45", "45-60", "60-75", "75-90", ">90")}
     for b in bi_data.brand_summaries:
         ageing_distribution["<15"] += b.bucket_lt_15
         ageing_distribution["15-30"] += b.bucket_15_30
@@ -251,8 +307,8 @@ async def get_dashboard_summary(
     )
 
     return DashboardSummaryResponse(
-        period=month if month and month != "ALL" else "LIVE",
-        is_historical=bool(month and month != "ALL"),
+        period=",".join(months) if months else "LIVE",
+        is_historical=has_period,
         is_history=is_history,
         kpis=kpis,
         brand_breakdown=bi_data.brand_summaries,
@@ -261,6 +317,15 @@ async def get_dashboard_summary(
         area_breakdown=bi_data.area_summaries,
         ageing_distribution=ageing_distribution,
         recent_exceptions=recent_exceptions,
+        data_source=bi_data.data_source,
+        data_source_note=bi_data.data_source_note,
+        as_of_date=bi_data.as_of_date,
+        applied_brands=brands or [],
+        applied_periods=months or [],
+        applied_employee_ids=[str(i) for i in emp_ids or []],
+        ageing_bucket=bi_data.ageing_bucket,
+        ageing_basis=bi_data.ageing_basis,
+        recent_visits=recent_visits,
     )
 
 

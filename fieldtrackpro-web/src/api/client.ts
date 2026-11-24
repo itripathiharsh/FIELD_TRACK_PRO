@@ -1967,6 +1967,26 @@ export class ApiClient {
   }
 
   /** Generic loader used by the Reports page: the same (report, params) pair is later used for the export. */
+  /** Brands to offer in the Dashboard / Reports brand filter (brands with Tally records + 'Unattributed'). */
+  async getBrandFilterOptions(): Promise<import('../utils/biFilters').BrandFilterOption[]> {
+    return this.request('/api/v1/brands/filter-options');
+  }
+
+  async getBrandReconciliation(): Promise<{
+    source_note: string;
+    rows: import('../types').BrandReconciliationRow[];
+    unattributed_groups: Array<{ group: string; ledgers: number; invoices: number; invoice_amount: string;
+      voucher_types: string[]; possible_brand: string | null; status: string }>;
+  }> {
+    return this.request('/api/v1/brands/reconciliation');
+  }
+
+  /** Totals of the whole filtered outstanding report (same params as the report itself). */
+  async getOutstandingSummary(params: Record<string, string>): Promise<import('../types').OutstandingSummary> {
+    const q = new URLSearchParams(params).toString();
+    return this.request(`/api/v1/reports/outstanding/summary${q ? `?${q}` : ''}`);
+  }
+
   async getReport<T>(report: ReportKey, params: Record<string, string>): Promise<T> {
     const q = new URLSearchParams(params).toString();
     return this.request<T>(`${REPORT_ENDPOINTS[report]}${q ? `?${q}` : ''}`);
@@ -2699,6 +2719,23 @@ export class ApiClient {
   /** Map a Tally group to an employee, or mark it NOT a FOS group, or (neither) un-map it. */
   async mapFosGroup(groupId: string, body: { employee_id?: string | null; not_fos?: boolean; note?: string }): Promise<FosGroup> {
     return this.request<FosGroup>(`/api/v1/fos-assignments/groups/${groupId}`, { method: 'PUT', body: JSON.stringify(body) });
+  }
+
+  /** Admin per-outlet FOS change (replaces the outlet's FOS now; the Tally ledger move is recorded and tracked). */
+  async changeOutletFos(
+    customerId: string,
+    body: { employee_id: string; expected_employee_ids?: string[]; note?: string },
+    idempotencyKey?: string,
+  ): Promise<import('../types').FosLedgerMove> {
+    return this.request(`/api/v1/fos-assignments/outlets/${customerId}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+      headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
+    });
+  }
+
+  async resolveFosMove(moveId: string, keep: 'ADMIN' | 'TALLY'): Promise<import('../types').FosLedgerMove> {
+    return this.request(`/api/v1/fos-assignments/moves/${moveId}/resolve`, { method: 'POST', body: JSON.stringify({ keep }) });
   }
 
   async mapFosGroupsBulk(items: { group_id: string; employee_id?: string | null; not_fos?: boolean }[]): Promise<{ mapped: number; sync_enabled: boolean }> {

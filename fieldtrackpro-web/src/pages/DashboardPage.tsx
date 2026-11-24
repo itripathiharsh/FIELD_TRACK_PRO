@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Users,
   Building2,
@@ -55,19 +55,39 @@ import {
 } from '../types';
 import { generatePDFContent } from '../utils/pdf-report';
 import { formatMoney as formatCurrency } from '../utils/money';
+import { formatIstDate, formatIstDateTime } from '../utils/ist';
+import { MultiSelectFilter } from '../components/filters/MultiSelectFilter';
+import { joinMulti, splitMulti } from '../utils/multiValue';
+import {
+  AGEING_BUCKETS,
+  AGEING_EXPLAINER,
+  BrandFilterOption,
+  ageingLabel,
+  isBrandOptionList,
+  biFiltersFromSearch,
+  brandOptions,
+  fosOptions,
+  periodOptions,
+  writeBiFiltersToSearch,
+} from '../utils/biFilters';
 
 export const DashboardPage: React.FC = () => {
   const navigate = useNavigate();
   const { user, isLoading: isAuthLoading } = useAuth();
   const isAdmin = isAdminRole(user);
 
-  // Master & Filter States
-  const [selectedMonth, setSelectedMonth] = useState<string>('ALL');
-  const [selectedBrand, setSelectedBrand] = useState<string>('ALL');
-  const [selectedZoneId, setSelectedZoneId] = useState<string>('ALL');
-  const [selectedAreaId, setSelectedAreaId] = useState<string>('ALL');
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>('ALL');
-  const [selectedAgeingBucket, setSelectedAgeingBucket] = useState<string>('ALL');
+  // Master & Filter States. Brand, Period and FOS are multi-select (comma-joined, 'ALL' = none selected);
+  // the filters live in the URL (?period=&brand=&fos=&zone=&area=&ageing=) so a view can be shared / reloaded.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [initialBi] = useState(() => biFiltersFromSearch(searchParams));
+  const [selectedMonth, setSelectedMonth] = useState<string>(initialBi.month);
+  const [selectedBrand, setSelectedBrand] = useState<string>(initialBi.brand);
+  const [selectedZoneId, setSelectedZoneId] = useState<string>(initialBi.zoneId);
+  const [selectedAreaId, setSelectedAreaId] = useState<string>(initialBi.areaId);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>(initialBi.employeeId);
+  const [selectedAgeingBucket, setSelectedAgeingBucket] = useState<string>(initialBi.ageingBucket);
+  const [brandFilterOptions, setBrandFilterOptions] = useState<BrandFilterOption[] | null>(null);
+  const [biUnavailable, setBiUnavailable] = useState(false);
 
   // Reference filter options
   const [territories, setTerritories] = useState<Territory[]>([]);
@@ -113,13 +133,51 @@ export const DashboardPage: React.FC = () => {
 
   /** Label of the selected History period ("FY 2025-26" or "July 2025 · FY 2025-26"), or null when not History. */
   const selectedHistoryLabel = useMemo(() => {
-    for (const fy of historyPeriods) {
-      if (fy.value === selectedMonth) return `${fy.label} (full year)`;
-      const m = fy.months.find((x) => x.value === selectedMonth);
-      if (m) return `${m.label} · ${fy.label}`;
+    const labels: string[] = [];
+    for (const v of splitMulti(selectedMonth)) {
+      for (const fy of historyPeriods) {
+        if (fy.value === v) labels.push(`${fy.label} (full year)`);
+        const m = fy.months.find((x) => x.value === v);
+        if (m) labels.push(`${m.label} · ${fy.label}`);
+      }
     }
-    return null;
+    return labels.length ? labels.join(', ') : null;
   }, [historyPeriods, selectedMonth]);
+
+  // Keep the URL in step with the filters (admin dashboard only; ?tab= and other params are kept).
+  useEffect(() => {
+    if (!isAdmin) return;
+    const next = writeBiFiltersToSearch(searchParams, {
+      month: selectedMonth, brand: selectedBrand, zoneId: selectedZoneId, areaId: selectedAreaId,
+      employeeId: selectedEmployeeId, ageingBucket: selectedAgeingBucket,
+    });
+    if (next.toString() !== searchParams.toString()) setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin, selectedMonth, selectedBrand, selectedZoneId, selectedAreaId, selectedEmployeeId, selectedAgeingBucket]);
+
+  const periodFilterOptions = useMemo(
+    () => periodOptions(monthlyPeriods, historyPeriods),
+    [monthlyPeriods, historyPeriods],
+  );
+  const brandFilterOpts = useMemo(
+    () =>
+      brandOptions(
+        brandFilterOptions ??
+          // Older backend without /brands/filter-options: fall back to the brand master list.
+          masterBrands.map((b) => ({ name: b.name, records: 0, unattributed: false })),
+      ).map((o) => (brandFilterOptions ? o : { ...o, hint: undefined })),
+    [brandFilterOptions, masterBrands],
+  );
+  const fosFilterOptions = useMemo(() => fosOptions(employeeOptions), [employeeOptions]);
+  const toggleAgeingBucket = (key: string) => setSelectedAgeingBucket((cur) => (cur === key ? 'ALL' : key));
+  const resetBiFilters = () => {
+    setSelectedMonth('ALL');
+    setSelectedBrand('ALL');
+    setSelectedZoneId('ALL');
+    setSelectedAreaId('ALL');
+    setSelectedEmployeeId('ALL');
+    setSelectedAgeingBucket('ALL');
+  };
 
   const availablePeriodsWithData = useMemo(() => {
     return monthlyPeriods.filter(
@@ -186,12 +244,14 @@ export const DashboardPage: React.FC = () => {
       apiClient.getEmployees({ limit: 1500 }).catch(() => [] as Employee[]),
       apiClient.getMonthlyPeriods().catch(() => [] as MonthlyReportingPeriod[]),
       apiClient.getBrands(true).catch(() => [] as Brand[]),
-    ]).then(([tList, aList, eList, pList, bList]) => {
+      apiClient.getBrandFilterOptions().catch(() => null),
+    ]).then(([tList, aList, eList, pList, bList, bOpts]) => {
       setTerritories(tList || []);
       setAreas(aList || []);
       setEmployeeOptions(eList || []);
       setMonthlyPeriods(pList || []);
       setMasterBrands(bList || []);
+      setBrandFilterOptions(isBrandOptionList(bOpts) ? bOpts : null);
     });
   }, [isAdmin]);
 
@@ -200,8 +260,13 @@ export const DashboardPage: React.FC = () => {
     return areas.filter((a) => a.territory_id === selectedZoneId);
   }, [areas, selectedZoneId]);
 
+  // Only the newest request may update the page: a slower, older request (e.g. the refetch on window focus that
+  // starts just before a filter click) must never overwrite the figures of the filters now selected.
+  const fetchSeq = useRef(0);
   const fetchData = useCallback(() => {
     if (isAuthLoading || !user) return;
+    const seq = ++fetchSeq.current;
+    const current = () => seq === fetchSeq.current;
 
     setIsLoading(true);
     setError(null);
@@ -246,6 +311,7 @@ export const DashboardPage: React.FC = () => {
 
       Promise.all([visitsPromise, biPromise, customersPromise, employeesPromise, overviewPromise, periodsPromise, tallyPromise])
         .then(([vList, biData, cList, eList, ovData, pList, tallyData]) => {
+          if (!current()) return;
           setVisits(vList || []);
           setDashboardBI(biData);
           setCustomers(cList || []);
@@ -256,14 +322,17 @@ export const DashboardPage: React.FC = () => {
             setMonthlyPeriods(pList);
           }
           setTallyStatus(tallyData);
+          setBiUnavailable(!biData);
           if (!biData && biFailure.message) {
-            setError(`Executive dashboard figures could not be loaded: ${biFailure.message}`);
+            setError(`Executive dashboard figures could not be loaded: ${biFailure.message}. No figure is shown rather than a wrong 0.`);
           }
         })
         .catch((err: Error) => {
-          setError(err.message || 'Unable to load dashboard data');
+          if (current()) setError(err.message || 'Unable to load dashboard data');
         })
-        .finally(() => setIsLoading(false));
+        .finally(() => {
+          if (current()) setIsLoading(false);
+        });
     } else {
       // Employee dashboard uses employee-scoped "My Day" endpoint with IST boundaries
       const visitsPromise = apiClient.getMyTodayVisits().catch(() => [] as Visit[]);
@@ -277,6 +346,7 @@ export const DashboardPage: React.FC = () => {
 
       Promise.all([visitsPromise, dayPromise, customersPromise, analyticsPromise, tallyPromise])
         .then(([vList, dayData, cList, anData, tallyData]) => {
+          if (!current()) return;
           setVisits(vList || []);
           setDayDashboard(dayData);
           setCustomers(cList || []);
@@ -284,10 +354,13 @@ export const DashboardPage: React.FC = () => {
           setTallyStatus(tallyData);
         })
         .catch((err: Error) => {
+          if (!current()) return;
           setVisits([]);
           setError(err.message || 'Unable to load dashboard data');
         })
-        .finally(() => setIsLoading(false));
+        .finally(() => {
+          if (current()) setIsLoading(false);
+        });
     }
   }, [
     isAdmin,
@@ -345,6 +418,15 @@ export const DashboardPage: React.FC = () => {
     ? (dashboardBI ? dashboardBI.kpis.total_outlets : customers.length)
     : (dayDashboard ? dayDashboard.assigned_outlets_count : customers.length);
 
+  // Admin cards come from /dashboard/summary only: while it loads they show '…', if it failed they show '—'
+  // (never a 0 that looks like a real figure).
+  const biPending = isAdmin && !dashboardBI;
+  // "Recent Field Operations": for admins the filtered list from /dashboard/summary (same scope as every card);
+  // employees keep their own visits of today.
+  const recentOps = (isAdmin && dashboardBI?.recent_visits ? dashboardBI.recent_visits : visits.slice(0, 6)) as Array<
+    Pick<Visit, 'id' | 'customer_id' | 'scheduled_at' | 'status'> & { customer_name?: string; check_in_at?: string | null }
+  >;
+  const shown = (v: number | string) => (biPending ? (isLoading && !biUnavailable ? '…' : '—') : v);
   const geoComplianceRate =
     totalVisits > 0
       ? Math.max(0, Math.min(100, Math.round(((totalVisits - flaggedVisits) / totalVisits) * 100)))
@@ -648,7 +730,7 @@ export const DashboardPage: React.FC = () => {
                 {' • '}Receipts: <span className="font-semibold text-primary">{tallyStatus.total_payments_synced.toLocaleString('en-IN')}</span>
                 {tallyStatus.last_sync_at && (
                   <>
-                    {' • '}Last Sync: <span className="font-semibold text-on-surface">{new Date(tallyStatus.last_sync_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                    {' • '}Last Sync: <span className="font-semibold text-on-surface">{formatIstDateTime(tallyStatus.last_sync_at)} IST</span>
                   </>
                 )}
               </p>
@@ -679,25 +761,29 @@ export const DashboardPage: React.FC = () => {
                 </span>
               </div>
               <div className="flex items-center gap-3">
-                <span className="font-caption text-xs text-on-surface-variant">
+                <span className="font-caption text-xs text-on-surface-variant" data-testid="data-scope">
                   Data Scope:{' '}
                   <span className="font-semibold text-primary">
                     {selectedMonth === 'ALL'
-                      ? '🟢 Current Live Data'
+                      ? 'Current Live Data'
                       : selectedHistoryLabel
-                      ? `📜 History · ${selectedHistoryLabel}`
-                      : `🔒 ${availablePeriodsWithData.find((p) => `${p.period_year}-${String(p.period_month).padStart(2, '0')}` === selectedMonth)?.period_name || selectedMonth}`}
+                      ? `History · ${selectedHistoryLabel}`
+                      : splitMulti(selectedMonth)
+                          .map((v) => periodFilterOptions.find((o) => o.value === v)?.label ?? v)
+                          .join(', ')}
                   </span>
+                  {dashboardBI && (
+                    <span className="ml-1">
+                      ·{' '}
+                      {dashboardBI.data_source === 'SNAPSHOT'
+                        ? `Monthly snapshot${dashboardBI.as_of_date ? ` (as of ${formatIstDate(dashboardBI.as_of_date)})` : ''}`
+                        : `Live from Tally, outstanding as of ${formatIstDate(dashboardBI.as_of_date || new Date())} (IST)`}
+                    </span>
+                  )}
                 </span>
                 <button
-                  onClick={() => {
-                    setSelectedMonth('ALL');
-                    setSelectedBrand('ALL');
-                    setSelectedZoneId('ALL');
-                    setSelectedAreaId('ALL');
-                    setSelectedEmployeeId('ALL');
-                    setSelectedAgeingBucket('ALL');
-                  }}
+                  type="button"
+                  onClick={resetBiFilters}
                   className="font-label-md text-xs uppercase tracking-wider text-on-surface-variant hover:text-primary flex items-center gap-1 transition-colors cursor-pointer"
                 >
                   <RefreshCw className="w-3 h-3" /> Reset
@@ -706,57 +792,25 @@ export const DashboardPage: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-              {/* Period */}
-              <div>
-                <label className="font-label-md text-xs text-on-surface uppercase tracking-wider block font-semibold mb-1">
-                  Period / Month
-                </label>
-                <select
-                  className="w-full h-9 bg-surface border border-outline-variant rounded-lg px-2.5 py-1.5 text-xs text-on-surface font-body-md focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 transition-all"
-                  value={selectedMonth}
-                  onChange={(e) => setSelectedMonth(e.target.value)}
-                >
-                  <option value="ALL">Current Live Data</option>
-                  {availablePeriodsWithData.map((p) => {
-                    const mStr = `${p.period_year}-${String(p.period_month).padStart(2, '0')}`;
-                    const tag = p.status === 'FINALIZED' ? '🔒 (Locked)' : p.status === 'PENDING_CLOSE' ? '⏳ (Pending Close)' : '🟢 (Current)';
-                    return (
-                      <option key={p.id} value={mStr}>
-                        {p.period_name} {tag}
-                      </option>
-                    );
-                  })}
-                  {historyPeriods.map((fy) => (
-                    <optgroup key={fy.value} label={`History (read-only) · ${fy.label}`}>
-                      <option value={fy.value}>{`📜 ${fy.label} — full year (History)`}</option>
-                      {fy.months.map((m) => (
-                        <option key={m.value} value={m.value}>
-                          {`📜 ${m.label} (History)`}
-                        </option>
-                      ))}
-                    </optgroup>
-                  ))}
-                </select>
-              </div>
+              {/* Period (multi-select) */}
+              <MultiSelectFilter
+                testId="filter-period"
+                label="Period / Month"
+                allLabel="Current Live Data"
+                options={periodFilterOptions}
+                value={splitMulti(selectedMonth)}
+                onChange={(v) => setSelectedMonth(joinMulti(v))}
+              />
 
-              {/* Brand */}
-              <div>
-                <label className="font-label-md text-xs text-on-surface uppercase tracking-wider block font-semibold mb-1">
-                  Brand
-                </label>
-                <select
-                  className="w-full h-9 bg-surface border border-outline-variant rounded-lg px-2.5 py-1.5 text-xs text-on-surface font-body-md focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 transition-all"
-                  value={selectedBrand}
-                  onChange={(e) => setSelectedBrand(e.target.value)}
-                >
-                  <option value="ALL">All Brands</option>
-                  {masterBrands.map((b) => (
-                    <option key={b.id} value={b.name}>
-                      {b.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {/* Brand (multi-select) */}
+              <MultiSelectFilter
+                testId="filter-brand"
+                label="Brand"
+                allLabel="All Brands"
+                options={brandFilterOpts}
+                value={splitMulti(selectedBrand)}
+                onChange={(v) => setSelectedBrand(joinMulti(v))}
+              />
 
               {/* Zone */}
               <div>
@@ -799,24 +853,15 @@ export const DashboardPage: React.FC = () => {
                 </select>
               </div>
 
-              {/* FOS */}
-              <div>
-                <label className="font-label-md text-xs text-on-surface uppercase tracking-wider block font-semibold mb-1">
-                  FOS / Field Officer
-                </label>
-                <select
-                  className="w-full h-9 bg-surface border border-outline-variant rounded-lg px-2.5 py-1.5 text-xs text-on-surface font-body-md focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 transition-all"
-                  value={selectedEmployeeId}
-                  onChange={(e) => setSelectedEmployeeId(e.target.value)}
-                >
-                  <option value="ALL">All Field Officers ({employeeOptions.length})</option>
-                  {employeeOptions.map((emp) => (
-                    <option key={emp.id} value={emp.id}>
-                      {emp.full_name} ({emp.employee_code})
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {/* FOS (multi-select) */}
+              <MultiSelectFilter
+                testId="filter-fos"
+                label="FOS / Field Officer"
+                allLabel={`All Field Officers (${fosFilterOptions.length})`}
+                options={fosFilterOptions}
+                value={splitMulti(selectedEmployeeId)}
+                onChange={(v) => setSelectedEmployeeId(joinMulti(v))}
+              />
 
               {/* Ageing */}
               <div>
@@ -829,13 +874,11 @@ export const DashboardPage: React.FC = () => {
                   onChange={(e) => setSelectedAgeingBucket(e.target.value)}
                 >
                   <option value="ALL">All Ageing Buckets</option>
-                  <option value=">90">&gt;90 Days (Critical)</option>
-                  <option value="75-90">75-90 Days (Severe)</option>
-                  <option value="60-75">60-75 Days (High)</option>
-                  <option value="45-60">45-60 Days (Medium)</option>
-                  <option value="30-45">30-45 Days (Low)</option>
-                  <option value="15-30">15-30 Days (Early)</option>
-                  <option value="<15">&lt;15 Days (Normal)</option>
+                  {AGEING_BUCKETS.map((b) => (
+                    <option key={b.key} value={b.key}>
+                      {b.label}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -861,7 +904,7 @@ export const DashboardPage: React.FC = () => {
         {isAdmin && (
           <MetricCard
             title="Field Representatives"
-            value={totalEmployeesCount}
+            value={shown(totalEmployeesCount)}
             subtitle="Registered employee profiles"
             icon={Users}
             color="primary"
@@ -870,7 +913,7 @@ export const DashboardPage: React.FC = () => {
         )}
         <MetricCard
           title="Customer Accounts"
-          value={totalOutletsCount}
+          value={isAdmin ? shown(totalOutletsCount) : totalOutletsCount}
           subtitle="Monitored geofence zones"
           icon={Building2}
           color="slate"
@@ -878,15 +921,15 @@ export const DashboardPage: React.FC = () => {
         />
         <MetricCard
           title={isAdmin ? 'Visits' : 'My Visits Today'}
-          value={totalVisits}
-          subtitle={`${completedVisits} completed, ${inProgressVisits} active`}
+          value={isAdmin ? shown(totalVisits) : totalVisits}
+          subtitle={biPending ? (isLoading ? 'Loading…' : 'Could not be loaded') : `${completedVisits} completed, ${inProgressVisits} active`}
           icon={CalendarCheck}
           color="primary"
           onClick={() => navigate('/visits')}
         />
         <MetricCard
           title="Geo Compliance"
-          value={geoComplianceRate === null ? '—' : `${geoComplianceRate}%`}
+          value={biPending ? shown('—') : geoComplianceRate === null ? '—' : `${geoComplianceRate}%`}
           subtitle={
             geoComplianceRate === null
               ? 'No visits recorded yet'
@@ -1253,21 +1296,56 @@ export const DashboardPage: React.FC = () => {
             <Card>
               <CardHeader>
                 <CardTitle>7-Bucket Ageing Distribution</CardTitle>
-                <CardSubtitle>Market Outstanding categorized by overdue duration</CardSubtitle>
+                <CardSubtitle>
+                  Unpaid amount by age of the bill. Click a bucket to filter the whole dashboard; click again to clear.
+                </CardSubtitle>
               </CardHeader>
-              <div className="space-y-3">
-                {Object.entries(dashboardBI.ageing_distribution).map(([bucket, amount]) => {
+              <p className="text-[11px] text-on-surface-variant mb-3" data-testid="ageing-explainer">
+                {dashboardBI.ageing_basis || AGEING_EXPLAINER}
+              </p>
+              {selectedAgeingBucket !== 'ALL' && (
+                <div
+                  role="status"
+                  className="mb-3 flex items-center justify-between gap-2 rounded-lg border border-primary/30 bg-primary-container/30 px-3 py-1.5 text-xs text-on-surface"
+                >
+                  <span>
+                    Showing only money aged <strong>{ageingLabel(selectedAgeingBucket)}</strong> on every card, chart and table.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedAgeingBucket('ALL')}
+                    className="font-semibold text-primary hover:underline cursor-pointer"
+                  >
+                    Clear
+                  </button>
+                </div>
+              )}
+              <div className="space-y-1.5" role="group" aria-label="Ageing buckets">
+                {AGEING_BUCKETS.map(({ key: bucket, label }) => {
+                  const amount = dashboardBI.ageing_distribution[bucket] ?? '0';
                   const numAmount = parseFloat(amount || '0');
-                  const totalOS = parseFloat(dashboardBI.kpis.total_market_outstanding || '1');
+                  const totalOS = parseFloat(dashboardBI.kpis.total_market_outstanding || '0');
                   const percent = totalOS > 0 ? Math.min(100, Math.round((numAmount / totalOS) * 100)) : 0;
                   const isCritical = bucket === '>90' || bucket === '75-90';
+                  const active = selectedAgeingBucket === bucket;
+                  const dimmed = selectedAgeingBucket !== 'ALL' && !active;
 
                   return (
-                    <div key={bucket} className="space-y-1">
+                    <button
+                      type="button"
+                      key={bucket}
+                      data-testid={`ageing-bucket-${bucket}`}
+                      aria-pressed={active}
+                      title={active ? 'Click to clear this filter' : `Show only money aged ${label}`}
+                      onClick={() => toggleAgeingBucket(bucket)}
+                      className={`w-full text-left space-y-1 rounded-lg px-2 py-1.5 border transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary-container/40 ${
+                        active
+                          ? 'border-primary bg-primary-container/30'
+                          : 'border-transparent hover:bg-surface-container-low'
+                      } ${dimmed ? 'opacity-60' : ''}`}
+                    >
                       <div className="flex items-center justify-between text-xs">
-                        <span className="font-label-md text-xs font-semibold text-on-surface">
-                          {bucket.startsWith('>') ? `${bucket} Days` : `${bucket} Days`}
-                        </span>
+                        <span className="font-label-md text-xs font-semibold text-on-surface">{label}</span>
                         <span className={`font-headline-sm text-xs font-bold ${isCritical ? 'text-error' : 'text-primary'}`}>
                           {formatCurrency(amount)} ({percent}%)
                         </span>
@@ -1288,7 +1366,7 @@ export const DashboardPage: React.FC = () => {
                           style={{ width: `${percent}%` }}
                         />
                       </div>
-                    </div>
+                    </button>
                   );
                 })}
               </div>
@@ -1437,7 +1515,7 @@ export const DashboardPage: React.FC = () => {
                         </td>
                       </tr>
                     ))
-                  ) : visits.length === 0 ? (
+                  ) : recentOps.length === 0 ? (
                     <tr>
                       <td
                         colSpan={4}
@@ -1449,7 +1527,7 @@ export const DashboardPage: React.FC = () => {
                       </td>
                     </tr>
                   ) : (
-                    visits.slice(0, 6).map((visit) => (
+                    recentOps.map((visit) => (
                       <tr
                         key={visit.id}
                         onClick={() => navigate(`/visits/${visit.id}`)}
@@ -1461,14 +1539,14 @@ export const DashboardPage: React.FC = () => {
                             `Customer #${visit.customer_id.substring(0, 8)}`}
                         </td>
                         <td className="px-space-4 py-space-3.5 font-caption text-xs text-on-surface-variant">
-                          {new Date(visit.scheduled_at).toLocaleString()}
+                          {formatIstDateTime(visit.scheduled_at)} IST
                         </td>
                         <td className="px-space-4 py-space-3.5">
                           <StatusBadge status={visit.status} size="sm" />
                         </td>
                         <td className="px-space-4 py-space-3.5 font-label-md text-xs text-on-surface-variant">
                           {visit.check_in_at ? (
-                            new Date(visit.check_in_at).toLocaleTimeString()
+                            `${formatIstDateTime(visit.check_in_at)} IST`
                           ) : (
                             <span className="text-outline">—</span>
                           )}

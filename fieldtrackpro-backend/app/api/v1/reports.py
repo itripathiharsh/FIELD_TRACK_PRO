@@ -35,6 +35,7 @@ from app.schemas.reports import (
     EmployeeMasterReportRow,
     OutletReportRow,
     OutstandingAgeingReportRow,
+    OutstandingSummary,
     CollectionReportRow,
     VisitDetailedReportRow,
 )
@@ -49,6 +50,7 @@ from app.services import report_tables as rt
 from app.services.report_exports import (
     PDF_MIME, XLSX_MIME, ReportTable, content_disposition, report_filename, to_pdf, to_xlsx,
 )
+from app.services.report_filters import as_list, as_uuid_list
 from app.services.report_service import report_service
 
 #: Financial reports are readable by ADMIN / SUPER_ADMIN and the read-only ACCOUNTANT. Every endpoint that is
@@ -67,61 +69,75 @@ _MONTH_DOC = "Calendar month YYYY-MM. Ignored when start_date/end_date is given 
 # ---------------------------------------------------------------------------
 # Shared parameter sets (the JSON endpoint and its export use the SAME dependency)
 # ---------------------------------------------------------------------------
+_MULTI_DOC = " Several values: repeat the parameter or separate with commas (values OR together)."
+
+
+def _multi(values: Optional[list[str]]) -> Optional[str]:
+    """Repeated / comma-separated query values -> one comma-joined string (None when nothing is selected)."""
+    items = as_list(values)
+    return ",".join(items) if items else None
+
+
+def _multi_ids(values: Optional[list[str]]) -> Optional[str]:
+    ids = as_uuid_list(values)
+    return ",".join(str(i) for i in ids) if ids else None
+
+
 def bi_params(
-    brand: Optional[str] = Query(default=None, description="Filter by brand (e.g., USHA, VU, Zebronics)"),
+    brand: Optional[list[str]] = Query(default=None, description="Brand (e.g. Oppo, USHA, Unattributed)." + _MULTI_DOC),
     zone_id: Optional[uuid.UUID] = Query(default=None, description="Zone / Territory ID"),
     area_id: Optional[uuid.UUID] = Query(default=None, description="Area ID"),
-    employee_id: Optional[uuid.UUID] = Query(default=None, description="Assigned employee ID"),
-    month: Optional[str] = Query(default=None, description=_MONTH_DOC),
+    employee_id: Optional[list[str]] = Query(default=None, description="Assigned FOS employee id." + _MULTI_DOC),
+    month: Optional[list[str]] = Query(default=None, description=_MONTH_DOC + _MULTI_DOC),
     start_date: Optional[date] = Query(default=None, description=_DATE_DOC),
     end_date: Optional[date] = Query(default=None, description=_DATE_DOC),
 ) -> dict:
-    return dict(brand=brand, zone_id=zone_id, area_id=area_id, employee_id=employee_id,
-                month=month, start_date=start_date, end_date=end_date)
+    return dict(brand=_multi(brand), zone_id=zone_id, area_id=area_id, employee_id=_multi_ids(employee_id),
+                month=_multi(month), start_date=start_date, end_date=end_date)
 
 
 def outstanding_params(
-    brand: Optional[str] = Query(default=None),
+    brand: Optional[list[str]] = Query(default=None, description="Brand." + _MULTI_DOC),
     zone_id: Optional[uuid.UUID] = Query(default=None),
     area_id: Optional[uuid.UUID] = Query(default=None),
-    employee_id: Optional[uuid.UUID] = Query(default=None),
+    employee_id: Optional[list[str]] = Query(default=None, description="Assigned FOS employee id." + _MULTI_DOC),
     ageing_bucket: Optional[str] = Query(default=None, description="'>90', '75-90', '60-75', '45-60', '30-45', '15-30', '<15'"),
-    month: Optional[str] = Query(default=None, description=_MONTH_DOC),
+    month: Optional[list[str]] = Query(default=None, description=_MONTH_DOC + _MULTI_DOC),
     start_date: Optional[date] = Query(default=None, description=_DATE_DOC),
     end_date: Optional[date] = Query(default=None, description=_DATE_DOC),
     query: Optional[str] = Query(default=None, description="Outlet name/code, zone, area or employee"),
 ) -> dict:
-    return dict(brand=brand, zone_id=zone_id, area_id=area_id, employee_id=employee_id,
-                ageing_bucket=ageing_bucket, month=month, start_date=start_date, end_date=end_date, query=query)
+    return dict(brand=_multi(brand), zone_id=zone_id, area_id=area_id, employee_id=_multi_ids(employee_id),
+                ageing_bucket=ageing_bucket, month=_multi(month), start_date=start_date, end_date=end_date, query=query)
 
 
 def outlets_params(
-    brand: Optional[str] = Query(default=None),
+    brand: Optional[list[str]] = Query(default=None, description="Brand." + _MULTI_DOC),
     zone_id: Optional[uuid.UUID] = Query(default=None),
     area_id: Optional[uuid.UUID] = Query(default=None),
-    employee_id: Optional[uuid.UUID] = Query(default=None),
+    employee_id: Optional[list[str]] = Query(default=None, description="Assigned FOS employee id." + _MULTI_DOC),
     location_status: Optional[str] = Query(default=None),
-    month: Optional[str] = Query(default=None, description=_MONTH_DOC),
+    month: Optional[list[str]] = Query(default=None, description=_MONTH_DOC + _MULTI_DOC),
     start_date: Optional[date] = Query(default=None, description=_DATE_DOC),
     end_date: Optional[date] = Query(default=None, description=_DATE_DOC),
     query: Optional[str] = Query(default=None),
 ) -> dict:
-    return dict(brand=brand, zone_id=zone_id, area_id=area_id, employee_id=employee_id,
-                location_status=location_status, month=month, start_date=start_date, end_date=end_date, query=query)
+    return dict(brand=_multi(brand), zone_id=zone_id, area_id=area_id, employee_id=_multi_ids(employee_id),
+                location_status=location_status, month=_multi(month), start_date=start_date, end_date=end_date, query=query)
 
 
 def collections_report_params(
-    brand: Optional[str] = Query(default=None),
+    brand: Optional[list[str]] = Query(default=None, description="Brand." + _MULTI_DOC),
     zone_id: Optional[uuid.UUID] = Query(default=None),
     area_id: Optional[uuid.UUID] = Query(default=None),
-    employee_id: Optional[uuid.UUID] = Query(default=None),
-    month: Optional[str] = Query(default=None, description=_MONTH_DOC),
+    employee_id: Optional[list[str]] = Query(default=None, description="Assigned FOS employee id." + _MULTI_DOC),
+    month: Optional[list[str]] = Query(default=None, description=_MONTH_DOC + _MULTI_DOC),
     start_date: Optional[date] = Query(default=None, description=_DATE_DOC),
     end_date: Optional[date] = Query(default=None, description=_DATE_DOC),
     query: Optional[str] = Query(default=None),
 ) -> dict:
-    return dict(brand=brand, zone_id=zone_id, area_id=area_id, employee_id=employee_id,
-                month=month, start_date=start_date, end_date=end_date, query=query)
+    return dict(brand=_multi(brand), zone_id=zone_id, area_id=area_id, employee_id=_multi_ids(employee_id),
+                month=_multi(month), start_date=start_date, end_date=end_date, query=query)
 
 
 def visits_params(
@@ -299,8 +315,20 @@ async def get_outstanding_report(
     current_user: CurrentUser = None,
     session=Depends(get_async_session),
 ) -> list[OutstandingAgeingReportRow]:
-    """Dedicated Market Outstanding and 7 Ageing Buckets report (latest snapshot in the period)."""
+    """Market Outstanding and 7 Ageing Buckets, one row per outlet+brand. Same source and filters as the
+    dashboard (snapshots when the period has any, otherwise live Tally invoices). Pages with skip/limit; the
+    totals of the whole filtered set are at /reports/outstanding/summary."""
     return await report_service.get_outstanding_ageing_report(session=session, skip=skip, limit=limit, **f)
+
+
+@router.get("/reports/outstanding/summary", response_model=OutstandingSummary)
+async def get_outstanding_summary(
+    f: dict = Depends(outstanding_params),
+    current_user: CurrentUser = None,
+    session=Depends(get_async_session),
+) -> OutstandingSummary:
+    """Totals of the whole filtered outstanding report (accounts, outlets, zones, areas, market OS, buckets)."""
+    return await report_service.get_outstanding_summary(session=session, **f)
 
 
 @router.get("/reports/outstanding/export")

@@ -14,6 +14,7 @@ from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -179,6 +180,43 @@ async def agent_capabilities(agent: AuthenticatedAgent):
     from app.services.reporting_floor import reporting_floor
     return {"history_safe": True, "reporting_floor": reporting_floor().isoformat(), "backend_release": "2.2.0",
             "agent_id": str(agent.id)}
+
+
+@router.get("/fos-moves/pending")
+async def agent_pending_fos_moves(agent: AuthenticatedAgent, session: DbSession):
+    """Release 3.3 (OFF unless TALLY_FOS_WRITEBACK_ENABLED): ledger moves an admin made in FieldTrack, for an agent
+    that can ALTER a ledger's parent group (nothing else). The agent reports each result; the next ledger sync is
+    what confirms the move. Returns [] while write-back is disabled."""
+    from app.config import settings
+    from app.models.tally_fos import FosLedgerMove, MOVE_PENDING, WB_QUEUED
+    if not settings.tally_fos_writeback_enabled:
+        return {"enabled": False, "moves": []}
+    rows = (await session.execute(select(FosLedgerMove).where(
+        FosLedgerMove.status == MOVE_PENDING, FosLedgerMove.writeback_status == WB_QUEUED,
+        FosLedgerMove.to_group.is_not(None), FosLedgerMove.tally_ledger_guid.is_not(None)).limit(50))).scalars().all()
+    return {"enabled": True, "moves": [
+        {"id": str(m.id), "idempotency_key": m.idempotency_key, "ledger_guid": m.tally_ledger_guid,
+         "ledger_name": m.ledger_name, "from_group": m.from_group, "to_group": m.to_group} for m in rows]}
+
+
+class FosMoveResult(BaseModel):
+    ok: bool
+    error: Optional[str] = None
+
+
+@router.post("/fos-moves/{move_id}/result")
+async def agent_fos_move_result(move_id: uuid.UUID, body: FosMoveResult, agent: AuthenticatedAgent, session: DbSession):
+    """The agent's result for one ledger move. Idempotent: repeating a result changes nothing more."""
+    from app.models.tally_fos import FosLedgerMove, WB_DONE, WB_FAILED
+    m = await session.get(FosLedgerMove, move_id)
+    if m is None:
+        raise HTTPException(status_code=404, detail="Unknown move")
+    if m.writeback_status != WB_DONE:
+        m.writeback_attempts += 1
+        m.writeback_status = WB_DONE if body.ok else WB_FAILED
+        m.writeback_error = None if body.ok else (body.error or "failed")[:500]
+        await session.commit()
+    return {"id": str(m.id), "writeback_status": m.writeback_status}
 
 
 @router.post("/heartbeat", response_model=HeartbeatResponse)

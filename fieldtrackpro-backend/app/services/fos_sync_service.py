@@ -213,6 +213,14 @@ async def run_sync(
         for r in (await session.execute(select(EmployeeCustomerAssignment).where(EmployeeCustomerAssignment.customer_id.in_(cids)))).scalars().all():
             rows_by_cust[r.customer_id].append(r)
     system_uid = None
+    # Open admin per-outlet changes (release 3.3): protected until Tally agrees, flagged if Tally disagrees.
+    from app.models.tally_fos import FosLedgerMove, OPEN_MOVE_STATUSES, MOVE_CONFIRMED, MOVE_CONFLICT, ST_ADMIN_PENDING_TALLY
+    from app.services.fos_outlet_edit import evaluate_open_move
+    moves: dict[uuid.UUID, FosLedgerMove] = {}
+    if cids:
+        for m in (await session.execute(select(FosLedgerMove).where(
+                FosLedgerMove.customer_id.in_(cids), FosLedgerMove.status.in_(OPEN_MOVE_STATUSES)))).scalars().all():
+            moves[m.customer_id] = m
 
     counts: Counter = Counter()
     status_counts: Counter = Counter()
@@ -238,6 +246,48 @@ async def run_sync(
         current = [L.CurrentRow(r.id, r.employee_id, r.source or "LEGACY") for r in cur_rows]
         plan = L.plan_outlet(ledgers.get(c.id, []), rules, current, policy)
         counts["evaluated"] += 1
+
+        mv = moves.get(c.id)
+        if mv is not None:
+            verdict = evaluate_open_move(mv, ledgers.get(c.id, []), plan)
+            if verdict == "hold":
+                status_counts[ST_ADMIN_PENDING_TALLY] += 1
+                counts["held_admin_change"] += 1
+                add_report("held_for_tally", c, cur_rows, plan, {"to_group": mv.to_group})
+                if not dry_run:
+                    if c.fos_status != ST_ADMIN_PENDING_TALLY:
+                        c.fos_status = ST_ADMIN_PENDING_TALLY
+                    touched.append(c.id)
+                continue
+            if verdict == "conflict":
+                status_counts[ST_CONFLICT] += 1
+                counts["admin_change_conflict"] += 1
+                add_report("conflicting", c, cur_rows, plan, {"admin_change": True})
+                if not dry_run:
+                    if mv.status != MOVE_CONFLICT:
+                        mv.status = MOVE_CONFLICT
+                        session.add(FosAssignmentAudit(
+                            run_id=run.id, customer_id=c.id, customer_name=c.name[:150],
+                            previous_fos=_names([r.employee_id for r in cur_rows], emps) or None,
+                            new_fos=_names(plan.wanted.keys(), emps) or None, action="CONFLICT", source="TALLY",
+                            tally_group=", ".join(sorted({l.group_name for l in ledgers.get(c.id, [])})) or None,
+                            tally_ledger_guid=mv.tally_ledger_guid, result="FLAGGED",
+                            detail=(f'admin change kept: Tally moved the ledger from "{mv.from_group}" to another group '
+                                    f'instead of "{mv.to_group or "the new FOS group"}"; an admin must decide')[:900]))
+                        counts["flagged"] += 1
+                    if c.fos_status != ST_CONFLICT:
+                        c.fos_status = ST_CONFLICT
+                    touched.append(c.id)
+                continue
+            # confirm: Tally now gives the outlet the admin's FOS; the sync takes ownership of the row again.
+            if not dry_run:
+                mv.status, mv.resolved_at = MOVE_CONFIRMED, now
+                session.add(FosAssignmentAudit(
+                    run_id=run.id, customer_id=c.id, customer_name=c.name[:150],
+                    new_employee_id=mv.employee_id, new_fos=_names([mv.employee_id], emps) or None,
+                    action="TALLY_CONFIRMED", source="TALLY",
+                    tally_group=next(iter(plan.wanted.values()), (None, None))[0], tally_ledger_guid=mv.tally_ledger_guid,
+                    result="APPLIED", detail="Tally ledger now sits in the new FOS's group: the FieldTrack change is confirmed"))
         status_counts[plan.status] += 1
 
         # ---- report categories (always computed from the plan, applied or not)
@@ -404,10 +454,21 @@ async def reconciliation_report(session: AsyncSession) -> dict[str, Any]:
     buckets: dict[str, list] = defaultdict(list)
     status_counts: Counter = Counter()
     group_counts: Counter = Counter()
+    from app.models.tally_fos import FosLedgerMove, OPEN_MOVE_STATUSES
+    from app.services.fos_outlet_edit import evaluate_open_move
+    moves = {m.customer_id: m for m in (await session.execute(
+        select(FosLedgerMove).where(FosLedgerMove.status.in_(OPEN_MOVE_STATUSES)))).scalars().all()}
     for c in customers:
         cur_rows = rows_by_cust.get(c.id, [])
         plan = L.plan_outlet(ledgers.get(c.id, []), rules,
                              [L.CurrentRow(r.id, r.employee_id, r.source or "LEGACY") for r in cur_rows], L.POLICY_REPORT_ONLY)
+        mv = moves.get(c.id)
+        if mv is not None and evaluate_open_move(mv, ledgers.get(c.id, []), plan) == "hold":
+            status_counts["ADMIN_PENDING"] += 1
+            buckets["held_for_tally"].append({"customer_id": str(c.id), "outlet": c.name, "outlet_code": c.outlet_code,
+                                              "tally_group": mv.from_group, "to_group": mv.to_group,
+                                              "existing_fos": _names([r.employee_id for r in cur_rows], emps) or None})
+            continue
         status_counts[plan.status] += 1
         for led in ledgers.get(c.id, []):
             group_counts[led.group_name] += 1

@@ -278,6 +278,8 @@ export interface OutletProof {
   prospect_id: string | null;
   kind: OutletProofKind;
   status: OutletProofStatus;
+  /** Accepted by the system (first location of an outlet / new-outlet request), not by an admin. */
+  auto_accepted?: boolean;
   is_primary: boolean;
   latitude: number;
   longitude: number;
@@ -1471,6 +1473,39 @@ export interface OutstandingAgeingReportRow {
   as_of_date?: string | null;
 }
 
+/** Totals of the whole filtered outstanding report (all pages). */
+export interface OutstandingSummary {
+  accounts: number;
+  outlets: number;
+  zones: number;
+  areas: number;
+  market_outstanding: string;
+  bucket_lt_15: string;
+  bucket_15_30: string;
+  bucket_30_45: string;
+  bucket_45_60: string;
+  bucket_60_75: string;
+  bucket_75_90: string;
+  bucket_gt_90: string;
+  data_source: string;
+  data_source_note?: string | null;
+  ageing_basis?: string | null;
+  as_of_date?: string | null;
+  period_label: string;
+}
+
+export interface BrandReconciliationRow {
+  tally_brand: string | null;
+  fieldtrack_brand: string | null;
+  status: string;
+  ledgers: number;
+  invoices: number;
+  invoice_amount: string;
+  receipts: number;
+  receipt_amount: string;
+  outlets: number;
+}
+
 export interface CollectionReportRow {
   customer_id: string;
   dms_code?: string;
@@ -1618,6 +1653,21 @@ export interface DashboardSummaryResponse {
   area_breakdown: BusinessSummaryRow[];
   ageing_distribution: Record<string, string>;
   recent_exceptions: FieldException[];
+  /** LIVE_INVOICES = live from Tally (as of today); SNAPSHOT = monthly outlet snapshot. */
+  data_source?: 'LIVE_INVOICES' | 'SNAPSHOT' | string;
+  data_source_note?: string | null;
+  as_of_date?: string | null;
+  applied_brands?: string[];
+  applied_periods?: string[];
+  applied_employee_ids?: string[];
+  /** Selected ageing bucket ('<15' ... '>90') or null. */
+  ageing_bucket?: string | null;
+  ageing_basis?: string | null;
+  /** Latest visits in the same filter scope ("Recent Field Operations"). */
+  recent_visits?: Array<{
+    id: string; customer_id: string; customer_name: string; employee_name: string;
+    scheduled_at: string; status: string; check_in_at?: string | null;
+  }>;
 }
 
 export interface DashboardHistoryMonth {
@@ -2127,7 +2177,20 @@ export interface AgentHealth {
 // ---------------------------------------------------------------------------
 // Tally -> FieldTrack FOS assignment synchronisation (release 3.2)
 // ---------------------------------------------------------------------------
-export type FosStatus = 'ASSIGNED' | 'MULTIPLE' | 'UNASSIGNED' | 'UNMAPPED_GROUP' | 'CONFLICT' | 'NO_TALLY';
+export type FosStatus = 'ASSIGNED' | 'MULTIPLE' | 'UNASSIGNED' | 'UNMAPPED_GROUP' | 'CONFLICT' | 'NO_TALLY' | 'ADMIN_PENDING';
+
+/** An admin per-outlet FOS change and the Tally ledger move it needs (release 3.3). */
+export interface FosLedgerMove {
+  id: string;
+  customer_id: string;
+  status: 'PENDING_TALLY' | 'CONFIRMED' | 'CONFLICT' | 'SUPERSEDED' | 'CANCELLED' | string;
+  from_group: string | null;
+  to_group: string | null;
+  ledger_name: string | null;
+  employee_id: string | null;
+  writeback_status: string;
+  requested_at: string;
+}
 
 export interface FosRef {
   employee_id: string;
@@ -2144,6 +2207,7 @@ export interface OutletFos {
   fos: FosRef[];
   fos_status: FosStatus | null;
   fos_synced_at: string | null;
+  pending_move?: FosLedgerMove | null;
 }
 
 export interface FosSummary {

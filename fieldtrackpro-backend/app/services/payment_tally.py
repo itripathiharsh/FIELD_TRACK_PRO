@@ -123,6 +123,15 @@ def collected_clause(employee_id: uuid.UUID | None = None):
     linked ones included: an imported Tally receipt carries no employee, so the
     linked collection is the only record crediting that money to the employee
     (and the receipt itself never matches an employee filter, so nothing doubles)."""
+    if isinstance(employee_id, (list, tuple, set)):  # several FOS selected (multi-select filter)
+        ids = list(employee_id)
+        if not ids:
+            return or_(posted_clause(), awaiting_clause())
+        return and_(
+            Payment.status == PaymentStatus.VERIFIED,
+            Payment.source == PaymentSource.MANUAL,
+            Payment.employee_id.in_(ids),
+        )
     if employee_id is not None:
         return and_(
             Payment.status == PaymentStatus.VERIFIED,
@@ -134,6 +143,8 @@ def collected_clause(employee_id: uuid.UUID | None = None):
 
 def posted_clause_for(employee_id: uuid.UUID | None = None):
     """The `posted` part of collected_clause(employee_id): posted + awaiting == collected."""
+    if isinstance(employee_id, (list, tuple, set)) and not employee_id:
+        return posted_clause()
     if employee_id is not None:
         return or_(posted_clause(), linked_clause())
     return posted_clause()

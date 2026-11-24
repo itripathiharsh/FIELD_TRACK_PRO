@@ -21,6 +21,8 @@ BRAND_ALIASES: dict[str, str] = {
     "oppo": "oppo",
     "philips": "philips",
     "ph": "philips",
+    "rr": "rr",
+    "singer": "singer",
 }
 
 # Master canonical casing lookup
@@ -33,6 +35,8 @@ CANONICAL_BRAND_DISPLAY: dict[str, str] = {
     "havells": "Havells",
     "finolex": "Finolex",
     "anchor": "Anchor",
+    "rr": "RR",
+    "singer": "Singer",
 }
 
 
@@ -96,8 +100,11 @@ async def ensure_brand(session: AsyncSession, name: str) -> Optional[Brand]:
     resolved_key = BRAND_ALIASES.get(normalized, normalized)
     brand = (await session.execute(select(Brand).where(Brand.normalized_name == resolved_key))).scalar_one_or_none()
     if not brand:
+        # Release 3.3: the brand master is curated by an admin. A brand first seen in Tally data is recorded (so the
+        # records keep their brand) but created INACTIVE: it is not offered in filters or new transactions until an
+        # admin activates it in Settings > Brand Management. An inactive brand is never re-activated here.
         canonical = resolve_canonical_brand_name(name)
-        brand = Brand(name=canonical, normalized_name=resolved_key, is_active=True)
+        brand = Brand(name=canonical, normalized_name=resolved_key, is_active=False)
         session.add(brand)
         await session.flush()
     return brand

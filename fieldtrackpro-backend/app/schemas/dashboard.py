@@ -1,4 +1,5 @@
 from __future__ import annotations
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
 from pydantic import BaseModel
@@ -30,6 +31,17 @@ class DashboardExecutiveKPIs(BaseModel):
     total_orders_count: int
 
 
+class DashboardRecentVisit(BaseModel):
+    """One row of the dashboard's "Recent Field Operations" list (same filters as every other widget)."""
+    id: str
+    customer_id: str
+    customer_name: str
+    employee_name: str
+    scheduled_at: datetime
+    status: str
+    check_in_at: Optional[datetime] = None
+
+
 class DashboardSummaryResponse(BaseModel):
     period: str  # e.g. "LIVE", "2026-08" or "FY2025-26"
     is_historical: bool
@@ -43,6 +55,17 @@ class DashboardSummaryResponse(BaseModel):
     area_breakdown: list[BusinessSummaryRow]
     ageing_distribution: dict[str, Decimal]
     recent_exceptions: list[FieldExceptionRead]
+    # What the figures are: LIVE_INVOICES (live from Tally, as of today) or SNAPSHOT (monthly snapshot).
+    data_source: str = "LIVE_INVOICES"
+    data_source_note: Optional[str] = None
+    as_of_date: Optional[date] = None
+    # Echo of the applied filters, so the page can show exactly what was applied.
+    applied_brands: list[str] = []
+    applied_periods: list[str] = []
+    applied_employee_ids: list[str] = []
+    ageing_bucket: Optional[str] = None
+    ageing_basis: Optional[str] = None
+    recent_visits: list[DashboardRecentVisit] = []
 
 
 class EmployeeDayDashboardResponse(BaseModel):

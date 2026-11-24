@@ -88,13 +88,15 @@ async def test_dashboard_collection_aggregation_prevents_double_count():
         MockResult(30),       # emp_stmt
         MockResult(v_mock),   # visit_q
         MockResult(e_mock),   # exc_q
-        MockResult(c_mock),   # col_q
+        MockResult((c_mock.total_count, c_mock.verified_sum, c_mock.posted_sum, c_mock.awaiting_sum)),  # col_q
         MockResult(1691),     # cust_q
         MockResult(0),        # order_q
+        MockResult([]),       # recent visits (same scope)
     ]
-    
+
     from unittest.mock import patch
-    with patch("app.services.report_service.ReportService.get_business_bi_dashboard", return_value=mock_bi), \
+    # build_business_bi returns (dashboard, outlets of the selected ageing bucket or None).
+    with patch("app.services.report_service.ReportService.build_business_bi", return_value=(mock_bi, None)), \
          patch("app.services.field_exception_service.list_field_exceptions", return_value=([], 0)):
         
         res: DashboardSummaryResponse = await get_dashboard_summary(

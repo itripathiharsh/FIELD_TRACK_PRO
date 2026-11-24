@@ -6,7 +6,7 @@ import { Modal } from '../ui/Modal';
 import { ErrorBanner } from '../ui/ErrorBanner';
 import { OutletProof } from '../../types';
 import { formatIstDateTime } from '../../utils/ist';
-import { formatDistance, PROOF_COLORS } from '../../utils/outletProof';
+import { accuracyHelp, formatDistance, KIND_HELP, PROOF_COLORS, STATUS_HELP } from '../../utils/outletProof';
 import { OutletProofImage } from './OutletProofImage';
 import { OutletProofMap } from './OutletProofMap';
 import { AccuracyChip, ProofKindBadge, ProofStatusBadge, ProofWarningChips } from './OutletProofBadges';
@@ -133,6 +133,15 @@ export const OutletProofReviewCard: React.FC<OutletProofReviewCardProps> = ({
           <ProofStatusBadge status={proof.status} />
           <AccuracyChip accuracyM={proof.accuracy_m} />
         </div>
+        <ul className="text-[11px] text-on-surface-variant space-y-0.5" data-testid="proof-meaning">
+          <li><strong className="text-on-surface">{proof.kind === 'CHANGE_REQUEST' ? 'CHANGE REQUEST' : proof.kind}:</strong> {isProspectProof ? 'Photo and GPS point sent with a new-outlet request (the outlet does not exist yet).' : KIND_HELP[proof.kind]}</li>
+          <li><strong className="text-on-surface">{proof.status}:</strong> {proof.status === 'APPROVED' && proof.auto_accepted
+            ? (isProspectProof
+              ? 'Accepted automatically as the first submission (it passed the live GPS/photo checks). The new outlet itself still needs approval in New Outlet Approvals.'
+              : "Accepted automatically as the outlet's first location (it passed the live GPS/photo checks).")
+            : STATUS_HELP[proof.status]}</li>
+          <li><strong className="text-on-surface">±{Math.round(proof.accuracy_m)} m:</strong> {accuracyHelp(proof.accuracy_m)}</li>
+        </ul>
         <ProofWarningChips proof={proof} />
         <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-xs text-on-surface">
           <div className="flex items-center gap-1.5">
@@ -163,15 +172,26 @@ export const OutletProofReviewCard: React.FC<OutletProofReviewCardProps> = ({
           <p className="text-xs text-rose-800">Rejected: {proof.rejection_reason}</p>
         )}
 
-        {isPending && (
+        {isPending && isProspectProof && (
+          <div
+            className="flex flex-wrap items-center justify-end gap-2 pt-2 border-t border-outline-variant"
+            data-testid="prospect-proof-actions"
+          >
+            <p className="mr-auto text-[11px] text-on-surface-variant max-w-xl">
+              <strong className="text-on-surface">New outlet request.</strong> The admin decides on the request, not on this photo alone:
+              approving it creates the outlet with this GPS point as its location and this photo as its outlet photo (approved
+              together); rejecting it rejects the request and this photo, and the employee is told why. The approval rules are unchanged.
+            </p>
+            <Link
+              to="/customers?tab=newOutlets"
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-primary text-on-primary text-xs font-bold"
+            >
+              Review in New Outlet Approvals
+            </Link>
+          </div>
+        )}
+        {isPending && !isProspectProof && (
           <div className="flex flex-wrap items-center justify-end gap-2 pt-2 border-t border-outline-variant">
-            {isProspectProof && (
-              <span className="mr-auto text-[11px] text-on-surface-variant">
-                New outlet: approve it in{' '}
-                <Link to="/customers" className="text-primary underline">Customers &rarr; New Outlets</Link>; its location
-                and photo are approved together.
-              </span>
-            )}
             <Button
               variant="danger"
               size="sm"
@@ -187,8 +207,6 @@ export const OutletProofReviewCard: React.FC<OutletProofReviewCardProps> = ({
               variant="primary"
               size="sm"
               icon={CheckCircle2}
-              disabled={isProspectProof}
-              title={isProspectProof ? 'Approve the new outlet first' : undefined}
               onClick={() => {
                 setDialogError(null);
                 setConfirming(true);

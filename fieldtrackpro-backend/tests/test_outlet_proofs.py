@@ -716,3 +716,58 @@ async def test_model_check_constraint_requires_target(env):
         ))
         with pytest.raises(IntegrityError):
             await s.commit()
+
+
+# ---------------------------------------------------------------------------
+# Release 3.3: the first photo + GPS of a NEW outlet is accepted automatically (agreed rule)
+# ---------------------------------------------------------------------------
+
+async def test_new_outlet_proof_is_auto_accepted_and_outlet_still_needs_approval(env, client, monkeypatch):
+    monkeypatch.setattr(settings, "outlet_proof_first_location_auto_accept", True)
+    admin = hdr(env["admin"].id, Role.ADMIN)
+    ub = (await upload(client, hdr(env["ua"].id), make_image(140), lat=LAT, lon=LON, acc=17.8)).json()
+    r = await client.post("/api/v1/customers/prospect", headers=hdr(env["ua"].id),
+                          json=prospect_body(env, outlet_proof_id=ub["id"]))
+    assert r.status_code == 201, r.text
+    pid = r.json()["prospect_id"]
+    p = await get_proof(ub["id"])
+    assert p.kind == "INITIAL" and p.status == "APPROVED" and p.auto_accepted and p.reviewed_by is None
+    assert p.customer_id is None, "the outlet does not exist until the request is approved"
+    pending = await client.get("/api/v1/customers/outlet-proofs", params={"status": "PENDING", "limit": 200}, headers=admin)
+    items = pending.json()["items"] if isinstance(pending.json(), dict) else pending.json()
+    assert ub["id"] not in {x["id"] for x in items}, "never in the Outlet Verification queue"
+    # The new outlet itself is still an admin decision; approving it makes this photo/GPS its official ones.
+    ap = await client.post(f"/api/v1/customers/prospects/{pid}/approve", headers=admin)
+    assert ap.status_code == 200, ap.text
+    cust = ap.json()
+    assert cust["location_status"] == "VERIFIED" and cust["primary_outlet_proof_id"] == ub["id"]
+    p = await get_proof(ub["id"])
+    assert p.customer_id == uuid.UUID(cust["id"]) and p.is_primary and p.status == "APPROVED"
+    assert p.auto_accepted and p.reviewed_by is None, "the system acceptance stays the proof's history"
+    env["customers"].append(uuid.UUID(cust["id"]))
+
+
+async def test_rejecting_a_new_outlet_rejects_its_auto_accepted_proof(env, client, monkeypatch):
+    monkeypatch.setattr(settings, "outlet_proof_first_location_auto_accept", True)
+    admin = hdr(env["admin"].id, Role.ADMIN)
+    ub = (await upload(client, hdr(env["ua"].id), make_image(141))).json()
+    pid = (await client.post("/api/v1/customers/prospect", headers=hdr(env["ua"].id),
+                             json=prospect_body(env, outlet_proof_id=ub["id"]))).json()["prospect_id"]
+    assert (await get_proof(ub["id"])).status == "APPROVED"
+    r = await client.post(f"/api/v1/customers/prospects/{pid}/reject", headers=admin, json={"reason": "not our dealer"})
+    assert r.status_code == 200
+    p = await get_proof(ub["id"])
+    assert p.status == "REJECTED" and p.rejection_reason == "not our dealer" and p.customer_id is None
+
+
+def test_pending_new_outlet_proof_recheck_rules():
+    from scripts.accept_pending_new_outlet_proofs import check
+    base = dict(is_mock_location=False, accuracy_m=17.8, latitude=LAT, longitude=LON, storage_key="k", size_bytes=10,
+                captured_at=datetime(2026, 11, 23, 13, 12, 44, tzinfo=timezone.utc),
+                received_at=datetime(2026, 11, 23, 13, 12, 58, tzinfo=timezone.utc))
+    ok = OutletProof(**base)
+    assert check(ok) == []
+    assert check(OutletProof(**{**base, "accuracy_m": 45.0}))
+    assert check(OutletProof(**{**base, "is_mock_location": True}))
+    assert check(OutletProof(**{**base, "received_at": base["captured_at"] + timedelta(minutes=30)}))
+    assert check(OutletProof(**{**base, "latitude": 51.5, "longitude": -0.1}))

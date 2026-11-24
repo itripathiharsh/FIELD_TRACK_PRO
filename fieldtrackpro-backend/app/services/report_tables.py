@@ -18,7 +18,7 @@ from app.models.area import Area
 from app.models.employee import Employee
 from app.models.territory import Territory
 from app.services.report_exports import Col, ReportTable, fmt_date, parse_iso_dt
-from app.services.report_filters import SnapshotWindow, ist_now, resolve_snapshot_window
+from app.services.report_filters import SnapshotWindow, as_list, as_uuid_list, ist_now, resolve_snapshot_window
 
 ALL = "All"
 
@@ -36,11 +36,11 @@ async def describe_filters(
     *,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
-    month: Optional[str] = None,
-    brand: Optional[str] = None,
+    month: Any = None,
+    brand: Any = None,
     zone_id: Optional[uuid.UUID] = None,
     area_id: Optional[uuid.UUID] = None,
-    employee_id: Optional[uuid.UUID] = None,
+    employee_id: Any = None,
     ageing_bucket: Optional[str] = None,
     status: Optional[str] = None,
     query: Optional[str] = None,
@@ -49,7 +49,8 @@ async def describe_filters(
     """Return ([(label, value)], any_filter_set) for the filters listed in ``include`` (in order)."""
     out: list[tuple[str, str]] = []
     filtered = False
-    month_set = bool(month and month != "ALL")
+    months = as_list(month) or []
+    month_set = bool(months)
     dates_set = bool(start_date or end_date)
 
     async def name_of(model, id_, col):
@@ -71,14 +72,15 @@ async def describe_filters(
             filtered |= dates_set
         elif key == "month":
             if month_set:
-                v = _month_label(month) + (" (ignored - date range applied)" if dates_set else "")
+                v = ", ".join(_month_label(m) for m in months) + (" (ignored - date range applied)" if dates_set else "")
                 filtered |= not dates_set
             else:
                 v = "All months"
             out.append(("Month", v))
         elif key == "brand":
-            set_ = bool(brand and brand != "ALL")
-            out.append(("Brand", brand if set_ else "All brands"))
+            brands = as_list(brand) or []
+            set_ = bool(brands)
+            out.append(("Brand", ", ".join(brands) if set_ else "All brands"))
             filtered |= set_
         elif key == "zone":
             nm = await name_of(Territory, zone_id, Territory.name)
@@ -89,15 +91,19 @@ async def describe_filters(
             out.append(("Area", (nm or str(area_id)) if area_id else "All areas"))
             filtered |= bool(area_id)
         elif key == "employee":
-            if employee_id:
-                row = (await session.execute(
-                    select(Employee.full_name, Employee.employee_code).where(Employee.id == employee_id)
-                )).first()
-                v = f"{row[0]} ({row[1]})" if row and row[1] else (row[0] if row else str(employee_id))
+            emp_ids = as_uuid_list(employee_id) or []
+            if emp_ids:
+                rows = {r[0]: r for r in (await session.execute(
+                    select(Employee.id, Employee.full_name, Employee.employee_code).where(Employee.id.in_(emp_ids))
+                )).all()}
+                v = ", ".join(
+                    (f"{rows[i][1]} ({rows[i][2]})" if rows[i][2] else rows[i][1]) if i in rows else str(i)
+                    for i in emp_ids
+                )
             else:
                 v = "All employees"
             out.append(("Employee", v))
-            filtered |= bool(employee_id)
+            filtered |= bool(emp_ids)
         elif key == "ageing":
             set_ = bool(ageing_bucket and ageing_bucket != "ALL")
             out.append(("Ageing bucket", ageing_bucket if set_ else "All buckets"))
