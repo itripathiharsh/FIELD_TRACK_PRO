@@ -231,3 +231,25 @@ export function signIn(user: User) {
   }
   return user;
 }
+
+
+/**
+ * Pick one value in a MultiSelectFilter (Brand / Period / FOS): open it, tick the option whose value is
+ * `value`, close it again. Several calls add several values.
+ */
+export async function pickMultiOption(label: string, value: string): Promise<void> {
+  const { default: userEvent } = await import('@testing-library/user-event');
+  const { screen, waitFor } = await import('@testing-library/react');
+  const button = (await screen.findAllByRole('button')).find((b) =>
+    (b.getAttribute('aria-label') ?? '').startsWith(`${label}:`),
+  );
+  if (!button) throw new Error(`no multi-select filter labelled ${label}`);
+  await userEvent.click(button);
+  let box: HTMLInputElement | null = null;
+  await waitFor(() => {
+    box = document.querySelector<HTMLInputElement>(`input[type="checkbox"][value="${value}"]`);
+    if (!box) throw new Error(`option ${value} not offered in ${label}`);
+  });
+  await userEvent.click(box!);
+  await userEvent.keyboard('{Escape}');
+}

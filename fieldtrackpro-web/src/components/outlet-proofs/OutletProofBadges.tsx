@@ -3,21 +3,30 @@ import { AlertTriangle } from 'lucide-react';
 import { OutletProof, OutletProofKind, OutletProofStatus } from '../../types';
 import {
   ACCURACY_TONE_CLASS,
+  accuracyHelp,
   accuracyTone,
   KIND_CLASS,
+  KIND_HELP,
   KIND_LABEL,
   proofWarnings,
   STATUS_CLASS,
+  STATUS_HELP,
 } from '../../utils/outletProof';
 
 export const ProofKindBadge: React.FC<{ kind: OutletProofKind }> = ({ kind }) => (
-  <span className={`inline-flex px-2 py-0.5 text-[10px] font-bold rounded border ${KIND_CLASS[kind] ?? KIND_CLASS.INITIAL}`}>
+  <span
+    title={KIND_HELP[kind]}
+    className={`inline-flex px-2 py-0.5 text-[10px] font-bold rounded border ${KIND_CLASS[kind] ?? KIND_CLASS.INITIAL}`}
+  >
     {KIND_LABEL[kind] ?? kind}
   </span>
 );
 
 export const ProofStatusBadge: React.FC<{ status: OutletProofStatus }> = ({ status }) => (
-  <span className={`inline-flex px-2 py-0.5 text-[10px] font-bold rounded border ${STATUS_CLASS[status] ?? STATUS_CLASS.UNATTACHED}`}>
+  <span
+    title={STATUS_HELP[status]}
+    className={`inline-flex px-2 py-0.5 text-[10px] font-bold rounded border ${STATUS_CLASS[status] ?? STATUS_CLASS.UNATTACHED}`}
+  >
     {status}
   </span>
 );
@@ -25,6 +34,7 @@ export const ProofStatusBadge: React.FC<{ status: OutletProofStatus }> = ({ stat
 export const AccuracyChip: React.FC<{ accuracyM: number }> = ({ accuracyM }) => (
   <span
     data-testid="accuracy-chip"
+    title={accuracyHelp(accuracyM)}
     className={`inline-flex px-2 py-0.5 text-[11px] font-bold rounded border ${ACCURACY_TONE_CLASS[accuracyTone(accuracyM)]}`}
   >
     ±{Math.round(accuracyM)} m

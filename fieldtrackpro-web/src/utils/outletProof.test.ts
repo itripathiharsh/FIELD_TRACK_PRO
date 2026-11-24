@@ -32,7 +32,7 @@ describe('outletProof utils', () => {
   });
 
   it('maps backend error codes to friendly messages', () => {
-    expect(outletProofErrorMessage(new ApiError('x', 409, 'OUTLET_PROOF_PROSPECT_PENDING'))).toMatch(/Approve the new outlet first/);
+    expect(outletProofErrorMessage(new ApiError('x', 409, 'OUTLET_PROOF_PROSPECT_PENDING'))).toMatch(/New Outlet Approvals/);
     expect(outletProofErrorMessage(new ApiError('x', 409, 'OUTLET_PROOF_NOT_PENDING'))).toMatch(/already reviewed/);
     expect(outletProofErrorMessage(new ApiError('x', 404, 'OUTLET_PROOF_NOT_FOUND'))).toMatch(/no longer exists/);
     expect(outletProofErrorMessage(new ApiError('boom', 500))).toBe('boom');

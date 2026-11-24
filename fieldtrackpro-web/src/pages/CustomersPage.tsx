@@ -36,7 +36,11 @@ const emptyForm = {
 
 export const CustomersPage: React.FC = () => {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'directory' | 'approvals' | 'newOutlets'>('directory');
+  // ?tab=newOutlets / ?tab=approvals opens that tab directly (links from Outlet Verification).
+  const [activeTab, setActiveTab] = useState<'directory' | 'approvals' | 'newOutlets'>(() => {
+    const t = new URLSearchParams(window.location.search).get('tab');
+    return t === 'newOutlets' || t === 'approvals' ? t : 'directory';
+  });
   const [pendingProposalsCount, setPendingProposalsCount] = useState(0);
   const [pendingProspectsCount, setPendingProspectsCount] = useState(0);
   const [tallyActionError, setTallyActionError] = useState<string | null>(null);

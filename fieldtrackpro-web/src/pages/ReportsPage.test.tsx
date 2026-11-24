@@ -8,6 +8,7 @@ import {
     baseRoutes,
     json,
     mockApi,
+    pickMultiOption,
     renderWithProviders,
     route,
     signIn,
@@ -483,17 +484,17 @@ describe('ReportsPage - filters reach the API (no silent no-ops)', () => {
     });
 
     async function pickCommon() {
-        await userEvent.selectOptions(await screen.findByLabelText('Brand'), 'USHA');
+        await pickMultiOption('Brand', 'USHA');
         await userEvent.selectOptions(screen.getByLabelText('Zone (Territory)'), 'zone-1');
         await userEvent.selectOptions(screen.getByLabelText('Area'), 'area-1');
-        await userEvent.selectOptions(screen.getByLabelText('FOS / Field Officer'), 'emp-1');
+        await pickMultiOption('FOS / Field Officer', 'emp-1');
     }
 
     it('Financial & BI: month/brand/zone/area/employee are sent; search and ageing are disabled', async () => {
         const calls = setupApi();
         renderWithProviders(<ReportsPage />);
         await params(calls, 'business-summary');
-        await userEvent.selectOptions(await screen.findByLabelText('Month Period'), '2026-09');
+        await pickMultiOption('Period / Month', '2026-09');
         await pickCommon();
         await waitFor(() => {
             const p = q(last(calls, 'business-summary'));
@@ -507,7 +508,7 @@ describe('ReportsPage - filters reach the API (no silent no-ops)', () => {
         expect(screen.getByLabelText('Ageing Bucket')).toBeDisabled();
         expect(screen.getByLabelText('Ageing Bucket').parentElement).toHaveAttribute('title', expect.stringMatching(/not used by this tab/i));
         const strip = screen.getByTestId('applied-filters');
-        expect(strip).toHaveTextContent('Month: September 2026');
+        expect(strip).toHaveTextContent('Period: September 2026');
         expect(strip).toHaveTextContent('Zone: Zone North');
         expect(strip).toHaveTextContent('Employee: Asha Rep (RF01)');
     });
@@ -516,7 +517,7 @@ describe('ReportsPage - filters reach the API (no silent no-ops)', () => {
         const calls = setupApi();
         renderWithProviders(<ReportsPage />);
         await params(calls, 'business-summary');
-        await userEvent.selectOptions(await screen.findByLabelText('Month Period'), '2026-09');
+        await pickMultiOption('Period / Month', '2026-09');
         fireEvent.change(screen.getByLabelText(/start date/i), { target: { value: '2026-08-01' } });
         fireEvent.change(screen.getByLabelText(/end date/i), { target: { value: '2026-08-31' } });
         await userEvent.click(screen.getByRole('button', { name: /apply filter/i }));
@@ -524,7 +525,7 @@ describe('ReportsPage - filters reach the API (no silent no-ops)', () => {
         const bi = q(last(calls, 'business-summary'));
         expect(bi.get('end_date')).toBe('2026-08-31');
         expect(bi.has('month')).toBe(false); // the range wins; the month is not sent
-        expect(screen.getByLabelText('Month Period')).toBeDisabled();
+        expect(screen.getByLabelText('Period / Month')).toBeDisabled();
         expect(screen.getByText(/month ignored/i)).toBeInTheDocument();
 
         await openTab('outstanding');
@@ -545,7 +546,7 @@ describe('ReportsPage - filters reach the API (no silent no-ops)', () => {
         await openTab('outstanding');
         await params(calls, 'outstanding');
         await userEvent.selectOptions(await screen.findByLabelText('Ageing Bucket'), '75-90');
-        await userEvent.selectOptions(screen.getByLabelText('Month Period'), '2026-09');
+        await pickMultiOption('Period / Month', '2026-09');
         await pickCommon();
         await userEvent.type(screen.getByLabelText('Search'), 'one');
         await waitFor(() => {
@@ -572,7 +573,7 @@ describe('ReportsPage - filters reach the API (no silent no-ops)', () => {
             expect(p.get('query')).toBe('one');
         });
         expect(screen.getByLabelText('Ageing Bucket')).toBeDisabled();
-        expect(screen.getByLabelText('Month Period')).not.toBeDisabled();
+        expect(screen.getByLabelText('Period / Month')).not.toBeDisabled();
         // one row per outlet, the FOS list shown as one string
         expect(screen.getByText('Asha Rep, Ben Rep')).toBeInTheDocument();
     });
@@ -584,7 +585,7 @@ describe('ReportsPage - filters reach the API (no silent no-ops)', () => {
         await params(calls, 'employees');
         await userEvent.selectOptions(await screen.findByLabelText('Zone (Territory)'), 'zone-1');
         await userEvent.selectOptions(screen.getByLabelText('Area'), 'area-1');
-        await userEvent.selectOptions(screen.getByLabelText('FOS / Field Officer'), 'emp-1');
+        await pickMultiOption('FOS / Field Officer', 'emp-1');
         await userEvent.type(screen.getByLabelText('Search'), 'asha');
         await waitFor(() => {
             const p = q(last(calls, 'employees'));
@@ -595,7 +596,7 @@ describe('ReportsPage - filters reach the API (no silent no-ops)', () => {
             expect(p.has('brand')).toBe(false);
         });
         expect(screen.getByLabelText('Brand')).toBeDisabled();
-        expect(screen.getByLabelText('Month Period')).toBeDisabled();
+        expect(screen.getByLabelText('Period / Month')).toBeDisabled();
         expect(screen.getByLabelText('Ageing Bucket')).toBeDisabled();
         expect(await screen.findByText('RF01')).toBeInTheDocument();
         expect(screen.queryByText('emp-uuid-1')).not.toBeInTheDocument();
@@ -608,7 +609,7 @@ describe('ReportsPage - filters reach the API (no silent no-ops)', () => {
         await params(calls, 'visits-detailed');
         await userEvent.selectOptions(await screen.findByLabelText('Visit Status'), 'COMPLETED');
         await userEvent.type(screen.getByLabelText('Search'), 'outlet');
-        await userEvent.selectOptions(screen.getByLabelText('FOS / Field Officer'), 'emp-1');
+        await pickMultiOption('FOS / Field Officer', 'emp-1');
         await waitFor(() => {
             const p = q(last(calls, 'visits-detailed'));
             expect(p.get('status')).toBe('COMPLETED');
@@ -668,7 +669,7 @@ describe('ReportsPage - filters reach the API (no silent no-ops)', () => {
             expect(p.get('end_date')).toBe('2026-09-30');
         });
         expect(screen.getByLabelText('Brand')).toBeDisabled();
-        expect(screen.getByLabelText('Month Period')).toBeDisabled();
+        expect(screen.getByLabelText('Period / Month')).toBeDisabled();
     });
 
     it('Financial & BI shows an explicit note when the period fell back to live invoices (and none for snapshots)', async () => {
@@ -742,7 +743,7 @@ describe('ReportsPage - server-side Excel / PDF exports', () => {
         if (listKey) await params(calls, listKey);
         // apply a few filters so "same params" is meaningful (those that this tab supports)
         if (tab !== 'monthly') {
-            await userEvent.selectOptions(await screen.findByLabelText('FOS / Field Officer'), 'emp-1');
+            await pickMultiOption('FOS / Field Officer', 'emp-1');
             await waitFor(() => expect(q(last(calls, listKey)).get('employee_id')).toBe('emp-1'));
         }
         const excel = await screen.findByRole('button', { name: /export excel/i });
@@ -801,7 +802,7 @@ describe('ReportsPage - server-side Excel / PDF exports', () => {
         renderWithProviders(<ReportsPage />);
         await openTab('outstanding');
         await params(calls, 'outstanding');
-        await userEvent.selectOptions(await screen.findByLabelText('Brand'), 'USHA');
+        await pickMultiOption('Brand', 'USHA');
         await userEvent.selectOptions(screen.getByLabelText('Ageing Bucket'), '>90');
         await userEvent.type(screen.getByLabelText('Search'), 'one');
         fireEvent.change(screen.getByLabelText(/start date/i), { target: { value: '2026-08-01' } });
@@ -841,5 +842,79 @@ describe('ReportsPage - server-side Excel / PDF exports', () => {
         expect(await screen.findByText(/export exploded/i)).toBeInTheDocument();
         expect(cap.downloads).toHaveLength(0);
         cap.restore();
+    });
+});
+
+describe('ReportsPage - Outstanding report (live from Tally, totals, pages, buckets)', () => {
+    beforeEach(() => {
+        localStorage.clear();
+        signIn(ADMIN_USER);
+    });
+
+    const SUMMARY = {
+        accounts: 60, outlets: 55, zones: 3, areas: 7, market_outstanding: '36000.00',
+        bucket_lt_15: '6000.00', bucket_15_30: '0', bucket_30_45: '0', bucket_45_60: '0', bucket_60_75: '0', bucket_75_90: '0',
+        bucket_gt_90: '30000.00', data_source: 'LIVE_INVOICES', data_source_note: 'Live from Tally: invoice amount less receipts.',
+        ageing_basis: 'Age = days from the Tally bill (invoice) date to today, Asia/Kolkata.', as_of_date: '2026-11-23',
+        period_label: 'Current Live Data',
+    };
+    const rows = Array.from({ length: 60 }, (_, i) => ({ ...OS_ROW, customer_id: `c${i}`, outlet_name: `Outlet ${i + 1}` }));
+
+    it('shows the whole-set totals with the data source, pages the rows, and a bucket click filters', async () => {
+        const calls: Calls = {};
+        setupApi({
+            '/api/v1/reports/outstanding/summary': route((url) => { (calls.summary ??= []).push(url); return json(SUMMARY); }),
+            '/api/v1/reports/outstanding': route((url) => { (calls.outstanding ??= []).push(url); return json(rows); }),
+        }, calls);
+        renderWithProviders(<ReportsPage />);
+        await openTab('outstanding');
+        const summary = await screen.findByTestId('outstanding-summary');
+        expect(summary).toHaveTextContent('Accounts (outlet + brand)60');
+        expect(summary).toHaveTextContent('Zones3');
+        expect(summary).toHaveTextContent('Areas7');
+        expect(screen.getByTestId('outstanding-source')).toHaveTextContent(/Live from Tally, as of 23\/11\/2026 \(IST\)/);
+        expect(await screen.findByText('Outlet 1')).toBeInTheDocument();
+        expect(screen.queryByText('Outlet 51')).not.toBeInTheDocument();
+        expect(screen.getByTestId('outstanding-pager')).toHaveTextContent('Rows 1-50 of 60');
+        await userEvent.click(screen.getByRole('button', { name: 'Next' }));
+        expect(await screen.findByText('Outlet 51')).toBeInTheDocument();
+        await userEvent.click(screen.getByTestId('os-bucket->90'));
+        await waitFor(() => expect(q(last(calls, 'outstanding')).get('ageing_bucket')).toBe('>90'));
+        expect(q(last(calls, 'summary')).get('ageing_bucket')).toBe('>90');
+        expect(screen.getByTestId('os-bucket->90')).toHaveAttribute('aria-pressed', 'true');
+        await userEvent.click(screen.getByTestId('os-bucket->90'));
+        await waitFor(() => expect(q(last(calls, 'outstanding')).get('ageing_bucket')).toBeNull());
+    });
+
+    it('several brands and periods are sent together; several FOS are not silently narrowed on single-FOS tabs', async () => {
+        const calls = setupApi({
+            '/api/v1/employees': [EMP, { ...EMP, id: 'emp-2', full_name: 'Ben Rep', employee_code: 'RF02' }],
+            '/api/v1/brands': [BRAND, { ...BRAND, id: 'b2', name: 'VU', normalized_name: 'vu' }],
+        });
+        renderWithProviders(<ReportsPage />);
+        await openTab('outstanding');
+        await params(calls, 'outstanding');
+        await pickMultiOption('Brand', 'USHA');
+        await pickMultiOption('Brand', 'VU');
+        await pickMultiOption('FOS / Field Officer', 'emp-1');
+        await pickMultiOption('FOS / Field Officer', 'emp-2');
+        await waitFor(() => {
+            const p = q(last(calls, 'outstanding'));
+            expect(p.get('brand')).toBe('USHA,VU');
+            expect(p.get('employee_id')).toBe('emp-1,emp-2');
+        });
+        expect(screen.getByTestId('applied-filters')).toHaveTextContent('FOS: Asha Rep (RF01), Ben Rep (RF02)');
+        // Field Staff takes one FOS: with two selected the filter is not applied there, and the page says so.
+        await openTab('employees');
+        await waitFor(() => expect(q(last(calls, 'employees')).get('employee_id')).toBeNull());
+        expect(screen.getByText(/filters by one FOS at a time/i)).toBeInTheDocument();
+    });
+
+    it('a filter list that fails to load is reported, not shown as "Zones (0)"', async () => {
+        setupApi({ '/api/v1/territories': route(() => json({ error: { code: 'X', message: 'down' } }, 500)) });
+        renderWithProviders(<ReportsPage />);
+        expect(await screen.findByText(/Filter lists could not be loaded \(zones\)/)).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: 'All Zones (list unavailable)' })).toBeInTheDocument();
+        expect(screen.queryByRole('option', { name: 'All Zones (0)' })).not.toBeInTheDocument();
     });
 });

@@ -189,7 +189,28 @@ export const SettingsPage: React.FC = () => {
     }
   };
 
+  // Brand usage (Tally ledgers / invoices / receipts / outlets) and the records Tally sends without a brand.
+  const [brandUsage, setBrandUsage] = useState<Awaited<ReturnType<typeof apiClient.getBrandReconciliation>> | null>(null);
+  const [brandUsageError, setBrandUsageError] = useState<string | null>(null);
+  useEffect(() => {
+    if (activeTab !== 'brands' || brandUsage) return;
+    apiClient.getBrandReconciliation().then(setBrandUsage).catch((e) =>
+      setBrandUsageError(e instanceof Error ? e.message : 'Brand usage could not be loaded'));
+  }, [activeTab, brandUsage]);
+  const usageOf = (b: Brand) =>
+    brandUsage?.rows.find((r) => (r.fieldtrack_brand ?? '').toLowerCase() === b.name.toLowerCase() && r.tally_brand !== null && !String(r.tally_brand).includes('(from group names'))
+    ?? brandUsage?.rows.find((r) => (r.fieldtrack_brand ?? '').toLowerCase() === b.name.toLowerCase());
+
   const handleToggleBrandStatus = async (brand: Brand) => {
+    if (brand.is_active) {
+      const u = usageOf(brand);
+      const msg =
+        `Deactivate ${brand.name}?\n\n` +
+        `- It disappears from the brand filters on Dashboard and Reports and from new collections / requirements.\n` +
+        `- Its history is kept: ${u ? `${u.invoices.toLocaleString('en-IN')} Tally invoices and ${u.receipts.toLocaleString('en-IN')} receipts` : 'its records'} ` +
+        `stay as they are and still count in totals without a brand filter.\n- You can activate it again at any time.`;
+      if (!window.confirm(msg)) return;
+    }
     try {
       setUpdatingBrandId(brand.id);
       const updated = await apiClient.updateBrand(brand.id, { is_active: !brand.is_active });
@@ -412,6 +433,7 @@ export const SettingsPage: React.FC = () => {
                   <th className="px-4 py-3">Brand Name</th>
                   <th className="px-4 py-3">Normalized Identifier</th>
                   <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3 text-right" title="Tally debtor ledgers / invoices / receipts carrying this brand">Usage (ledgers / invoices / receipts)</th>
                   <th className="px-4 py-3">Created</th>
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
@@ -437,8 +459,16 @@ export const SettingsPage: React.FC = () => {
                         </span>
                       )}
                     </td>
+                    <td className="px-4 py-3.5 text-right text-on-surface-variant" data-testid={`brand-usage-${brand.normalized_name}`}>
+                      {(() => {
+                        const u = usageOf(brand);
+                        if (!brandUsage) return brandUsageError ? '—' : '…';
+                        if (!u || (u.ledgers + u.invoices + u.receipts) === 0) return 'No Tally records';
+                        return `${u.ledgers.toLocaleString('en-IN')} / ${u.invoices.toLocaleString('en-IN')} / ${u.receipts.toLocaleString('en-IN')}`;
+                      })()}
+                    </td>
                     <td className="px-4 py-3.5 text-on-surface-variant">
-                      {brand.created_at ? new Date(brand.created_at).toLocaleDateString() : 'System Seed'}
+                      {brand.created_at ? new Date(brand.created_at).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' }) : 'System Seed'}
                     </td>
                     <td className="px-4 py-3.5 text-right">
                       <button
@@ -462,13 +492,50 @@ export const SettingsPage: React.FC = () => {
 
                 {brands.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="px-4 py-8 text-center text-on-surface-variant italic">
+                    <td colSpan={6} className="px-4 py-8 text-center text-on-surface-variant italic">
                       No brands found. Click &quot;+ Add New Brand&quot; to create your first brand.
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
+          </div>
+
+          {/* Unmapped brand data: what Tally sends without a brand (review only; nothing is re-attributed here) */}
+          <div className="space-y-2" data-testid="unmapped-brand-data">
+            <h4 className="font-bold text-sm text-on-surface">Unmapped brand data (review)</h4>
+            <p className="text-xs text-on-surface-variant">
+              {brandUsage?.source_note ?? 'Records Tally sends without a brand, grouped by the ledger\'s Tally group.'} These
+              records are shown as &quot;Unattributed&quot;. FieldTrack never guesses their brand; a possible brand is only a hint from the
+              group name and needs the accountant&apos;s confirmation.
+            </p>
+            {brandUsageError && <p className="text-xs text-error">{brandUsageError}</p>}
+            {brandUsage && (
+              <div className="overflow-x-auto rounded-xl border border-surface-container-highest">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-surface-container text-on-surface-variant uppercase tracking-wider">
+                    <tr><th className="px-3 py-2">Tally group</th><th className="px-3 py-2 text-right">Ledgers</th>
+                      <th className="px-3 py-2 text-right">Invoices</th><th className="px-3 py-2 text-right">Amount</th>
+                      <th className="px-3 py-2">Voucher types</th><th className="px-3 py-2">Possible brand (unconfirmed)</th></tr>
+                  </thead>
+                  <tbody className="divide-y divide-surface-container-highest bg-surface">
+                    {brandUsage.unattributed_groups.length === 0 && (
+                      <tr><td colSpan={6} className="px-3 py-4 text-on-surface-variant">Every Tally record carries a brand.</td></tr>
+                    )}
+                    {brandUsage.unattributed_groups.map((g) => (
+                      <tr key={g.group}>
+                        <td className="px-3 py-2 font-semibold">{g.group}</td>
+                        <td className="px-3 py-2 text-right">{g.ledgers}</td>
+                        <td className="px-3 py-2 text-right">{g.invoices.toLocaleString('en-IN')}</td>
+                        <td className="px-3 py-2 text-right">₹{Number(g.invoice_amount).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</td>
+                        <td className="px-3 py-2">{g.voucher_types.join(', ') || '-'}</td>
+                        <td className="px-3 py-2">{g.possible_brand ?? '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </Card>
       )}

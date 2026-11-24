@@ -118,7 +118,7 @@ describe('reportFilters - applied filters strip + notes derive from the params',
   });
 
   it('formats months and one-sided ranges', () => {
-    expect(describeAppliedFilters(buildReportRequest('outlets', base({ month: '2026-09' })), lookups)).toEqual([{ label: 'Month', value: 'September 2026' }]);
+    expect(describeAppliedFilters(buildReportRequest('outlets', base({ month: '2026-09' })), lookups)).toEqual([{ label: 'Period', value: 'September 2026' }]);
     expect(describeAppliedFilters(buildReportRequest('outlets', base({ startDate: '2026-09-01' })), lookups)[0].value).toBe('from 01/09/2026');
   });
 

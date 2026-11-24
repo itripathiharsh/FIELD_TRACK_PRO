@@ -126,13 +126,13 @@ describe('OutletVerificationPage', () => {
     await waitFor(() => expect(list.mock.calls.length).toBeGreaterThanOrEqual(2));
   });
 
-  it('shows "Approve the new outlet first" for OUTLET_PROOF_PROSPECT_PENDING', async () => {
+  it('explains OUTLET_PROOF_PROSPECT_PENDING by pointing to New Outlet Approvals', async () => {
     vi.spyOn(apiClient, 'getOutletProofs').mockResolvedValue({ items: [makeProof()], total: 1 });
     vi.spyOn(apiClient, 'approveOutletProof').mockRejectedValue(new ApiError('x', 409, 'OUTLET_PROOF_PROSPECT_PENDING'));
     renderPage();
     await userEvent.click(await screen.findByRole('button', { name: APPROVE_BTN }));
     await userEvent.click(await screen.findByRole('button', { name: /confirm approval/i }));
-    expect(await screen.findByText(/Approve the new outlet first/i)).toBeInTheDocument();
+    expect(await screen.findByText(/approve or reject the request in Customers > New Outlet Approvals/i)).toBeInTheDocument();
   });
 
   it('shows a friendly message on 404', async () => {
@@ -145,7 +145,7 @@ describe('OutletVerificationPage', () => {
     expect(await screen.findByText(/no longer exists/i)).toBeInTheDocument();
   });
 
-  it('disables approve for a not-yet-approved new outlet proof', async () => {
+  it('a new-outlet proof (INITIAL / PENDING / ±18 m) explains itself and is decided in New Outlet Approvals', async () => {
     vi.spyOn(apiClient, 'getOutletProofs').mockResolvedValue({
       items: [
         makeProof({
@@ -163,7 +163,19 @@ describe('OutletVerificationPage', () => {
     });
     renderPage();
     expect(await screen.findByText('New Shop')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: APPROVE_BTN })).toBeDisabled();
+    // No approve / reject on the photo alone: the request decides both together.
+    expect(screen.queryByRole('button', { name: APPROVE_BTN })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^reject$/i })).not.toBeInTheDocument();
+    const link = screen.getByRole('link', { name: /review in new outlet approvals/i });
+    expect(link).toHaveAttribute('href', '/customers?tab=newOutlets');
+    const actions = screen.getByTestId('prospect-proof-actions');
+    expect(actions).toHaveTextContent(/approved\s+together/);
+    expect(actions).toHaveTextContent(/rejecting it rejects the request and this photo/);
+    const meaning = screen.getByTestId('proof-meaning');
+    expect(meaning).toHaveTextContent(/INITIAL: Photo and GPS point sent with a new-outlet request/);
+    expect(meaning).toHaveTextContent(/PENDING: Waiting for an admin/);
+    expect(meaning).toHaveTextContent(/GPS accuracy/);
+    expect(screen.getByTestId('accuracy-chip')).toHaveAttribute('title', expect.stringMatching(/within about \d+ m/));
   });
 
   it('changes filters, resets to page 1 and paginates', async () => {

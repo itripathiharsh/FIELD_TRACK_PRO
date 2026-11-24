@@ -32,11 +32,11 @@ export type FilterKey =
   | 'locationStatus';
 
 export interface ReportFilterState {
-  month: string; // 'ALL' or YYYY-MM
-  brand: string; // 'ALL' or name
+  month: string; // 'ALL' or one or more YYYY-MM / FYyyyy-yy, comma-joined
+  brand: string; // 'ALL' or one or more names, comma-joined
   zoneId: string; // 'ALL' or id
   areaId: string;
-  employeeId: string;
+  employeeId: string; // 'ALL' or one or more ids, comma-joined
   ageingBucket: string;
   search: string;
   startDate: string; // applied dates, '' = unset
@@ -117,6 +117,21 @@ export interface ReportRequest {
 
 const isSet = (v: string | undefined | null): v is string => !!v && v !== 'ALL';
 
+/** Reports whose API takes several brands / periods / FOS (comma-joined). The others take one FOS. */
+export const MULTI_VALUE_REPORTS: ReportKey[] = ['business_summary', 'outstanding', 'outlets'];
+const splitCsv = (v: string | undefined | null): string[] =>
+  !v || v === 'ALL' ? [] : v.split(',').map((x) => x.trim()).filter(Boolean);
+
+/** True when several FOS are selected but the tab's report filters by one FOS only (so it is not applied). */
+export function fosNotAppliedOnTab(tab: ReportTabId, f: ReportFilterState, visitSubView: VisitSubView = 'register'): boolean {
+  const report = reportForTab(tab, visitSubView);
+  return (
+    applicableFilters(tab, visitSubView).includes('employee') &&
+    !MULTI_VALUE_REPORTS.includes(report) &&
+    splitCsv(f.employeeId).length > 1
+  );
+}
+
 export function reportForTab(tab: ReportTabId, visitSubView: VisitSubView = 'register'): ReportKey {
   switch (tab) {
     case 'financial_bi':
@@ -170,7 +185,9 @@ export function buildReportRequest(
     put('zone_id', f.zoneId, applies.has('zone'));
   }
   put('area_id', f.areaId, applies.has('area'));
-  put('employee_id', f.employeeId, applies.has('employee'));
+  // Several FOS only where the API takes several; elsewhere one FOS is applied or none (never a silent first pick).
+  const fos = splitCsv(f.employeeId);
+  put('employee_id', MULTI_VALUE_REPORTS.includes(report) || fos.length <= 1 ? f.employeeId : '', applies.has('employee'));
   put('ageing_bucket', f.ageingBucket, applies.has('ageing'));
   put('collection_status', f.collectionStatus, applies.has('collectionStatus'));
   put('status', f.visitStatus, applies.has('visitStatus'));
@@ -191,6 +208,11 @@ export interface AppliedFilterItem {
   value: string;
 }
 
+const AGEING_LABEL: Record<string, string> = {
+  '<15': '0-15 days', '15-30': '16-30 days', '30-45': '31-45 days', '45-60': '46-60 days',
+  '60-75': '61-75 days', '75-90': '76-90 days', '>90': 'Over 90 days',
+};
+
 const COLLECTION_STATUS_LABEL: Record<string, string> = {
   NORMAL: 'Current / Not Due',
   WARNING: 'Warning (21-25 days)',
@@ -210,16 +232,19 @@ export function describeAppliedFilters(req: ReportRequest, lookups: FilterLookup
       value: a && b ? `${a} to ${b}` : a ? `from ${a}` : `until ${b}`,
     });
   }
-  if (p.month) out.push({ label: 'Month', value: formatMonthLabel(p.month) });
-  if (p.brand) out.push({ label: 'Brand', value: p.brand });
+  if (p.month) out.push({ label: 'Period', value: splitCsv(p.month).map(formatMonthLabel).join(', ') });
+  if (p.brand) out.push({ label: 'Brand', value: splitCsv(p.brand).join(', ') });
   const zone = p.zone_id ?? p.territory_id;
   if (zone) out.push({ label: 'Zone', value: lookups.zones.find((z) => z.id === zone)?.name ?? zone });
   if (p.area_id) out.push({ label: 'Area', value: lookups.areas.find((a) => a.id === p.area_id)?.name ?? p.area_id });
   if (p.employee_id) {
-    const e = lookups.employees.find((x) => x.id === p.employee_id);
-    out.push({ label: 'Employee', value: e ? `${e.full_name} (${e.employee_code})` : p.employee_id });
+    const names = splitCsv(p.employee_id).map((id) => {
+      const e = lookups.employees.find((x) => x.id === id);
+      return e ? (e.employee_code ? `${e.full_name} (${e.employee_code})` : e.full_name) : id;
+    });
+    out.push({ label: names.length > 1 ? 'FOS' : 'Employee', value: names.join(', ') });
   }
-  if (p.ageing_bucket) out.push({ label: 'Ageing bucket', value: p.ageing_bucket });
+  if (p.ageing_bucket) out.push({ label: 'Ageing bucket', value: AGEING_LABEL[p.ageing_bucket] ?? p.ageing_bucket });
   if (p.collection_status) {
     out.push({ label: 'Status', value: COLLECTION_STATUS_LABEL[p.collection_status] ?? p.collection_status });
   }
@@ -237,8 +262,10 @@ export function tabSemanticsNotes(tab: ReportTabId, f: ReportFilterState, visitS
   const snapshotTab = tab === 'financial_bi' || tab === 'outstanding' || tab === 'outlets';
   if (snapshotTab) {
     notes.push(
-      'Sales and collection are summed over the snapshots in the period. Market outstanding and ageing buckets show the ' +
-        'latest snapshot in the period (as of its date) and are never summed across dates.',
+      'Live from Tally when the period has no monthly snapshot (the usual case): sales and collections of the period, ' +
+        'outstanding and ageing as of today. With a monthly snapshot: sales and collection summed over its snapshots, ' +
+        'outstanding and ageing from the latest snapshot in the period. Several brands, periods or FOS add up (OR); ' +
+        'different filters narrow down (AND).',
     );
     if (hasDates && f.month !== 'ALL') {
       notes.push('Month ignored: the date range takes priority over the month.');
@@ -256,6 +283,9 @@ export function tabSemanticsNotes(tab: ReportTabId, f: ReportFilterState, visitS
     );
   } else if (tab === 'monthly') {
     notes.push('Filters do not apply to Monthly Snapshots - every accounting period with data is listed.');
+  }
+  if (fosNotAppliedOnTab(tab, f, visitSubView)) {
+    notes.push('This tab filters by one FOS at a time. Several FOS are selected, so the FOS filter is not applied here.');
   }
   return notes;
 }
